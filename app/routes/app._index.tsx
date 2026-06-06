@@ -2,22 +2,11 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-
-type RequestStatus =
-  | "New"
-  | "Awaiting Response"
-  | "Offers Sent"
-  | "Purchased"
-  | "Expired";
-
-type PlantRequest = {
-  id: string;
-  customer: string;
-  email: string;
-  plantsRequested: string;
-  status: RequestStatus;
-  submittedDate: string;
-};
+import {
+  formatPlantsSummary,
+  SAMPLE_REQUESTS,
+  type RequestStatus,
+} from "../lib/sample-requests";
 
 type DashboardData = {
   stats: {
@@ -27,59 +16,15 @@ type DashboardData = {
     purchased: number;
     expired: number;
   };
-  requests: PlantRequest[];
+  requests: Array<{
+    id: string;
+    customer: string;
+    email: string;
+    plantsRequested: string;
+    status: RequestStatus;
+    submittedDate: string;
+  }>;
 };
-
-const SAMPLE_REQUESTS: PlantRequest[] = [
-  {
-    id: "1",
-    customer: "Sarah Mitchell",
-    email: "sarah.mitchell@email.com",
-    plantsRequested: "Monstera Deliciosa, Fiddle Leaf Fig",
-    status: "New",
-    submittedDate: "Jun 4, 2026",
-  },
-  {
-    id: "2",
-    customer: "James Chen",
-    email: "j.chen@email.com",
-    plantsRequested: "Snake Plant, ZZ Plant, Pothos",
-    status: "Awaiting Response",
-    submittedDate: "Jun 3, 2026",
-  },
-  {
-    id: "3",
-    customer: "Emily Rodriguez",
-    email: "emily.r@email.com",
-    plantsRequested: "Bird of Paradise",
-    status: "Offers Sent",
-    submittedDate: "Jun 2, 2026",
-  },
-  {
-    id: "4",
-    customer: "Michael Thompson",
-    email: "m.thompson@email.com",
-    plantsRequested: "Rubber Plant, Peace Lily",
-    status: "Purchased",
-    submittedDate: "May 30, 2026",
-  },
-  {
-    id: "5",
-    customer: "Lisa Park",
-    email: "lisa.park@email.com",
-    plantsRequested: "Calathea, Alocasia",
-    status: "Expired",
-    submittedDate: "May 28, 2026",
-  },
-  {
-    id: "6",
-    customer: "David Wilson",
-    email: "d.wilson@email.com",
-    plantsRequested: "Philodendron Brasil, Hoya",
-    status: "New",
-    submittedDate: "Jun 5, 2026",
-  },
-];
 
 function getDashboardData(): DashboardData {
   const stats = {
@@ -93,7 +38,16 @@ function getDashboardData(): DashboardData {
     expired: SAMPLE_REQUESTS.filter((r) => r.status === "Expired").length,
   };
 
-  return { stats, requests: SAMPLE_REQUESTS };
+  const requests = SAMPLE_REQUESTS.map((request) => ({
+    id: request.id,
+    customer: request.customer,
+    email: request.email,
+    plantsRequested: formatPlantsSummary(request.items),
+    status: request.status,
+    submittedDate: request.submittedDate,
+  }));
+
+  return { stats, requests };
 }
 
 function statusTone(
@@ -160,6 +114,7 @@ export default function Dashboard() {
             <s-table-header>Plants Requested</s-table-header>
             <s-table-header>Status</s-table-header>
             <s-table-header>Submitted Date</s-table-header>
+            <s-table-header>Actions</s-table-header>
           </s-table-header-row>
           <s-table-body>
             {requests.map((request) => (
@@ -173,6 +128,11 @@ export default function Dashboard() {
                   </s-badge>
                 </s-table-cell>
                 <s-table-cell>{request.submittedDate}</s-table-cell>
+                <s-table-cell>
+                  <s-link href={`/app/requests/${request.id}`}>
+                    View items
+                  </s-link>
+                </s-table-cell>
               </s-table-row>
             ))}
           </s-table-body>
