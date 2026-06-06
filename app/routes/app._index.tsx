@@ -1,249 +1,182 @@
-import { useEffect } from "react";
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+
+type RequestStatus =
+  | "New"
+  | "Awaiting Response"
+  | "Offers Sent"
+  | "Purchased"
+  | "Expired";
+
+type PlantRequest = {
+  id: string;
+  customer: string;
+  email: string;
+  plantsRequested: string;
+  status: RequestStatus;
+  submittedDate: string;
+};
+
+type DashboardData = {
+  stats: {
+    newRequests: number;
+    awaitingResponse: number;
+    offersSent: number;
+    purchased: number;
+    expired: number;
+  };
+  requests: PlantRequest[];
+};
+
+const SAMPLE_REQUESTS: PlantRequest[] = [
+  {
+    id: "1",
+    customer: "Sarah Mitchell",
+    email: "sarah.mitchell@email.com",
+    plantsRequested: "Monstera Deliciosa, Fiddle Leaf Fig",
+    status: "New",
+    submittedDate: "Jun 4, 2026",
+  },
+  {
+    id: "2",
+    customer: "James Chen",
+    email: "j.chen@email.com",
+    plantsRequested: "Snake Plant, ZZ Plant, Pothos",
+    status: "Awaiting Response",
+    submittedDate: "Jun 3, 2026",
+  },
+  {
+    id: "3",
+    customer: "Emily Rodriguez",
+    email: "emily.r@email.com",
+    plantsRequested: "Bird of Paradise",
+    status: "Offers Sent",
+    submittedDate: "Jun 2, 2026",
+  },
+  {
+    id: "4",
+    customer: "Michael Thompson",
+    email: "m.thompson@email.com",
+    plantsRequested: "Rubber Plant, Peace Lily",
+    status: "Purchased",
+    submittedDate: "May 30, 2026",
+  },
+  {
+    id: "5",
+    customer: "Lisa Park",
+    email: "lisa.park@email.com",
+    plantsRequested: "Calathea, Alocasia",
+    status: "Expired",
+    submittedDate: "May 28, 2026",
+  },
+  {
+    id: "6",
+    customer: "David Wilson",
+    email: "d.wilson@email.com",
+    plantsRequested: "Philodendron Brasil, Hoya",
+    status: "New",
+    submittedDate: "Jun 5, 2026",
+  },
+];
+
+function getDashboardData(): DashboardData {
+  const stats = {
+    newRequests: SAMPLE_REQUESTS.filter((r) => r.status === "New").length,
+    awaitingResponse: SAMPLE_REQUESTS.filter(
+      (r) => r.status === "Awaiting Response",
+    ).length,
+    offersSent: SAMPLE_REQUESTS.filter((r) => r.status === "Offers Sent")
+      .length,
+    purchased: SAMPLE_REQUESTS.filter((r) => r.status === "Purchased").length,
+    expired: SAMPLE_REQUESTS.filter((r) => r.status === "Expired").length,
+  };
+
+  return { stats, requests: SAMPLE_REQUESTS };
+}
+
+function statusTone(
+  status: RequestStatus,
+): "info" | "warning" | "caution" | "success" | "critical" {
+  switch (status) {
+    case "New":
+      return "info";
+    case "Awaiting Response":
+      return "warning";
+    case "Offers Sent":
+      return "caution";
+    case "Purchased":
+      return "success";
+    case "Expired":
+      return "critical";
+  }
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
 
-  return null;
+  return getDashboardData();
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
+export default function Dashboard() {
+  const { stats, requests } = useLoaderData<typeof loader>();
+
+  const statCards = [
+    { label: "New Requests", value: stats.newRequests },
+    { label: "Awaiting Response", value: stats.awaitingResponse },
+    { label: "Offers Sent", value: stats.offersSent },
+    { label: "Purchased", value: stats.purchased },
+    { label: "Expired", value: stats.expired },
   ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
-};
-
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
-
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
-      </s-button>
-
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
+    <s-page heading="UPT Plant Request Portal">
+      <s-section heading="Overview">
         <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
+          {statCards.map((card) => (
+            <s-box
+              key={card.label}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
+              inlineSize="180px"
             >
-              Edit product
-            </s-button>
-          )}
+              <s-stack direction="block" gap="small">
+                <s-text color="subdued">{card.label}</s-text>
+                <s-heading>{card.value}</s-heading>
+              </s-stack>
+            </s-box>
+          ))}
         </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-            </s-stack>
-          </s-section>
-        )}
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
+      <s-section heading="Recent Requests">
+        <s-table>
+          <s-table-header-row>
+            <s-table-header listSlot="primary">Customer</s-table-header>
+            <s-table-header>Email</s-table-header>
+            <s-table-header>Plants Requested</s-table-header>
+            <s-table-header>Status</s-table-header>
+            <s-table-header>Submitted Date</s-table-header>
+          </s-table-header-row>
+          <s-table-body>
+            {requests.map((request) => (
+              <s-table-row key={request.id}>
+                <s-table-cell>{request.customer}</s-table-cell>
+                <s-table-cell>{request.email}</s-table-cell>
+                <s-table-cell>{request.plantsRequested}</s-table-cell>
+                <s-table-cell>
+                  <s-badge tone={statusTone(request.status)}>
+                    {request.status}
+                  </s-badge>
+                </s-table-cell>
+                <s-table-cell>{request.submittedDate}</s-table-cell>
+              </s-table-row>
+            ))}
+          </s-table-body>
+        </s-table>
       </s-section>
     </s-page>
   );
