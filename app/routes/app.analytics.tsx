@@ -260,43 +260,40 @@ function PlantTable({
     return sortDirection === "asc" ? " ↑" : " ↓";
   };
 
+  const headerLabel = (key: SortKey, label: string) => (
+    <span
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={() => handleSort(key)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleSort(key);
+        }
+      }}
+    >
+      {label}
+      {sortIndicator(key)}
+    </span>
+  );
+
   return (
     <s-section heading={heading}>
       <s-table>
         <s-table-header-row>
           <s-table-header listSlot="primary">
-            <s-button variant="tertiary" onClick={() => handleSort("plantName")}>
-              Plant Name{sortIndicator("plantName")}
-            </s-button>
+            {headerLabel("plantName", "Plant Name")}
           </s-table-header>
           <s-table-header>
-            <s-button
-              variant="tertiary"
-              onClick={() => handleSort("requestCount")}
-            >
-              Request Count{sortIndicator("requestCount")}
-            </s-button>
+            {headerLabel("requestCount", "Request Count")}
           </s-table-header>
           <s-table-header>
-            <s-button
-              variant="tertiary"
-              onClick={() => handleSort("purchaseCount")}
-            >
-              Purchase Count{sortIndicator("purchaseCount")}
-            </s-button>
+            {headerLabel("purchaseCount", "Purchase Count")}
           </s-table-header>
+          <s-table-header>{headerLabel("revenue", "Revenue")}</s-table-header>
           <s-table-header>
-            <s-button variant="tertiary" onClick={() => handleSort("revenue")}>
-              Revenue{sortIndicator("revenue")}
-            </s-button>
-          </s-table-header>
-          <s-table-header>
-            <s-button
-              variant="tertiary"
-              onClick={() => handleSort("conversionRate")}
-            >
-              Conversion Rate{sortIndicator("conversionRate")}
-            </s-button>
+            {headerLabel("conversionRate", "Conversion Rate")}
           </s-table-header>
         </s-table-header-row>
         <s-table-body>

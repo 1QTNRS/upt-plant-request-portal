@@ -25,4 +25,7 @@ api_version = "2026-07"
 scopes = ""
 
 [auth]
-redirect_urls = []
+redirect_urls = [
+  "https://shopify.dev/apps/default-app-home/auth/callback",
+  "https://shopify.dev/apps/default-app-home/auth/shopify/callback",
+]
