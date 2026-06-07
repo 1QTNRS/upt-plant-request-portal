@@ -1,5 +1,18 @@
 import { useMemo, useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import {
+  behaviorFlagTone,
+  getCustomerBehaviorSummary,
+  SAMPLE_CUSTOMER_BEHAVIOR,
+  type CustomerBehavior,
+} from "../lib/sample-customer-behavior";
+import {
+  getItemConversionCustomerSummary,
+  getItemConversionSummary,
+  itemPurchaseBehaviorFlagTone,
+  SAMPLE_ITEM_PURCHASE_BEHAVIOR,
+  type ItemPurchaseBehavior,
+} from "../lib/sample-item-conversion";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -46,6 +59,35 @@ type SortKey = keyof Pick<
 >;
 
 type SortDirection = "asc" | "desc";
+
+type CustomerSortKey = keyof Pick<
+  CustomerBehavior,
+  | "customerName"
+  | "email"
+  | "totalRequests"
+  | "offersSent"
+  | "closedPaidRequests"
+  | "expiredRequests"
+  | "noPaymentRate"
+  | "totalRevenue"
+  | "lastRequestDate"
+  | "behaviorFlag"
+>;
+
+type ItemPurchaseSortKey = keyof Pick<
+  ItemPurchaseBehavior,
+  | "customerName"
+  | "email"
+  | "requestId"
+  | "itemsRequested"
+  | "itemsOffered"
+  | "itemsAccepted"
+  | "itemsPurchased"
+  | "acceptedVsPurchasedPercent"
+  | "requestToPurchasePercent"
+  | "itemRevenue"
+  | "behaviorFlag"
+>;
 
 const DATE_FILTERS: { id: DateRange; label: string }[] = [
   { id: "7d", label: "Last 7 days" },
@@ -186,12 +228,12 @@ function formatPercent(value: number): string {
   return `${prefix}${value}%`;
 }
 
-function sortPlants(
-  plants: PlantMetric[],
-  key: SortKey,
+function sortByKey<T extends Record<string, string | number>>(
+  items: T[],
+  key: keyof T,
   direction: SortDirection,
-): PlantMetric[] {
-  return [...plants].sort((a, b) => {
+): T[] {
+  return [...items].sort((a, b) => {
     const left = a[key];
     const right = b[key];
 
@@ -205,6 +247,14 @@ function sortPlants(
       ? Number(left) - Number(right)
       : Number(right) - Number(left);
   });
+}
+
+function sortPlants(
+  plants: PlantMetric[],
+  key: SortKey,
+  direction: SortDirection,
+): PlantMetric[] {
+  return sortByKey(plants, key, direction);
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -312,12 +362,237 @@ function PlantTable({
   );
 }
 
+function CustomerBehaviorTable({
+  customers,
+}: {
+  customers: CustomerBehavior[];
+}) {
+  const [sortKey, setSortKey] = useState<CustomerSortKey>("totalRequests");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  const sortedCustomers = useMemo(
+    () => sortByKey(customers, sortKey, sortDirection),
+    [customers, sortKey, sortDirection],
+  );
+
+  const handleSort = (key: CustomerSortKey) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(key);
+    setSortDirection(
+      key === "customerName" || key === "email" || key === "lastRequestDate"
+        ? "asc"
+        : "desc",
+    );
+  };
+
+  const sortIndicator = (key: CustomerSortKey) => {
+    if (sortKey !== key) return "";
+    return sortDirection === "asc" ? " ↑" : " ↓";
+  };
+
+  const headerLabel = (key: CustomerSortKey, label: string) => (
+    <span
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={() => handleSort(key)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleSort(key);
+        }
+      }}
+    >
+      {label}
+      {sortIndicator(key)}
+    </span>
+  );
+
+  return (
+    <s-table>
+      <s-table-header-row>
+        <s-table-header listSlot="primary">
+          {headerLabel("customerName", "Customer Name")}
+        </s-table-header>
+        <s-table-header>{headerLabel("email", "Email")}</s-table-header>
+        <s-table-header>
+          {headerLabel("totalRequests", "Total Requests")}
+        </s-table-header>
+        <s-table-header>{headerLabel("offersSent", "Offers Sent")}</s-table-header>
+        <s-table-header>
+          {headerLabel("closedPaidRequests", "Closed/Paid Requests")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("expiredRequests", "Expired Requests")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("noPaymentRate", "No-Payment Rate")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("totalRevenue", "Total Revenue")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("lastRequestDate", "Last Request Date")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("behaviorFlag", "Behavior Flag")}
+        </s-table-header>
+      </s-table-header-row>
+      <s-table-body>
+        {sortedCustomers.map((customer) => (
+          <s-table-row key={customer.email}>
+            <s-table-cell>{customer.customerName}</s-table-cell>
+            <s-table-cell>{customer.email}</s-table-cell>
+            <s-table-cell>{customer.totalRequests}</s-table-cell>
+            <s-table-cell>{customer.offersSent}</s-table-cell>
+            <s-table-cell>{customer.closedPaidRequests}</s-table-cell>
+            <s-table-cell>{customer.expiredRequests}</s-table-cell>
+            <s-table-cell>{customer.noPaymentRate}%</s-table-cell>
+            <s-table-cell>{formatCurrency(customer.totalRevenue)}</s-table-cell>
+            <s-table-cell>{customer.lastRequestDate}</s-table-cell>
+            <s-table-cell>
+              <s-badge tone={behaviorFlagTone(customer.behaviorFlag)}>
+                {customer.behaviorFlag}
+              </s-badge>
+            </s-table-cell>
+          </s-table-row>
+        ))}
+      </s-table-body>
+    </s-table>
+  );
+}
+
+function ItemPurchaseBehaviorTable({
+  rows,
+}: {
+  rows: ItemPurchaseBehavior[];
+}) {
+  const [sortKey, setSortKey] = useState<ItemPurchaseSortKey>("itemsRequested");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  const sortedRows = useMemo(
+    () => sortByKey(rows, sortKey, sortDirection),
+    [rows, sortKey, sortDirection],
+  );
+
+  const handleSort = (key: ItemPurchaseSortKey) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(key);
+    setSortDirection(
+      key === "customerName" ||
+        key === "email" ||
+        key === "requestId" ||
+        key === "behaviorFlag"
+        ? "asc"
+        : "desc",
+    );
+  };
+
+  const sortIndicator = (key: ItemPurchaseSortKey) => {
+    if (sortKey !== key) return "";
+    return sortDirection === "asc" ? " ↑" : " ↓";
+  };
+
+  const headerLabel = (key: ItemPurchaseSortKey, label: string) => (
+    <span
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={() => handleSort(key)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleSort(key);
+        }
+      }}
+    >
+      {label}
+      {sortIndicator(key)}
+    </span>
+  );
+
+  return (
+    <s-table>
+      <s-table-header-row>
+        <s-table-header listSlot="primary">
+          {headerLabel("customerName", "Customer Name")}
+        </s-table-header>
+        <s-table-header>{headerLabel("email", "Email")}</s-table-header>
+        <s-table-header>{headerLabel("requestId", "Request ID")}</s-table-header>
+        <s-table-header>
+          {headerLabel("itemsRequested", "Items Requested")}
+        </s-table-header>
+        <s-table-header>{headerLabel("itemsOffered", "Items Offered")}</s-table-header>
+        <s-table-header>
+          {headerLabel("itemsAccepted", "Items Accepted")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("itemsPurchased", "Items Purchased")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("acceptedVsPurchasedPercent", "Accepted vs Purchased %")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("requestToPurchasePercent", "Request-to-Purchase %")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("itemRevenue", "Item Revenue")}
+        </s-table-header>
+        <s-table-header>
+          {headerLabel("behaviorFlag", "Behavior Flag")}
+        </s-table-header>
+      </s-table-header-row>
+      <s-table-body>
+        {sortedRows.map((row) => (
+          <s-table-row key={row.requestId}>
+            <s-table-cell>{row.customerName}</s-table-cell>
+            <s-table-cell>{row.email}</s-table-cell>
+            <s-table-cell>{row.requestId}</s-table-cell>
+            <s-table-cell>{row.itemsRequested}</s-table-cell>
+            <s-table-cell>{row.itemsOffered}</s-table-cell>
+            <s-table-cell>{row.itemsAccepted}</s-table-cell>
+            <s-table-cell>{row.itemsPurchased}</s-table-cell>
+            <s-table-cell>{row.acceptedVsPurchasedPercent}%</s-table-cell>
+            <s-table-cell>{row.requestToPurchasePercent}%</s-table-cell>
+            <s-table-cell>{formatCurrency(row.itemRevenue)}</s-table-cell>
+            <s-table-cell>
+              <s-badge tone={itemPurchaseBehaviorFlagTone(row.behaviorFlag)}>
+                {row.behaviorFlag}
+              </s-badge>
+            </s-table-cell>
+          </s-table-row>
+        ))}
+      </s-table-body>
+    </s-table>
+  );
+}
+
 export default function Analytics() {
   const [dateRange, setDateRange] = useState<DateRange>("month");
   const [customStart, setCustomStart] = useState("2026-05-01");
   const [customEnd, setCustomEnd] = useState("2026-06-06");
 
   const data = useMemo(() => getAnalyticsData(dateRange), [dateRange]);
+  const customerBehaviorSummary = useMemo(
+    () => getCustomerBehaviorSummary(SAMPLE_CUSTOMER_BEHAVIOR),
+    [],
+  );
+  const itemConversionSummary = useMemo(
+    () => getItemConversionSummary(SAMPLE_ITEM_PURCHASE_BEHAVIOR),
+    [],
+  );
+  const itemConversionCustomerSummary = useMemo(
+    () => getItemConversionCustomerSummary(SAMPLE_ITEM_PURCHASE_BEHAVIOR),
+    [],
+  );
 
   const financialCards = [
     {
@@ -339,6 +614,75 @@ export default function Analytics() {
     {
       label: "Revenue From Plant Requests",
       value: formatCurrency(data.financial.revenueFromPlantRequests),
+    },
+  ];
+
+  const customerBehaviorCards = [
+    {
+      label: "Repeat Request Customers",
+      value: String(customerBehaviorSummary.repeatRequestCustomers),
+    },
+    {
+      label: "Customers With Expired Offers",
+      value: String(customerBehaviorSummary.customersWithExpiredOffers),
+    },
+    {
+      label: "Customers With Closed/Paid Requests",
+      value: String(customerBehaviorSummary.customersWithClosedPaidRequests),
+    },
+    {
+      label: "High Request / Low Purchase Customers",
+      value: String(customerBehaviorSummary.highRequestLowPurchaseCustomers),
+    },
+  ];
+
+  const itemConversionCards = [
+    {
+      label: "Total Plant Items Offered",
+      value: String(itemConversionSummary.totalItemsOffered),
+    },
+    {
+      label: "Total Plant Items Accepted",
+      value: String(itemConversionSummary.totalItemsAccepted),
+    },
+    {
+      label: "Total Plant Items Purchased",
+      value: String(itemConversionSummary.totalItemsPurchased),
+    },
+    {
+      label: "Accepted But Not Purchased",
+      value: String(itemConversionSummary.acceptedButNotPurchased),
+    },
+    {
+      label: "Item Purchase Conversion Rate",
+      value: `${itemConversionSummary.itemPurchaseConversionRate}%`,
+    },
+    {
+      label: "Item Drop-Off Rate",
+      value: `${itemConversionSummary.itemDropOffRate}%`,
+    },
+  ];
+
+  const itemConversionCustomerCards = [
+    {
+      label: "Total Items Requested",
+      value: String(itemConversionCustomerSummary.totalItemsRequested),
+    },
+    {
+      label: "Total Items Accepted",
+      value: String(itemConversionCustomerSummary.totalItemsAccepted),
+    },
+    {
+      label: "Total Items Purchased",
+      value: String(itemConversionCustomerSummary.totalItemsPurchased),
+    },
+    {
+      label: "Overall Accepted vs Purchased %",
+      value: `${itemConversionCustomerSummary.overallAcceptedVsPurchasedPercent}%`,
+    },
+    {
+      label: "Overall Request-to-Purchase %",
+      value: `${itemConversionCustomerSummary.overallRequestToPurchasePercent}%`,
     },
   ];
 
@@ -397,6 +741,50 @@ export default function Analytics() {
           {requestCards.map((card) => (
             <MetricCard key={card.label} label={card.label} value={card.value} />
           ))}
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Customer Behavior">
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="base">
+            {customerBehaviorCards.map((card) => (
+              <MetricCard key={card.label} label={card.label} value={card.value} />
+            ))}
+          </s-stack>
+          <CustomerBehaviorTable customers={SAMPLE_CUSTOMER_BEHAVIOR} />
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Item Conversion Analytics">
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="base">
+            {itemConversionCards.map((card) => (
+              <MetricCard key={card.label} label={card.label} value={card.value} />
+            ))}
+          </s-stack>
+
+          <s-box
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+            background="subdued"
+          >
+            <s-stack direction="block" gap="base">
+              <s-heading>Customer-Level Summary</s-heading>
+              <s-stack direction="inline" gap="base">
+                {itemConversionCustomerCards.map((card) => (
+                  <MetricCard
+                    key={card.label}
+                    label={card.label}
+                    value={card.value}
+                  />
+                ))}
+              </s-stack>
+            </s-stack>
+          </s-box>
+
+          <s-heading>Item Purchase Behavior</s-heading>
+          <ItemPurchaseBehaviorTable rows={SAMPLE_ITEM_PURCHASE_BEHAVIOR} />
         </s-stack>
       </s-section>
 
