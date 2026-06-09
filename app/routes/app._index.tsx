@@ -1,18 +1,24 @@
+import { useEffect, useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { hydrateCustomerOfferResponses } from "../lib/customer-offer-responses";
+import { LOCAL_STATE_CHANGED_EVENT } from "../lib/local-state-events";
+import { hydrateSubmittedRequests } from "../lib/customer-request-submissions";
 import {
   formatPlantsSummary,
-  SAMPLE_REQUESTS,
+  getAllPlantRequests,
+  getEffectiveRequestStatus,
+  hydrateSampleOfferState,
   type RequestStatus,
 } from "../lib/sample-requests";
+import { resetAllSampleLocalState } from "../lib/sample-local-state";
 
 type DashboardData = {
   stats: {
     newRequests: number;
-    awaitingResponse: number;
-    offersSent: number;
+    offerSent: number;
     purchased: number;
     expired: number;
   };
@@ -27,23 +33,29 @@ type DashboardData = {
 };
 
 function getDashboardData(): DashboardData {
+  const allRequests = getAllPlantRequests();
+
   const stats = {
-    newRequests: SAMPLE_REQUESTS.filter((r) => r.status === "New").length,
-    awaitingResponse: SAMPLE_REQUESTS.filter(
-      (r) => r.status === "Awaiting Response",
+    newRequests: allRequests.filter(
+      (r) => getEffectiveRequestStatus(r.id, r.status) === "New",
     ).length,
-    offersSent: SAMPLE_REQUESTS.filter((r) => r.status === "Offers Sent")
-      .length,
-    purchased: SAMPLE_REQUESTS.filter((r) => r.status === "Purchased").length,
-    expired: SAMPLE_REQUESTS.filter((r) => r.status === "Expired").length,
+    offerSent: allRequests.filter(
+      (r) => getEffectiveRequestStatus(r.id, r.status) === "Pending",
+    ).length,
+    purchased: allRequests.filter(
+      (r) => getEffectiveRequestStatus(r.id, r.status) === "Closed",
+    ).length,
+    expired: allRequests.filter(
+      (r) => getEffectiveRequestStatus(r.id, r.status) === "Expired",
+    ).length,
   };
 
-  const requests = SAMPLE_REQUESTS.map((request) => ({
+  const requests = allRequests.map((request) => ({
     id: request.id,
     customer: request.customer,
     email: request.email,
     plantsRequested: formatPlantsSummary(request.items),
-    status: request.status,
+    status: getEffectiveRequestStatus(request.id, request.status),
     submittedDate: request.submittedDate,
   }));
 
@@ -56,11 +68,9 @@ function statusTone(
   switch (status) {
     case "New":
       return "info";
-    case "Awaiting Response":
-      return "warning";
-    case "Offers Sent":
+    case "Pending":
       return "caution";
-    case "Purchased":
+    case "Closed":
       return "success";
     case "Expired":
       return "critical";
@@ -73,19 +83,67 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return getDashboardData();
 };
 
+function getInitialDashboardData(fallback: DashboardData): DashboardData {
+  if (typeof window === "undefined") return fallback;
+
+  hydrateSampleOfferState();
+  hydrateSubmittedRequests();
+  hydrateCustomerOfferResponses();
+  return getDashboardData();
+}
+
 export default function Dashboard() {
-  const { stats, requests } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  const [dashboardData, setDashboardData] = useState(() =>
+    getInitialDashboardData(loaderData),
+  );
+
+  useEffect(() => {
+    const refresh = () => {
+      hydrateSampleOfferState();
+      hydrateSubmittedRequests();
+      hydrateCustomerOfferResponses();
+      setDashboardData(getDashboardData());
+    };
+
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
+    };
+  }, []);
+
+  const { stats, requests } = dashboardData;
 
   const statCards = [
     { label: "New Requests", value: stats.newRequests },
-    { label: "Awaiting Response", value: stats.awaitingResponse },
-    { label: "Offers Sent", value: stats.offersSent },
-    { label: "Purchased", value: stats.purchased },
+    { label: "Pending", value: stats.offerSent },
+    { label: "Closed", value: stats.purchased },
     { label: "Expired", value: stats.expired },
   ];
 
+  const handleResetSampleData = () => {
+    resetAllSampleLocalState();
+    setDashboardData(getDashboardData());
+  };
+
   return (
     <s-page heading="UPT Plant Request Portal">
+      <s-section heading="Sample data (local testing)">
+        <s-stack direction="block" gap="base">
+          <s-text color="subdued">
+            Resets offer status, customer responses, notes, availability, and
+            customer form submissions saved in this browser. Use this to return
+            Sarah Mitchell and other requests to their default sample states.
+          </s-text>
+          <s-button variant="secondary" onClick={handleResetSampleData}>
+            Reset sample request state
+          </s-button>
+        </s-stack>
+      </s-section>
+
       <s-section heading="Overview">
         <s-stack direction="inline" gap="base">
           {statCards.map((card) => (
