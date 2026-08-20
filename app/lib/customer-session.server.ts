@@ -188,27 +188,4 @@ export async function destroyCustomerSession(): Promise<string> {
   return customerCookie.serialize("", { maxAge: 0 });
 }
 
-/**
- * Decides whether an identity may read a given request. Customers who have a
- * Shopify account id are matched on that id alone: matching on email as well
- * would let a customer who changed their account email reach another shopper's
- * request, and vice versa.
- */
-export function identityOwnsRequest(
-  identity: Pick<CustomerIdentity, "email" | "shopifyCustomerId">,
-  plantRequest: { email?: string | null; shopifyCustomerId?: string | null } | null,
-): boolean {
-  if (!plantRequest) return false;
-
-  if (identity.shopifyCustomerId && plantRequest.shopifyCustomerId) {
-    return identity.shopifyCustomerId === plantRequest.shopifyCustomerId;
-  }
-
-  const identityEmail = identity.email.trim().toLowerCase();
-  const requestEmail = (plantRequest.email ?? "").trim().toLowerCase();
-  if (!identityEmail || !requestEmail) return false;
-
-  // Only reachable for requests created before the customer linked a Shopify
-  // account, which have no `shopifyCustomerId` to match on.
-  return identityEmail === requestEmail;
-}
+export { identityOwnsRequest } from "./customer-identity";

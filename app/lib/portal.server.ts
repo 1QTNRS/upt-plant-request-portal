@@ -358,7 +358,7 @@ export async function listCustomerRequests(
       identityFilters.push({ customerEmail: email, shopifyCustomerId: null });
     }
   } else if (email) {
-    identityFilters.push({ customerEmail: email });
+    identityFilters.push({ customerEmail: email, shopifyCustomerId: null });
   }
 
   if (identityFilters.length === 0) return [];
