@@ -8,9 +8,11 @@ generator client {
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+// SQLite is fine for development and the demo shop. For a hosted deploy point
+// DATABASE_URL at durable storage, because a container filesystem is ephemeral.
 datasource db {
   provider = "sqlite"
-  url      = "file:dev.sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -218,6 +220,8 @@ model ShopifyOrderReference {
   orderNumber      String?
   paidAt           DateTime     @default(now())
   plantRevenue     Float        @default(0)
+
+  @@index([shopifyOrderGid])
 }
 
 model StatusEvent {
@@ -264,7 +268,11 @@ model EmailMessage {
   error        String?
   createdAt    DateTime      @default(now())
   sentAt       DateTime?
+  // Stops retries and duplicate form submits from sending the same message
+  // twice. Usually "{templateKey}:{requestId}".
+  idempotencyKey String?
 
+  @@unique([shop, idempotencyKey])
   @@index([shop, createdAt])
   @@index([requestId])
 }

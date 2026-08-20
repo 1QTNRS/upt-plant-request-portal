@@ -6,6 +6,7 @@ import {
   isPosPublicationTitle,
   buildExactPlantProductCreateInput,
 } from "./exact-plants";
+import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
 import {
   buildDraftOrderLineItems,
   FEDEX_PRODUCT_HANDLE,
@@ -13,7 +14,9 @@ import {
   type DraftOrderLineItem,
 } from "./portal";
 import {
+  getDraftOrder,
   getShopSettings,
+  parseDraftOrderLineItems,
   saveDraftOrderReference,
   updateShopSettings,
 } from "./portal.server";
@@ -72,6 +75,35 @@ export async function resolveFedexVariant(
   return { variantGid: settings.fedexVariantGid ?? undefined, price: settings.fedexUpgradePrice };
 }
 
+export function draftOrderIdempotencyTag(requestId: string): string {
+  return `upt-request:${requestId}`;
+}
+
+/**
+ * Recovers a draft order that Shopify already created for this request. Covers
+ * the window where `draftOrderCreate` succeeded but the reply never reached us,
+ * so a retry would otherwise bill the customer twice.
+ */
+async function findDraftOrderByRequestTag(
+  admin: GraphqlClient,
+  requestId: string,
+): Promise<{ id: string; invoiceUrl: string | null } | null> {
+  const data = await adminGraphql<{
+    draftOrders: { nodes: Array<{ id: string; invoiceUrl: string | null }> };
+  }>(
+    admin,
+    `#graphql
+      query PlantRequestDraftOrderByTag($query: String!) {
+        draftOrders(first: 1, query: $query) {
+          nodes { id invoiceUrl }
+        }
+      }
+    `,
+    { query: `tag:'${draftOrderIdempotencyTag(requestId)}'` },
+  );
+  return data.draftOrders.nodes[0] ?? null;
+}
+
 export async function createDraftOrderForRequest(
   admin: GraphqlClient | undefined,
   shop: string,
@@ -88,6 +120,17 @@ export async function createDraftOrderForRequest(
     fedexSelected: boolean;
   },
 ): Promise<{ invoiceUrl: string; shopifyDraftOrderGid?: string; lineItems: DraftOrderLineItem[] }> {
+  // A draft order already recorded for this request is authoritative. Never
+  // create a second one.
+  const recorded = await getDraftOrder(shop, input.requestId);
+  if (recorded?.shopifyDraftOrderGid && recorded.invoiceUrl) {
+    return {
+      invoiceUrl: recorded.invoiceUrl,
+      shopifyDraftOrderGid: recorded.shopifyDraftOrderGid,
+      lineItems: parseDraftOrderLineItems(recorded.lineItemsJson),
+    };
+  }
+
   const settings = await getShopSettings(shop);
   const fedex = input.fedexSelected
     ? await resolveFedexVariant(admin, shop)
@@ -104,70 +147,87 @@ export async function createDraftOrderForRequest(
     throw new Error("Cannot create a draft order with no accepted plant items.");
   }
 
+  requireAdminClient(admin, shop, "Creating a Shopify draft order");
+
   let shopifyDraftOrderGid: string | undefined;
   let invoiceUrl: string | undefined;
 
   if (admin) {
-    const draftInput = {
-      email: input.customerEmail,
-      note: `UPT plant request ${input.requestNumber}`,
-      tags: ["upt-plant-request", input.requestNumber],
-      lineItems: lineItems.map((line) => {
-        if (line.kind === "fedex" && fedex.variantGid) {
-          return { variantId: fedex.variantGid, quantity: 1 };
-        }
-        return {
-          title: line.title,
-          originalUnitPrice: line.price.toFixed(2),
-          quantity: line.quantity,
-          weight: { value: line.weightLbs, unit: "POUNDS" },
-        };
-      }),
-    };
-
-    const created = await adminGraphql<{
-      draftOrderCreate: {
-        draftOrder: { id: string; invoiceUrl: string | null } | null;
-        userErrors: Array<{ field: string[] | null; message: string }>;
-      };
-    }>(
-      admin,
-      `#graphql
-        mutation CreatePlantRequestDraftOrder($input: DraftOrderInput!) {
-          draftOrderCreate(input: $input) {
-            draftOrder { id invoiceUrl }
-            userErrors { field message }
+    const existing = await findDraftOrderByRequestTag(admin, input.requestId);
+    if (existing) {
+      shopifyDraftOrderGid = existing.id;
+      invoiceUrl = existing.invoiceUrl ?? undefined;
+    } else {
+      const draftInput = {
+        email: input.customerEmail,
+        note: `UPT plant request ${input.requestNumber}`,
+        tags: [
+          "upt-plant-request",
+          input.requestNumber,
+          draftOrderIdempotencyTag(input.requestId),
+        ],
+        lineItems: lineItems.map((line) => {
+          if (line.kind === "fedex" && fedex.variantGid) {
+            return { variantId: fedex.variantGid, quantity: 1 };
           }
-        }
-      `,
-      { input: draftInput },
-    );
+          return {
+            title: line.title,
+            originalUnitPrice: line.price.toFixed(2),
+            quantity: line.quantity,
+            weight: { value: line.weightLbs, unit: "POUNDS" },
+          };
+        }),
+      };
 
-    const errors = created.draftOrderCreate.userErrors;
-    if (errors.length > 0) {
-      throw new Error(errors.map((error) => error.message).join("; "));
-    }
-
-    shopifyDraftOrderGid = created.draftOrderCreate.draftOrder?.id;
-    invoiceUrl = created.draftOrderCreate.draftOrder?.invoiceUrl ?? undefined;
-
-    if (shopifyDraftOrderGid) {
-      await adminGraphql(
+      const created = await adminGraphql<{
+        draftOrderCreate: {
+          draftOrder: { id: string; invoiceUrl: string | null } | null;
+          userErrors: Array<{ field: string[] | null; message: string }>;
+        };
+      }>(
         admin,
         `#graphql
-          mutation SendPlantRequestInvoice($id: ID!) {
-            draftOrderInvoiceSend(id: $id) {
-              draftOrder { id }
-              userErrors { message }
+          mutation CreatePlantRequestDraftOrder($input: DraftOrderInput!) {
+            draftOrderCreate(input: $input) {
+              draftOrder { id invoiceUrl }
+              userErrors { field message }
             }
           }
         `,
-        { id: shopifyDraftOrderGid },
+        { input: draftInput },
       );
+
+      const errors = created.draftOrderCreate.userErrors;
+      if (errors.length > 0) {
+        throw new Error(errors.map((error) => error.message).join("; "));
+      }
+
+      shopifyDraftOrderGid = created.draftOrderCreate.draftOrder?.id;
+      invoiceUrl = created.draftOrderCreate.draftOrder?.invoiceUrl ?? undefined;
+
+      if (shopifyDraftOrderGid) {
+        await adminGraphql(
+          admin,
+          `#graphql
+            mutation SendPlantRequestInvoice($id: ID!) {
+              draftOrderInvoiceSend(id: $id) {
+                draftOrder { id }
+                userErrors { message }
+              }
+            }
+          `,
+          { id: shopifyDraftOrderGid },
+        );
+      }
     }
   }
 
   if (!invoiceUrl) {
+    if (!canStubShopifyWrites(shop)) {
+      throw new Error(
+        "Shopify did not return a checkout link for this draft order. The customer's selections were saved; retry once the Admin API is reachable.",
+      );
+    }
     invoiceUrl = `/customer/requests/${input.requestId}?checkout=pending`;
   }
 
@@ -211,9 +271,14 @@ const STAGED_UPLOADS_MUTATION = `#graphql
 
 export async function uploadPlantPhoto(
   admin: GraphqlClient | undefined,
+  shop: string,
   file: { filename: string; mimeType: string; data: Buffer },
 ): Promise<{ url: string; shopifyFileId?: string }> {
+  requireAdminClient(admin, shop, "Uploading a plant photo to Shopify Files");
+
   if (!admin) {
+    // Demo shop only. A base64 data URL keeps the local walkthrough working but
+    // would bloat the database and break Shopify product media in production.
     const encoded = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
     return { url: encoded };
   }

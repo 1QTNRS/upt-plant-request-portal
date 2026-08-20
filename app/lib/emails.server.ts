@@ -10,6 +10,14 @@ import {
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
 
+/**
+ * Identifies a message that must only ever be sent once. Retries, double
+ * submits and webhook redeliveries all produce the same key.
+ */
+function defaultIdempotencyKey(templateKey: string, requestId?: string): string | undefined {
+  return requestId ? `${templateKey}:${requestId}` : undefined;
+}
+
 async function queueEmail(input: {
   shop: string;
   requestId?: string;
@@ -17,23 +25,55 @@ async function queueEmail(input: {
   subject: string;
   bodyText: string;
   templateKey: string;
+  idempotencyKey?: string;
 }) {
   if (!input.toEmail.trim()) return null;
 
-  const message = await prisma.emailMessage.create({
-    data: {
-      shop: input.shop,
-      requestId: input.requestId,
-      toEmail: input.toEmail,
-      subject: input.subject,
-      bodyText: input.bodyText,
-      templateKey: input.templateKey,
-      status: "queued",
-    },
-  });
+  const idempotencyKey =
+    input.idempotencyKey ?? defaultIdempotencyKey(input.templateKey, input.requestId);
 
-  const delivered = await deliverEmail(message.id, input.toEmail, input.subject, input.bodyText);
-  return delivered;
+  if (idempotencyKey) {
+    const existing = await prisma.emailMessage.findFirst({
+      where: { shop: input.shop, idempotencyKey },
+    });
+    if (existing) return existing;
+  }
+
+  let message;
+  try {
+    message = await prisma.emailMessage.create({
+      data: {
+        shop: input.shop,
+        requestId: input.requestId,
+        toEmail: input.toEmail,
+        subject: input.subject,
+        bodyText: input.bodyText,
+        templateKey: input.templateKey,
+        status: "queued",
+        idempotencyKey,
+      },
+    });
+  } catch (error) {
+    // Lost a race against a concurrent request for the same key. The unique
+    // index guarantees the other caller already queued and delivered it.
+    if (idempotencyKey && isUniqueConstraintError(error)) {
+      return prisma.emailMessage.findFirst({
+        where: { shop: input.shop, idempotencyKey },
+      });
+    }
+    throw error;
+  }
+
+  return deliverEmail(message.id, input.toEmail, input.subject, input.bodyText);
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002"
+  );
 }
 
 async function deliverEmail(

@@ -8,6 +8,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { CustomerRequestPortal } from "../components/customer-request-portal";
 import { requireAdmin } from "../lib/admin-auth.server";
+import { isDemoDataEnabled } from "../lib/environment.server";
 import { notifyNewRequest } from "../lib/emails.server";
 import {
   getDisplayRequestNumber,
@@ -39,9 +40,26 @@ function toMyRequestRows(email: string, shopifyCustomerId?: string) {
   };
 }
 
+const PREVIEW_NOTICE =
+  "Preview only. This is what customers see at /apps/plant-requests. Requests submitted here would be attributed to a demo account, so submission is disabled outside development.";
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
+
+  // The demo customer is a development fixture. Creating it on a merchant shop
+  // would put a fake shopper and fake requests in the live dashboard.
+  if (!isDemoDataEnabled(shop)) {
+    return {
+      loggedIn: true,
+      name: DEMO_CUSTOMER.name,
+      email: DEMO_CUSTOMER.email,
+      myRequests: [] as CustomerMyRequestRow[],
+      showDemoLogin: false,
+      previewNotice: PREVIEW_NOTICE as string | null,
+    };
+  }
+
   await findOrCreateCustomer(shop, DEMO_CUSTOMER);
   const myRequests = await toMyRequestRows(
     DEMO_CUSTOMER.email,
@@ -54,6 +72,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     email: DEMO_CUSTOMER.email,
     myRequests,
     showDemoLogin: true,
+    previewNotice: null as string | null,
   };
 };
 
@@ -61,6 +80,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+
+  if (!isDemoDataEnabled(shop)) {
+    return { errors: [PREVIEW_NOTICE], successMessage: null };
+  }
 
   if (intent !== "submit-request") {
     return { errors: ["Unknown action"], successMessage: null };
@@ -103,6 +126,12 @@ export default function CustomerRequestForm() {
   const loaderData = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
+  const errors = actionData?.errors?.length
+    ? actionData.errors
+    : loaderData.previewNotice
+      ? [loaderData.previewNotice]
+      : undefined;
+
   return (
     <CustomerRequestPortal
       loggedIn={loaderData.loggedIn}
@@ -110,7 +139,7 @@ export default function CustomerRequestForm() {
       email={loaderData.email}
       myRequests={loaderData.myRequests}
       successMessage={actionData?.successMessage}
-      errors={actionData?.errors}
+      errors={errors}
       showDemoLogin={loaderData.showDemoLogin}
       requestDetailHref={(requestId) =>
         `/app/customer-offer-preview?requestId=${requestId}`
