@@ -232,7 +232,7 @@ export default function ExactPlantListingReview() {
                   <s-stack direction="inline" gap="base">
                     <img
                       src={url}
-                      alt={`Exact plant photo ${index + 1}`}
+                      alt={`Exact plant ${index + 1}`}
                       style={{
                         width: "96px",
                         height: "96px",
