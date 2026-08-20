@@ -14,21 +14,257 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model ShopSettings {
+  id                      String   @id @default(cuid())
+  shop                    String   @unique
+  fedexRemovalWarning     String
+  fedexProductHandle      String   @default("upgrade-to-fedex-priority-overnight-for-just-15-extra")
+  fedexVariantGid         String?
+  fedexUpgradePrice       Float    @default(15)
+  fedexUpgradeLabel       String   @default("FedEx Priority Overnight Upgrade")
+  adminNotificationEmail  String   @default("")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model RequestNumberSequence {
+  shop      String
+  year      Int
+  nextValue Int
+
+  @@id([shop, year])
+}
+
+model CustomerProfile {
+  id                String         @id @default(cuid())
+  shop              String
+  shopifyCustomerId String?
+  name              String
+  email             String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  requests          PlantRequest[]
+
+  @@unique([shop, email])
+  @@index([shop, shopifyCustomerId])
+}
+
+model PlantRequest {
+  id                    String                 @id @default(cuid())
+  shop                  String
+  requestNumber         String
+  customerId            String
+  customer              CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerName          String
+  customerEmail         String
+  shopifyCustomerId     String?
+  status                String
+  submittedAt           DateTime               @default(now())
+  firstViewedAt         DateTime?
+  closedAt              DateTime?
+  expiredAt             DateTime?
+  paidAt                DateTime?
+  items                 RequestItem[]
+  offer                 Offer?
+  response              CustomerResponse?
+  draftOrder            DraftOrderReference?
+  shopifyOrder          ShopifyOrderReference?
+  statusEvents          StatusEvent[]
+  emails                EmailMessage[]
+
+  @@unique([shop, requestNumber])
+  @@index([shop, status])
+  @@index([shop, customerEmail])
+  @@index([shop, submittedAt])
+}
+
+model RequestItem {
+  id                    String           @id @default(cuid())
+  requestId             String
+  request               PlantRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  plantName             String
+  offeredName           String
+  budget                String?
+  customerRequestNotes  String?
+  quantity              Int              @default(1)
+  availability          String           @default("available")
+  unavailableReason     String?
+  price                 Float            @default(0)
+  weightLbs             Float            @default(0)
+  customerFacingNotes   String           @default("")
+  itemStatus            String           @default("Requested")
+  purchasedAt           DateTime?
+  photos                PhotoReference[]
+  offerItems            OfferItem[]
+  responseItems         ResponseItem[]
+  exactPlantListing     ExactPlantListing?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([requestId])
+  @@index([plantName])
+}
+
+model PhotoReference {
+  id            String      @id @default(cuid())
+  itemId        String
+  item          RequestItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  url           String
+  shopifyFileId String?
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+
+  @@index([itemId, sortOrder])
+}
+
+model Offer {
+  id              String      @id @default(cuid())
+  requestId       String      @unique
+  request         PlantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sentAt          DateTime    @default(now())
+  expiresAt       DateTime
+  expirationDays  Int
+  offerLink       String
+  items           OfferItem[]
+}
+
+model OfferItem {
+  id                   String      @id @default(cuid())
+  offerId              String
+  offer                Offer       @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  requestItemId        String
+  requestItem          RequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  plantName            String
+  quantity             Int
+  price                Float
+  weightLbs            Float
+  customerFacingNotes  String
+  availability         String
+  unavailableReason    String?
+  photoUrlsJson        String      @default("[]")
+
+  @@index([offerId])
+}
+
+model CustomerResponse {
+  id                    String         @id @default(cuid())
+  requestId             String         @unique
+  request               PlantRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  respondedAt           DateTime       @default(now())
+  customerName          String
+  customerEmail         String
+  shopifyCustomerId     String?
+  requestNumber         String
+  offerExpiresAt        DateTime?
+  fedexUpgradeSelected  Boolean        @default(true)
+  fedexUpgradePrice     Float          @default(15)
+  snapshotJson          String
+  items                 ResponseItem[]
+}
+
+model ResponseItem {
+  id                   String            @id @default(cuid())
+  responseId           String
+  response             CustomerResponse  @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  requestItemId        String
+  requestItem          RequestItem       @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  plantName            String
+  choice               String
+  price                Float
+  quantity             Int
+  customerFacingNotes  String            @default("")
+  photoUrlsJson        String            @default("[]")
+  unavailableReason    String?
+
+  @@index([responseId])
+  @@index([choice])
+}
+
+model DraftOrderReference {
+  id                    String       @id @default(cuid())
+  requestId             String       @unique
+  request               PlantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  shopifyDraftOrderGid  String?
+  invoiceUrl            String?
+  createdAt             DateTime     @default(now())
+  paidAt                DateTime?
+  lineItemsJson         String       @default("[]")
+}
+
+model ShopifyOrderReference {
+  id               String       @id @default(cuid())
+  requestId        String       @unique
+  request          PlantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  shopifyOrderGid  String
+  orderNumber      String?
+  paidAt           DateTime     @default(now())
+  plantRevenue     Float        @default(0)
+}
+
+model StatusEvent {
+  id          String       @id @default(cuid())
+  requestId   String
+  request     PlantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fromStatus  String?
+  toStatus    String
+  reason      String
+  createdAt   DateTime     @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+model ExactPlantListing {
+  id                   String      @id @default(cuid())
+  shop                 String
+  requestItemId        String      @unique
+  requestItem          RequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  shopifyProductGid    String?
+  shopifyProductHandle String?
+  title                String
+  price                Float
+  weightLbs            Float
+  photoUrlsJson        String      @default("[]")
+  status               String
+  lastError            String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([shop, status])
+}
+
+model EmailMessage {
+  id           String        @id @default(cuid())
+  shop         String
+  requestId    String?
+  request      PlantRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  toEmail      String
+  subject      String
+  bodyText     String
+  templateKey  String
+  status       String        @default("queued")
+  error        String?
+  createdAt    DateTime      @default(now())
+  sentAt       DateTime?
+
+  @@index([shop, createdAt])
+  @@index([requestId])
 }

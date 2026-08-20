@@ -37,7 +37,6 @@ export type PrototypeCustomerProfile = {
 
 export type CustomerRequestFormItem = {
   plantName: string;
-  budget?: string;
   notes?: string;
 };
 
@@ -54,7 +53,7 @@ export type CustomerRequestSubmissionResult = {
 };
 
 const submittedRequests: PlantRequest[] = [];
-let submittedRequestsHydrated = false;
+let prototypeRequestSequence = 0;
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -129,8 +128,6 @@ export function hydrateSubmittedRequests(): void {
   } catch {
     // Ignore invalid stored submissions during local testing.
   }
-
-  submittedRequestsHydrated = true;
 }
 
 export function getSubmittedPlantRequests(): PlantRequest[] {
@@ -176,17 +173,7 @@ export function setCustomerLoggedInPrototype(loggedIn: boolean): void {
 }
 
 function buildAdminNotes(item: CustomerRequestFormItem): string {
-  const parts: string[] = [];
-
-  if (item.budget?.trim()) {
-    parts.push(`Customer budget: ${item.budget.trim()}`);
-  }
-
-  if (item.notes?.trim()) {
-    parts.push(item.notes.trim());
-  }
-
-  return parts.join(" | ");
+  return item.notes?.trim() ?? "";
 }
 
 function createPlantItems(
@@ -206,9 +193,8 @@ function createPlantItems(
 }
 
 function generateRequestNumber(): string {
-  const year = new Date().getFullYear();
-  const suffix = String(Date.now()).slice(-6);
-  return `UPT-REQ-${year}-${suffix}`;
+  prototypeRequestSequence += 1;
+  return `REQ${prototypeRequestSequence}`;
 }
 
 export function submitCustomerRequest(
@@ -231,7 +217,6 @@ export function submitCustomerRequest(
       requestId,
       submission.items.map((item) => ({
         plantName: item.plantName,
-        budget: item.budget,
         notes: item.notes,
       })),
     ),
@@ -245,7 +230,7 @@ export function submitCustomerRequest(
 
 export function resetSubmittedRequests(): void {
   submittedRequests.splice(0, submittedRequests.length);
-  submittedRequestsHydrated = false;
+  prototypeRequestSequence = 0;
 
   if (isBrowser()) {
     localStorage.removeItem(SUBMITTED_REQUESTS_STORAGE_KEY);

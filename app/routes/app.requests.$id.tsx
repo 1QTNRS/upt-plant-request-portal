@@ -1,65 +1,45 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
-import { authenticate } from "../shopify.server";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import {
+  Form,
+  useFetcher,
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+
+import { requireAdmin } from "../lib/admin-auth.server";
+import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
+import { listDeclinedExactPlants } from "../lib/exact-plants.server";
 import {
-  getCustomerItemNote,
-  hydrateCustomerItemNotes,
-  setCustomerItemNote,
-} from "../lib/customer-item-notes";
-import {
-  getItemAvailabilityState,
-  hydrateItemAvailability,
-  isItemAvailable,
-  setItemAvailability,
-  setUnavailableReason,
+  formatCurrency,
+  getDisplayRequestNumber,
+  requestStatusTone,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
-  type UnavailableReason,
-} from "../lib/item-availability";
-import {
-  getEffectiveItemPrice,
-  getEffectiveItemWeight,
-  hydrateItemPricing,
-  setItemPrice,
-  setItemWeight,
-} from "../lib/item-pricing";
-import {
-  getCustomerOfferResponse,
-  hydrateCustomerOfferResponses,
-  type CustomerOfferResponse,
-} from "../lib/customer-offer-responses";
-import { LOCAL_STATE_CHANGED_EVENT } from "../lib/local-state-events";
-import { hydrateSubmittedRequests } from "../lib/customer-request-submissions";
-import {
-  getBuiltInRequestWithState,
-  getRequestWithState,
-  hydrateSampleOfferState,
-  sendOfferToCustomer,
   type OfferExpirationDays,
   type PlantItem,
   type PlantItemStatus,
   type RequestStatus,
   type SentOffer,
-} from "../lib/sample-requests";
-
-type RequestDetailData = NonNullable<ReturnType<typeof getRequestWithState>>;
-
-function requestStatusTone(
-  status: RequestStatus,
-): "info" | "warning" | "caution" | "success" | "critical" {
-  switch (status) {
-    case "New":
-      return "info";
-    case "Pending":
-      return "caution";
-    case "Closed":
-      return "success";
-    case "Expired":
-      return "critical";
-  }
-}
+  type UnavailableReason,
+} from "../lib/portal";
+import {
+  addItemPhotos,
+  getCustomerResponse,
+  getRequest,
+  markRequestViewed,
+  sendOffer,
+  updateRequestItem,
+} from "../lib/portal.server";
+import { ensureShopSeeded } from "../lib/seed-demo.server";
+import { uploadPlantPhoto } from "../lib/shopify-ops.server";
+import { saveLocalUpload } from "../lib/uploads.server";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -72,6 +52,8 @@ function itemStatusTone(
     case "Offered":
       return "caution";
     case "Sold":
+      return "success";
+    case "Listed":
       return "success";
     case "Unavailable":
       return "critical";
@@ -93,13 +75,17 @@ const disabledNumberInputStyle = {
   border: "1px solid #e1e3e5",
 } as const;
 
-const selectStyle = {
+const textInputStyle = {
   width: "100%",
   maxWidth: "420px",
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
+} as const;
+
+const selectStyle = {
+  ...textInputStyle,
   background: "#fff",
 } as const;
 
@@ -125,6 +111,116 @@ const editableTextareaStyle = {
   resize: "vertical" as const,
 };
 
+export const loader = async ({ request, params }: LoaderFunctionArgs) => {
+  const { shop } = await requireAdmin(request);
+  await ensureShopSeeded(shop);
+  const requestId = params.id ?? "";
+  const plantRequest = await getRequest(shop, requestId);
+  if (plantRequest) {
+    await markRequestViewed(shop, requestId);
+  }
+  const response = plantRequest
+    ? await getCustomerResponse(shop, requestId)
+    : null;
+  const emails = plantRequest ? await listEmailsForRequest(shop, requestId) : [];
+
+  const declinedExactPlants = plantRequest
+    ? await listDeclinedExactPlants(shop, requestId)
+    : [];
+
+  return { requestId, plantRequest, response, emails, declinedExactPlants };
+};
+
+export const action = async ({ request, params }: ActionFunctionArgs) => {
+  const { shop, admin } = await requireAdmin(request);
+  const requestId = params.id ?? "";
+  const form = await request.formData();
+  const intent = String(form.get("intent") || "");
+
+  try {
+    if (intent === "update-item") {
+      await updateRequestItem(shop, {
+        requestId,
+        itemId: String(form.get("itemId") || ""),
+        offeredName: form.has("offeredName")
+          ? String(form.get("offeredName") || "")
+          : undefined,
+        availability: form.has("availability")
+          ? (String(form.get("availability")) as ItemAvailabilityStatus)
+          : undefined,
+        unavailableReason: form.has("unavailableReason")
+          ? (String(form.get("unavailableReason")) as UnavailableReason)
+          : undefined,
+        price: form.has("price")
+          ? Number.parseFloat(String(form.get("price")))
+          : undefined,
+        weightLbs: form.has("weightLbs")
+          ? Number.parseFloat(String(form.get("weightLbs")))
+          : undefined,
+        customerFacingNotes: form.has("customerFacingNotes")
+          ? String(form.get("customerFacingNotes") || "")
+          : undefined,
+      });
+      return { ok: true };
+    }
+
+    if (intent === "add-photo-url") {
+      const url = String(form.get("photoUrl") || "").trim();
+      if (url) {
+        await addItemPhotos(shop, requestId, String(form.get("itemId") || ""), [
+          { url },
+        ]);
+      }
+      return { ok: true };
+    }
+
+    if (intent === "upload-photo") {
+      const itemId = String(form.get("itemId") || "");
+      const upload = form.get("photo");
+      if (upload instanceof File && upload.size > 0) {
+        const data = Buffer.from(await upload.arrayBuffer());
+        let stored: { url: string; shopifyFileId?: string };
+        try {
+          stored = await uploadPlantPhoto(admin, {
+            filename: upload.name,
+            mimeType: upload.type || "image/jpeg",
+            data,
+          });
+        } catch {
+          stored = {
+            url: await saveLocalUpload(shop, itemId, {
+              filename: upload.name,
+              data,
+            }),
+          };
+        }
+        await addItemPhotos(shop, requestId, itemId, [stored]);
+      }
+      return { ok: true };
+    }
+
+    if (intent === "send-offer") {
+      const days = Number(form.get("expirationDays")) as OfferExpirationDays;
+      const expirationDays: OfferExpirationDays =
+        days === 5 || days === 7 ? days : 3;
+      const updated = await sendOffer(shop, requestId, expirationDays);
+      if (updated) {
+        const appUrl =
+          process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
+        await notifyOfferReady(shop, requestId, appUrl);
+      }
+      return { ok: true, sent: Boolean(updated) };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Save failed",
+    };
+  }
+
+  return { ok: false, error: "Unknown action" };
+};
+
 function PlantItemCard({
   item,
   canEdit,
@@ -132,75 +228,44 @@ function PlantItemCard({
   item: PlantItem;
   canEdit: boolean;
 }) {
-  const [customerNotes, setCustomerNotes] = useState(() =>
-    getCustomerItemNote(item.id),
+  const fetcher = useFetcher<typeof action>();
+  const photoFetcher = useFetcher<typeof action>();
+  const [offeredName, setOfferedName] = useState(item.offeredName);
+  const [customerNotes, setCustomerNotes] = useState(item.customerFacingNotes);
+  const [availability, setAvailability] = useState(item.availability);
+  const [unavailableReason, setUnavailableReason] = useState(
+    item.unavailableReason,
   );
-  const [availabilityState, setAvailabilityState] = useState(() =>
-    getItemAvailabilityState(item.id),
-  );
-  const [price, setPrice] = useState(() =>
-    getEffectiveItemPrice(item.id, item.price),
-  );
-  const [weightLbs, setWeightLbs] = useState(() =>
-    getEffectiveItemWeight(item.id, item.weightLbs),
-  );
+  const [price, setPrice] = useState(item.price);
+  const [weightLbs, setWeightLbs] = useState(item.weightLbs);
+  const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
-    hydrateCustomerItemNotes();
-    hydrateItemAvailability();
-    hydrateItemPricing();
-    setCustomerNotes(getCustomerItemNote(item.id));
-    setAvailabilityState(getItemAvailabilityState(item.id));
-    setPrice(getEffectiveItemPrice(item.id, item.price));
-    setWeightLbs(getEffectiveItemWeight(item.id, item.weightLbs));
-  }, [item.id, item.price, item.weightLbs]);
+    setOfferedName(item.offeredName);
+    setCustomerNotes(item.customerFacingNotes);
+    setAvailability(item.availability);
+    setUnavailableReason(item.unavailableReason);
+    setPrice(item.price);
+    setWeightLbs(item.weightLbs);
+  }, [item]);
 
-  const isAvailable = availabilityState.availability === "available";
+  const isAvailable = availability === "available";
   const fieldsLocked = !canEdit;
 
-  const handleCustomerNotesChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+  const saveField = (fields: Record<string, string>) => {
     if (fieldsLocked) return;
-
-    const value = event.currentTarget.value;
-    setCustomerNotes(value);
-    setCustomerItemNote(item.id, value);
+    const data = new FormData();
+    data.set("intent", "update-item");
+    data.set("itemId", item.id);
+    for (const [key, value] of Object.entries(fields)) {
+      data.set(key, value);
+    }
+    fetcher.submit(data, { method: "post" });
   };
 
-  const handleAvailabilityChange = (availability: ItemAvailabilityStatus) => {
-    if (fieldsLocked) return;
-
-    setItemAvailability(item.id, availability);
-    setAvailabilityState(getItemAvailabilityState(item.id));
-  };
-
-  const handleUnavailableReasonChange = (
-    event: ChangeEvent<HTMLSelectElement>,
-  ) => {
-    if (fieldsLocked) return;
-
-    const reason = event.currentTarget.value as UnavailableReason;
-    setUnavailableReason(item.id, reason);
-    setAvailabilityState(getItemAvailabilityState(item.id));
-  };
-
-  const handlePriceChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (fieldsLocked) return;
-
-    const parsed = Number.parseFloat(event.currentTarget.value);
-    if (!Number.isFinite(parsed)) return;
-
-    setPrice(parsed);
-    setItemPrice(item.id, parsed);
-  };
-
-  const handleWeightChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (fieldsLocked) return;
-
-    const parsed = Number.parseFloat(event.currentTarget.value);
-    if (!Number.isFinite(parsed)) return;
-
-    setWeightLbs(parsed);
-    setItemWeight(item.id, parsed);
+  const handleAvailabilityChange = (next: ItemAvailabilityStatus) => {
+    setAvailability(next);
+    saveField({ availability: next });
   };
 
   return (
@@ -220,6 +285,10 @@ function PlantItemCard({
             {isAvailable ? "Available" : "Not Available"}
           </s-badge>
         </s-stack>
+
+        {item.adminNotes ? (
+          <s-text color="subdued">Customer request notes: {item.adminNotes}</s-text>
+        ) : null}
 
         <s-stack direction="block" gap="small">
           <s-text color="subdued">Availability</s-text>
@@ -248,9 +317,13 @@ function PlantItemCard({
             </label>
             <select
               id={`unavailable-reason-${item.id}`}
-              value={availabilityState.unavailableReason}
-              onChange={handleUnavailableReasonChange}
+              value={unavailableReason}
               disabled={fieldsLocked}
+              onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                const reason = event.currentTarget.value as UnavailableReason;
+                setUnavailableReason(reason);
+                saveField({ unavailableReason: reason });
+              }}
               style={selectStyle}
             >
               {UNAVAILABLE_REASON_OPTIONS.map((reason) => (
@@ -264,6 +337,21 @@ function PlantItemCard({
 
         {isAvailable && (
           <>
+            <s-stack direction="block" gap="small">
+              <label htmlFor={`offered-name-${item.id}`}>
+                <s-text color="subdued">Final item name</s-text>
+              </label>
+              <input
+                id={`offered-name-${item.id}`}
+                value={offeredName}
+                readOnly={fieldsLocked}
+                disabled={fieldsLocked}
+                onChange={(event) => setOfferedName(event.currentTarget.value)}
+                onBlur={() => saveField({ offeredName })}
+                style={fieldsLocked ? disabledNumberInputStyle : textInputStyle}
+              />
+            </s-stack>
+
             <s-stack direction="inline" gap="large">
               <s-stack direction="block" gap="small">
                 <label htmlFor={`price-${item.id}`}>
@@ -275,12 +363,13 @@ function PlantItemCard({
                   min={0}
                   step={0.01}
                   value={price}
-                  onChange={handlePriceChange}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  style={
-                    fieldsLocked ? disabledNumberInputStyle : numberInputStyle
+                  onChange={(event) =>
+                    setPrice(Number.parseFloat(event.currentTarget.value) || 0)
                   }
+                  onBlur={() => saveField({ price: String(price) })}
+                  style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
               <s-stack direction="block" gap="small">
@@ -293,58 +382,65 @@ function PlantItemCard({
                   min={0}
                   step={0.1}
                   value={weightLbs}
-                  onChange={handleWeightChange}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  style={
-                    fieldsLocked ? disabledNumberInputStyle : numberInputStyle
+                  onChange={(event) =>
+                    setWeightLbs(
+                      Number.parseFloat(event.currentTarget.value) || 0,
+                    )
                   }
+                  onBlur={() => saveField({ weightLbs: String(weightLbs) })}
+                  style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
             </s-stack>
 
-            <s-stack direction="inline" gap="large">
-              <s-stack direction="block" gap="small">
-                <s-text color="subdued">Photo upload</s-text>
-                <s-box
-                  padding="base"
-                  borderWidth="base"
-                  borderRadius="base"
-                  background="base"
-                >
-                  <s-stack direction="block" gap="small">
-                    <s-button variant="secondary" disabled>
-                      Upload plant photo
-                    </s-button>
-                    <s-text color="subdued">
-                      Placeholder — file upload coming soon
-                    </s-text>
-                  </s-stack>
-                </s-box>
-              </s-stack>
-
-              <s-stack direction="block" gap="small">
-                <s-text color="subdued">Photo preview</s-text>
-                <s-box
-                  padding="small"
-                  borderWidth="base"
-                  borderRadius="base"
-                  background="base"
-                >
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Exact plant photos</s-text>
+              <s-stack direction="inline" gap="base">
+                {item.photoUrls.map((url) => (
                   <img
-                    src={item.photoPreviewUrl}
-                    alt={`Sample photo of ${item.plantName}`}
-                    width={160}
-                    height={160}
+                    key={url}
+                    src={url}
+                    alt={item.offeredName || item.plantName}
+                    width={120}
+                    height={120}
                     style={{
                       display: "block",
                       objectFit: "cover",
                       borderRadius: "8px",
                     }}
                   />
-                  <s-text color="subdued">Sample placeholder image</s-text>
-                </s-box>
+                ))}
               </s-stack>
+              {canEdit ? (
+                <s-stack direction="block" gap="small">
+                  <photoFetcher.Form method="post" encType="multipart/form-data">
+                    <input type="hidden" name="intent" value="upload-photo" />
+                    <input type="hidden" name="itemId" value={item.id} />
+                    <input type="file" name="photo" accept="image/*" />
+                    <s-button variant="secondary" type="submit">
+                      Upload plant photo
+                    </s-button>
+                  </photoFetcher.Form>
+                  <photoFetcher.Form method="post">
+                    <input type="hidden" name="intent" value="add-photo-url" />
+                    <input type="hidden" name="itemId" value={item.id} />
+                    <s-stack direction="inline" gap="small">
+                      <input
+                        name="photoUrl"
+                        value={photoUrl}
+                        placeholder="https://..."
+                        onChange={(event) => setPhotoUrl(event.currentTarget.value)}
+                        style={textInputStyle}
+                      />
+                      <s-button variant="secondary" type="submit">
+                        Add photo URL
+                      </s-button>
+                    </s-stack>
+                  </photoFetcher.Form>
+                </s-stack>
+              ) : null}
             </s-stack>
           </>
         )}
@@ -357,15 +453,16 @@ function PlantItemCard({
             id={`customer-notes-${item.id}`}
             rows={3}
             value={customerNotes}
-            onChange={handleCustomerNotesChange}
             readOnly={fieldsLocked}
             disabled={fieldsLocked}
             placeholder="e.g. Minor cosmetic damage on one leaf."
+            onChange={(event) => setCustomerNotes(event.currentTarget.value)}
+            onBlur={() => saveField({ customerFacingNotes: customerNotes })}
             style={fieldsLocked ? disabledTextareaStyle : editableTextareaStyle}
           />
           <s-text color="subdued">
             {fieldsLocked
-              ? "Read-only. Only New requests can be edited before an offer is sent."
+              ? "Read-only. Notes, photos, and prices are frozen after the offer is sent so the customer sees the exact snapshot."
               : "Shown to the customer on the offer page, approval snapshot, confirmation email, and final approval summary."}
           </s-text>
         </s-stack>
@@ -374,15 +471,6 @@ function PlantItemCard({
   );
 }
 
-export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-
-  const requestId = params.id ?? "";
-  const plantRequest = getBuiltInRequestWithState(requestId) ?? null;
-
-  return { requestId, plantRequest };
-};
-
 const EXPIRATION_OPTIONS: { days: OfferExpirationDays; label: string }[] = [
   { days: 3, label: "3 days" },
   { days: 5, label: "5 days" },
@@ -390,55 +478,25 @@ const EXPIRATION_OPTIONS: { days: OfferExpirationDays; label: string }[] = [
 ];
 
 function SendOfferSection({
-  requestId,
   status,
   sentOffer,
-  items,
-  onOfferSent,
 }: {
-  requestId: string;
   status: RequestStatus;
   sentOffer?: SentOffer;
-  items: PlantItem[];
-  onOfferSent: (offer: SentOffer) => void;
 }) {
   const [expirationDays, setExpirationDays] = useState<OfferExpirationDays>(3);
-  const [isSending, setIsSending] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(Boolean(sentOffer));
-
-  const handleSendOffer = () => {
-    setIsSending(true);
-
-    window.setTimeout(() => {
-      const offer = sendOfferToCustomer(requestId, expirationDays);
-      setIsSending(false);
-
-      if (offer) {
-        onOfferSent(offer);
-        setShowSuccess(true);
-      }
-    }, 600);
-  };
+  const navigation = useNavigation();
+  const sending =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "send-offer";
 
   if (sentOffer) {
     return (
       <s-stack direction="block" gap="base">
-        {showSuccess && (
-          <s-banner tone="success">
-            <s-text>Offer sent to customer</s-text>
-          </s-banner>
-        )}
-
-        <s-text>
-          <strong>Offer already sent</strong>
-        </s-text>
-
-        <s-box
-          padding="base"
-          borderWidth="base"
-          borderRadius="base"
-          background="subdued"
-        >
+        <s-banner tone="success">
+          <s-text>Offer sent to customer</s-text>
+        </s-banner>
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           <s-stack direction="block" gap="base">
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Offer link</s-text>
@@ -460,38 +518,6 @@ function SendOfferSection({
             </s-stack>
           </s-stack>
         </s-box>
-
-        <s-box
-          padding="base"
-          borderWidth="base"
-          borderRadius="base"
-          background="base"
-        >
-          <s-stack direction="block" gap="base">
-            <s-heading>Approval snapshot</s-heading>
-            {items.map((item) => {
-              const availability = getItemAvailabilityState(item.id);
-              const available = isItemAvailable(item.id);
-              return (
-                <s-stack key={item.id} direction="block" gap="small">
-                  <s-text>
-                    <strong>{item.plantName}</strong>
-                  </s-text>
-                  <s-text>Quantity: {item.quantity}</s-text>
-                  <s-text>
-                    {available ? "Available" : "Not Available"}
-                    {!available && ` — ${availability.unavailableReason}`}
-                  </s-text>
-                  <s-text color="subdued">Customer Notes / Disclaimers</s-text>
-                  <s-text>
-                    {getCustomerItemNote(item.id) ||
-                      "No customer notes added yet."}
-                  </s-text>
-                </s-stack>
-              );
-            })}
-          </s-stack>
-        </s-box>
       </s-stack>
     );
   }
@@ -505,65 +531,114 @@ function SendOfferSection({
   }
 
   return (
-    <s-stack direction="block" gap="base">
-      <s-paragraph>
-        Choose how long the customer has to review and accept this offer.
-      </s-paragraph>
-
-      <s-stack direction="inline" gap="small">
-        {EXPIRATION_OPTIONS.map((option) => (
-          <s-button
-            key={option.days}
-            variant={expirationDays === option.days ? "primary" : "secondary"}
-            onClick={() => setExpirationDays(option.days)}
-          >
-            {option.label}
-          </s-button>
-        ))}
+    <Form method="post">
+      <s-stack direction="block" gap="base">
+        <input type="hidden" name="intent" value="send-offer" />
+        <input type="hidden" name="expirationDays" value={expirationDays} />
+        <s-paragraph>
+          Choose how long the customer has to review and accept this offer.
+        </s-paragraph>
+        <s-stack direction="inline" gap="small">
+          {EXPIRATION_OPTIONS.map((option) => (
+            <button
+              key={option.days}
+              type="button"
+              onClick={() => setExpirationDays(option.days)}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "8px",
+                border: "1px solid #c9cccf",
+                background: expirationDays === option.days ? "#008060" : "#fff",
+                color: expirationDays === option.days ? "#fff" : "inherit",
+                font: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </s-stack>
+        <s-button variant="primary" type="submit" {...(sending ? { loading: true } : {})}>
+          Send Offer
+        </s-button>
       </s-stack>
-
-      <s-button
-        variant="primary"
-        onClick={handleSendOffer}
-        {...(isSending ? { loading: true } : {})}
-      >
-        Send Offer
-      </s-button>
-    </s-stack>
+    </Form>
   );
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
+function DeclinedExactPlantsSection({
+  requestId,
+  items,
+}: {
+  requestId: string;
+  items: Awaited<ReturnType<typeof listDeclinedExactPlants>>;
+}) {
+  const returnTo = `/app/requests/${requestId}`;
+  return (
+    <s-section heading="Declined exact plants">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          These plants were marked Available, offered as exact plants, and
+          rejected by the customer. Review a listing before any Shopify product
+          is created. Not Available items are not included.
+        </s-text>
+        {items.length === 0 ? (
+          <s-text color="subdued">No declined exact plants on this request.</s-text>
+        ) : (
+          items.map((item) => {
+            const listed =
+              item.listing?.status === "listed" && item.listing.shopifyProductGid;
+            return (
+              <s-box
+                key={item.requestItemId}
+                padding="base"
+                borderWidth="base"
+                borderRadius="base"
+                background="subdued"
+              >
+                <s-stack direction="block" gap="small">
+                  <s-heading>{item.title}</s-heading>
+                  <s-text>
+                    {formatCurrency(item.price)} · {item.weightLbs} lb
+                  </s-text>
+                  {item.listing?.status === "failed" && item.listing.lastError ? (
+                    <s-banner tone="critical">
+                      <s-text>{item.listing.lastError}</s-text>
+                    </s-banner>
+                  ) : null}
+                  {listed ? (
+                    <s-stack direction="inline" gap="base">
+                      <s-badge tone="success">Listed in EXACT PLANTS</s-badge>
+                      {item.listing?.productAdminUrl ? (
+                        <s-link href={item.listing.productAdminUrl} target="_blank">
+                          Open Shopify product
+                        </s-link>
+                      ) : null}
+                    </s-stack>
+                  ) : (
+                    <s-link
+                      href={`/app/exact-plants/${item.requestItemId}?returnTo=${encodeURIComponent(returnTo)}`}
+                    >
+                      Create EXACT PLANTS Listing
+                    </s-link>
+                  )}
+                </s-stack>
+              </s-box>
+            );
+          })
+        )}
+      </s-stack>
+    </s-section>
+  );
 }
 
-function CustomerResponseSection({ requestId }: { requestId: string }) {
-  const [response, setResponse] = useState<CustomerOfferResponse | undefined>(
-    () => {
-      if (typeof window === "undefined") return undefined;
-      hydrateCustomerOfferResponses();
-      return getCustomerOfferResponse(requestId);
-    },
-  );
-
-  useEffect(() => {
-    const refresh = () => {
-      hydrateCustomerOfferResponses();
-      setResponse(getCustomerOfferResponse(requestId));
-    };
-
-    refresh();
-    window.addEventListener("focus", refresh);
-    window.addEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    };
-  }, [requestId]);
-
+function CustomerResponseSection({
+  response,
+  status,
+}: {
+  response: Awaited<ReturnType<typeof getCustomerResponse>>;
+  status: RequestStatus;
+}) {
   if (!response) {
     return (
       <s-section heading="Customer response">
@@ -576,183 +651,92 @@ function CustomerResponseSection({ requestId }: { requestId: string }) {
 
   const accepted = response.items.filter((item) => item.choice === "accept");
   const rejected = response.items.filter((item) => item.choice === "reject");
-  const unavailable = response.items.filter(
-    (item) => item.choice === "unavailable",
-  );
 
   return (
     <s-section heading="Customer response">
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" gap="large">
           <s-stack direction="block" gap="small">
-            <s-text color="subdued">Responded</s-text>
+            <s-text color="subdued">Customer response timestamp</s-text>
             <s-text>{response.respondedAt}</s-text>
-          </s-stack>
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Accepted purchasable items</s-text>
-            <s-text>
-              {response.hasAcceptedPurchasableItems ? "Yes" : "No"}
-            </s-text>
           </s-stack>
           <s-stack direction="block" gap="small">
             <s-text color="subdued">FedEx upgrade</s-text>
             <s-text>
-              {response.hasAcceptedPurchasableItems &&
-              response.fedexUpgradeSelected
+              {response.hasAcceptedPurchasableItems && response.fedexUpgradeSelected
                 ? `Selected (${formatCurrency(response.fedexUpgradePrice)})`
                 : response.hasAcceptedPurchasableItems
                   ? "Removed"
                   : "Not applicable"}
             </s-text>
           </s-stack>
-          {response.closedAt ? (
-            <s-stack direction="block" gap="small">
-              <s-text color="subdued">Closed</s-text>
-              <s-text>{response.closedAt}</s-text>
-            </s-stack>
-          ) : null}
+          <s-stack direction="block" gap="small">
+            <s-text color="subdued">Current request status</s-text>
+            <s-badge tone={requestStatusTone(status)}>{status}</s-badge>
+          </s-stack>
         </s-stack>
 
-        <s-box
-          padding="base"
-          borderWidth="base"
-          borderRadius="base"
-          background="subdued"
-        >
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           <s-stack direction="block" gap="base">
-            <s-heading>Accepted items</s-heading>
+            <s-heading>Accepted Items</s-heading>
             {accepted.length === 0 ? (
               <s-text color="subdued">None</s-text>
             ) : (
               accepted.map((item) => (
                 <s-text key={item.offerItemId}>
-                  {item.plantName} — Qty {item.quantity} —{" "}
-                  {formatCurrency(item.lineRevenue)}
+                  {item.plantName} — {formatCurrency(item.price)}
                 </s-text>
               ))
             )}
           </s-stack>
         </s-box>
 
-        <s-box
-          padding="base"
-          borderWidth="base"
-          borderRadius="base"
-          background="subdued"
-        >
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           <s-stack direction="block" gap="base">
-            <s-heading>Rejected items</s-heading>
+            <s-heading>Rejected Items</s-heading>
             {rejected.length === 0 ? (
               <s-text color="subdued">None</s-text>
             ) : (
               rejected.map((item) => (
-                <s-text key={item.offerItemId}>{item.plantName}</s-text>
+                <s-text key={item.offerItemId}>
+                  {item.plantName} — {formatCurrency(item.price)}
+                </s-text>
               ))
             )}
           </s-stack>
         </s-box>
-
-        {unavailable.length > 0 ? (
-          <s-box
-            padding="base"
-            borderWidth="base"
-            borderRadius="base"
-            background="subdued"
-          >
-            <s-stack direction="block" gap="base">
-              <s-heading>Not available items</s-heading>
-              {unavailable.map((item) => (
-                <s-text key={item.offerItemId}>
-                  {item.plantName}
-                  {item.unavailableReason ? ` — ${item.unavailableReason}` : ""}
-                </s-text>
-              ))}
-            </s-stack>
-          </s-box>
-        ) : null}
       </s-stack>
     </s-section>
   );
 }
 
-function getRequestDetailState(requestId: string): RequestDetailData | null {
-  if (typeof window === "undefined") return null;
-
-  hydrateSubmittedRequests();
-  hydrateSampleOfferState();
-  hydrateCustomerOfferResponses();
-  hydrateItemAvailability();
-  hydrateCustomerItemNotes();
-  hydrateItemPricing();
-  return getRequestWithState(requestId) ?? null;
-}
-
-function getInitialRequestDetail(
-  requestId: string,
-  fallback: RequestDetailData | null,
-): RequestDetailData | null {
-  if (typeof window === "undefined") return fallback;
-  return getRequestDetailState(requestId) ?? fallback;
-}
-
 export default function RequestDetail() {
-  const { requestId, plantRequest: loaderRequest } =
-    useLoaderData<typeof loader>();
-  const [request, setRequest] = useState<RequestDetailData | null>(() =>
-    getInitialRequestDetail(requestId, loaderRequest),
-  );
-  const [status, setStatus] = useState<RequestStatus>(
-    () => getInitialRequestDetail(requestId, loaderRequest)?.status ?? "New",
-  );
-  const [sentOffer, setSentOffer] = useState<SentOffer | undefined>(
-    () => getInitialRequestDetail(requestId, loaderRequest)?.sentOffer,
-  );
+  const { plantRequest, response, declinedExactPlants } = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
 
   useEffect(() => {
-    const refresh = () => {
-      const nextRequest = getRequestDetailState(requestId);
-      if (!nextRequest) {
-        setRequest(null);
-        return;
-      }
+    const onFocus = () => revalidator.revalidate();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [revalidator]);
 
-      setRequest(nextRequest);
-      setStatus(nextRequest.status);
-      setSentOffer(nextRequest.sentOffer);
-    };
-
-    refresh();
-    window.addEventListener("focus", refresh);
-    window.addEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    };
-  }, [requestId]);
-
-  if (!request) {
+  if (!plantRequest) {
     return (
       <s-page heading="Request not found">
         <s-link slot="breadcrumb-actions" href="/app">
           Dashboard
         </s-link>
         <s-section>
-          <s-stack direction="block" gap="base">
-            <s-text>
-              This request could not be loaded. Submitted customer requests are
-              stored in this browser only.
-            </s-text>
-            <s-link href="/app">Back to dashboard</s-link>
-          </s-stack>
+          <s-text>This request could not be loaded.</s-text>
         </s-section>
       </s-page>
     );
   }
 
-  const canEditItems = status === "New";
+  const canEditItems = plantRequest.status === "New";
 
   return (
-    <s-page heading={`Request from ${request.customer}`}>
+    <s-page heading={`Request ${getDisplayRequestNumber(plantRequest)}`}>
       <s-link slot="breadcrumb-actions" href="/app">
         Dashboard
       </s-link>
@@ -761,21 +745,21 @@ export default function RequestDetail() {
         <s-stack direction="inline" gap="large">
           <s-stack direction="block" gap="small">
             <s-text color="subdued">Customer</s-text>
-            <s-text>{request.customer}</s-text>
+            <s-text>{plantRequest.customer}</s-text>
           </s-stack>
           <s-stack direction="block" gap="small">
             <s-text color="subdued">Email</s-text>
-            <s-text>{request.email}</s-text>
+            <s-text>{plantRequest.email}</s-text>
           </s-stack>
           <s-stack direction="block" gap="small">
             <s-text color="subdued">Status</s-text>
-            <s-badge tone={requestStatusTone(status)}>
-              {status}
+            <s-badge tone={requestStatusTone(plantRequest.status)}>
+              {plantRequest.status}
             </s-badge>
           </s-stack>
           <s-stack direction="block" gap="small">
             <s-text color="subdued">Submitted</s-text>
-            <s-text>{request.submittedDate}</s-text>
+            <s-text>{plantRequest.submittedDate}</s-text>
           </s-stack>
         </s-stack>
       </s-section>
@@ -784,17 +768,14 @@ export default function RequestDetail() {
         {!canEditItems && (
           <s-banner tone="info">
             <s-text>
-              This request is read-only because its status is {status}. Only New
-              requests can be edited before an offer is sent.
+              This request is read-only because its status is {plantRequest.status}.
+              Customer-facing notes, photos, names, and prices are frozen in the
+              offer snapshot.
             </s-text>
           </s-banner>
         )}
-        <s-paragraph>
-          Set availability, pricing, and customer-facing notes for each plant
-          before sending the offer.
-        </s-paragraph>
         <s-stack direction="block" gap="base">
-          {request.items.map((item) => (
+          {plantRequest.items.map((item) => (
             <PlantItemCard key={item.id} item={item} canEdit={canEditItems} />
           ))}
         </s-stack>
@@ -802,18 +783,20 @@ export default function RequestDetail() {
 
       <s-section heading="Send Offer">
         <SendOfferSection
-          requestId={request.id}
-          status={status}
-          sentOffer={sentOffer}
-          items={request.items}
-          onOfferSent={(offer) => {
-            setSentOffer(offer);
-            setStatus("Pending");
-          }}
+          status={plantRequest.status}
+          sentOffer={plantRequest.sentOffer}
         />
       </s-section>
 
-      <CustomerResponseSection requestId={request.id} />
+      <CustomerResponseSection
+        response={response}
+        status={plantRequest.status}
+      />
+
+      <DeclinedExactPlantsSection
+        requestId={plantRequest.id}
+        items={declinedExactPlants}
+      />
     </s-page>
   );
 }

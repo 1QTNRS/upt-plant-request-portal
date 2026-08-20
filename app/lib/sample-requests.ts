@@ -39,7 +39,8 @@ export type PlantItemStatus =
   | "Sourced"
   | "Offered"
   | "Sold"
-  | "Unavailable";
+  | "Unavailable"
+  | "Listed";
 
 export type PlantItem = {
   id: string;
@@ -63,7 +64,7 @@ export type PlantRequest = {
 };
 
 export function getDisplayRequestNumber(request: PlantRequest): string {
-  return request.requestNumber ?? `UPT-REQ-${request.id}`;
+  return request.requestNumber ?? "REQ";
 }
 
 export function isOfferReadyForCustomer(requestId: string): boolean {
@@ -261,7 +262,6 @@ type StoredOfferState = {
 
 const sentOffersByRequestId = new Map<string, SentOffer>();
 const statusByRequestId = new Map<string, RequestStatus>();
-let offerStateHydrated = false;
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -307,8 +307,6 @@ export function hydrateSampleOfferState(): void {
   } catch {
     // Ignore invalid stored state during local testing.
   }
-
-  offerStateHydrated = true;
 }
 
 function formatOfferDateTime(date: Date): string {
@@ -456,7 +454,6 @@ export function setRequestStatus(
 export function resetSampleOfferState(): void {
   sentOffersByRequestId.clear();
   statusByRequestId.clear();
-  offerStateHydrated = false;
 
   if (isBrowser()) {
     localStorage.removeItem(OFFER_STATE_STORAGE_KEY);

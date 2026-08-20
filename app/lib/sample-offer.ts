@@ -1,6 +1,5 @@
 import { getCustomerItemNote, hydrateCustomerItemNotes } from "./customer-item-notes";
 import {
-  getItemAvailabilityState,
   hydrateItemAvailability,
   isItemAvailable,
 } from "./item-availability";
