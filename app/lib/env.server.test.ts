@@ -107,15 +107,55 @@ describe("scope resolution", () => {
   });
 
   it("matches the scopes declared in shopify.app.toml", () => {
-    const toml = readFileSync(
-      path.join(import.meta.dirname, "..", "..", "shopify.app.toml"),
-      "utf8",
-    );
-    const declared = toml.match(/^scopes\s*=\s*"([^"]*)"/m)?.[1];
+    const declared = readToml().match(/^scopes\s*=\s*"([^"]*)"/m)?.[1];
     assert.ok(declared, "shopify.app.toml must declare access scopes");
     assert.deepEqual(
       declared.split(",").map((scope) => scope.trim()).sort(),
       [...REQUIRED_SHOPIFY_SCOPES].sort(),
     );
+  });
+});
+
+function readToml(): string {
+  return readFileSync(
+    path.join(import.meta.dirname, "..", "..", "shopify.app.toml"),
+    "utf8",
+  );
+}
+
+describe("shopify.app.toml webhooks", () => {
+  it("declares the webhook API version the Admin client uses", () => {
+    const declared = readToml().match(/^api_version\s*=\s*"([^"]*)"/m)?.[1];
+    const source = readFileSync(
+      path.join(import.meta.dirname, "..", "shopify.server.ts"),
+      "utf8",
+    );
+    // Mismatched versions mean webhook payload shapes can drift from the
+    // shapes the Admin API client reads.
+    const constant = source.match(/export const apiVersion = ApiVersion\.(\w+)/)?.[1];
+    const expected = { October25: "2025-10", January26: "2026-01", April26: "2026-04" }[
+      constant ?? ""
+    ];
+    assert.ok(expected, `Add ApiVersion.${constant} to this test's version map`);
+    assert.equal(declared, expected);
+  });
+
+  it("subscribes to all three mandatory compliance topics", () => {
+    const toml = readToml();
+    for (const topic of [
+      "customers/data_request",
+      "customers/redact",
+      "shop/redact",
+    ]) {
+      assert.match(
+        toml,
+        new RegExp(`compliance_topics\\s*=\\s*\\[[^\\]]*"${topic}"`),
+        `shopify.app.toml must subscribe to ${topic}`,
+      );
+    }
+  });
+
+  it("subscribes to the orders/paid topic that closes a request", () => {
+    assert.match(readToml(), /topics\s*=\s*\[\s*"orders\/paid"\s*\]/);
   });
 });

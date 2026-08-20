@@ -5,6 +5,7 @@ import { findRequestByNumber, markRequestPaid } from "../lib/portal.server";
 import { authenticate } from "../shopify.server";
 
 type PaidOrderPayload = {
+  id?: number | string;
   admin_graphql_api_id?: string;
   order_number?: number | string;
   name?: string;
@@ -49,26 +50,58 @@ function requestNumberFromPayload(payload: PaidOrderPayload): string | null {
   return parsed != null ? formatRequestNumber(parsed) : fromNote;
 }
 
+function orderLabel(order: PaidOrderPayload): string {
+  return String(order.name || order.order_number || order.id || "unknown order");
+}
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop, topic, payload } = await authenticate.webhook(request);
-  console.log(`Received ${topic} webhook for ${shop}`);
-
   const order = payload as PaidOrderPayload;
+
   const requestNumber = requestNumberFromPayload(order);
   if (!requestNumber) {
+    // Not every paid order comes from a plant request. Retrying will not help,
+    // so acknowledge, but log enough to diagnose a draft order that lost its
+    // tag and left a request stuck in Pending.
+    console.log(
+      `${topic} for ${shop}: order ${orderLabel(order)} carries no plant request number; ignoring.`,
+    );
     return new Response();
   }
 
   const plantRequest = await findRequestByNumber(shop, requestNumber);
   if (!plantRequest) {
+    console.warn(
+      `${topic} for ${shop}: order ${orderLabel(order)} references ${requestNumber}, which does not exist.`,
+    );
+    return new Response();
+  }
+
+  if (plantRequest.paidAt) {
+    // Shopify redelivers on any non-2xx response, and re-closing would append a
+    // duplicate status event to the request's history.
+    console.log(
+      `${topic} for ${shop}: ${requestNumber} is already paid; ignoring redelivery of order ${orderLabel(order)}.`,
+    );
+    return new Response();
+  }
+
+  const shopifyOrderGid =
+    order.admin_graphql_api_id ||
+    (order.id ? `gid://shopify/Order/${order.id}` : null);
+  if (!shopifyOrderGid) {
+    console.error(
+      `${topic} for ${shop}: order ${orderLabel(order)} has no Shopify order id; not closing ${requestNumber}.`,
+    );
     return new Response();
   }
 
   await markRequestPaid(shop, plantRequest.id, {
-    shopifyOrderGid: order.admin_graphql_api_id || `gid://shopify/Order/${requestNumber}`,
+    shopifyOrderGid,
     orderNumber: String(order.name || order.order_number || ""),
     plantRevenue: plantRevenueFromPayload(order),
   });
+  console.log(`${topic} for ${shop}: closed ${requestNumber} from order ${orderLabel(order)}.`);
 
   return new Response();
 };
