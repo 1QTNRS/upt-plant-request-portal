@@ -10,14 +10,15 @@ Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app
 
 This app is the Unsolicited Plant Talks plant request portal. Plant requests, offers, customer responses, photos, settings, emails, and analytics are stored in Prisma (SQLite by default).
 
-- Admin: `/app` dashboard, request detail, analytics, and settings
+- Admin: `/app` dashboard, request detail, EXACT PLANTS listings, analytics, and settings
 - Customer portal: `/customer` (Shopify customer account / app proxy in production; demo login in local development)
 - Database setup: `npm run setup` then `npx prisma db seed`
 - Tests: `npm test`
+- Cloud Agent handoff: [`docs/CLOUD_AGENT_HANDOFF.md`](docs/CLOUD_AGENT_HANDOFF.md)
 
-Required Shopify scopes (merchants must re-approve after install): `write_draft_orders`, `read_draft_orders`, `read_orders`, `read_customers`, `write_files`, `read_files`, `read_products`.
+Required Shopify scopes (merchants must re-approve after install): `write_draft_orders`, `read_draft_orders`, `read_orders`, `read_customers`, `write_files`, `read_files`, `read_products`, `write_products`, `read_publications`, `write_publications`.
 
-The `orders/paid` webhook closes a request when payment completes. Unpaid offers expire automatically when their hold window passes.
+The `orders/paid` webhook closes a request when payment completes. Unpaid offers expire automatically when their hold window passes. Request numbers are sequential `REQ1`, `REQ2`, `REQ2178`.
 
 ## Upgrading from Remix
 
