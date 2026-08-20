@@ -11,14 +11,20 @@
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
     "docker-start": "npm run setup && npm run start",
-    "setup": "prisma generate && prisma migrate deploy",
+    "setup": "npm run prisma:generate && npm run prisma:migrate",
+    "prisma:generate": "node scripts/prisma.mjs generate",
+    "prisma:migrate": "node scripts/prisma.mjs migrate deploy",
+    "prisma:validate": "prisma validate --schema prisma/schema.prisma && prisma validate --schema prisma/postgres/schema.prisma",
+    "prisma:sync-schema": "node scripts/prisma-schema.mjs --sync",
+    "prisma:check-schema": "node scripts/prisma-schema.mjs --check",
+    "validate-graphql": "node scripts/validate-admin-graphql.mjs",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "test": "tsx --test app/lib/portal.test.ts app/lib/portal.server.test.ts app/lib/exact-plants.test.ts app/lib/exact-plants.server.test.ts"
+    "test": "tsx --test app/lib/*.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -58,6 +64,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^4.6.2",
+    "graphql": "^16.14.2",
     "graphql-config": "^5.1.1",
     "prettier": "^3.6.2",
     "tsx": "^4.23.12",

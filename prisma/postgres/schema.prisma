@@ -1,21 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// GENERATED FILE — do not edit by hand.
+//
+// Regenerate with `npm run prisma:sync-schema` after changing
+// prisma/schema.prisma. `npm run prisma:check-schema` fails when this file is
+// stale, so the two providers cannot drift apart.
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
-//
-// This is the SQLite schema, used for local development. The PostgreSQL schema
-// used in production lives in prisma/postgres/schema.prisma and is generated
-// from this file by `npm run prisma:sync-schema`; the model blocks must stay
-// byte-identical. `npm run prisma:resolve` picks the right schema from
-// DATABASE_URL, so every prisma script works for either provider.
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
