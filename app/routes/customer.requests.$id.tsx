@@ -1,9 +1,14 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { data, useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
-import { DEMO_SHOP } from "../lib/shop";
-import { readCustomerSession } from "../lib/customer-session.server";
+import { customerPortalRelativeLinks } from "../lib/app-proxy";
+import { isDevAdminBypass } from "../lib/shop";
+import {
+  readCustomerContext,
+  type CustomerIdentity,
+} from "../lib/customer-session.server";
+import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import {
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
@@ -14,35 +19,54 @@ import {
   loadCustomerOfferPage,
 } from "../lib/offer-response.server";
 import { getRequest } from "../lib/portal.server";
+import { offlineAdminClient } from "../lib/offline-admin.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
 function customerOwnsRequest(
   request: Awaited<ReturnType<typeof getRequest>>,
-  session: { email: string; shopifyCustomerId?: string },
+  identity: CustomerIdentity,
 ) {
   if (!request) return false;
-  const email = session.email.trim().toLowerCase();
+  const email = identity.email.trim().toLowerCase();
   if (email && request.email.trim().toLowerCase() === email) return true;
   if (
-    session.shopifyCustomerId &&
+    identity.shopifyCustomerId &&
     request.shopifyCustomerId &&
-    session.shopifyCustomerId === request.shopifyCustomerId
+    identity.shopifyCustomerId === request.shopifyCustomerId
   ) {
     return true;
   }
   return false;
 }
 
-export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
-  await ensureShopSeeded(shop);
-  const session = await readCustomerSession(request);
-  const requestId = params.id ?? "";
-  const plantRequest = await getRequest(shop, requestId);
+/**
+ * Resolves the visitor and confirms they own the request, or returns null so
+ * the caller can render the same "not available" response for a missing
+ * request, a forged id and someone else's request.
+ */
+async function authorizeRequest(request: Request, requestId: string) {
+  const context = await readCustomerContext(request);
+  if (!context) return null;
 
-  if (!session || !customerOwnsRequest(plantRequest, session)) {
+  if (isDevAdminBypass()) {
+    await ensureShopSeeded(context.shop);
+  }
+
+  if (!context.identity) return null;
+  const identity = await resolveCustomerIdentity(context.shop, context.identity);
+  const plantRequest = await getRequest(context.shop, requestId);
+  if (!customerOwnsRequest(plantRequest, identity)) return null;
+
+  return { context, plantRequest };
+}
+
+export const loader = async ({ request, params }: LoaderFunctionArgs) => {
+  const requestId = params.id ?? "";
+  const authorized = await authorizeRequest(request, requestId);
+
+  if (!authorized) {
     return {
-      forbidden: true,
+      forbidden: true as const,
       request: null,
       offer: null,
       response: null,
@@ -50,23 +74,32 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       fedexRemovalWarning: "",
       requestClosed: false,
       confirmationEmail: null,
+      backHref: customerPortalRelativeLinks(false).home,
     };
   }
 
-  const page = await loadCustomerOfferPage(shop, requestId);
-  return { forbidden: false, request: plantRequest, ...page };
+  const { context, plantRequest } = authorized;
+  const page = await loadCustomerOfferPage(context.shop, requestId);
+  return {
+    forbidden: false as const,
+    request: plantRequest,
+    ...page,
+    backHref: customerPortalRelativeLinks(context.viaAppProxy).home,
+  };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
-  const session = await readCustomerSession(request);
   const requestId = params.id ?? "";
-  const plantRequest = await getRequest(shop, requestId);
-  if (!session || !customerOwnsRequest(plantRequest, session)) {
-    return { ok: false };
-  }
+  const authorized = await authorizeRequest(request, requestId);
+  if (!authorized) throw data("Not found", { status: 404 });
+
+  const { context } = authorized;
   const form = await request.formData();
-  return handleCustomerOfferAction({ shop, requestId, form });
+  // The portal is served through the app proxy and so has no merchant session;
+  // the stored offline token is what lets an accepted offer become a real
+  // Shopify draft order.
+  const admin = await offlineAdminClient(context.shop);
+  return handleCustomerOfferAction({ shop: context.shop, requestId, form, admin });
 };
 
 export default function CustomerRequestDetail() {
@@ -81,7 +114,7 @@ export default function CustomerRequestDetail() {
               You can only view your own plant requests. Please log in with the
               customer account that submitted this request.
             </s-text>
-            <s-link href="/customer">Back to My Requests</s-link>
+            <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
       </s-page>
@@ -104,7 +137,7 @@ export default function CustomerRequestDetail() {
             <s-text color="subdued">
               We&apos;ll notify you when your personal offer is ready.
             </s-text>
-            <s-link href="/customer">Back to My Requests</s-link>
+            <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
       </s-page>
@@ -117,7 +150,7 @@ export default function CustomerRequestDetail() {
       response={data.response}
       invoiceUrl={data.invoiceUrl}
       fedexRemovalWarning={data.fedexRemovalWarning}
-      backHref="/customer"
+      backHref={data.backHref}
       requestClosed={data.requestClosed}
       confirmationEmail={data.confirmationEmail}
     />

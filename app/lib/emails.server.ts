@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { customerLinksForShop } from "./customer-links.server";
 import {
   buildAdminNewRequestEmail,
   buildCheckoutEmail,
@@ -137,7 +138,7 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
   const request = await getRequest(shop, requestId);
   if (!request?.sentOffer) return;
 
-  const offerLink = `${appUrl.replace(/\/$/, "")}/customer/requests/${request.id}`;
+  const offerLink = customerLinksForShop(shop, appUrl).requestDetail(request.id);
   const email = buildOfferReadyEmail({
     customerName: request.customer,
     requestNumber: request.requestNumber,
@@ -217,6 +218,7 @@ export async function notifyConfirmation(
 }
 
 export async function notifyExpirationReminders(shop: string, appUrl: string) {
+  const links = customerLinksForShop(shop, appUrl);
   const soon = new Date();
   soon.setHours(soon.getHours() + 24);
   const now = new Date();
@@ -243,7 +245,7 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
       customerName: request.customerName,
       requestNumber: request.requestNumber,
       expiresAt: request.offer.expiresAt.toISOString(),
-      offerLink: `${appUrl.replace(/\/$/, "")}/customer/requests/${request.id}`,
+      offerLink: links.requestDetail(request.id),
     });
     await queueEmail({
       shop,

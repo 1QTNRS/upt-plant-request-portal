@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 
 import prisma from "../db.server";
+import { customerLinksForShop } from "./customer-links.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -484,7 +485,7 @@ export async function sendOffer(
         sentAt,
         expiresAt,
         expirationDays,
-        offerLink: `/customer/requests/${requestId}`,
+        offerLink: customerLinksForShop(shop).requestDetail(requestId),
         items: {
           create: request.items.map((item) => ({
             requestItemId: item.id,

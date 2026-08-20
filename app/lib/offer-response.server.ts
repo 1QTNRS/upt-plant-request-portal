@@ -110,8 +110,16 @@ export async function handleCustomerOfferAction(input: {
   });
 
   const accepted = saved.items.filter((item) => item.choice === "accept");
-  if (accepted.length > 0) {
-    const draft = await createDraftOrderForRequest(input.admin, input.shop, {
+  if (accepted.length === 0) {
+    return { ok: true as const, draftOrderFailed: false };
+  }
+
+  // The response is already committed, so a Shopify outage must not roll the
+  // customer's accept/reject choices back or surface as a failed submission.
+  // The request stays Pending, which keeps it in the expiry and reminder sweeps.
+  let draft: Awaited<ReturnType<typeof createDraftOrderForRequest>> | null = null;
+  try {
+    draft = await createDraftOrderForRequest(input.admin, input.shop, {
       requestId: input.requestId,
       requestNumber: offer.requestNumber,
       customerEmail: offer.customerEmail,
@@ -125,20 +133,29 @@ export async function handleCustomerOfferAction(input: {
       })),
       fedexSelected: fedexUpgradeSelected,
     });
-    await notifyConfirmation(input.shop, {
-      requestId: input.requestId,
-      acceptedItems: accepted.map((item) => ({
-        plantName: item.plantName,
-        price: item.price,
-        quantity: item.quantity,
-        customerNotes: item.customerNotes,
-      })),
-      fedexSelected: fedexUpgradeSelected,
-      fedexPrice: offer.fedexUpgradePrice,
-      invoiceUrl: draft.invoiceUrl,
-    });
+  } catch (error) {
+    console.error(
+      `Could not create a Shopify draft order for ${offer.requestNumber} on ${input.shop}.`,
+      error,
+    );
+  }
+
+  await notifyConfirmation(input.shop, {
+    requestId: input.requestId,
+    acceptedItems: accepted.map((item) => ({
+      plantName: item.plantName,
+      price: item.price,
+      quantity: item.quantity,
+      customerNotes: item.customerNotes,
+    })),
+    fedexSelected: fedexUpgradeSelected,
+    fedexPrice: offer.fedexUpgradePrice,
+    invoiceUrl: draft?.invoiceUrl,
+  });
+
+  if (draft) {
     await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
   }
 
-  return { ok: true as const };
+  return { ok: true as const, draftOrderFailed: draft === null };
 }

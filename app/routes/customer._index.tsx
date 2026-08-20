@@ -1,14 +1,16 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { redirect, useActionData, useLoaderData } from "react-router";
+import { data, redirect, useActionData, useLoaderData } from "react-router";
 
 import { CustomerRequestPortal } from "../components/customer-request-portal";
-import { DEMO_SHOP, isDevAdminBypass } from "../lib/shop";
+import { customerPortalRelativeLinks } from "../lib/app-proxy";
+import { isDevAdminBypass } from "../lib/shop";
 import {
   canUseDemoCustomerLogin,
   destroyCustomerSession,
-  readCustomerSession,
+  readCustomerContext,
   serializeCustomerSession,
 } from "../lib/customer-session.server";
+import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
 import { getDisplayRequestNumber } from "../lib/portal";
 import {
@@ -25,26 +27,34 @@ const DEMO_CUSTOMER = {
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
+  const context = await readCustomerContext(request);
+  if (!context) throw data("Not found", { status: 404 });
+
   if (isDevAdminBypass()) {
-    await ensureShopSeeded(shop);
+    await ensureShopSeeded(context.shop);
   }
 
-  const session = await readCustomerSession(request);
-  if (!session) {
-    return {
-      loggedIn: false,
-      name: "",
-      email: "",
-      myRequests: [],
-      showDemoLogin: canUseDemoCustomerLogin(),
-    };
-  }
+  const links = customerPortalRelativeLinks(context.viaAppProxy);
+  const signedOut = {
+    loggedIn: false as const,
+    name: "",
+    email: "",
+    myRequests: [] as Array<never>,
+    showDemoLogin: canUseDemoCustomerLogin(),
+    requestDetailBase: links.home,
+  };
 
-  const customer = await findOrCreateCustomer(session.shop || shop, {
-    name: session.name || DEMO_CUSTOMER.name,
-    email: session.email || DEMO_CUSTOMER.email,
-    shopifyCustomerId: session.shopifyCustomerId,
+  if (!context.identity) return signedOut;
+
+  const identity = await resolveCustomerIdentity(context.shop, context.identity);
+  // Without an email there is no way to attribute the request or notify anyone,
+  // and guessing would expose one customer's requests to another.
+  if (!identity.email.trim()) return signedOut;
+
+  const customer = await findOrCreateCustomer(context.shop, {
+    name: identity.name,
+    email: identity.email,
+    shopifyCustomerId: identity.shopifyCustomerId,
   });
   const requests = await listCustomerRequests(customer.shop, {
     email: customer.email,
@@ -52,10 +62,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   return {
-    loggedIn: true,
+    loggedIn: true as const,
     name: customer.name,
     email: customer.email,
     showDemoLogin: canUseDemoCustomerLogin(),
+    requestDetailBase: links.home,
     myRequests: requests.map((request) => ({
       id: request.id,
       requestNumber: getDisplayRequestNumber(request),
@@ -67,7 +78,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
+  const context = await readCustomerContext(request);
+  if (!context) throw data("Not found", { status: 404 });
+
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
 
@@ -78,10 +91,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const headers = new Headers();
     headers.append(
       "Set-Cookie",
-      await serializeCustomerSession({
-        shop,
-        ...DEMO_CUSTOMER,
-      }),
+      await serializeCustomerSession({ shop: context.shop, ...DEMO_CUSTOMER }),
     );
     throw redirect("/customer", { headers });
   }
@@ -92,9 +102,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     throw redirect("/customer", { headers });
   }
 
-  const session = await readCustomerSession(request);
-  if (!session) {
+  if (!context.identity) {
     return { errors: ["Please log in to submit a request."], successMessage: null };
+  }
+
+  const identity = await resolveCustomerIdentity(context.shop, context.identity);
+  if (!identity.email.trim()) {
+    return {
+      errors: [
+        "We could not read the email address on your customer account. Please contact us so we can take your request.",
+      ],
+      successMessage: null,
+    };
   }
 
   const itemCount = Number(form.get("itemCount") || 0);
@@ -115,13 +134,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
   if (errors.length) return { errors, successMessage: null };
 
-  const created = await submitCustomerRequest(session.shop || shop, {
-    name: session.name,
-    email: session.email,
-    shopifyCustomerId: session.shopifyCustomerId,
+  const created = await submitCustomerRequest(context.shop, {
+    name: identity.name,
+    email: identity.email,
+    shopifyCustomerId: identity.shopifyCustomerId,
     items: items.filter((item) => item.plantName),
   });
-  await notifyNewRequest(session.shop || shop, created.id);
+  await notifyNewRequest(context.shop, created.id);
 
   return {
     errors: [],
@@ -142,7 +161,9 @@ export default function CustomerHome() {
       successMessage={actionData?.successMessage}
       errors={actionData?.errors}
       showDemoLogin={loaderData.showDemoLogin}
-      requestDetailHref={(requestId) => `/customer/requests/${requestId}`}
+      requestDetailHref={(requestId) =>
+        `${loaderData.requestDetailBase}/requests/${requestId}`
+      }
       formAction="?index"
     />
   );

@@ -1,4 +1,5 @@
 import type { AdminContext } from "./admin-auth.server";
+import { customerLinksForShop } from "./customer-links.server";
 import {
   declinedItemTag,
   EXACT_PLANTS_COLLECTION_TITLE,
@@ -168,7 +169,7 @@ export async function createDraftOrderForRequest(
   }
 
   if (!invoiceUrl) {
-    invoiceUrl = `/customer/requests/${input.requestId}?checkout=pending`;
+    invoiceUrl = `${customerLinksForShop(shop).requestDetail(input.requestId)}?checkout=pending`;
   }
 
   await saveDraftOrderReference(shop, input.requestId, {
