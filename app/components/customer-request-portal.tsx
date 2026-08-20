@@ -42,6 +42,7 @@ export function CustomerRequestPortal({
   errors,
   requestDetailHref,
   showDemoLogin,
+  formAction,
 }: {
   loggedIn: boolean;
   name: string;
@@ -51,6 +52,7 @@ export function CustomerRequestPortal({
   errors?: string[];
   requestDetailHref: (requestId: string) => string;
   showDemoLogin: boolean;
+  formAction?: string;
 }) {
   const navigation = useNavigation();
   const [plantLines, setPlantLines] = useState<PlantLine[]>([createPlantLine()]);
@@ -71,7 +73,7 @@ export function CustomerRequestPortal({
               request.
             </s-text>
             {showDemoLogin ? (
-              <Form method="post">
+              <Form method="post" action={formAction}>
                 <input type="hidden" name="intent" value="demo-login" />
                 <s-stack direction="block" gap="base">
                   <s-button variant="primary" type="submit">
@@ -115,7 +117,7 @@ export function CustomerRequestPortal({
         </s-stack>
       </s-section>
 
-      <Form method="post">
+      <Form method="post" action={formAction}>
         <input type="hidden" name="intent" value="submit-request" />
         <s-section heading="Plants requested">
           <s-stack direction="block" gap="large">

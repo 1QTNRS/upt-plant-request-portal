@@ -144,6 +144,7 @@ export default function CustomerHome() {
       errors={actionData?.errors}
       showDemoLogin={loaderData.showDemoLogin}
       requestDetailHref={(requestId) => `/customer/requests/${requestId}`}
+      formAction="?index"
     />
   );
 }
