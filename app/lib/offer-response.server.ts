@@ -6,6 +6,7 @@ import {
   getDraftOrder,
   getRequest,
   getShopSettings,
+  OfferAlreadyAnsweredError,
   saveCustomerResponse,
 } from "./portal.server";
 import { notifyCheckoutLink, notifyConfirmation } from "./emails.server";
@@ -77,6 +78,14 @@ export async function handleCustomerOfferAction(input: {
     return { ok: true as const };
   }
 
+  // An offer is answered once. Re-posting (double click, refresh, retry) must
+  // not overwrite the recorded choices, create a second draft order, or resend
+  // the confirmation and checkout emails.
+  const alreadyAnswered = await getCustomerResponse(input.shop, input.requestId);
+  if (alreadyAnswered) {
+    return { ok: true as const, alreadySubmitted: true as const };
+  }
+
   const request = await getRequest(input.shop, input.requestId);
   const fedexUpgradeSelected =
     String(input.form.get("fedexUpgradeSelected")) === "true";
@@ -102,12 +111,21 @@ export async function handleCustomerOfferAction(input: {
     };
   });
 
-  const saved = await saveCustomerResponse(input.shop, {
-    requestId: input.requestId,
-    items,
-    fedexUpgradeSelected,
-    fedexUpgradePrice: offer.fedexUpgradePrice,
-  });
+  let saved;
+  try {
+    saved = await saveCustomerResponse(input.shop, {
+      requestId: input.requestId,
+      items,
+      fedexUpgradeSelected,
+      fedexUpgradePrice: offer.fedexUpgradePrice,
+    });
+  } catch (error) {
+    // Lost a race with a concurrent submit of the same offer.
+    if (error instanceof OfferAlreadyAnsweredError) {
+      return { ok: true as const, alreadySubmitted: true as const };
+    }
+    throw error;
+  }
 
   const accepted = saved.items.filter((item) => item.choice === "accept");
   if (accepted.length > 0) {

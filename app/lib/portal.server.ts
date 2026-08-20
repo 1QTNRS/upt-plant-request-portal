@@ -42,6 +42,22 @@ import {
 
 export const prismaClient = prisma;
 
+export class OfferAlreadyAnsweredError extends Error {
+  constructor() {
+    super("This offer has already been answered.");
+    this.name = "OfferAlreadyAnsweredError";
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002"
+  );
+}
+
 type RequestWithRelations = DbPlantRequest & {
   items: Array<RequestItem & { photos: PhotoReference[] }>;
   offer?:
@@ -703,54 +719,44 @@ export async function saveCustomerResponse(
     items: input.items,
   };
 
-  const saved = await prisma.customerResponse.upsert({
-    where: { requestId: input.requestId },
-    create: {
-      requestId: input.requestId,
-      customerName: request.customerName,
-      customerEmail: request.customerEmail,
-      shopifyCustomerId: request.shopifyCustomerId,
-      requestNumber: request.requestNumber,
-      offerExpiresAt: request.offer?.expiresAt,
-      fedexUpgradeSelected: input.fedexUpgradeSelected,
-      fedexUpgradePrice: input.fedexUpgradePrice,
-      snapshotJson: JSON.stringify(snapshot),
-      items: {
-        create: input.items.map((item) => ({
-          requestItemId: item.sourceItemId,
-          plantName: item.plantName,
-          choice: item.choice,
-          price: item.price,
-          quantity: item.quantity,
-          customerFacingNotes: item.customerNotes,
-          photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
-          unavailableReason: item.unavailableReason,
-        })),
+  // Create-only. `CustomerResponse.requestId` is unique, so two concurrent
+  // submissions cannot both record a response, and the loser is reported as an
+  // already-answered offer rather than silently overwriting the first answer.
+  try {
+    const saved = await prisma.customerResponse.create({
+      data: {
+        requestId: input.requestId,
+        customerName: request.customerName,
+        customerEmail: request.customerEmail,
+        shopifyCustomerId: request.shopifyCustomerId,
+        requestNumber: request.requestNumber,
+        offerExpiresAt: request.offer?.expiresAt,
+        fedexUpgradeSelected: input.fedexUpgradeSelected,
+        fedexUpgradePrice: input.fedexUpgradePrice,
+        snapshotJson: JSON.stringify(snapshot),
+        items: {
+          create: input.items.map((item) => ({
+            requestItemId: item.sourceItemId,
+            plantName: item.plantName,
+            choice: item.choice,
+            price: item.price,
+            quantity: item.quantity,
+            customerFacingNotes: item.customerNotes,
+            photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
+            unavailableReason: item.unavailableReason,
+          })),
+        },
       },
-    },
-    update: {
-      respondedAt: new Date(),
-      fedexUpgradeSelected: input.fedexUpgradeSelected,
-      fedexUpgradePrice: input.fedexUpgradePrice,
-      snapshotJson: JSON.stringify(snapshot),
-      items: {
-        deleteMany: {},
-        create: input.items.map((item) => ({
-          requestItemId: item.sourceItemId,
-          plantName: item.plantName,
-          choice: item.choice,
-          price: item.price,
-          quantity: item.quantity,
-          customerFacingNotes: item.customerNotes,
-          photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
-          unavailableReason: item.unavailableReason,
-        })),
-      },
-    },
-    include: { items: true },
-  });
+      include: { items: true },
+    });
 
-  return toResponseDto(saved, request.closedAt);
+    return toResponseDto(saved, request.closedAt);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new OfferAlreadyAnsweredError();
+    }
+    throw error;
+  }
 }
 
 export async function closeRequest(
@@ -760,6 +766,11 @@ export async function closeRequest(
 ): Promise<PlantRequest | null> {
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
+
+  // Already closed: keep the original closedAt and do not append another event.
+  if (normalizeRequestStatus(request.status) === "Closed") {
+    return toPlantRequest(request);
+  }
 
   const now = new Date();
   await prisma.$transaction([
@@ -792,11 +803,20 @@ export async function markRequestPaid(
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
 
+  // `orders/paid` is delivered at least once. Redelivery of an order we have
+  // already recorded must not re-close the request or append a second event.
+  const existingOrder = await prisma.shopifyOrderReference.findUnique({
+    where: { requestId },
+  });
+  if (existingOrder?.shopifyOrderGid === order.shopifyOrderGid && request.paidAt) {
+    return toPlantRequest(request);
+  }
+
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await tx.plantRequest.update({
       where: { id: requestId },
-      data: { status: "Closed", closedAt: now, paidAt: now },
+      data: { status: "Closed", closedAt: request.closedAt ?? now, paidAt: now },
     });
     await tx.shopifyOrderReference.upsert({
       where: { requestId },
@@ -873,6 +893,17 @@ export async function saveDraftOrderReference(
       lineItemsJson: JSON.stringify(data.lineItems),
     },
   });
+}
+
+export function parseDraftOrderLineItems(raw: string | null | undefined): DraftOrderLineItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed as DraftOrderLineItem[];
+  } catch {
+    return [];
+  }
 }
 
 export async function getDraftOrder(shop: string, requestId: string) {

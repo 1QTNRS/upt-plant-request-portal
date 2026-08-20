@@ -218,6 +218,8 @@ model ShopifyOrderReference {
   orderNumber      String?
   paidAt           DateTime     @default(now())
   plantRevenue     Float        @default(0)
+
+  @@index([shopifyOrderGid])
 }
 
 model StatusEvent {
@@ -264,7 +266,11 @@ model EmailMessage {
   error        String?
   createdAt    DateTime      @default(now())
   sentAt       DateTime?
+  // Stops retries and duplicate form submits from sending the same message
+  // twice. Usually "{templateKey}:{requestId}".
+  idempotencyKey String?
 
+  @@unique([shop, idempotencyKey])
   @@index([shop, createdAt])
   @@index([requestId])
 }
