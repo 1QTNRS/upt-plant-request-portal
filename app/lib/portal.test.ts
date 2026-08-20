@@ -6,16 +6,35 @@ import {
   buildDraftOrderLineItems,
   computeBehaviorFlags,
   formatCustomerStatusLabel,
+  formatRequestNumber,
+  getDisplayRequestNumber,
   isOfferExpired,
   matchesAdminSearch,
   normalizeRequestStatus,
   normalizeUnavailableReason,
+  parseRequestNumber,
   plantRevenueFromLines,
   primaryBehaviorFlag,
   computeTimeRemaining,
 } from "./portal";
 
-describe("status mapping", () => {
+describe("request numbers", () => {
+  it("formats sequential request numbers as REQ1, REQ2, REQ2178", () => {
+    assert.equal(formatRequestNumber(1), "REQ1");
+    assert.equal(formatRequestNumber(2), "REQ2");
+    assert.equal(formatRequestNumber(2178), "REQ2178");
+    assert.equal(parseRequestNumber("REQ2178"), 2178);
+    assert.equal(parseRequestNumber("UPT-REQ-2026-000041"), 41);
+    assert.equal(
+      getDisplayRequestNumber({ id: "x", requestNumber: "UPT-REQ-2026-000001" }),
+      "REQ1",
+    );
+    assert.equal(
+      getDisplayRequestNumber({ id: "x", requestNumber: "REQ8" }),
+      "REQ8",
+    );
+  });
+});
   it("keeps Pending stored while displaying Needs Payment", () => {
     assert.equal(normalizeRequestStatus("Pending"), "Pending");
     assert.equal(formatCustomerStatusLabel("Pending"), "Needs Payment");
@@ -40,14 +59,15 @@ describe("admin search", () => {
   const request = {
     customer: "Sarah Mitchell",
     email: "sarah.mitchell@email.com",
-    requestNumber: "UPT-REQ-2026-000041",
+    requestNumber: "REQ41",
     items: [{ plantName: "Monstera Deliciosa", offeredName: "Monstera Exact" }],
   };
 
   it("matches customer name, plant text, and request number", () => {
     assert.equal(matchesAdminSearch(request, "sarah"), true);
     assert.equal(matchesAdminSearch(request, "monstera"), true);
-    assert.equal(matchesAdminSearch(request, "000041"), true);
+    assert.equal(matchesAdminSearch(request, "REQ41"), true);
+    assert.equal(matchesAdminSearch(request, "41"), true);
     assert.equal(matchesAdminSearch(request, "exact"), true);
     assert.equal(matchesAdminSearch(request, "calathea"), false);
   });
@@ -109,7 +129,7 @@ describe("confirmation email", () => {
     const email = buildConfirmationEmail({
       customerName: "Alex Rivera",
       customerEmail: "alex.rivera@example.com",
-      requestNumber: "UPT-REQ-2026-000001",
+      requestNumber: "REQ1",
       acceptedItems: [
         {
           plantName: "Monstera Deliciosa",

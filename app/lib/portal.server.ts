@@ -14,6 +14,9 @@ import {
   FEDEX_PRODUCT_HANDLE,
   formatDate,
   formatDateTime,
+  formatRequestNumber,
+  GLOBAL_REQUEST_SEQUENCE_YEAR,
+  parseRequestNumber,
   getOfferHoldMessage,
   getOfferUrgencyMessage,
   normalizePrice,
@@ -215,15 +218,13 @@ export async function updateShopSettings(
 }
 
 async function nextRequestNumber(shop: string): Promise<string> {
-  const year = new Date().getFullYear();
   const sequence = await prisma.requestNumberSequence.upsert({
-    where: { shop_year: { shop, year } },
-    create: { shop, year, nextValue: 2 },
+    where: { shop_year: { shop, year: GLOBAL_REQUEST_SEQUENCE_YEAR } },
+    create: { shop, year: GLOBAL_REQUEST_SEQUENCE_YEAR, nextValue: 2 },
     update: { nextValue: { increment: 1 } },
   });
 
-  const value = sequence.nextValue - 1;
-  return `UPT-REQ-${year}-${String(value).padStart(6, "0")}`;
+  return formatRequestNumber(sequence.nextValue - 1);
 }
 
 export async function findOrCreateCustomer(
@@ -860,7 +861,23 @@ export async function findRequestByDraftOrderGid(draftOrderGid: string) {
 }
 
 export async function findRequestByNumber(shop: string, requestNumber: string) {
-  return prisma.plantRequest.findFirst({
+  const exact = await prisma.plantRequest.findFirst({
     where: { shop, requestNumber },
+  });
+  if (exact) return exact;
+
+  const parsed = parseRequestNumber(requestNumber);
+  if (parsed == null) return null;
+
+  const year = new Date().getFullYear();
+  const padded = String(parsed).padStart(6, "0");
+  const candidates = [
+    formatRequestNumber(parsed),
+    `UPT-REQ-${year}-${padded}`,
+    `UPT-REQ-${year - 1}-${padded}`,
+  ];
+
+  return prisma.plantRequest.findFirst({
+    where: { shop, requestNumber: { in: candidates } },
   });
 }

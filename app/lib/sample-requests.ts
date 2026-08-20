@@ -64,7 +64,7 @@ export type PlantRequest = {
 };
 
 export function getDisplayRequestNumber(request: PlantRequest): string {
-  return request.requestNumber ?? `UPT-REQ-${request.id}`;
+  return request.requestNumber ?? "REQ";
 }
 
 export function isOfferReadyForCustomer(requestId: string): boolean {

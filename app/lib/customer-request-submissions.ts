@@ -53,6 +53,7 @@ export type CustomerRequestSubmissionResult = {
 };
 
 const submittedRequests: PlantRequest[] = [];
+let prototypeRequestSequence = 0;
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -192,9 +193,8 @@ function createPlantItems(
 }
 
 function generateRequestNumber(): string {
-  const year = new Date().getFullYear();
-  const suffix = String(Date.now()).slice(-6);
-  return `UPT-REQ-${year}-${suffix}`;
+  prototypeRequestSequence += 1;
+  return `REQ${prototypeRequestSequence}`;
 }
 
 export function submitCustomerRequest(
@@ -230,6 +230,7 @@ export function submitCustomerRequest(
 
 export function resetSubmittedRequests(): void {
   submittedRequests.splice(0, submittedRequests.length);
+  prototypeRequestSequence = 0;
 
   if (isBrowser()) {
     localStorage.removeItem(SUBMITTED_REQUESTS_STORAGE_KEY);

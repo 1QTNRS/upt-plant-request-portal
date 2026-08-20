@@ -79,7 +79,7 @@ describe("plant request persistence", () => {
       ],
     });
 
-    assert.match(created.requestNumber, /^UPT-REQ-\d{4}-\d{6}$/);
+    assert.match(created.requestNumber, /^REQ\d+$/);
     assert.equal(created.status, "New");
     assert.equal(created.items.length, 2);
     assert.equal(created.items[0]?.quantity, 1);

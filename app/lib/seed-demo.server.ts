@@ -1,5 +1,10 @@
 import prisma from "../db.server";
-import { DEFAULT_FEDEX_REMOVAL_WARNING, DEFAULT_UNAVAILABLE_REASON } from "./portal";
+import {
+  DEFAULT_FEDEX_REMOVAL_WARNING,
+  DEFAULT_UNAVAILABLE_REASON,
+  GLOBAL_REQUEST_SEQUENCE_YEAR,
+  parseRequestNumber,
+} from "./portal";
 
 type SeedItem = {
   plantName: string;
@@ -38,7 +43,7 @@ function daysAgo(days: number): Date {
 
 const SEED_REQUESTS: SeedRequest[] = [
   {
-    requestNumber: "UPT-REQ-2026-000001",
+    requestNumber: "REQ1",
     customerName: "Sarah Mitchell",
     email: "sarah.mitchell@email.com",
     status: "New",
@@ -61,7 +66,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     ],
   },
   {
-    requestNumber: "UPT-REQ-2026-000002",
+    requestNumber: "REQ2",
     customerName: "James Chen",
     email: "j.chen@email.com",
     status: "Pending",
@@ -91,7 +96,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     ],
   },
   {
-    requestNumber: "UPT-REQ-2026-000003",
+    requestNumber: "REQ3",
     customerName: "Emily Rodriguez",
     email: "emily.r@email.com",
     status: "Pending",
@@ -109,7 +114,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     ],
   },
   {
-    requestNumber: "UPT-REQ-2026-000004",
+    requestNumber: "REQ4",
     customerName: "Michael Thompson",
     email: "m.thompson@email.com",
     status: "Closed",
@@ -140,7 +145,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     },
   },
   {
-    requestNumber: "UPT-REQ-2026-000005",
+    requestNumber: "REQ5",
     customerName: "Lisa Park",
     email: "lisa.park@email.com",
     status: "Expired",
@@ -169,7 +174,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     },
   },
   {
-    requestNumber: "UPT-REQ-2026-000006",
+    requestNumber: "REQ6",
     customerName: "David Wilson",
     email: "d.wilson@email.com",
     status: "New",
@@ -187,7 +192,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     ],
   },
   {
-    requestNumber: "UPT-REQ-2026-000007",
+    requestNumber: "REQ7",
     customerName: "Alex Rivera",
     email: "alex.rivera@example.com",
     status: "Closed",
@@ -214,7 +219,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     },
   },
   {
-    requestNumber: "UPT-REQ-2026-000099",
+    requestNumber: "REQ8",
     customerName: "Alex Rivera",
     email: "alex.rivera@example.com",
     status: "Pending",
@@ -256,27 +261,66 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
     },
   });
 
-  const existingNumbers = new Set(
-    (
-      await prisma.plantRequest.findMany({
-        where: { shop },
-        select: { requestNumber: true },
-      })
-    ).map((row) => row.requestNumber),
-  );
+  const legacySeedNumbers: Record<string, string> = {
+    "UPT-REQ-2026-000001": "REQ1",
+    "UPT-REQ-2026-000002": "REQ2",
+    "UPT-REQ-2026-000003": "REQ3",
+    "UPT-REQ-2026-000004": "REQ4",
+    "UPT-REQ-2026-000005": "REQ5",
+    "UPT-REQ-2026-000006": "REQ6",
+    "UPT-REQ-2026-000007": "REQ7",
+    "UPT-REQ-2026-000099": "REQ8",
+  };
+  for (const [from, to] of Object.entries(legacySeedNumbers)) {
+    const existing = await prisma.plantRequest.findFirst({
+      where: { shop, requestNumber: from },
+    });
+    const collision = await prisma.plantRequest.findFirst({
+      where: { shop, requestNumber: to },
+    });
+    if (existing && !collision) {
+      await prisma.plantRequest.update({
+        where: { id: existing.id },
+        data: { requestNumber: to },
+      });
+      await prisma.customerResponse.updateMany({
+        where: { requestId: existing.id },
+        data: { requestNumber: to },
+      });
+    }
+  }
 
-  const year = new Date().getFullYear();
-  const currentSequence = await prisma.requestNumberSequence.findUnique({
-    where: { shop_year: { shop, year } },
+  const existingRows = await prisma.plantRequest.findMany({
+    where: { shop },
+    select: { requestNumber: true },
   });
+  const existingNumbers = new Set(existingRows.map((row) => row.requestNumber));
+  const maxExistingNumber = existingRows.reduce((max, row) => {
+    const parsed = parseRequestNumber(row.requestNumber) ?? 0;
+    return Math.max(max, parsed);
+  }, 0);
+  const maxSeedNumber = SEED_REQUESTS.reduce((max, seed) => {
+    const parsed = parseRequestNumber(seed.requestNumber) ?? 0;
+    return Math.max(max, parsed);
+  }, 0);
+  const sequenceRows = await prisma.requestNumberSequence.findMany({
+    where: { shop },
+  });
+  const maxSequenceValue = sequenceRows.reduce(
+    (max, row) => Math.max(max, row.nextValue),
+    1,
+  );
   const nextValue = Math.max(
-    currentSequence?.nextValue ?? 1,
-    SEED_REQUESTS.length + 1,
+    maxExistingNumber + 1,
+    maxSeedNumber + 1,
+    maxSequenceValue,
   );
   await prisma.requestNumberSequence.upsert({
-    where: { shop_year: { shop, year } },
+    where: {
+      shop_year: { shop, year: GLOBAL_REQUEST_SEQUENCE_YEAR },
+    },
     update: { nextValue },
-    create: { shop, year, nextValue },
+    create: { shop, year: GLOBAL_REQUEST_SEQUENCE_YEAR, nextValue },
   });
 
   for (const seed of SEED_REQUESTS) {
@@ -477,7 +521,7 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
         data: {
           requestId: created.id,
           shopifyOrderGid: `gid://shopify/Order/seed-${created.id}`,
-          orderNumber: seed.requestNumber.replace("UPT-REQ-", "#"),
+          orderNumber: seed.requestNumber.replace(/^REQ/, "#"),
           paidAt: seed.paidAt,
           plantRevenue: seed.plantRevenue ?? accepted.reduce((sum, item) => sum + item.price, 0),
         },

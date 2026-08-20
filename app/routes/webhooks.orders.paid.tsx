@@ -1,6 +1,8 @@
 import type { ActionFunctionArgs } from "react-router";
+
+import { formatRequestNumber, parseRequestNumber } from "../lib/portal";
+import { findRequestByNumber, markRequestPaid } from "../lib/portal.server";
 import { authenticate } from "../shopify.server";
-import { markRequestPaid, findRequestByNumber } from "../lib/portal.server";
 
 type PaidOrderPayload = {
   admin_graphql_api_id?: string;
@@ -26,15 +28,25 @@ function plantRevenueFromPayload(payload: PaidOrderPayload): number {
 }
 
 function requestNumberFromPayload(payload: PaidOrderPayload): string | null {
-  const tagMatch = (payload.tags ?? "")
+  const tags = (payload.tags ?? "")
     .split(",")
     .map((tag) => tag.trim())
-    .find((tag) => tag.startsWith("UPT-REQ-"));
-  if (tagMatch) return tagMatch;
+    .filter(Boolean);
+  const tagged =
+    tags.find((tag) => parseRequestNumber(tag) != null) ??
+    tags.find((tag) => tag.startsWith("UPT-REQ-"));
+  if (tagged) {
+    const parsed = parseRequestNumber(tagged);
+    return parsed != null ? formatRequestNumber(parsed) : tagged;
+  }
 
   const note = payload.note ?? "";
-  const noteMatch = note.match(/UPT-REQ-\d{4}-\d+/);
-  return noteMatch?.[0] ?? null;
+  const modern = note.match(/\bREQ\d+\b/i)?.[0];
+  const legacy = note.match(/UPT-REQ-\d{4}-\d+/)?.[0];
+  const fromNote = modern ?? legacy;
+  if (!fromNote) return null;
+  const parsed = parseRequestNumber(fromNote);
+  return parsed != null ? formatRequestNumber(parsed) : fromNote;
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {

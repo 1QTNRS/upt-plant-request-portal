@@ -78,7 +78,7 @@ describe("exact plant listing draft", () => {
       customerFacingNotes: "Do not publish this disclaimer.",
       customerName: "Alex Rivera",
       customerEmail: "alex.rivera@example.com",
-      requestNumber: "UPT-REQ-2026-000008",
+      requestNumber: "REQ8",
       responseChoice: "reject",
     });
 

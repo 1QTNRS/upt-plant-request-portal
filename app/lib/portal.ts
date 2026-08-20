@@ -166,11 +166,39 @@ export function normalizeUnavailableReason(
   return LEGACY_UNAVAILABLE_REASONS[reason] ?? DEFAULT_UNAVAILABLE_REASON;
 }
 
+export const GLOBAL_REQUEST_SEQUENCE_YEAR = 0;
+
+export function formatRequestNumber(value: number): string {
+  const n = Math.max(1, Math.floor(value));
+  return `REQ${n}`;
+}
+
+export function parseRequestNumber(raw?: string | null): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const modern = trimmed.match(/^REQ(\d+)$/i);
+  if (modern) {
+    const value = Number.parseInt(modern[1], 10);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+  const legacy = trimmed.match(/^UPT-REQ-\d{4}-(\d+)$/i);
+  if (legacy) {
+    const value = Number.parseInt(legacy[1], 10);
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+  return null;
+}
+
 export function getDisplayRequestNumber(request: {
   id: string;
   requestNumber?: string;
 }): string {
-  return request.requestNumber ?? `UPT-REQ-${request.id}`;
+  if (request.requestNumber) {
+    const parsed = parseRequestNumber(request.requestNumber);
+    if (parsed != null) return formatRequestNumber(parsed);
+    return request.requestNumber;
+  }
+  return "REQ";
 }
 
 export function formatPlantsSummary(
@@ -251,6 +279,10 @@ export function matchesAdminSearch(
     request.customer,
     request.email ?? "",
     request.requestNumber,
+    getDisplayRequestNumber({
+      id: "",
+      requestNumber: request.requestNumber,
+    }),
     ...request.items.map((item) => item.plantName),
     ...request.items.map((item) => item.offeredName ?? ""),
   ];
