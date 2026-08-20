@@ -14,6 +14,7 @@ import {
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
+import { canStubShopifyWrites } from "../lib/environment.server";
 import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
 import { listDeclinedExactPlants } from "../lib/exact-plants.server";
 import {
@@ -181,12 +182,16 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         const data = Buffer.from(await upload.arrayBuffer());
         let stored: { url: string; shopifyFileId?: string };
         try {
-          stored = await uploadPlantPhoto(admin, {
+          stored = await uploadPlantPhoto(admin, shop, {
             filename: upload.name,
             mimeType: upload.type || "image/jpeg",
             data,
           });
-        } catch {
+        } catch (error) {
+          // Local disk is ephemeral on a hosted deploy and is not served by the
+          // Shopify CDN, so a failed upload must surface rather than appear to
+          // succeed with an unreachable URL.
+          if (!canStubShopifyWrites(shop)) throw error;
           stored = {
             url: await saveLocalUpload(shop, itemId, {
               filename: upload.name,

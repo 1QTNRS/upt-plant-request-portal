@@ -271,9 +271,14 @@ const STAGED_UPLOADS_MUTATION = `#graphql
 
 export async function uploadPlantPhoto(
   admin: GraphqlClient | undefined,
+  shop: string,
   file: { filename: string; mimeType: string; data: Buffer },
 ): Promise<{ url: string; shopifyFileId?: string }> {
+  requireAdminClient(admin, shop, "Uploading a plant photo to Shopify Files");
+
   if (!admin) {
+    // Demo shop only. A base64 data URL keeps the local walkthrough working but
+    // would bloat the database and break Shopify product media in production.
     const encoded = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
     return { url: encoded };
   }
