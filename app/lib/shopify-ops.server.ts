@@ -2,12 +2,14 @@ import type { AdminContext } from "./admin-auth.server";
 import { customerLinksForShop } from "./customer-links.server";
 import {
   declinedItemTag,
+  exactPlantMediaError,
   EXACT_PLANTS_COLLECTION_TITLE,
   isOnlineStorePublicationTitle,
   isPosPublicationTitle,
   buildExactPlantProductCreateInput,
 } from "./exact-plants";
 import {
+  buildDraftOrderInput,
   buildDraftOrderLineItems,
   FEDEX_PRODUCT_HANDLE,
   plantRevenueFromLines,
@@ -47,30 +49,58 @@ export async function resolveFedexVariant(
   }
 
   const data = await adminGraphql<{
-    productByHandle: {
+    productByIdentifier: {
       variants: { nodes: Array<{ id: string; price: string }> };
     } | null;
   }>(
     admin,
     `#graphql
-      query FedexUpgradeProduct($handle: String!) {
-        productByHandle(handle: $handle) {
+      query FedexUpgradeProduct($identifier: ProductIdentifierInput!) {
+        productByIdentifier(identifier: $identifier) {
           variants(first: 1) {
             nodes { id price }
           }
         }
       }
     `,
-    { handle: settings.fedexProductHandle || FEDEX_PRODUCT_HANDLE },
+    {
+      identifier: { handle: settings.fedexProductHandle || FEDEX_PRODUCT_HANDLE },
+    },
   );
 
-  const variant = data.productByHandle?.variants.nodes[0];
+  const variant = data.productByIdentifier?.variants.nodes[0];
   if (variant) {
     await updateShopSettings(shop, { fedexVariantGid: variant.id });
     return { variantGid: variant.id, price: Number.parseFloat(variant.price) || settings.fedexUpgradePrice };
   }
 
   return { variantGid: settings.fedexVariantGid ?? undefined, price: settings.fedexUpgradePrice };
+}
+
+/**
+ * Custom draft-order line items need an explicit currency, so the store's
+ * currency has to be read before prices can be set. Cached per process because
+ * a store's currency effectively never changes.
+ */
+const shopCurrencyCache = new Map<string, string>();
+
+export async function resolveShopCurrency(
+  admin: GraphqlClient,
+  shop: string,
+): Promise<string> {
+  const cached = shopCurrencyCache.get(shop);
+  if (cached) return cached;
+
+  const data = await adminGraphql<{ shop: { currencyCode: string } }>(
+    admin,
+    `#graphql
+      query PortalShopCurrency {
+        shop { currencyCode }
+      }
+    `,
+  );
+  shopCurrencyCache.set(shop, data.shop.currencyCode);
+  return data.shop.currencyCode;
 }
 
 export async function createDraftOrderForRequest(
@@ -109,22 +139,13 @@ export async function createDraftOrderForRequest(
   let invoiceUrl: string | undefined;
 
   if (admin) {
-    const draftInput = {
-      email: input.customerEmail,
-      note: `UPT plant request ${input.requestNumber}`,
-      tags: ["upt-plant-request", input.requestNumber],
-      lineItems: lineItems.map((line) => {
-        if (line.kind === "fedex" && fedex.variantGid) {
-          return { variantId: fedex.variantGid, quantity: 1 };
-        }
-        return {
-          title: line.title,
-          originalUnitPrice: line.price.toFixed(2),
-          quantity: line.quantity,
-          weight: { value: line.weightLbs, unit: "POUNDS" },
-        };
-      }),
-    };
+    const draftInput = buildDraftOrderInput({
+      requestNumber: input.requestNumber,
+      customerEmail: input.customerEmail,
+      currencyCode: await resolveShopCurrency(admin, shop),
+      lineItems,
+      fedexVariantGid: fedex.variantGid,
+    });
 
     const created = await adminGraphql<{
       draftOrderCreate: {
@@ -153,18 +174,36 @@ export async function createDraftOrderForRequest(
     invoiceUrl = created.draftOrderCreate.draftOrder?.invoiceUrl ?? undefined;
 
     if (shopifyDraftOrderGid) {
-      await adminGraphql(
+      const sent = await adminGraphql<{
+        draftOrderInvoiceSend: {
+          draftOrder: { id: string; invoiceUrl: string | null } | null;
+          userErrors: Array<{ field: string[] | null; message: string }>;
+        };
+      }>(
         admin,
         `#graphql
           mutation SendPlantRequestInvoice($id: ID!) {
             draftOrderInvoiceSend(id: $id) {
-              draftOrder { id }
-              userErrors { message }
+              draftOrder { id invoiceUrl }
+              userErrors { field message }
             }
           }
         `,
         { id: shopifyDraftOrderGid },
       );
+
+      // A silent failure here means the customer never receives the Shopify
+      // invoice, so it has to surface rather than fall through to the
+      // "checkout pending" placeholder.
+      if (sent.draftOrderInvoiceSend.userErrors.length > 0) {
+        throw new Error(
+          sent.draftOrderInvoiceSend.userErrors
+            .map((error) => error.message)
+            .join("; "),
+        );
+      }
+      invoiceUrl =
+        sent.draftOrderInvoiceSend.draftOrder?.invoiceUrl ?? invoiceUrl;
     }
   }
 
@@ -187,15 +226,95 @@ const FILE_CREATE_MUTATION = `#graphql
   mutation CreatePlantPhoto($files: [FileCreateInput!]!) {
     fileCreate(files: $files) {
       files {
+        id
+        fileStatus
+        fileErrors { code message }
         ... on MediaImage {
-          id
           image { url }
         }
       }
-      userErrors { message }
+      userErrors { field message }
     }
   }
 `;
+
+const FILE_STATUS_QUERY = `#graphql
+  query PlantPhotoStatus($id: ID!) {
+    node(id: $id) {
+      ... on MediaImage {
+        id
+        fileStatus
+        fileErrors { code message }
+        image { url }
+      }
+    }
+  }
+`;
+
+type ShopifyFileNode = {
+  id: string;
+  fileStatus: string;
+  fileErrors: Array<{ code: string; message: string }>;
+  image?: { url?: string | null } | null;
+};
+
+const FILE_READY_ATTEMPTS = 10;
+const FILE_READY_DELAY_MS = 500;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function fileErrorMessage(file: ShopifyFileNode): string {
+  const detail = file.fileErrors
+    .map((error) => `${error.code}: ${error.message}`)
+    .join("; ");
+  return detail || "Shopify could not process the uploaded photo.";
+}
+
+/**
+ * Waits for Shopify to finish processing an uploaded file.
+ *
+ * `fileCreate` returns immediately with `fileStatus: UPLOADED` and no CDN URL —
+ * files are processed asynchronously. Reading `image.url` straight from the
+ * mutation response therefore fails intermittently, which is what made photo
+ * uploads fall back to local disk.
+ */
+async function waitForFileUrl(
+  admin: GraphqlClient,
+  file: ShopifyFileNode,
+): Promise<{ url: string; shopifyFileId: string }> {
+  let current = file;
+
+  for (let attempt = 0; attempt < FILE_READY_ATTEMPTS; attempt += 1) {
+    if (current.fileStatus === "FAILED") {
+      throw new Error(fileErrorMessage(current));
+    }
+    const url = current.image?.url;
+    if (current.fileStatus === "READY" && url) {
+      return { url, shopifyFileId: current.id };
+    }
+
+    await wait(FILE_READY_DELAY_MS);
+    const polled = await adminGraphql<{ node: ShopifyFileNode | null }>(
+      admin,
+      FILE_STATUS_QUERY,
+      { id: current.id },
+    );
+    if (!polled.node) {
+      throw new Error("Shopify lost track of the uploaded photo.");
+    }
+    current = polled.node;
+  }
+
+  const url = current.image?.url;
+  if (url) return { url, shopifyFileId: current.id };
+  throw new Error(
+    `Shopify did not finish processing the photo (status ${current.fileStatus}).`,
+  );
+}
 
 const STAGED_UPLOADS_MUTATION = `#graphql
   mutation StagedPlantPhotoUpload($input: [StagedUploadInput!]!) {
@@ -263,8 +382,8 @@ export async function uploadPlantPhoto(
 
   const created = await adminGraphql<{
     fileCreate: {
-      files: Array<{ id?: string; image?: { url?: string } } | null>;
-      userErrors: Array<{ message: string }>;
+      files: Array<ShopifyFileNode | null>;
+      userErrors: Array<{ field: string[] | null; message: string }>;
     };
   }>(admin, FILE_CREATE_MUTATION, {
     files: [
@@ -276,16 +395,18 @@ export async function uploadPlantPhoto(
     ],
   });
 
-  const uploaded = created.fileCreate.files[0];
-  const url = uploaded?.image?.url;
-  if (!url) {
+  if (created.fileCreate.userErrors.length > 0) {
     throw new Error(
-      created.fileCreate.userErrors.map((error) => error.message).join("; ") ||
-        "Shopify fileCreate returned no image URL.",
+      created.fileCreate.userErrors.map((error) => error.message).join("; "),
     );
   }
 
-  return { url, shopifyFileId: uploaded?.id };
+  const uploaded = created.fileCreate.files[0];
+  if (!uploaded) {
+    throw new Error("Shopify fileCreate returned no file.");
+  }
+
+  return waitForFileUrl(admin, uploaded);
 }
 
 function userErrorMessage(
@@ -299,22 +420,39 @@ function userErrorMessage(
 export async function findExactPlantProductByItemTag(
   admin: GraphqlClient,
   requestItemId: string,
-): Promise<{ id: string; handle: string } | null> {
+): Promise<{ id: string; handle: string; variantId?: string } | null> {
   const tag = declinedItemTag(requestItemId);
   const data = await adminGraphql<{
-    products: { nodes: Array<{ id: string; handle: string }> };
+    products: {
+      nodes: Array<{
+        id: string;
+        handle: string;
+        variants: { nodes: Array<{ id: string }> };
+      }>;
+    };
   }>(
     admin,
     `#graphql
       query ExactPlantProductByTag($query: String!) {
         products(first: 1, query: $query) {
-          nodes { id handle }
+          nodes {
+            id
+            handle
+            variants(first: 1) { nodes { id } }
+          }
         }
       }
     `,
     { query: `tag:${tag}` },
   );
-  return data.products.nodes[0] ?? null;
+
+  const product = data.products.nodes[0];
+  if (!product) return null;
+  return {
+    id: product.id,
+    handle: product.handle,
+    variantId: product.variants.nodes[0]?.id,
+  };
 }
 
 export async function findOrCreateExactPlantsCollection(
@@ -399,41 +537,50 @@ async function addProductToCollection(
   }
 }
 
+const PUBLICATIONS_QUERY = `#graphql
+  query SalesChannelPublications($after: String) {
+    publications(first: 50, after: $after) {
+      nodes {
+        id
+        catalog { title }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
 export async function resolveOnlineStoreAndPosPublications(
   admin: GraphqlClient,
 ): Promise<{ onlineStoreId: string; posId: string }> {
-  const data = await adminGraphql<{
-    publications: {
-      nodes: Array<{
-        id: string;
-        catalog?: { title?: string | null } | null;
-      }>;
-    };
-  }>(
-    admin,
-    `#graphql
-      query SalesChannelPublications {
-        publications(first: 50) {
-          nodes {
-            id
-            catalog { title }
-          }
-        }
-      }
-    `,
-  );
-
   let onlineStoreId: string | undefined;
   let posId: string | undefined;
-  for (const publication of data.publications.nodes) {
-    const title = publication.catalog?.title ?? "";
-    if (!onlineStoreId && isOnlineStorePublicationTitle(title)) {
-      onlineStoreId = publication.id;
+  let after: string | null = null;
+
+  // A store with many channels and catalogs can push Online Store or POS past
+  // the first page, and silently failing to publish is worse than a slow loop.
+  do {
+    const data: {
+      publications: {
+        nodes: Array<{ id: string; catalog?: { title?: string | null } | null }>;
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    } = await adminGraphql(admin, PUBLICATIONS_QUERY, { after });
+
+    for (const publication of data.publications.nodes) {
+      const title = publication.catalog?.title ?? "";
+      if (!onlineStoreId && isOnlineStorePublicationTitle(title)) {
+        onlineStoreId = publication.id;
+      }
+      if (!posId && isPosPublicationTitle(title)) {
+        posId = publication.id;
+      }
     }
-    if (!posId && isPosPublicationTitle(title)) {
-      posId = publication.id;
-    }
-  }
+
+    if (onlineStoreId && posId) break;
+    after = data.publications.pageInfo.hasNextPage
+      ? data.publications.pageInfo.endCursor
+      : null;
+  } while (after);
 
   if (!onlineStoreId || !posId) {
     const missing = [
@@ -527,6 +674,52 @@ async function setExactPlantVariantPriceAndWeight(
   }
 }
 
+/** Applies the admin's approved title, price and weight to an existing product. */
+async function updateExactPlantProduct(
+  admin: GraphqlClient,
+  product: { id: string; handle: string; variantId?: string },
+  input: { title: string; price: number; weightLbs: number },
+): Promise<{ id: string; handle: string }> {
+  const updated = await adminGraphql<{
+    productUpdate: {
+      product: { id: string; handle: string } | null;
+      userErrors: Array<{ message: string }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      mutation UpdateExactPlantProduct($product: ProductUpdateInput!) {
+        productUpdate(product: $product) {
+          product { id handle }
+          userErrors { message }
+        }
+      }
+    `,
+    { product: { id: product.id, title: input.title } },
+  );
+
+  if (updated.productUpdate.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        updated.productUpdate.userErrors,
+        "Could not update the existing EXACT PLANTS product.",
+      ),
+    );
+  }
+
+  if (product.variantId) {
+    await setExactPlantVariantPriceAndWeight(
+      admin,
+      product.id,
+      product.variantId,
+      input.price,
+      input.weightLbs,
+    );
+  }
+
+  return updated.productUpdate.product ?? product;
+}
+
 export async function createExactPlantShopifyProduct(
   admin: GraphqlClient,
   input: {
@@ -535,17 +728,24 @@ export async function createExactPlantShopifyProduct(
     price: number;
     weightLbs: number;
     photoUrls: string[];
+    appUrl?: string;
   },
 ): Promise<{ productGid: string; handle: string; collectionGid: string }> {
+  const mediaError = exactPlantMediaError(input.photoUrls, input.appUrl);
+  if (mediaError) throw new Error(mediaError);
+
   const existing = await findExactPlantProductByItemTag(admin, input.requestItemId);
   const collection = await findOrCreateExactPlantsCollection(admin);
 
   if (existing) {
-    await addProductToCollection(admin, collection.id, existing.id);
-    await publishProductToOnlineStoreAndPos(admin, existing.id);
+    // A retry after an edit on the review form must land the edited values on
+    // the one product for this item rather than create a second one.
+    const refreshed = await updateExactPlantProduct(admin, existing, input);
+    await addProductToCollection(admin, collection.id, refreshed.id);
+    await publishProductToOnlineStoreAndPos(admin, refreshed.id);
     return {
-      productGid: existing.id,
-      handle: existing.handle,
+      productGid: refreshed.id,
+      handle: refreshed.handle,
       collectionGid: collection.id,
     };
   }
@@ -581,6 +781,7 @@ export async function createExactPlantShopifyProduct(
       title: input.title,
       photoUrls: input.photoUrls,
       collectionId: collection.id,
+      appUrl: input.appUrl,
     }),
   );
 

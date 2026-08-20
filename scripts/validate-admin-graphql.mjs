@@ -18,8 +18,14 @@ import process from "node:process";
 
 import {
   buildClientSchema,
+  coerceInputValue,
   getIntrospectionQuery,
+  isInputObjectType,
+  isListType,
+  isNonNullType,
   parse,
+  typeFromAST,
+  parseType,
   validate,
 } from "graphql";
 
@@ -122,6 +128,162 @@ function extractDocuments(source, file) {
   return documents;
 }
 
+/**
+ * Sample variable payloads, built by the same pure functions the server uses.
+ *
+ * Document validation alone is not enough: `originalUnitPrice` shipped as a
+ * valid `DraftOrderInput` document with a variable field Shopify had deprecated,
+ * and only a live store would have complained.
+ */
+async function inputSamples() {
+  const { buildDraftOrderInput, buildDraftOrderLineItems } = await import(
+    "../app/lib/portal.ts"
+  );
+  const { buildExactPlantProductCreateInput } = await import(
+    "../app/lib/exact-plants.ts"
+  );
+
+  const lineItems = buildDraftOrderLineItems({
+    acceptedItems: [
+      { plantName: "Monstera Thai Constellation", quantity: 1, price: 285, weightLbs: 4.5 },
+    ],
+    fedexSelected: true,
+    fedexLabel: "FedEx Priority Overnight Upgrade",
+    fedexPrice: 15,
+  });
+
+  const exactPlant = buildExactPlantProductCreateInput({
+    requestItemId: "cm0itemid",
+    title: "Monstera Thai Constellation",
+    photoUrls: ["https://cdn.shopify.com/s/files/1/0/photo.jpg"],
+    collectionId: "gid://shopify/Collection/1",
+  });
+
+  return [
+    {
+      label: "draftOrderCreate($input)",
+      type: "DraftOrderInput!",
+      value: buildDraftOrderInput({
+        requestNumber: "REQ2178",
+        customerEmail: "customer@example.com",
+        currencyCode: "USD",
+        lineItems,
+        fedexVariantGid: "gid://shopify/ProductVariant/1",
+      }),
+    },
+    {
+      label: "draftOrderCreate($input) without a FedEx variant",
+      type: "DraftOrderInput!",
+      value: buildDraftOrderInput({
+        requestNumber: "REQ2178",
+        customerEmail: "customer@example.com",
+        currencyCode: "USD",
+        lineItems,
+      }),
+    },
+    {
+      label: "productCreate($product)",
+      type: "ProductCreateInput!",
+      value: exactPlant.product,
+    },
+    {
+      label: "productCreate($media)",
+      type: "[CreateMediaInput!]!",
+      value: exactPlant.media,
+    },
+    {
+      label: "productVariantsBulkUpdate($variants)",
+      type: "[ProductVariantsBulkInput!]!",
+      value: [
+        {
+          id: "gid://shopify/ProductVariant/1",
+          price: "285.00",
+          inventoryItem: {
+            measurement: { weight: { value: 4.5, unit: "POUNDS" } },
+          },
+        },
+      ],
+    },
+    {
+      label: "fileCreate($files)",
+      type: "[FileCreateInput!]!",
+      value: [
+        {
+          alt: "photo.jpg",
+          contentType: "IMAGE",
+          originalSource: "https://staged.example.com/photo.jpg",
+        },
+      ],
+    },
+    {
+      label: "stagedUploadsCreate($input)",
+      type: "[StagedUploadInput!]!",
+      value: [
+        {
+          filename: "photo.jpg",
+          mimeType: "image/jpeg",
+          httpMethod: "POST",
+          resource: "FILE",
+        },
+      ],
+    },
+    {
+      label: "publishablePublish($input)",
+      type: "[PublicationInput!]!",
+      value: [{ publicationId: "gid://shopify/Publication/1" }],
+    },
+    {
+      label: "productUpdate($product)",
+      type: "ProductUpdateInput!",
+      value: { id: "gid://shopify/Product/1", title: "Monstera Thai Constellation" },
+    },
+  ];
+}
+
+/** Deprecated input fields present in a payload, as `Type.field` paths. */
+function deprecatedInputFields(type, value, seen = new Set()) {
+  if (value === null || value === undefined) return [];
+  if (isNonNullType(type)) return deprecatedInputFields(type.ofType, value, seen);
+  if (isListType(type)) {
+    const items = Array.isArray(value) ? value : [value];
+    return items.flatMap((item) => deprecatedInputFields(type.ofType, item, seen));
+  }
+  if (!isInputObjectType(type) || typeof value !== "object") return [];
+
+  const found = [];
+  const fields = type.getFields();
+  for (const [key, entry] of Object.entries(value)) {
+    const field = fields[key];
+    if (!field) continue;
+    const path = `${type.name}.${key}`;
+    if (field.deprecationReason && !seen.has(path)) {
+      seen.add(path);
+      found.push(`${path} (${field.deprecationReason})`);
+    }
+    found.push(...deprecatedInputFields(field.type, entry, seen));
+  }
+  return found;
+}
+
+function validateInputSample(schema, sample) {
+  const type = typeFromAST(schema, parseType(sample.type));
+  if (!type) {
+    return [`Unknown type ${sample.type}`];
+  }
+
+  const errors = [];
+  coerceInputValue(sample.value, type, (path, _invalidValue, error) => {
+    const location = path.length ? ` at ${path.join(".")}` : "";
+    errors.push(`${error.message}${location}`);
+  });
+  errors.push(
+    ...deprecatedInputFields(type, sample.value).map(
+      (field) => `uses deprecated input field ${field}`,
+    ),
+  );
+  return errors;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const version = args.version ?? (await resolveApiVersion());
@@ -178,6 +340,19 @@ async function main() {
     `\nChecked ${checked} document(s) against Admin API ${version}` +
       (skipped ? ` (${skipped} skipped)` : ""),
   );
+
+  const samples = await inputSamples();
+  for (const sample of samples) {
+    const errors = validateInputSample(schema, sample);
+    if (errors.length > 0) {
+      failures.push({
+        relative: sample.label,
+        line: sample.type,
+        errors: errors.map((message) => ({ message })),
+      });
+    }
+  }
+  console.log(`Checked ${samples.length} variable payload(s) against their input types`);
 
   if (failures.length > 0) {
     console.error("");

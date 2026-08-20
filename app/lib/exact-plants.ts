@@ -129,8 +129,39 @@ export function isPosPublicationTitle(title: string): boolean {
   );
 }
 
-export function hostedPhotoUrls(photoUrls: string[]): string[] {
-  return photoUrls.filter((url) => /^https?:\/\//i.test(url));
+/**
+ * Photo URLs Shopify can fetch when creating product media.
+ *
+ * Shopify downloads `originalSource` from its own network, so a `data:` URL is
+ * unusable and a root-relative local-upload path has to be made absolute
+ * against the app's public URL first. Dropping these silently produced listings
+ * with no images, so `exactPlantMediaError` reports the difference instead.
+ */
+export function hostedPhotoUrls(photoUrls: string[], appUrl = ""): string[] {
+  const origin = appUrl.replace(/\/+$/, "");
+  return photoUrls.flatMap((url) => {
+    if (/^https?:\/\//i.test(url)) return [url];
+    if (url.startsWith("/") && origin.startsWith("https://")) {
+      return [`${origin}${url}`];
+    }
+    return [];
+  });
+}
+
+/**
+ * Explains why approved photos cannot be published, or null when they can.
+ * Listing a plant with no photo is not an acceptable silent outcome.
+ */
+export function exactPlantMediaError(
+  photoUrls: string[],
+  appUrl = "",
+): string | null {
+  if (photoUrls.length === 0) return null;
+  if (hostedPhotoUrls(photoUrls, appUrl).length > 0) return null;
+  return (
+    "None of the selected photos are hosted where Shopify can fetch them. " +
+    "Re-upload the photos on the request so they are stored in Shopify Files, then approve the listing again."
+  );
 }
 
 export function buildExactPlantProductCreateInput(input: {
@@ -138,6 +169,7 @@ export function buildExactPlantProductCreateInput(input: {
   title: string;
   photoUrls: string[];
   collectionId: string;
+  appUrl?: string;
 }) {
   return {
     product: {
@@ -148,7 +180,7 @@ export function buildExactPlantProductCreateInput(input: {
       tags: [EXACT_PLANTS_COLLECTION_TITLE, declinedItemTag(input.requestItemId)],
       collectionsToJoin: [input.collectionId],
     },
-    media: hostedPhotoUrls(input.photoUrls).map((url) => ({
+    media: hostedPhotoUrls(input.photoUrls, input.appUrl).map((url) => ({
       originalSource: url,
       alt: input.title,
       mediaContentType: "IMAGE" as const,

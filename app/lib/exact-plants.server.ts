@@ -282,6 +282,7 @@ export async function createExactPlantListing(
       ? await createExactPlantShopifyProduct(admin, {
           requestItemId: input.requestItemId,
           ...approved,
+          appUrl: process.env.SHOPIFY_APP_URL,
         })
       : demoProduct(input.requestItemId);
 

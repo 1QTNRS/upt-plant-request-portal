@@ -487,6 +487,45 @@ export function buildDraftOrderLineItems(input: {
   return lines;
 }
 
+/** Tag the `orders/paid` webhook matches a paid order back to its request by. */
+export const DRAFT_ORDER_TAG = "upt-plant-request";
+
+/**
+ * Variables for `draftOrderCreate`. Kept pure and separate from the API call so
+ * `scripts/validate-admin-graphql.mjs` can check the payload against the real
+ * `DraftOrderInput` type — a document can be valid while its variables use a
+ * field Shopify has since removed.
+ */
+export function buildDraftOrderInput(input: {
+  requestNumber: string;
+  customerEmail: string;
+  currencyCode: string;
+  lineItems: DraftOrderLineItem[];
+  fedexVariantGid?: string;
+}) {
+  return {
+    email: input.customerEmail,
+    note: `UPT plant request ${input.requestNumber}`,
+    tags: [DRAFT_ORDER_TAG, input.requestNumber],
+    lineItems: input.lineItems.map((line) => {
+      // A real variant carries its own price and weight; Shopify ignores those
+      // fields when `variantId` is set.
+      if (line.kind === "fedex" && input.fedexVariantGid) {
+        return { variantId: input.fedexVariantGid, quantity: 1 };
+      }
+      return {
+        title: line.title,
+        originalUnitPriceWithCurrency: {
+          amount: line.price.toFixed(2),
+          currencyCode: input.currencyCode,
+        },
+        quantity: line.quantity,
+        weight: { value: line.weightLbs, unit: "POUNDS" as const },
+      };
+    }),
+  };
+}
+
 export function plantRevenueFromLines(lines: DraftOrderLineItem[]): number {
   return lines
     .filter((line) => line.kind === "plant")

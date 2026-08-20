@@ -17,7 +17,7 @@
     "prisma:validate": "prisma validate --schema prisma/schema.prisma && prisma validate --schema prisma/postgres/schema.prisma",
     "prisma:sync-schema": "node scripts/prisma-schema.mjs --sync",
     "prisma:check-schema": "node scripts/prisma-schema.mjs --check",
-    "validate-graphql": "node scripts/validate-admin-graphql.mjs",
+    "validate-graphql": "tsx scripts/validate-admin-graphql.mjs",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
