@@ -261,7 +261,6 @@ type StoredOfferState = {
 
 const sentOffersByRequestId = new Map<string, SentOffer>();
 const statusByRequestId = new Map<string, RequestStatus>();
-let offerStateHydrated = false;
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -307,8 +306,6 @@ export function hydrateSampleOfferState(): void {
   } catch {
     // Ignore invalid stored state during local testing.
   }
-
-  offerStateHydrated = true;
 }
 
 function formatOfferDateTime(date: Date): string {
@@ -456,7 +453,6 @@ export function setRequestStatus(
 export function resetSampleOfferState(): void {
   sentOffersByRequestId.clear();
   statusByRequestId.clear();
-  offerStateHydrated = false;
 
   if (isBrowser()) {
     localStorage.removeItem(OFFER_STATE_STORAGE_KEY);

@@ -1,149 +1,96 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
-import { authenticate } from "../shopify.server";
+import { Form, useLoaderData, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { hydrateCustomerOfferResponses } from "../lib/customer-offer-responses";
-import { LOCAL_STATE_CHANGED_EVENT } from "../lib/local-state-events";
-import { hydrateSubmittedRequests } from "../lib/customer-request-submissions";
+
+import { requireAdmin } from "../lib/admin-auth.server";
 import {
   formatPlantsSummary,
-  getAllPlantRequests,
-  getEffectiveRequestStatus,
-  hydrateSampleOfferState,
+  getDisplayRequestNumber,
+  matchesAdminSearch,
+  requestStatusTone,
+  type PlantRequest,
   type RequestStatus,
-} from "../lib/sample-requests";
-import { resetAllSampleLocalState } from "../lib/sample-local-state";
+} from "../lib/portal";
+import { listRequests } from "../lib/portal.server";
+import { ensureShopSeeded } from "../lib/seed-demo.server";
 
 type DashboardData = {
   stats: {
     newRequests: number;
-    offerSent: number;
-    purchased: number;
+    pending: number;
+    closed: number;
     expired: number;
   };
   requests: Array<{
     id: string;
+    requestNumber: string;
     customer: string;
     email: string;
     plantsRequested: string;
     status: RequestStatus;
     submittedDate: string;
   }>;
+  query: string;
 };
 
-function getDashboardData(): DashboardData {
-  const allRequests = getAllPlantRequests();
+function toDashboard(requests: PlantRequest[], query: string): DashboardData {
+  const filtered = requests.filter((request) =>
+    matchesAdminSearch(
+      {
+        customer: request.customer,
+        email: request.email,
+        requestNumber: getDisplayRequestNumber(request),
+        items: request.items,
+      },
+      query,
+    ),
+  );
 
-  const stats = {
-    newRequests: allRequests.filter(
-      (r) => getEffectiveRequestStatus(r.id, r.status) === "New",
-    ).length,
-    offerSent: allRequests.filter(
-      (r) => getEffectiveRequestStatus(r.id, r.status) === "Pending",
-    ).length,
-    purchased: allRequests.filter(
-      (r) => getEffectiveRequestStatus(r.id, r.status) === "Closed",
-    ).length,
-    expired: allRequests.filter(
-      (r) => getEffectiveRequestStatus(r.id, r.status) === "Expired",
-    ).length,
+  return {
+    query,
+    stats: {
+      newRequests: requests.filter((request) => request.status === "New").length,
+      pending: requests.filter((request) => request.status === "Pending").length,
+      closed: requests.filter((request) => request.status === "Closed").length,
+      expired: requests.filter((request) => request.status === "Expired").length,
+    },
+    requests: filtered.map((request) => ({
+      id: request.id,
+      requestNumber: getDisplayRequestNumber(request),
+      customer: request.customer,
+      email: request.email,
+      plantsRequested: formatPlantsSummary(request.items),
+      status: request.status,
+      submittedDate: request.submittedDate,
+    })),
   };
-
-  const requests = allRequests.map((request) => ({
-    id: request.id,
-    customer: request.customer,
-    email: request.email,
-    plantsRequested: formatPlantsSummary(request.items),
-    status: getEffectiveRequestStatus(request.id, request.status),
-    submittedDate: request.submittedDate,
-  }));
-
-  return { stats, requests };
-}
-
-function statusTone(
-  status: RequestStatus,
-): "info" | "warning" | "caution" | "success" | "critical" {
-  switch (status) {
-    case "New":
-      return "info";
-    case "Pending":
-      return "caution";
-    case "Closed":
-      return "success";
-    case "Expired":
-      return "critical";
-  }
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-
-  return getDashboardData();
+  const { shop } = await requireAdmin(request);
+  await ensureShopSeeded(shop);
+  const query = new URL(request.url).searchParams.get("q") ?? "";
+  const requests = await listRequests(shop);
+  return toDashboard(requests, query);
 };
 
-function getInitialDashboardData(fallback: DashboardData): DashboardData {
-  if (typeof window === "undefined") return fallback;
-
-  hydrateSampleOfferState();
-  hydrateSubmittedRequests();
-  hydrateCustomerOfferResponses();
-  return getDashboardData();
-}
-
 export default function Dashboard() {
-  const loaderData = useLoaderData<typeof loader>();
-  const [dashboardData, setDashboardData] = useState(() =>
-    getInitialDashboardData(loaderData),
-  );
-
-  useEffect(() => {
-    const refresh = () => {
-      hydrateSampleOfferState();
-      hydrateSubmittedRequests();
-      hydrateCustomerOfferResponses();
-      setDashboardData(getDashboardData());
-    };
-
-    refresh();
-    window.addEventListener("focus", refresh);
-    window.addEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener(LOCAL_STATE_CHANGED_EVENT, refresh);
-    };
-  }, []);
-
-  const { stats, requests } = dashboardData;
+  const data = useLoaderData<typeof loader>();
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(data.query || searchParams.get("q") || "");
 
   const statCards = [
-    { label: "New Requests", value: stats.newRequests },
-    { label: "Pending", value: stats.offerSent },
-    { label: "Closed", value: stats.purchased },
-    { label: "Expired", value: stats.expired },
+    { label: "New Requests", value: data.stats.newRequests },
+    { label: "Pending", value: data.stats.pending },
+    { label: "Closed", value: data.stats.closed },
+    { label: "Expired", value: data.stats.expired },
   ];
 
-  const handleResetSampleData = () => {
-    resetAllSampleLocalState();
-    setDashboardData(getDashboardData());
-  };
+  const visibleCount = useMemo(() => data.requests.length, [data.requests.length]);
 
   return (
     <s-page heading="UPT Plant Request Portal">
-      <s-section heading="Sample data (local testing)">
-        <s-stack direction="block" gap="base">
-          <s-text color="subdued">
-            Resets offer status, customer responses, notes, availability, and
-            customer form submissions saved in this browser. Use this to return
-            Sarah Mitchell and other requests to their default sample states.
-          </s-text>
-          <s-button variant="secondary" onClick={handleResetSampleData}>
-            Reset sample request state
-          </s-button>
-        </s-stack>
-      </s-section>
-
       <s-section heading="Overview">
         <s-stack direction="inline" gap="base">
           {statCards.map((card) => (
@@ -164,10 +111,34 @@ export default function Dashboard() {
         </s-stack>
       </s-section>
 
+      <s-section heading="Search requests">
+        <Form method="get">
+          <s-stack direction="inline" gap="base">
+            <s-text-field
+              name="q"
+              label="Search"
+              labelAccessibilityVisibility="exclusive"
+              value={query}
+              placeholder="Customer name, plant, or request number"
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
+            <input type="hidden" name="q" value={query} />
+            <s-button variant="primary" type="submit">
+              Search
+            </s-button>
+          </s-stack>
+        </Form>
+        <s-text color="subdued">
+          Showing {visibleCount} request{visibleCount === 1 ? "" : "s"}
+          {data.query ? ` matching “${data.query}”` : ""}.
+        </s-text>
+      </s-section>
+
       <s-section heading="Recent Requests">
         <s-table>
           <s-table-header-row>
-            <s-table-header listSlot="primary">Customer</s-table-header>
+            <s-table-header listSlot="primary">Request Number</s-table-header>
+            <s-table-header>Customer</s-table-header>
             <s-table-header>Email</s-table-header>
             <s-table-header>Plants Requested</s-table-header>
             <s-table-header>Status</s-table-header>
@@ -175,21 +146,24 @@ export default function Dashboard() {
             <s-table-header>Actions</s-table-header>
           </s-table-header-row>
           <s-table-body>
-            {requests.map((request) => (
+            {data.requests.map((request) => (
               <s-table-row key={request.id}>
+                <s-table-cell>
+                  <s-link href={`/app/requests/${request.id}`}>
+                    {request.requestNumber}
+                  </s-link>
+                </s-table-cell>
                 <s-table-cell>{request.customer}</s-table-cell>
                 <s-table-cell>{request.email}</s-table-cell>
                 <s-table-cell>{request.plantsRequested}</s-table-cell>
                 <s-table-cell>
-                  <s-badge tone={statusTone(request.status)}>
+                  <s-badge tone={requestStatusTone(request.status)}>
                     {request.status}
                   </s-badge>
                 </s-table-cell>
                 <s-table-cell>{request.submittedDate}</s-table-cell>
                 <s-table-cell>
-                  <s-link href={`/app/requests/${request.id}`}>
-                    View items
-                  </s-link>
+                  <s-link href={`/app/requests/${request.id}`}>View items</s-link>
                 </s-table-cell>
               </s-table-row>
             ))}

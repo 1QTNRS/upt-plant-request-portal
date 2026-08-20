@@ -54,7 +54,6 @@ export type CustomerRequestSubmissionResult = {
 };
 
 const submittedRequests: PlantRequest[] = [];
-let submittedRequestsHydrated = false;
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -129,8 +128,6 @@ export function hydrateSubmittedRequests(): void {
   } catch {
     // Ignore invalid stored submissions during local testing.
   }
-
-  submittedRequestsHydrated = true;
 }
 
 export function getSubmittedPlantRequests(): PlantRequest[] {
@@ -245,7 +242,6 @@ export function submitCustomerRequest(
 
 export function resetSubmittedRequests(): void {
   submittedRequests.splice(0, submittedRequests.length);
-  submittedRequestsHydrated = false;
 
   if (isBrowser()) {
     localStorage.removeItem(SUBMITTED_REQUESTS_STORAGE_KEY);

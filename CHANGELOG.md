@@ -1,5 +1,10 @@
 # @shopify/shopify-app-template-react-router
 
+## Unreleased
+
+- Persist UPT plant requests, offers, customer responses, settings, emails, and analytics in Prisma instead of browser localStorage.
+- Add admin request search, offer snapshots, draft-order/payment webhooks, and a customer portal at `/customer`.
+
 ## 2026.01.08
 - [#170](https://github.com/Shopify/shopify-app-template-react-router/pull/170) - Update React Router minimum version to v7.12.0
 
