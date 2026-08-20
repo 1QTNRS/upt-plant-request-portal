@@ -21,6 +21,7 @@ export default function App() {
   const nav = (
     <s-app-nav>
       <s-link href="/app">Dashboard</s-link>
+      <s-link href="/app/exact-plants">EXACT PLANTS</s-link>
       <s-link href="/app/analytics">Analytics</s-link>
       <s-link href="/app/customer-request-form">Request Form</s-link>
       <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
@@ -41,6 +42,7 @@ export default function App() {
           }}
         >
           <s-link href="/app">Dashboard</s-link>
+          <s-link href="/app/exact-plants">EXACT PLANTS</s-link>
           <s-link href="/app/analytics">Analytics</s-link>
           <s-link href="/app/customer-request-form">Request Form</s-link>
           <s-link href="/app/customer-offer-preview">Offer Preview</s-link>

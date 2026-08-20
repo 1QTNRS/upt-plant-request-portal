@@ -39,7 +39,8 @@ export type PlantItemStatus =
   | "Sourced"
   | "Offered"
   | "Sold"
-  | "Unavailable";
+  | "Unavailable"
+  | "Listed";
 
 export type PlantItem = {
   id: string;

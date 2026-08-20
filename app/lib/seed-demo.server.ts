@@ -9,7 +9,6 @@ type SeedItem = {
   weightLbs?: number;
   notes?: string;
   photoSeed?: string;
-  budget?: string;
   customerNotes?: string;
 };
 
@@ -178,7 +177,6 @@ const SEED_REQUESTS: SeedRequest[] = [
     items: [
       {
         plantName: "Philodendron Brasil",
-        budget: "$40",
         customerNotes: "Hanging basket if available.",
         photoSeed: "philodendron",
       },
@@ -215,6 +213,36 @@ const SEED_REQUESTS: SeedRequest[] = [
       fedexSelected: false,
     },
   },
+  {
+    requestNumber: "UPT-REQ-2026-000008",
+    customerName: "Alex Rivera",
+    email: "alex.rivera@example.com",
+    status: "Pending",
+    submittedAt: daysAgo(2),
+    expirationDays: 5,
+    items: [
+      {
+        plantName: "Thai Constellation",
+        price: 175,
+        weightLbs: 9.5,
+        customerNotes:
+          "Please note: this exact plant has a small scar on one leaf. Customer-facing disclaimer for the original offer only.",
+        photoSeed: "thaiconstellation",
+      },
+      {
+        plantName: "String of Pearls",
+        availability: "not_available",
+        unavailableReason: "not in our current inventory",
+        customerNotes: "Not in our current inventory.",
+        photoSeed: "stringofpearls",
+      },
+    ],
+    response: {
+      accepted: [],
+      rejected: ["Thai Constellation"],
+      fedexSelected: false,
+    },
+  },
 ];
 
 export async function ensureShopSeeded(shop: string): Promise<void> {
@@ -228,17 +256,31 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
     },
   });
 
-  const existing = await prisma.plantRequest.count({ where: { shop } });
-  if (existing > 0) return;
+  const existingNumbers = new Set(
+    (
+      await prisma.plantRequest.findMany({
+        where: { shop },
+        select: { requestNumber: true },
+      })
+    ).map((row) => row.requestNumber),
+  );
 
   const year = new Date().getFullYear();
+  const currentSequence = await prisma.requestNumberSequence.findUnique({
+    where: { shop_year: { shop, year } },
+  });
+  const nextValue = Math.max(
+    currentSequence?.nextValue ?? 1,
+    SEED_REQUESTS.length + 1,
+  );
   await prisma.requestNumberSequence.upsert({
     where: { shop_year: { shop, year } },
-    update: { nextValue: 8 },
-    create: { shop, year, nextValue: 8 },
+    update: { nextValue },
+    create: { shop, year, nextValue },
   });
 
   for (const seed of SEED_REQUESTS) {
+    if (existingNumbers.has(seed.requestNumber)) continue;
     const customer = await prisma.customerProfile.upsert({
       where: { shop_email: { shop, email: seed.email } },
       update: { name: seed.customerName },
@@ -273,7 +315,6 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
           create: seed.items.map((item) => ({
             plantName: item.plantName,
             offeredName: item.plantName,
-            budget: item.budget ?? null,
             customerRequestNotes: item.notes ?? null,
             quantity: 1,
             availability: item.availability ?? "available",

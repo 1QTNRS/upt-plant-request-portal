@@ -15,6 +15,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
+import { listDeclinedExactPlants } from "../lib/exact-plants.server";
 import {
   formatCurrency,
   getDisplayRequestNumber,
@@ -51,6 +52,8 @@ function itemStatusTone(
     case "Offered":
       return "caution";
     case "Sold":
+      return "success";
+    case "Listed":
       return "success";
     case "Unavailable":
       return "critical";
@@ -121,7 +124,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     : null;
   const emails = plantRequest ? await listEmailsForRequest(shop, requestId) : [];
 
-  return { requestId, plantRequest, response, emails };
+  const declinedExactPlants = plantRequest
+    ? await listDeclinedExactPlants(shop, requestId)
+    : [];
+
+  return { requestId, plantRequest, response, emails, declinedExactPlants };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -559,6 +566,72 @@ function SendOfferSection({
   );
 }
 
+function DeclinedExactPlantsSection({
+  requestId,
+  items,
+}: {
+  requestId: string;
+  items: Awaited<ReturnType<typeof listDeclinedExactPlants>>;
+}) {
+  const returnTo = `/app/requests/${requestId}`;
+  return (
+    <s-section heading="Declined exact plants">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          These plants were marked Available, offered as exact plants, and
+          rejected by the customer. Review a listing before any Shopify product
+          is created. Not Available items are not included.
+        </s-text>
+        {items.length === 0 ? (
+          <s-text color="subdued">No declined exact plants on this request.</s-text>
+        ) : (
+          items.map((item) => {
+            const listed =
+              item.listing?.status === "listed" && item.listing.shopifyProductGid;
+            return (
+              <s-box
+                key={item.requestItemId}
+                padding="base"
+                borderWidth="base"
+                borderRadius="base"
+                background="subdued"
+              >
+                <s-stack direction="block" gap="small">
+                  <s-heading>{item.title}</s-heading>
+                  <s-text>
+                    {formatCurrency(item.price)} · {item.weightLbs} lb
+                  </s-text>
+                  {item.listing?.status === "failed" && item.listing.lastError ? (
+                    <s-banner tone="critical">
+                      <s-text>{item.listing.lastError}</s-text>
+                    </s-banner>
+                  ) : null}
+                  {listed ? (
+                    <s-stack direction="inline" gap="base">
+                      <s-badge tone="success">Listed in EXACT PLANTS</s-badge>
+                      {item.listing?.productAdminUrl ? (
+                        <s-link href={item.listing.productAdminUrl} target="_blank">
+                          Open Shopify product
+                        </s-link>
+                      ) : null}
+                    </s-stack>
+                  ) : (
+                    <s-link
+                      href={`/app/exact-plants/${item.requestItemId}?returnTo=${encodeURIComponent(returnTo)}`}
+                    >
+                      Create EXACT PLANTS Listing
+                    </s-link>
+                  )}
+                </s-stack>
+              </s-box>
+            );
+          })
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
 function CustomerResponseSection({
   response,
   status,
@@ -638,7 +711,7 @@ function CustomerResponseSection({
 }
 
 export default function RequestDetail() {
-  const { plantRequest, response } = useLoaderData<typeof loader>();
+  const { plantRequest, response, declinedExactPlants } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
   useEffect(() => {
@@ -718,6 +791,11 @@ export default function RequestDetail() {
       <CustomerResponseSection
         response={response}
         status={plantRequest.status}
+      />
+
+      <DeclinedExactPlantsSection
+        requestId={plantRequest.id}
+        items={declinedExactPlants}
       />
     </s-page>
   );

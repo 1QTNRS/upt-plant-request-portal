@@ -116,6 +116,7 @@ model RequestItem {
   photos                PhotoReference[]
   offerItems            OfferItem[]
   responseItems         ResponseItem[]
+  exactPlantListing     ExactPlantListing?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
@@ -229,6 +230,25 @@ model StatusEvent {
   createdAt   DateTime     @default(now())
 
   @@index([requestId, createdAt])
+}
+
+model ExactPlantListing {
+  id                   String      @id @default(cuid())
+  shop                 String
+  requestItemId        String      @unique
+  requestItem          RequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  shopifyProductGid    String?
+  shopifyProductHandle String?
+  title                String
+  price                Float
+  weightLbs            Float
+  photoUrlsJson        String      @default("[]")
+  status               String
+  lastError            String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([shop, status])
 }
 
 model EmailMessage {

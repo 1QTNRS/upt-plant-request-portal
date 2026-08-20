@@ -1,5 +1,12 @@
 import type { AdminContext } from "./admin-auth.server";
 import {
+  declinedItemTag,
+  EXACT_PLANTS_COLLECTION_TITLE,
+  isOnlineStorePublicationTitle,
+  isPosPublicationTitle,
+  buildExactPlantProductCreateInput,
+} from "./exact-plants";
+import {
   buildDraftOrderLineItems,
   FEDEX_PRODUCT_HANDLE,
   plantRevenueFromLines,
@@ -279,3 +286,331 @@ export async function uploadPlantPhoto(
 
   return { url, shopifyFileId: uploaded?.id };
 }
+
+function userErrorMessage(
+  errors: Array<{ message: string }> | undefined,
+  fallback: string,
+): string {
+  const message = errors?.map((error) => error.message).filter(Boolean).join("; ");
+  return message || fallback;
+}
+
+export async function findExactPlantProductByItemTag(
+  admin: GraphqlClient,
+  requestItemId: string,
+): Promise<{ id: string; handle: string } | null> {
+  const tag = declinedItemTag(requestItemId);
+  const data = await adminGraphql<{
+    products: { nodes: Array<{ id: string; handle: string }> };
+  }>(
+    admin,
+    `#graphql
+      query ExactPlantProductByTag($query: String!) {
+        products(first: 1, query: $query) {
+          nodes { id handle }
+        }
+      }
+    `,
+    { query: `tag:${tag}` },
+  );
+  return data.products.nodes[0] ?? null;
+}
+
+export async function findOrCreateExactPlantsCollection(
+  admin: GraphqlClient,
+): Promise<{ id: string; title: string; handle: string }> {
+  const existing = await adminGraphql<{
+    collections: {
+      nodes: Array<{ id: string; title: string; handle: string }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      query ExactPlantsCollection($query: String!) {
+        collections(first: 5, query: $query) {
+          nodes { id title handle }
+        }
+      }
+    `,
+    { query: `title:'${EXACT_PLANTS_COLLECTION_TITLE}'` },
+  );
+
+  const match = existing.collections.nodes.find(
+    (collection) =>
+      collection.title.trim().toLowerCase() ===
+      EXACT_PLANTS_COLLECTION_TITLE.toLowerCase(),
+  );
+  if (match) return match;
+
+  const created = await adminGraphql<{
+    collectionCreate: {
+      collection: { id: string; title: string; handle: string } | null;
+      userErrors: Array<{ message: string }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      mutation CreateExactPlantsCollection($input: CollectionInput!) {
+        collectionCreate(input: $input) {
+          collection { id title handle }
+          userErrors { message }
+        }
+      }
+    `,
+    { input: { title: EXACT_PLANTS_COLLECTION_TITLE } },
+  );
+
+  const collection = created.collectionCreate.collection;
+  if (!collection) {
+    throw new Error(
+      userErrorMessage(
+        created.collectionCreate.userErrors,
+        "Could not find or create the EXACT PLANTS collection.",
+      ),
+    );
+  }
+  return collection;
+}
+
+async function addProductToCollection(
+  admin: GraphqlClient,
+  collectionId: string,
+  productId: string,
+): Promise<void> {
+  const result = await adminGraphql<{
+    collectionAddProducts: { userErrors: Array<{ message: string }> };
+  }>(
+    admin,
+    `#graphql
+      mutation AddExactPlantToCollection($id: ID!, $productIds: [ID!]!) {
+        collectionAddProducts(id: $id, productIds: $productIds) {
+          userErrors { message }
+        }
+      }
+    `,
+    { id: collectionId, productIds: [productId] },
+  );
+  const errors = result.collectionAddProducts.userErrors.filter(
+    (error) => !/already/i.test(error.message),
+  );
+  if (errors.length > 0) {
+    throw new Error(userErrorMessage(errors, "Could not add the product to EXACT PLANTS."));
+  }
+}
+
+export async function resolveOnlineStoreAndPosPublications(
+  admin: GraphqlClient,
+): Promise<{ onlineStoreId: string; posId: string }> {
+  const data = await adminGraphql<{
+    publications: {
+      nodes: Array<{
+        id: string;
+        catalog?: { title?: string | null } | null;
+      }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      query SalesChannelPublications {
+        publications(first: 50) {
+          nodes {
+            id
+            catalog { title }
+          }
+        }
+      }
+    `,
+  );
+
+  let onlineStoreId: string | undefined;
+  let posId: string | undefined;
+  for (const publication of data.publications.nodes) {
+    const title = publication.catalog?.title ?? "";
+    if (!onlineStoreId && isOnlineStorePublicationTitle(title)) {
+      onlineStoreId = publication.id;
+    }
+    if (!posId && isPosPublicationTitle(title)) {
+      posId = publication.id;
+    }
+  }
+
+  if (!onlineStoreId || !posId) {
+    const missing = [
+      !onlineStoreId ? "Online Store" : null,
+      !posId ? "POS" : null,
+    ]
+      .filter(Boolean)
+      .join(" and ");
+    throw new Error(
+      `Could not find the ${missing} sales channel publication. Re-approve the app with read_publications and write_publications.`,
+    );
+  }
+
+  return { onlineStoreId, posId };
+}
+
+async function publishProductToOnlineStoreAndPos(
+  admin: GraphqlClient,
+  productId: string,
+): Promise<void> {
+  const { onlineStoreId, posId } = await resolveOnlineStoreAndPosPublications(admin);
+  const result = await adminGraphql<{
+    publishablePublish: { userErrors: Array<{ message: string }> };
+  }>(
+    admin,
+    `#graphql
+      mutation PublishExactPlant($id: ID!, $input: [PublicationInput!]!) {
+        publishablePublish(id: $id, input: $input) {
+          userErrors { message }
+        }
+      }
+    `,
+    {
+      id: productId,
+      input: [{ publicationId: onlineStoreId }, { publicationId: posId }],
+    },
+  );
+  if (result.publishablePublish.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        result.publishablePublish.userErrors,
+        "Could not publish the product to Online Store and POS.",
+      ),
+    );
+  }
+}
+
+async function setExactPlantVariantPriceAndWeight(
+  admin: GraphqlClient,
+  productId: string,
+  variantId: string,
+  price: number,
+  weightLbs: number,
+): Promise<void> {
+  const result = await adminGraphql<{
+    productVariantsBulkUpdate: { userErrors: Array<{ message: string }> };
+  }>(
+    admin,
+    `#graphql
+      mutation UpdateExactPlantVariant(
+        $productId: ID!
+        $variants: [ProductVariantsBulkInput!]!
+      ) {
+        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+          userErrors { message }
+        }
+      }
+    `,
+    {
+      productId,
+      variants: [
+        {
+          id: variantId,
+          price: price.toFixed(2),
+          inventoryItem: {
+            measurement: {
+              weight: { value: weightLbs, unit: "POUNDS" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  if (result.productVariantsBulkUpdate.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        result.productVariantsBulkUpdate.userErrors,
+        "Could not set the exact plant price and weight.",
+      ),
+    );
+  }
+}
+
+export async function createExactPlantShopifyProduct(
+  admin: GraphqlClient,
+  input: {
+    requestItemId: string;
+    title: string;
+    price: number;
+    weightLbs: number;
+    photoUrls: string[];
+  },
+): Promise<{ productGid: string; handle: string; collectionGid: string }> {
+  const existing = await findExactPlantProductByItemTag(admin, input.requestItemId);
+  const collection = await findOrCreateExactPlantsCollection(admin);
+
+  if (existing) {
+    await addProductToCollection(admin, collection.id, existing.id);
+    await publishProductToOnlineStoreAndPos(admin, existing.id);
+    return {
+      productGid: existing.id,
+      handle: existing.handle,
+      collectionGid: collection.id,
+    };
+  }
+
+  const created = await adminGraphql<{
+    productCreate: {
+      product: {
+        id: string;
+        handle: string;
+        variants: { nodes: Array<{ id: string }> };
+      } | null;
+      userErrors: Array<{ message: string }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      mutation CreateExactPlantProduct(
+        $product: ProductCreateInput!
+        $media: [CreateMediaInput!]
+      ) {
+        productCreate(product: $product, media: $media) {
+          product {
+            id
+            handle
+            variants(first: 1) { nodes { id } }
+          }
+          userErrors { message }
+        }
+      }
+    `,
+    buildExactPlantProductCreateInput({
+      requestItemId: input.requestItemId,
+      title: input.title,
+      photoUrls: input.photoUrls,
+      collectionId: collection.id,
+    }),
+  );
+
+  const product = created.productCreate.product;
+  if (!product) {
+    throw new Error(
+      userErrorMessage(
+        created.productCreate.userErrors,
+        "Shopify productCreate returned no product.",
+      ),
+    );
+  }
+
+  const variantId = product.variants.nodes[0]?.id;
+  if (variantId) {
+    await setExactPlantVariantPriceAndWeight(
+      admin,
+      product.id,
+      variantId,
+      input.price,
+      input.weightLbs,
+    );
+  }
+
+  await addProductToCollection(admin, collection.id, product.id);
+  await publishProductToOnlineStoreAndPos(admin, product.id);
+
+  return {
+    productGid: product.id,
+    handle: product.handle,
+    collectionGid: collection.id,
+  };
+}
+

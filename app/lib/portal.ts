@@ -40,7 +40,8 @@ export type PlantItemStatus =
   | "Sourced"
   | "Offered"
   | "Sold"
-  | "Unavailable";
+  | "Unavailable"
+  | "Listed";
 
 export type CustomerResponseItemChoice = "accept" | "reject" | "unavailable";
 
