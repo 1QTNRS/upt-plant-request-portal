@@ -81,12 +81,7 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
       ? item.photos.map((photo) => photo.url)
       : [placeholderPhoto(item.id)];
 
-  const adminNotes = [
-    item.budget ? `Customer budget: ${item.budget}` : "",
-    item.customerRequestNotes ?? "",
-  ]
-    .filter(Boolean)
-    .join(" | ");
+  const adminNotes = item.customerRequestNotes ?? "";
 
   return {
     id: item.id,
@@ -337,7 +332,7 @@ export async function submitCustomerRequest(
     name: string;
     email: string;
     shopifyCustomerId?: string;
-    items: Array<{ plantName: string; budget?: string; notes?: string }>;
+    items: Array<{ plantName: string; notes?: string }>;
   },
 ): Promise<PlantRequest> {
   const customer = await findOrCreateCustomer(shop, input);
@@ -356,7 +351,6 @@ export async function submitCustomerRequest(
         create: input.items.map((item) => ({
           plantName: item.plantName.trim(),
           offeredName: item.plantName.trim(),
-          budget: item.budget?.trim() || null,
           customerRequestNotes: item.notes?.trim() || null,
           quantity: 1,
           availability: "available",

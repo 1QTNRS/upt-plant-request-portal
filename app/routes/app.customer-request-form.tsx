@@ -67,12 +67,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const itemCount = Number(form.get("itemCount") || 0);
-  const items: Array<{ plantName: string; budget?: string; notes?: string }> = [];
+  const items: Array<{ plantName: string; notes?: string }> = [];
   for (let index = 0; index < itemCount; index += 1) {
     const plantName = String(form.get(`plantName-${index}`) || "").trim();
     items.push({
       plantName,
-      budget: String(form.get(`budget-${index}`) || "").trim() || undefined,
       notes: String(form.get(`notes-${index}`) || "").trim() || undefined,
     });
   }

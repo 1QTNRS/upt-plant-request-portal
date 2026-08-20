@@ -12,7 +12,6 @@ import {
 type PlantLine = {
   key: string;
   plantName: string;
-  budget: string;
   notes: string;
 };
 
@@ -20,7 +19,6 @@ function createPlantLine(): PlantLine {
   return {
     key: `plant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     plantName: "",
-    budget: "",
     notes: "",
   };
 }
@@ -132,7 +130,6 @@ export function CustomerRequestPortal({
                 <s-stack direction="block" gap="base">
                   <s-heading>Plant {index + 1}</s-heading>
                   <input type="hidden" name={`plantName-${index}`} value={line.plantName} />
-                  <input type="hidden" name={`budget-${index}`} value={line.budget} />
                   <input type="hidden" name={`notes-${index}`} value={line.notes} />
                   <s-text-field
                     label="Plant Name"
@@ -143,19 +140,6 @@ export function CustomerRequestPortal({
                         current.map((entry) =>
                           entry.key === line.key
                             ? { ...entry, plantName: event.currentTarget.value }
-                            : entry,
-                        ),
-                      )
-                    }
-                  />
-                  <s-text-field
-                    label="Budget (optional)"
-                    value={line.budget}
-                    onChange={(event) =>
-                      setPlantLines((current) =>
-                        current.map((entry) =>
-                          entry.key === line.key
-                            ? { ...entry, budget: event.currentTarget.value }
                             : entry,
                         ),
                       )

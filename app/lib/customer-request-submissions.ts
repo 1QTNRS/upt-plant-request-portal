@@ -37,7 +37,6 @@ export type PrototypeCustomerProfile = {
 
 export type CustomerRequestFormItem = {
   plantName: string;
-  budget?: string;
   notes?: string;
 };
 
@@ -173,17 +172,7 @@ export function setCustomerLoggedInPrototype(loggedIn: boolean): void {
 }
 
 function buildAdminNotes(item: CustomerRequestFormItem): string {
-  const parts: string[] = [];
-
-  if (item.budget?.trim()) {
-    parts.push(`Customer budget: ${item.budget.trim()}`);
-  }
-
-  if (item.notes?.trim()) {
-    parts.push(item.notes.trim());
-  }
-
-  return parts.join(" | ");
+  return item.notes?.trim() ?? "";
 }
 
 function createPlantItems(
@@ -228,7 +217,6 @@ export function submitCustomerRequest(
       requestId,
       submission.items.map((item) => ({
         plantName: item.plantName,
-        budget: item.budget,
         notes: item.notes,
       })),
     ),

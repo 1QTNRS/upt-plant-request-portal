@@ -74,7 +74,7 @@ describe("plant request persistence", () => {
       email: "alex.rivera@example.com",
       shopifyCustomerId: "demo-customer-alex",
       items: [
-        { plantName: "Monstera Peru", budget: "$90", notes: "Climbing" },
+        { plantName: "Monstera Peru", notes: "Climbing" },
         { plantName: "Ghost Plant" },
       ],
     });
@@ -83,6 +83,8 @@ describe("plant request persistence", () => {
     assert.equal(created.status, "New");
     assert.equal(created.items.length, 2);
     assert.equal(created.items[0]?.quantity, 1);
+    assert.equal(created.items[0]?.adminNotes, "Climbing");
+    assert.equal(created.items[0]?.budget, undefined);
 
     await updateRequestItem(shop, {
       requestId: created.id,
