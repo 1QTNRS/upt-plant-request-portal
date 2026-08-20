@@ -31,7 +31,21 @@ export default function App() {
   if (!embedded) {
     return (
       <AppProvider>
-        {nav}
+        <div
+          style={{
+            display: "flex",
+            gap: "16px",
+            flexWrap: "wrap",
+            padding: "12px 16px",
+            borderBottom: "1px solid #e1e3e5",
+          }}
+        >
+          <s-link href="/app">Dashboard</s-link>
+          <s-link href="/app/analytics">Analytics</s-link>
+          <s-link href="/app/customer-request-form">Request Form</s-link>
+          <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
+          <s-link href="/app/settings">Settings</s-link>
+        </div>
         <Outlet />
       </AppProvider>
     );
