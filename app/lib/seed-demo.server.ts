@@ -214,7 +214,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     },
   },
   {
-    requestNumber: "UPT-REQ-2026-000008",
+    requestNumber: "UPT-REQ-2026-000099",
     customerName: "Alex Rivera",
     email: "alex.rivera@example.com",
     status: "Pending",
