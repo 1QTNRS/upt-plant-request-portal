@@ -3,27 +3,43 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
-import { requireAdmin } from "../lib/admin-auth.server";
+import { requireAdmin, isDevAdminBypass } from "../lib/admin-auth.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await requireAdmin(request);
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    embedded: !isDevAdminBypass(),
+  };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, embedded } = useLoaderData<typeof loader>();
+
+  const nav = (
+    <s-app-nav>
+      <s-link href="/app">Dashboard</s-link>
+      <s-link href="/app/analytics">Analytics</s-link>
+      <s-link href="/app/customer-request-form">Request Form</s-link>
+      <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
+      <s-link href="/app/settings">Settings</s-link>
+    </s-app-nav>
+  );
+
+  if (!embedded) {
+    return (
+      <AppProvider>
+        {nav}
+        <Outlet />
+      </AppProvider>
+    );
+  }
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-        <s-link href="/app">Dashboard</s-link>
-        <s-link href="/app/analytics">Analytics</s-link>
-        <s-link href="/app/customer-request-form">Request Form</s-link>
-        <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
-        <s-link href="/app/settings">Settings</s-link>
-      </s-app-nav>
+      {nav}
       <Outlet />
     </AppProvider>
   );
