@@ -177,6 +177,12 @@ describe("declined exact plant listings", () => {
     const item = await prisma.requestItem.findUnique({ where: { id: availableId } });
     assert.equal(item?.itemStatus, "Listed");
 
+    const listedRows = await listDeclinedExactPlants(shop);
+    const listedRow = listedRows.find((row) => row.requestItemId === availableId);
+    assert.equal(listedRow?.title, "Thai Constellation Showcase");
+    assert.equal(listedRow?.price, 189);
+    assert.equal(listedRow?.listing?.status, "listed");
+
     const retry = await createExactPlantListing(undefined, shop, {
       requestItemId: availableId,
       title: "Should Not Duplicate",

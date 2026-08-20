@@ -147,16 +147,20 @@ export async function listDeclinedExactPlants(
       photoUrls,
     });
 
+    const listing = listingDto(shop, item.exactPlantListing);
+
     return [
       {
         requestItemId: item.id,
         requestId: item.requestId,
         requestNumber: item.request.requestNumber,
-        title: draft.title,
-        price: draft.price,
-        weightLbs: draft.weightLbs,
-        photoUrls: draft.photoUrls,
-        listing: listingDto(shop, item.exactPlantListing),
+        title: item.exactPlantListing?.title || draft.title,
+        price: item.exactPlantListing?.price ?? draft.price,
+        weightLbs: item.exactPlantListing?.weightLbs ?? draft.weightLbs,
+        photoUrls: item.exactPlantListing
+          ? parsePhotoUrlList(item.exactPlantListing.photoUrlsJson)
+          : draft.photoUrls,
+        listing,
       },
     ];
   });
