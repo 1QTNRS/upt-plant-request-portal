@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 
 import prisma from "../db.server";
+import { isDemoDataEnabled } from "./environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -63,8 +64,20 @@ const requestInclude = {
   draftOrder: true,
 } as const;
 
+/**
+ * Stock imagery is only ever acceptable on a demo shop. A real offer shows the
+ * exact plant the customer is buying, so an item with no uploaded photo must
+ * render as having no photo rather than borrowing an unrelated one.
+ */
 function placeholderPhoto(seed: string): string {
+  if (!isDemoDataEnabled()) return "";
   return `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/800`;
+}
+
+function withPlaceholderFallback(urls: string[], seed: string): string[] {
+  if (urls.length > 0) return urls;
+  const placeholder = placeholderPhoto(seed);
+  return placeholder ? [placeholder] : [];
 }
 
 function parsePhotoUrls(raw: string | null | undefined): string[] {
@@ -79,10 +92,10 @@ function parsePhotoUrls(raw: string | null | undefined): string[] {
 }
 
 function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantItem {
-  const photoUrls =
-    item.photos.length > 0
-      ? item.photos.map((photo) => photo.url)
-      : [placeholderPhoto(item.id)];
+  const photoUrls = withPlaceholderFallback(
+    item.photos.map((photo) => photo.url),
+    item.id,
+  );
 
   const adminNotes = item.customerRequestNotes ?? "";
 
@@ -101,7 +114,7 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
     customerRequestNotes: item.customerRequestNotes ?? undefined,
     adminNotes,
     customerFacingNotes: item.customerFacingNotes ?? "",
-    photoPreviewUrl: photoUrls[0] ?? placeholderPhoto(item.id),
+    photoPreviewUrl: photoUrls[0] ?? "",
     photoUrls,
   };
 }
@@ -238,6 +251,14 @@ export async function findOrCreateCustomer(
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
 
+  // `CustomerProfile` is keyed on (shop, email). A blank email would collapse
+  // every unidentified shopper into a single shared profile.
+  if (!email) {
+    throw new Error(
+      "A customer email is required. Could not read the signed-in customer's email from Shopify.",
+    );
+  }
+
   if (input.shopifyCustomerId) {
     const byShopify = await prisma.customerProfile.findFirst({
       where: { shop, shopifyCustomerId: input.shopifyCustomerId },
@@ -301,18 +322,28 @@ export async function markRequestViewed(shop: string, requestId: string) {
   });
 }
 
+/**
+ * Mirrors `identityOwnsRequest`: a customer with a Shopify account id sees
+ * requests carrying that id, plus their own pre-account requests matched by
+ * email. Requests already claimed by a *different* account id are never
+ * returned, even when the email happens to match.
+ */
 export async function listCustomerRequests(
   shop: string,
   identity: { email?: string; shopifyCustomerId?: string },
 ): Promise<PlantRequest[]> {
   await expireOverdueOffers(shop);
   const email = identity.email?.trim().toLowerCase();
-  const identityFilters = [
-    email ? { customerEmail: email } : undefined,
-    identity.shopifyCustomerId
-      ? { shopifyCustomerId: identity.shopifyCustomerId }
-      : undefined,
-  ].filter(Boolean) as Array<{ customerEmail?: string; shopifyCustomerId?: string }>;
+  const identityFilters: Array<Record<string, unknown>> = [];
+
+  if (identity.shopifyCustomerId) {
+    identityFilters.push({ shopifyCustomerId: identity.shopifyCustomerId });
+    if (email) {
+      identityFilters.push({ customerEmail: email, shopifyCustomerId: null });
+    }
+  } else if (email) {
+    identityFilters.push({ customerEmail: email });
+  }
 
   if (identityFilters.length === 0) return [];
 
@@ -538,17 +569,16 @@ function offerItemToPlant(
 ): OfferPlantItem {
   const photoUrls = parsePhotoUrls(item.photoUrlsJson);
   const available = item.availability === "available";
+  const displayPhotos = available
+    ? withPlaceholderFallback(photoUrls, item.requestItemId)
+    : [];
   return {
     id: `offer-${requestId}-${index + 1}`,
     sourceItemId: item.requestItemId,
     plantName: item.plantName,
     price: available ? normalizePrice(item.price) : 0,
-    photoUrl: photoUrls[0] ?? placeholderPhoto(item.requestItemId),
-    photoUrls: available
-      ? photoUrls.length > 0
-        ? photoUrls
-        : [placeholderPhoto(item.requestItemId)]
-      : [],
+    photoUrl: displayPhotos[0] ?? "",
+    photoUrls: displayPhotos,
     notesFromUpt: item.customerFacingNotes,
     quantity: normalizeQuantity(item.quantity),
     availability: available ? "available" : "not_available",

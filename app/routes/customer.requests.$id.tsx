@@ -2,8 +2,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
-import { DEMO_SHOP } from "../lib/shop";
-import { readCustomerSession } from "../lib/customer-session.server";
+import {
+  authenticateCustomer,
+  identityOwnsRequest,
+  readCustomerSession,
+} from "../lib/customer-session.server";
 import {
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
@@ -14,59 +17,49 @@ import {
   loadCustomerOfferPage,
 } from "../lib/offer-response.server";
 import { getRequest } from "../lib/portal.server";
-import { ensureShopSeeded } from "../lib/seed-demo.server";
+import { ensureShopSettings } from "../lib/seed-demo.server";
 
-function customerOwnsRequest(
-  request: Awaited<ReturnType<typeof getRequest>>,
-  session: { email: string; shopifyCustomerId?: string },
-) {
-  if (!request) return false;
-  const email = session.email.trim().toLowerCase();
-  if (email && request.email.trim().toLowerCase() === email) return true;
-  if (
-    session.shopifyCustomerId &&
-    request.shopifyCustomerId &&
-    session.shopifyCustomerId === request.shopifyCustomerId
-  ) {
-    return true;
-  }
-  return false;
-}
+const FORBIDDEN = {
+  forbidden: true as const,
+  request: null,
+  offer: null,
+  response: null,
+  invoiceUrl: null,
+  fedexRemovalWarning: "",
+  requestClosed: false,
+  confirmationEmail: null,
+};
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
-  await ensureShopSeeded(shop);
   const session = await readCustomerSession(request);
+  if (!session) return FORBIDDEN;
+
+  await ensureShopSettings(session.shop);
   const requestId = params.id ?? "";
-  const plantRequest = await getRequest(shop, requestId);
+  const plantRequest = await getRequest(session.shop, requestId);
 
-  if (!session || !customerOwnsRequest(plantRequest, session)) {
-    return {
-      forbidden: true,
-      request: null,
-      offer: null,
-      response: null,
-      invoiceUrl: null,
-      fedexRemovalWarning: "",
-      requestClosed: false,
-      confirmationEmail: null,
-    };
-  }
+  if (!identityOwnsRequest(session, plantRequest)) return FORBIDDEN;
 
-  const page = await loadCustomerOfferPage(shop, requestId);
-  return { forbidden: false, request: plantRequest, ...page };
+  const page = await loadCustomerOfferPage(session.shop, requestId);
+  return { forbidden: false as const, request: plantRequest, ...page };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const shop = process.env.DEV_SHOP || DEMO_SHOP;
-  const session = await readCustomerSession(request);
+  const authenticated = await authenticateCustomer(request);
+  if (!authenticated) return { ok: false as const };
+
+  const { identity, admin } = authenticated;
   const requestId = params.id ?? "";
-  const plantRequest = await getRequest(shop, requestId);
-  if (!session || !customerOwnsRequest(plantRequest, session)) {
-    return { ok: false };
-  }
+  const plantRequest = await getRequest(identity.shop, requestId);
+  if (!identityOwnsRequest(identity, plantRequest)) return { ok: false as const };
+
   const form = await request.formData();
-  return handleCustomerOfferAction({ shop, requestId, form });
+  return handleCustomerOfferAction({
+    shop: identity.shop,
+    requestId,
+    form,
+    admin,
+  });
 };
 
 export default function CustomerRequestDetail() {

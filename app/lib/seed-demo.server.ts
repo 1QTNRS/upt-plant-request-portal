@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { isDemoDataEnabled } from "./environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -250,7 +251,11 @@ const SEED_REQUESTS: SeedRequest[] = [
   },
 ];
 
-export async function ensureShopSeeded(shop: string): Promise<void> {
+/**
+ * Every shop needs a settings row. This is the only part of shop bootstrap that
+ * is safe to run against a real merchant store.
+ */
+export async function ensureShopSettings(shop: string): Promise<void> {
   await prisma.shopSettings.upsert({
     where: { shop },
     update: {},
@@ -260,6 +265,14 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
       adminNotificationEmail: process.env.UPT_ADMIN_EMAIL || "",
     },
   });
+}
+
+export async function ensureShopSeeded(shop: string): Promise<void> {
+  await ensureShopSettings(shop);
+
+  // Sample requests and the Alex Rivera demo customer must never reach a real
+  // merchant store, so seeding stops here for anything but a demo shop.
+  if (!isDemoDataEnabled(shop)) return;
 
   const legacySeedNumbers: Record<string, string> = {
     "UPT-REQ-2026-000001": "REQ1",

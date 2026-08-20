@@ -529,7 +529,7 @@ function OfferItemCard({
     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" gap="large">
-          {available ? (
+          {available && item.photoUrl ? (
             <button
               type="button"
               onClick={onOpenPhotos}
