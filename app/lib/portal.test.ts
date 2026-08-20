@@ -35,6 +35,8 @@ describe("request numbers", () => {
     );
   });
 });
+
+describe("status mapping", () => {
   it("keeps Pending stored while displaying Needs Payment", () => {
     assert.equal(normalizeRequestStatus("Pending"), "Pending");
     assert.equal(formatCustomerStatusLabel("Pending"), "Needs Payment");
