@@ -2,11 +2,13 @@
 
 Read **[docs/CLOUD_AGENT_HANDOFF.md](docs/CLOUD_AGENT_HANDOFF.md)** before changing this app. It is the durable handoff for Cloud Agents: what is live, what is still demo, Shopify gaps, business rules, and productionization steps.
 
+Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Every remaining production blocker is an account action, a hosting decision, or a live-store verification — not code. Do not reimplement anything listed there.
+
 Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed React Router app on the existing working branch. Do not resurrect `app/lib/sample-*.ts` or other localStorage prototype modules as the source of truth.
 
 ## Cursor Cloud specific instructions
 
-This repo is the **UPT Plant Request Portal** on the Shopify App Template (React Router) — an embedded Shopify admin app (React Router v7 SSR + Vite) that uses **Prisma + SQLite** for session storage and portal data.
+This repo is the **UPT Plant Request Portal** on the Shopify App Template (React Router) — an embedded Shopify admin app (React Router v7 SSR + Vite) that uses **Prisma** for session storage and portal data. `DATABASE_URL` selects the provider: **SQLite** for local development (the default when it is unset), **PostgreSQL** in production.
 
 ### Services / commands
 
@@ -15,11 +17,17 @@ There is a single web service. Standard commands live in `package.json` scripts;
 - Lint: `npm run lint` — ESLint.
 - Typecheck: `npm run typecheck` — `react-router typegen && tsc --noEmit`.
 - Build: `npm run build` — React Router (Vite) production build.
-- Tests: `npm test` — `tsx --test` on `app/lib/portal*.test.ts` and `app/lib/exact-plants*.test.ts`.
-- DB setup: `npm run setup` — `prisma generate && prisma migrate deploy` (creates `prisma/dev.sqlite`).
-- Seed: `npx prisma db seed` (also runs via `ensureShopSeeded` on admin/customer loaders).
+- Tests: `npm test` — `tsx --test app/lib/*.test.ts`. Some suites hit the database, so run `npm run setup` first.
+- DB setup: `npm run setup` — generates the client and applies migrations for whichever provider `DATABASE_URL` names (creates `prisma/dev.sqlite` when unset).
+- Seed: `node scripts/prisma.mjs db seed` (also runs via `ensureShopSeeded` under the dev bypass only).
+- Shopify call validation: `npm run validate-graphql` — fetches the live Admin schema and checks every `#graphql` document plus the variable payloads. **Needs network.** Run after touching any Shopify call.
+- Prisma schema sync: `npm run prisma:sync-schema` after editing `prisma/schema.prisma`; `npm run prisma:check-schema` (in CI) fails when the generated PostgreSQL schema is stale.
 
-The GitHub CI (`.github/workflows/ci.yml`) is: install → `tsc --noEmit` → `npm run lint` → `prisma generate && prisma validate` → `npm run build`. It does **not** currently run `npm test`.
+The GitHub CI (`.github/workflows/ci.yml`) is: install → `tsc --noEmit` → `npm run lint` → validate both Prisma schemas → schema-sync check → **`npm test` on SQLite** → **`npm test` on PostgreSQL** → `npm run build`.
+
+### Verifying deployment changes
+
+Docker is not preinstalled but can be installed and run in the Cloud VM. Overlayfs is unavailable, so the daemon needs the **vfs** storage driver (`/etc/docker/daemon.json` with `{"storage-driver":"vfs"}`, then `sudo dockerd`). PostgreSQL can be installed with `apt-get install postgresql` and started with `pg_ctl`. Both were used to verify the production image end to end.
 
 ### Running the app (important caveat)
 
@@ -38,9 +46,12 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 ### Notes / gotchas
 
 - No lockfile is committed; `npm install` (used by the update script), `yarn`, and `pnpm` all work (all three run in CI). `.npmrc` sets `engine-strict=true`, so Node must satisfy `package.json` `engines` (`>=20.19 <22 || >=22.12`).
-- `@prisma/client` is generated code: run `npx prisma generate` after installing/updating deps. `prisma/dev.sqlite` is gitignored — run `npm run setup` (or `npx prisma migrate deploy`) to create it before running the app.
+- `@prisma/client` is generated code and is **provider-specific**: run `npm run prisma:generate` (not bare `npx prisma generate`) after installing/updating deps or after changing `DATABASE_URL`, so the client matches the schema. `prisma/dev.sqlite` is gitignored — run `npm run setup` to create it before running the app.
+- Edit `prisma/schema.prisma`, never `prisma/postgres/schema.prisma`; the latter is generated.
 - Request numbers are `REQ1`, `REQ2`, `REQ2178` (sequential, unpadded). Sequence row uses `RequestNumberSequence.year = 0`.
 - Local demo Shopify mutations (draft orders, Files, EXACT PLANTS products) no-op or stub when `admin` is missing. Declined-item listings still must **not** create a product until admin approves the review form.
+- Customer-facing links must go through the storefront app proxy (`customerLinksForShop` / `customerPortalRelativeLinks`). A link to the app's own origin carries no signed identity and renders "Request not available".
+- `ensureShopSeeded` must only ever run under the dev bypass. It previously ran on a production code path and seeded demo requests into the live database.
 - Leftover prototype files (`app/lib/sample-*.ts`, `item-*.ts`, `customer-request-submissions.ts`, etc.) are unused by active routes.
 
 ### Business rules to preserve
@@ -50,3 +61,4 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Offer snapshots freeze after send. FedEx is optional, default on, excluded from plant analytics, never listed in EXACT PLANTS.
 - Draft orders only for accepted plants. `orders/paid` closes the request.
 - A Declined Item is Available + offered + customer Reject. Not the same as UPT Not Available. Do not auto-publish. Admin review/approve only. One Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only.
+- A customer may only ever see their own requests. App-proxy identity is only trustworthy after the HMAC check in `app/lib/app-proxy.ts`; never read `logged_in_customer_id` without it.
