@@ -1,7 +1,16 @@
 import type { ActionFunctionArgs } from "react-router";
 
-import { formatRequestNumber, parseRequestNumber } from "../lib/portal";
-import { findRequestByNumber, markRequestPaid } from "../lib/portal.server";
+import {
+  formatRequestNumber,
+  parseRequestNumber,
+  plantRevenueFromLines,
+} from "../lib/portal";
+import {
+  findRequestByNumber,
+  getDraftOrder,
+  markRequestPaid,
+  parseDraftOrderLineItems,
+} from "../lib/portal.server";
 import { authenticate } from "../shopify.server";
 
 type PaidOrderPayload = {
@@ -15,6 +24,17 @@ type PaidOrderPayload = {
   line_items?: Array<{ title?: string; price?: string; quantity?: number }>;
 };
 
+/**
+ * Last resort when no draft order was recorded for the request.
+ *
+ * The shipping upgrade is identified by its title, which is not the app's to
+ * control: once `ShopSettings.fedexVariantGid` is set the line is submitted as
+ * a variant and Shopify names it after the real product. Renaming that product
+ * to anything without these substrings would fold shipping into the stored
+ * `plantRevenue`, and that one value feeds every revenue figure on the
+ * dashboard. Prefer `plantRevenueFromRecordedLines`, which reads a `kind` the
+ * app sets itself.
+ */
 function plantRevenueFromPayload(payload: PaidOrderPayload): number {
   return (payload.line_items ?? [])
     .filter((item) => {
@@ -26,6 +46,17 @@ function plantRevenueFromPayload(payload: PaidOrderPayload): number {
       const quantity = item.quantity ?? 1;
       return sum + (Number.isFinite(price) ? price * quantity : 0);
     }, 0);
+}
+
+/** Plant revenue from the lines the app itself recorded, or null if it has none. */
+async function plantRevenueFromRecordedLines(
+  shop: string,
+  requestId: string,
+): Promise<number | null> {
+  const draftOrder = await getDraftOrder(shop, requestId);
+  const lines = parseDraftOrderLineItems(draftOrder?.lineItemsJson);
+  if (lines.length === 0) return null;
+  return plantRevenueFromLines(lines);
 }
 
 function requestNumberFromPayload(payload: PaidOrderPayload): string | null {
@@ -96,10 +127,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response();
   }
 
+  const recorded = await plantRevenueFromRecordedLines(shop, plantRequest.id);
   await markRequestPaid(shop, plantRequest.id, {
     shopifyOrderGid,
     orderNumber: String(order.name || order.order_number || ""),
-    plantRevenue: plantRevenueFromPayload(order),
+    plantRevenue: recorded ?? plantRevenueFromPayload(order),
   });
   console.log(`${topic} for ${shop}: closed ${requestNumber} from order ${orderLabel(order)}.`);
 
