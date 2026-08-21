@@ -232,7 +232,9 @@ export function CustomerOfferView({
       <s-page
         heading={
           hasAccepted
-            ? "Your private checkout link is ready"
+            ? invoiceUrl
+              ? "Your private checkout link is ready"
+              : "Your selections are saved"
             : requestClosed
               ? "Request closed"
               : allUnavailable
@@ -240,19 +242,36 @@ export function CustomerOfferView({
                 : "Your selections are saved"
         }
       >
-        {hasAccepted ? (
+        {hasAccepted && invoiceUrl ? (
           <s-section>
             <s-stack direction="block" gap="base">
               <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
               <s-text color="subdued">{offer.customerEmail}</s-text>
-              {invoiceUrl ? (
-                <s-link href={invoiceUrl}>Continue to Checkout</s-link>
-              ) : (
-                <s-text color="subdued">
-                  Checkout link will appear here once the Shopify draft order is
-                  created.
+              <s-link href={invoiceUrl}>Continue to Checkout</s-link>
+            </s-stack>
+          </s-section>
+        ) : null}
+
+        {hasAccepted && !invoiceUrl ? (
+          /*
+           * There is no payment link, and nothing on this page will produce one:
+           * re-submitting an answered offer is refused. Telling the customer a
+           * link had been emailed and would appear here shortly was false on
+           * both counts.
+           */
+          <s-section>
+            <s-stack direction="block" gap="base">
+              <s-banner tone="warning">
+                <s-text>
+                  We could not create your payment link yet. Your selections are
+                  saved and your plants are still held for you.
                 </s-text>
-              )}
+              </s-banner>
+              <s-paragraph>
+                We will email the payment link to {offer.customerEmail} as soon as
+                it is ready. Nothing has been charged, and you do not need to
+                submit this offer again.
+              </s-paragraph>
             </s-stack>
           </s-section>
         ) : null}

@@ -63,6 +63,67 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
   };
 }
 
+/**
+ * Creates the draft order and emails the payment link for a request the
+ * customer has already accepted.
+ *
+ * The customer's own submission is otherwise the only caller of
+ * `createDraftOrderForRequest`, and re-submitting an answered offer returns
+ * `alreadySubmitted` without retrying, so a Shopify outage at that one moment
+ * left the request permanently unpayable. `checkout_link:{requestId}` is a key
+ * the confirmation never used, so the mail actually goes out.
+ *
+ * Idempotent through `createDraftOrderForRequest`, which reuses a recorded or
+ * tagged draft order rather than creating a second one.
+ */
+export async function createPaymentLinkForRequest(input: {
+  shop: string;
+  requestId: string;
+  admin?: AdminContext["admin"];
+}): Promise<{ ok: true; invoiceUrl: string } | { ok: false; error: string }> {
+  const response = await getCustomerResponse(input.shop, input.requestId);
+  if (!response) {
+    return { ok: false, error: "The customer has not answered this offer yet." };
+  }
+
+  const accepted = response.items.filter((item) => item.choice === "accept");
+  if (accepted.length === 0) {
+    return {
+      ok: false,
+      error:
+        "This customer accepted no plants, so there is nothing to charge for. Draft orders are only created for accepted plants.",
+    };
+  }
+
+  const request = await getRequest(input.shop, input.requestId);
+  if (!request) return { ok: false, error: "This request could not be loaded." };
+
+  try {
+    const draft = await createDraftOrderForRequest(input.admin, input.shop, {
+      requestId: input.requestId,
+      requestNumber: request.requestNumber,
+      customerEmail: request.email,
+      acceptedItems: accepted.map((item) => ({
+        plantName: item.plantName,
+        quantity: item.quantity,
+        price: item.price,
+        weightLbs:
+          request.items.find((entry) => entry.id === item.sourceItemId)?.weightLbs ?? 0,
+      })),
+      fedexSelected: response.fedexUpgradeSelected,
+    });
+    await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
+    return { ok: true, invoiceUrl: draft.invoiceUrl };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Could not create the payment link: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  }
+}
+
 export async function handleCustomerOfferAction(input: {
   shop: string;
   requestId: string;
