@@ -126,7 +126,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
 - Draft orders are idempotent twice over: a recorded `DraftOrderReference` short-circuits, and `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost. Without it a retry bills the customer twice
 - Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
-- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb), `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
+- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
 - Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
 
 ### Verifying Shopify calls without a store
@@ -159,8 +159,12 @@ Declared in `shopify.app.toml` **and** in `REQUIRED_SHOPIFY_SCOPES`
 app falls back to the code list when `SCOPES` is unset, so the two cannot drift.
 
 ```
-write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications
+write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications,write_inventory,write_app_proxy
 ```
+
+`write_inventory` is what lets an EXACT PLANTS listing stock the one plant it
+sells. It also covers reading `Location.id`, which is the only Location field
+the app touches — anything more would additionally need `read_locations`.
 
 Webhooks: `app/uninstalled`, `app/scopes_update`, `orders/paid`, plus the three
 compliance topics. `api_version` in `shopify.app.toml` must equal `apiVersion` in
@@ -175,6 +179,16 @@ Merchants must re-approve after the product/publication scopes were added.
 ### Draft orders
 
 Implemented. Accepted plant lines include title, qty 1, price, weight. FedEx line is added only when the customer kept the upgrade. If GraphQL is unavailable, a local checkout-pending URL is stored. Do not create draft orders for rejected-only or all-unavailable responses.
+
+`ShopSettings.fedexUpgradePrice` is the single FedEx amount: it is what the offer
+quotes, what the response snapshot freezes and what the confirmation email
+states. `resolveFedexVariant` writes it from the live variant price, and sending
+an offer refreshes it first (`refreshFedexUpgradePrice`, best effort — Shopify
+being unreachable must not block the offer). The draft-order FedEx line carries
+that frozen amount as `originalUnitPriceWithCurrency` alongside `variantId`, so
+Shopify bills what the customer answered rather than whatever the variant costs
+by the time they open the invoice. It previously sent `variantId` alone, which
+quoted $15 and billed the store's price.
 
 ### Shopify Files
 
@@ -201,7 +215,32 @@ Implemented as an **admin-approved** path only. Customer reject does not create 
 
 ### Online Store / POS publishing
 
-Implemented in GraphQL (`publishablePublish` to catalogs titled `Online Store` and `Point of Sale` / `POS`). Do not publish to other channels. Live publish is untested without a real store.
+Implemented in GraphQL (`publishablePublish`). Do not publish to other channels. Live publish is untested without a real store.
+
+The publications are found by the **app handle** behind each one —
+`online_store` and `point_of_sale` — never by the catalog title.
+`publications` must be queried with `catalogType: APP`: without it Shopify
+returns `catalog: null` for every publication, so nothing matched and no listing
+could ever be published. With it, the catalog title reads "Channel Catalog
+&lt;id&gt; for Online Store" and is translated into the merchant's admin
+language, so it is not something to match on.
+
+### One plant, one unit of stock
+
+An EXACT PLANTS listing is one specific physical plant. The variant is created
+tracked (`inventoryItem.tracked`), `inventoryPolicy: DENY`, and stocked with a
+quantity of 1 at the shop's primary location, all **before** `publishablePublish`
+— an untracked plant can be bought by several customers at once, and a tracked
+plant published before it is stocked shows as sold out.
+
+`inventoryQuantities` on `ProductVariantsBulkInput` is only honoured by
+`productVariantsBulkCreate`, so the quantity needs its own call:
+`inventorySetQuantities` when Shopify already stocks the item at that location,
+`inventoryActivate` when it does not. On `2025-10`, `inventorySetQuantities`
+still requires the deprecated `ignoreCompareQuantity` (or a `compareQuantity` on
+every entry); its replacement, `InventoryQuantityInput.changeFromQuantity`, only
+exists from `2026-01`. Revisit `buildExactPlantInventoryInput` when the API
+version is bumped.
 
 ### Emails
 
