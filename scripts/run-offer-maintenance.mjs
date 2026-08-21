@@ -98,20 +98,28 @@ if (shops.length === 0) {
 }
 
 let expired = 0;
+let queued = 0;
 let reminders = 0;
+let redelivered = 0;
 const failures = [];
 for (const shop of shops) {
   expired += shop.expired ?? 0;
+  queued += shop.remindersQueued ?? 0;
   reminders += shop.remindersSent ?? 0;
+  redelivered += shop.emailsRedelivered ?? 0;
   const detail = shop.error ? ` ERROR: ${shop.error}` : "";
   console.log(
-    `  ${shop.shop}: ${shop.expired} expired, ${shop.remindersSent} reminder(s) sent${detail}`,
+    `  ${shop.shop}: ${shop.expired} expired, ${shop.remindersSent}/${shop.remindersQueued} reminder(s) delivered, ` +
+      `${shop.emailsRedelivered}/${shop.emailsRetried} retried email(s) delivered${detail}`,
   );
   if (shop.error) failures.push(shop.shop);
 }
 
+// Queued and delivered are reported apart: a Resend outage still creates a
+// reminder row per request, so a single count would claim success either way.
 console.log(
-  `Ran at ${result.ranAt}: ${shops.length} shop(s), ${expired} offer(s) expired, ${reminders} reminder(s) sent.`,
+  `Ran at ${result.ranAt}: ${shops.length} shop(s), ${expired} offer(s) expired, ` +
+    `${reminders} of ${queued} reminder(s) delivered, ${redelivered} earlier email(s) redelivered.`,
 );
 
 if (failures.length > 0) {
