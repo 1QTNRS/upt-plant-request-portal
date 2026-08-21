@@ -6,7 +6,11 @@ import type {
 import { useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-import { CustomerRequestPortal } from "../components/customer-request-portal";
+import {
+  CustomerRequestPortal,
+  EMPTY_PLANT_LINE,
+  type PlantLine,
+} from "../components/customer-request-portal";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { isDemoDataEnabled } from "../lib/environment.server";
 import { notifyNewRequest } from "../lib/emails.server";
@@ -85,6 +89,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { errors: [PREVIEW_NOTICE], successMessage: null };
   }
 
+  if (intent === "add-plant") {
+    return {
+      errors: [],
+      successMessage: null,
+      plantLines: [...readPlantLines(form), { plantName: "", notes: "" }],
+    };
+  }
+
+  const removeMatch = intent.match(/^remove-plant-(\d+)$/);
+  if (removeMatch) {
+    const remaining = readPlantLines(form).filter(
+      (_line, index) => index !== Number(removeMatch[1]),
+    );
+    return {
+      errors: [],
+      successMessage: null,
+      plantLines: remaining.length > 0 ? remaining : [{ plantName: "", notes: "" }],
+    };
+  }
+
   if (intent !== "submit-request") {
     return { errors: ["Unknown action"], successMessage: null };
   }
@@ -122,6 +146,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   };
 };
 
+function readPlantLines(form: FormData): PlantLine[] {
+  const count = Math.max(1, Math.min(Number(form.get("itemCount") || 1) || 1, 20));
+  const lines: PlantLine[] = [];
+  for (let index = 0; index < count; index += 1) {
+    lines.push({
+      plantName: String(form.get(`plantName-${index}`) ?? ""),
+      notes: String(form.get(`notes-${index}`) ?? ""),
+    });
+  }
+  return lines;
+}
+
 export default function CustomerRequestForm() {
   const loaderData = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
@@ -144,6 +180,9 @@ export default function CustomerRequestForm() {
       requestDetailHref={(requestId) =>
         `/app/customer-offer-preview?requestId=${requestId}`
       }
+      formAction="/app/customer-request-form"
+      plantLines={actionData?.plantLines ?? [EMPTY_PLANT_LINE]}
+      canSubmit={loaderData.previewNotice === null}
     />
   );
 }
