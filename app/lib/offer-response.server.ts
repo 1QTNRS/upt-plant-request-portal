@@ -90,10 +90,32 @@ export async function handleCustomerOfferAction(input: {
   const fedexUpgradeSelected =
     String(input.form.get("fedexUpgradeSelected")) === "true";
 
+  // Every available plant needs a deliberate answer. Defaulting a missing field
+  // to `accept` would turn a form the customer never completed into a purchase,
+  // and the `required` attribute on the radios only binds a real browser.
+  const missingChoices = offer.items
+    .filter((item) => item.availability === "available")
+    .filter((item) => {
+      const choice = input.form.get(`choice-${item.sourceItemId}`);
+      return choice !== "accept" && choice !== "reject";
+    })
+    .map((item) => item.plantName);
+
+  if (missingChoices.length > 0) {
+    return {
+      ok: false as const,
+      missingChoices,
+      error:
+        missingChoices.length === 1
+          ? `Choose Accept or Reject for ${missingChoices[0]}.`
+          : `Choose Accept or Reject for each plant: ${missingChoices.join(", ")}.`,
+    };
+  }
+
   const items = offer.items.map((item) => {
     const available = item.availability === "available";
     const choice = available
-      ? (String(input.form.get(`choice-${item.sourceItemId}`) || "accept") as
+      ? (String(input.form.get(`choice-${item.sourceItemId}`)) as
           | "accept"
           | "reject")
       : ("unavailable" as const);
