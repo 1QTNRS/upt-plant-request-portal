@@ -265,7 +265,7 @@ exists. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12
 
 - Headless Cloud VM cannot run `shopify app dev` (needs Partner login + tunnel).
 - Demo listing products are not real Shopify products; GID looks like `gid://shopify/Product/upt-{itemId}`.
-- `shopify.app.toml` still has the template placeholder `application_url = "https://shopify.dev/apps/default-app-home"` and matching redirect URLs. These need the real host and cannot come from an environment variable.
+- `shopify.app.toml` carries the production Render URLs, committed because Shopify's TOML cannot read environment variables. `app/lib/shopify-config.test.ts` guards them. **Do not run `shopify app dev` against the production app** — use `shopify app config use dev` (`shopify.app.dev.toml`, separate development app), or the React Router dev server, which needs no Shopify app at all.
 - Custom draft-order plant lines do not set `requiresShipping`. Shopify does not document its default and it cannot be tested without a live store, so setting it would be guessing at checkout behaviour. Confirm shipping rates appear at checkout during the live draft-order test and set it then if they do not.
 - The CLA workflow was deleted on the production-readiness branch, but it is a `pull_request_target` workflow, which GitHub always runs from the **base** branch. It therefore keeps failing on PR #24 until that deletion is merged to `main`, and disappears for PRs opened afterwards.
 - Unused localStorage prototype modules remain in `app/lib/` and can confuse agents; they are not the live data layer.
@@ -282,16 +282,22 @@ No known application-code work remains. Everything left needs an account action,
 a hosting decision, or a live store — all of it enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
 
-1. Apply `render.yaml` as a Render Blueprint and supply the six prompted secrets (runbook §1–2)
-2. Confirm the database, web service and cron job came up (§3–4)
-3. Resend API key + verified sending domain (§5)
-4. Enable database backups (§6)
-5. Point the Shopify app at the Render URL, install, approve scopes, confirm the FedEx handle (§7)
-6. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS, `orders/paid` (§8)
+**Done:** the Render Blueprint is applied and the web service is live at
+`https://upt-plant-request-portal.onrender.com`, verified from outside —
+`/healthz` 200, unsigned `/customer` 404, `/cron/offer-maintenance` 401 (so
+`CRON_SECRET` is set). `shopify.app.toml` carries the production URLs.
 
-Blocked on the user for one committed value: `shopify.app.toml`'s
-`application_url` needs the real Render hostname. Shopify's TOML does not support
-environment variables, so it cannot be derived at runtime.
+Remaining, all on the user:
+
+1. Confirm the first hourly cron run and the Resend values (runbook §2, §4)
+2. Resend API key + verified sending domain (§5)
+3. Enable database backups (§6)
+4. `shopify app deploy`, then install and approve scopes on the store, and
+   confirm the FedEx product handle (§7)
+5. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS,
+   `orders/paid` (§8)
+
+Nothing is blocked on an agent.
 
 Genuinely optional, deliberately not done:
 

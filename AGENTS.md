@@ -31,7 +31,11 @@ Docker is not preinstalled but can be installed and run in the Cloud VM. Overlay
 
 ### Running the app (important caveat)
 
-`npm run dev` runs `shopify app dev`, which requires the Shopify CLI, a Shopify Partner login, and a public tunnel. **This does not work in the headless cloud VM.** To run the app in development mode locally, run the underlying React Router (Vite) dev server directly with placeholder env vars:
+`npm run dev` runs `shopify app dev`, which requires the Shopify CLI, a Shopify Partner login, and a public tunnel. **This does not work in the headless cloud VM.**
+
+**Never run `shopify app dev` against the production app.** `shopify.app.toml` holds the live Render URLs and sets `automatically_update_urls_on_dev = false`; a tunnel-based session belongs on `shopify.app.dev.toml` (`shopify app config use dev`) with a separate development app.
+
+To run the app in development mode locally, run the underlying React Router (Vite) dev server directly with placeholder env vars — this needs no Shopify app, tunnel or Partner login:
 
 ```bash
 SHOPIFY_API_KEY=devkey SHOPIFY_API_SECRET=devsecret \

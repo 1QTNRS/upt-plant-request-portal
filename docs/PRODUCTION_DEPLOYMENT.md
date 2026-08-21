@@ -17,21 +17,24 @@ asks you to write code.
 
 ## Summary
 
-| # | Blocker | Who | Where |
+| # | Blocker | Status | Where |
 | --- | --- | --- | --- |
-| 1 | Apply the Blueprint (creates all three resources) | **You** | Render Dashboard → New → Blueprint |
-| 2 | Supply the six prompted secret values | **You** | Same flow, or each service's Environment tab |
-| 3 | Confirm the database and web service came up | **You** | Render Dashboard |
-| 4 | Confirm the cron job runs | **You** | Render Dashboard → upt-offer-maintenance |
+| 1 | Apply the Blueprint (creates all three resources) | **Done** — web service live | Render Dashboard → New → Blueprint |
+| 2 | Supply the six prompted secret values | Partly done; confirm Resend values | Each service's Environment tab |
+| 3 | Confirm the database and web service came up | **Verified from outside** | Render Dashboard |
+| 4 | Confirm the cron job runs | **You** — check the first hourly run | Render Dashboard → upt-offer-maintenance |
 | 5 | Resend API key + verified sending domain | **You** | Resend Dashboard |
 | 6 | Enable database backups | **You** | Render Dashboard → upt-portal-db |
-| 7 | Point the Shopify app at Render, install, approve scopes | **You** | Shopify Partner dashboard + store admin |
+| 7 | Push the app config, install, approve scopes | **You — next step** | `shopify app deploy`, then the store admin |
 | 8 | Live verification of draft orders, Files, EXACT PLANTS, payment | You run it, I fix any failure | Storefront + Shopify admin |
 
-**What I still need before I can finish anything:** the Render web service URL
-(section 1). `shopify.app.toml` has a template placeholder for `application_url`
-and Shopify's TOML does not support environment variables, so that value has to
-be committed. Send me the hostname and I will commit it.
+**Status.** The Render web service is live at
+`https://upt-plant-request-portal.onrender.com` and verified: `/healthz` returns
+200 (so the database is reachable and migrations applied), an unsigned
+`/customer` request is refused with 404 (so the app is running in production
+mode with app-proxy verification active), and `/cron/offer-maintenance` returns
+401 rather than 404 (so `CRON_SECRET` is set). `shopify.app.toml` now carries the
+production URLs, so **nothing is blocked on me**. Sections 7 and 8 are yours.
 
 ---
 
@@ -201,23 +204,44 @@ can reconstruct them.
 
 Do this when you are ready to point the app at the real store.
 
-### 7a. Partner dashboard
+### 7a. Push the app configuration
 
-**Where:** [Shopify Partner dashboard](https://partners.shopify.com) → **Apps** →
-**UPT Plant Request Portal** → **Configuration**.
+`shopify.app.toml` is already committed with the production URLs:
 
-1. Set **App URL** to your Render URL.
-2. Add these **Allowed redirection URLs**:
-   - `https://upt-plant-request-portal.onrender.com/auth/callback`
-   - `https://upt-plant-request-portal.onrender.com/auth/shopify/callback`
-3. From a checkout of this branch, run `shopify app deploy`. That pushes the
-   scopes, the webhook subscriptions (including the three mandatory privacy
-   topics) and the app proxy configuration from `shopify.app.toml`.
+| Setting | Value |
+| --- | --- |
+| `application_url` | `https://upt-plant-request-portal.onrender.com` |
+| Redirect URL | `https://upt-plant-request-portal.onrender.com/auth/callback` |
+| Redirect URL | `https://upt-plant-request-portal.onrender.com/auth/shopify/callback` |
+| App proxy target | `https://upt-plant-request-portal.onrender.com/customer` |
+| Storefront proxy path | `https://<shop>/apps/plant-requests` |
 
-`shopify.app.toml` still has the template placeholder
-`application_url = "https://shopify.dev/apps/default-app-home"`. Send me the
-Render hostname and I will commit the real value; otherwise `shopify app deploy`
-prompts you to update it.
+**One command, from a checkout of this branch:**
+
+```bash
+shopify app config use shopify.app.toml   # make sure you are not on the dev config
+shopify app deploy
+```
+
+That pushes the app URL, both redirect URLs, the access scopes, all six webhook
+subscriptions (including the three mandatory privacy topics) and the app proxy
+configuration to the Shopify app. You do **not** need to type any of these into
+the Partner dashboard by hand — `shopify app deploy` is the supported path and
+the dashboard will show the new values afterwards.
+
+**Then confirm in the Partner dashboard** ([partners.shopify.com](https://partners.shopify.com)
+→ **Apps** → **UPT Plant Request Portal** → **Configuration**) that the App URL
+and both redirection URLs show the Render hostname, and that **App proxy** points
+at `https://upt-plant-request-portal.onrender.com/customer` with subpath
+`plant-requests` and prefix `apps`.
+
+> **Do not run `shopify app dev` against the production app.** `shopify.app.toml`
+> sets `automatically_update_urls_on_dev = false` so a dev session cannot
+> silently repoint the live app at a tunnel. For tunnel-based development, use
+> `shopify app config use dev` (`shopify.app.dev.toml`) with a **separate**
+> development app — see that file's header. Local work needs none of this: the
+> React Router dev server in AGENTS.md runs the whole portal with no Shopify app
+> at all.
 
 ### 7b. Install and approve scopes
 
