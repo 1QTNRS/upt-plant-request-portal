@@ -279,3 +279,40 @@ describe("concurrent writes", () => {
     await prisma.shopSettings.deleteMany({ where: { shop: freshShop } });
   });
 });
+
+describe("plants keep the order the customer typed them", () => {
+  const orderShop = `${DEMO_SHOP}-ordering-test`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: orderShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: orderShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: orderShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: orderShop } });
+  };
+
+  before(purge);
+  after(purge);
+
+  it("returns the same order on every read", async () => {
+    const typed = [
+      "Monstera Albo",
+      "Hoya Callistophylla",
+      "Anthurium Warocqueanum",
+      "Philodendron Spiritus Sancti",
+    ];
+    const created = await submitCustomerRequest(orderShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: typed.map((plantName) => ({ plantName })),
+    });
+    assert.deepEqual(created.items.map((item) => item.plantName), typed);
+
+    // Neither table has a position column, so without an explicit order
+    // PostgreSQL is free to return these rows differently each time — which is
+    // what the customer's offer page and the admin's request page would show.
+    for (let read = 0; read < 5; read += 1) {
+      const loaded = await getRequest(orderShop, created.id);
+      assert.deepEqual(loaded?.items.map((item) => item.plantName), typed);
+    }
+  });
+});

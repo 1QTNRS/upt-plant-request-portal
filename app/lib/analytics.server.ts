@@ -10,7 +10,11 @@ import {
   type BehaviorFlag,
   type DraftOrderLineItem,
 } from "./portal";
-import { expireOverdueOffers } from "./portal.server";
+import {
+  expireOverdueOffers,
+  OFFER_ITEM_ORDER,
+  REQUEST_ITEM_ORDER,
+} from "./portal.server";
 
 export type DateRangeId =
   | "7d"
@@ -90,9 +94,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   const requests = await prisma.plantRequest.findMany({
     where: { shop, submittedAt: { gte: range.start, lte: range.end } },
     include: {
-      items: true,
-      offer: { include: { items: true } },
-      response: { include: { items: true } },
+      items: { orderBy: REQUEST_ITEM_ORDER },
+      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       draftOrder: true,
       shopifyOrder: true,
     },
@@ -102,9 +106,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   const allShopRequests = await prisma.plantRequest.findMany({
     where: { shop },
     include: {
-      items: true,
-      offer: { include: { items: true } },
-      response: { include: { items: true } },
+      items: { orderBy: REQUEST_ITEM_ORDER },
+      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       draftOrder: true,
       shopifyOrder: true,
     },

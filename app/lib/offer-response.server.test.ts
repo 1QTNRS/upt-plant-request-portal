@@ -75,7 +75,7 @@ function form(fields: Record<string, string>): FormData {
   return data;
 }
 
-describe("an offer that lapses while the customer is answering", () => {
+describe("an offer answer must be deliberate", () => {
   before(purge);
   after(purge);
 
@@ -109,11 +109,6 @@ describe("an offer that lapses while the customer is answering", () => {
     // Nothing was recorded, so the plant is released rather than half-sold.
     assert.equal(await getCustomerResponse(shop, requestId), null);
   });
-});
-
-describe("an offer answer must be deliberate", () => {
-  before(purge);
-  after(purge);
 
   it("refuses a submission that leaves an available plant unanswered", async () => {
     // `required` on the radios is a browser guard; anything can post a form.

@@ -90,9 +90,29 @@ type RequestWithRelations = DbPlantRequest & {
   } | null;
 };
 
+/**
+ * Plants are shown in the order the customer typed them.
+ *
+ * Neither table carries a position column, and without an explicit order
+ * PostgreSQL returns rows however it likes — so the same request could list its
+ * plants in a different order on each page load, on the admin's screen and on
+ * the customer's offer. Items are created in one call in submission order, so
+ * creation order is that order; the id breaks ties within the same millisecond.
+ */
+export const REQUEST_ITEM_ORDER = [
+  { createdAt: "asc" as const },
+  { id: "asc" as const },
+];
+
+/** Offer items have no timestamp; they are written in request-item order. */
+export const OFFER_ITEM_ORDER = { id: "asc" as const };
+
 const requestInclude = {
-  items: { include: { photos: { orderBy: { sortOrder: "asc" as const } } } },
-  offer: { include: { items: true } },
+  items: {
+    include: { photos: { orderBy: { sortOrder: "asc" as const } } },
+    orderBy: REQUEST_ITEM_ORDER,
+  },
+  offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
   response: true,
   draftOrder: true,
 } as const;
@@ -737,7 +757,7 @@ export async function getCustomerResponse(
 
   const withItems = await prisma.customerResponse.findUnique({
     where: { requestId },
-    include: { items: true },
+    include: { items: { orderBy: OFFER_ITEM_ORDER } },
   });
   if (!withItems) return null;
   return toResponseDto(withItems, request.closedAt);
