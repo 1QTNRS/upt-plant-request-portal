@@ -3,14 +3,15 @@ import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
-import { listDeclinedExactPlants } from "../lib/exact-plants.server";
+import { listExactPlantCandidates } from "../lib/exact-plants.server";
+import { EXACT_PLANT_RELEASE_LABELS } from "../lib/exact-plants";
 import { formatCurrency } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
-  const items = await listDeclinedExactPlants(shop);
+  const items = await listExactPlantCandidates(shop);
   return { items };
 };
 
@@ -24,16 +25,16 @@ export default function ExactPlantsIndex() {
       </s-link>
       <s-section>
         <s-text color="subdued">
-          Declined exact plants are plants UPT marked Available, offered to the
-          customer, and the customer rejected. They are not published to Shopify
-          until you review and approve a listing. Not Available, accepted,
-          never-offered, and FedEx items are excluded.
+          Exact plants UPT marked Available and offered to a customer, whose hold
+          has ended: the customer declined, or the offer expired unpaid. Nothing
+          is published to Shopify until you review and approve a listing. Not
+          Available, never-offered, paid and FedEx items are excluded.
         </s-text>
       </s-section>
-      <s-section heading="Declined exact plants">
+      <s-section heading="Exact plants released for listing">
         {items.length === 0 ? (
           <s-text color="subdued">
-            No declined exact plants are waiting for an EXACT PLANTS listing.
+            No exact plants are waiting for an EXACT PLANTS listing.
           </s-text>
         ) : (
           <s-stack direction="block" gap="base">
@@ -51,6 +52,10 @@ export default function ExactPlantsIndex() {
                 >
                   <s-stack direction="block" gap="small">
                     <s-heading>{item.title}</s-heading>
+                    <s-stack direction="inline" gap="small">
+                      <s-badge>{EXACT_PLANT_RELEASE_LABELS[item.releaseReason]}</s-badge>
+                      <s-text color="subdued">{item.requestNumber}</s-text>
+                    </s-stack>
                     <s-text>
                       {formatCurrency(item.price)} · {item.weightLbs} lb
                     </s-text>

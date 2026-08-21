@@ -248,6 +248,34 @@ export default function Analytics() {
         </s-stack>
       </s-section>
 
+      <s-section heading="Exact Plants Released">
+        <s-stack direction="block" gap="base">
+          <s-text color="subdued">
+            Offered exact plants whose hold has ended and that are eligible for an
+            EXACT PLANTS listing. Counted separately because a decline, an unpaid
+            hold and no reply at all are different problems.
+          </s-text>
+          <s-stack direction="inline" gap="base">
+            <MetricCard
+              label="Customer Declined"
+              value={String(data.releasedItems.customerDeclined)}
+            />
+            <MetricCard
+              label="Accepted but Unpaid/Expired"
+              value={String(data.releasedItems.acceptedUnpaidExpired)}
+            />
+            <MetricCard
+              label="Never Responded/Expired"
+              value={String(data.releasedItems.neverRespondedExpired)}
+            />
+            <MetricCard
+              label="Total released"
+              value={String(data.releasedItems.total)}
+            />
+          </s-stack>
+        </s-stack>
+      </s-section>
+
       <s-section heading="Customer Behavior">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="base">

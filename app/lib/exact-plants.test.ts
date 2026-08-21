@@ -4,61 +4,158 @@ import { describe, it } from "node:test";
 import {
   buildExactPlantListingDraft,
   buildExactPlantProductCreateInput,
-  declinedExactPlantIneligibilityReason,
   declinedItemTag,
+  EXACT_PLANT_RELEASE_LABELS,
   EXACT_PLANTS_COLLECTION_TITLE,
-  isDeclinedExactPlant,
+  exactPlantIneligibilityReason,
+  exactPlantReleaseReason,
+  isExactPlantEligible,
   isOnlineStorePublicationTitle,
   isPosPublicationTitle,
 } from "./exact-plants";
 
-describe("declined exact plant definition", () => {
-  it("requires an available offered plant that the customer rejected", () => {
+/** An available plant offered on a request that has not been paid. */
+function offered(overrides: Record<string, unknown> = {}) {
+  return {
+    hasOfferItem: true,
+    offerAvailability: "available",
+    requestStatus: "Pending",
+    ...overrides,
+  };
+}
+
+describe("exact plant release eligibility", () => {
+  it("releases a plant the customer declined", () => {
     assert.equal(
-      isDeclinedExactPlant({
-        offerAvailability: "available",
-        responseChoice: "reject",
-      }),
-      true,
+      exactPlantReleaseReason(offered({ responseChoice: "reject" })),
+      "customer_declined",
     );
   });
 
-  it("excludes accepted, not available, never offered, and unavailable items", () => {
+  it("releases a plant the customer accepted but never paid for", () => {
     assert.equal(
-      isDeclinedExactPlant({
-        offerAvailability: "available",
-        responseChoice: "accept",
-      }),
-      false,
+      exactPlantReleaseReason(
+        offered({ responseChoice: "accept", requestStatus: "Expired" }),
+      ),
+      "accepted_unpaid_expired",
+    );
+  });
+
+  it("releases a plant the customer never answered on an expired offer", () => {
+    assert.equal(
+      exactPlantReleaseReason(offered({ requestStatus: "Expired" })),
+      "never_responded_expired",
+    );
+  });
+
+  it("keeps holding a plant the customer accepted while the hold is live", () => {
+    assert.equal(exactPlantReleaseReason(offered({ responseChoice: "accept" })), null);
+  });
+
+  it("keeps holding a plant nobody has answered while the hold is live", () => {
+    assert.equal(exactPlantReleaseReason(offered()), null);
+  });
+
+  it("never releases a plant UPT marked Not Available", () => {
+    for (const requestStatus of ["Pending", "Expired"]) {
+      assert.equal(
+        exactPlantReleaseReason({
+          hasOfferItem: true,
+          offerAvailability: "not_available",
+          requestStatus,
+          responseChoice: "unavailable",
+        }),
+        null,
+      );
+    }
+  });
+
+  it("never releases a plant that was never offered", () => {
+    assert.equal(
+      exactPlantReleaseReason({ hasOfferItem: false, requestStatus: "Expired" }),
+      null,
+    );
+  });
+
+  it("never releases a sold plant, however the request ended", () => {
+    // Paid and Closed requests are out of scope; the plant is gone.
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({ responseChoice: "accept", requestStatus: "Closed", paidAt: new Date() }),
+      ),
+      null,
     );
     assert.equal(
-      isDeclinedExactPlant({
-        offerAvailability: "not_available",
-        responseChoice: "reject",
-      }),
-      false,
+      exactPlantReleaseReason(
+        offered({ responseChoice: "reject", requestStatus: "Closed" }),
+      ),
+      null,
     );
+    // A declined item on a request that was paid for other plants stays sold-safe.
     assert.equal(
-      isDeclinedExactPlant({
-        offerAvailability: "not_available",
-        responseChoice: "unavailable",
-      }),
-      false,
+      exactPlantReleaseReason(
+        offered({ responseChoice: "reject", paidAt: new Date() }),
+      ),
+      null,
     );
+  });
+
+  it("agrees with isExactPlantEligible", () => {
+    assert.equal(isExactPlantEligible(offered({ responseChoice: "reject" })), true);
+    assert.equal(isExactPlantEligible(offered({ responseChoice: "accept" })), false);
+  });
+
+  it("labels every reason for the admin", () => {
+    for (const reason of [
+      "customer_declined",
+      "accepted_unpaid_expired",
+      "never_responded_expired",
+    ] as const) {
+      assert.ok(EXACT_PLANT_RELEASE_LABELS[reason].length > 0);
+    }
+    assert.equal(EXACT_PLANT_RELEASE_LABELS.customer_declined, "Customer Declined");
+  });
+});
+
+describe("exact plant ineligibility messages", () => {
+  it("says nothing when the plant is eligible", () => {
+    assert.equal(
+      exactPlantIneligibilityReason(offered({ responseChoice: "reject" })),
+      null,
+    );
+  });
+
+  it("explains a Not Available plant", () => {
     assert.match(
-      declinedExactPlantIneligibilityReason({
-        hasOfferItem: false,
-        responseChoice: "reject",
-      }) ?? "",
-      /never offered/i,
-    );
-    assert.match(
-      declinedExactPlantIneligibilityReason({
+      exactPlantIneligibilityReason({
         hasOfferItem: true,
-        offerAvailability: "available",
-        responseChoice: "accept",
+        offerAvailability: "not_available",
+        requestStatus: "Expired",
       }) ?? "",
-      /Accepted/,
+      /Not Available/,
+    );
+  });
+
+  it("explains a live hold", () => {
+    assert.match(
+      exactPlantIneligibilityReason(offered({ responseChoice: "accept" })) ?? "",
+      /has not expired yet/,
+    );
+  });
+
+  it("explains a paid request", () => {
+    assert.match(
+      exactPlantIneligibilityReason(
+        offered({ responseChoice: "reject", paidAt: new Date() }),
+      ) ?? "",
+      /paid and closed/,
+    );
+  });
+
+  it("explains a plant that was never offered", () => {
+    assert.match(
+      exactPlantIneligibilityReason({ hasOfferItem: false }) ?? "",
+      /never offered/,
     );
   });
 });
