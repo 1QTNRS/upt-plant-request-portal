@@ -239,21 +239,26 @@ Rules for `app/routes/customer*`:
 
 `app/lib/customer-portal.test.ts` enforces 1–5 for the request form.
 
-#### Known remaining gap: the offer accept/reject form
+#### The offer response follows the same rules
 
-`app/components/customer-offer-view.tsx` has not had this treatment. Its
-accept/reject choices and the FedEx checkbox are React state mirrored into hidden
-inputs, and the real controls sit outside the submitting form. Its form action
-also still resolves to `/customer/requests/:id`, which is a Shopify 404 on the
-storefront.
+`app/components/customer-offer-view.tsx` has had the same treatment.
+Accept/Reject are native radios named `choice-<sourceItemId>` inside the one
+submitting form; FedEx is a real checkbox whose unchecked state submits nothing,
+which is exactly "upgrade removed". The form posts to
+`/apps/plant-requests/requests/:id`.
 
-**Do not "fix" only the action.** Today the 404 makes the page unusable but
-safe. With a corrected action and no hydration it would submit every item's
-default — `accept` for anything available, FedEx on — regardless of what the
-customer clicked, creating a draft order for plants they meant to reject. The
-controls have to move inside the form and become native inputs at the same time
-as the action is corrected. Unchecked checkboxes submit nothing, which is the
-right semantics for the optional FedEx upgrade.
+Removing FedEx is a **two-step server round-trip**: the first submit returns
+`pendingFedexRemoval`, which renders the Settings warning with "Remove it and
+continue" / "Keep the upgrade" and carries the choices forward as hidden inputs.
+Nothing is recorded until the customer chooses. The JS modal it replaced never
+opened on the storefront.
+
+`readOfferChoices` only honours `accept` and `reject`; `unavailable` is always
+derived from the offer, so a forged field cannot make an unavailable plant
+purchasable.
+
+The photo lightbox is the one remaining piece of client state. It is decorative
+and nothing about checkout depends on it.
 
 ### Two environment modules, deliberately
 
