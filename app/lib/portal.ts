@@ -491,12 +491,24 @@ export function buildDraftOrderLineItems(input: {
 export const DRAFT_ORDER_TAG = "upt-plant-request";
 
 /**
+ * Tag that identifies the one draft order belonging to a request.
+ *
+ * Lets a retry find a draft order Shopify already created when the reply to
+ * `draftOrderCreate` never arrived, instead of creating a second one and
+ * billing the customer twice.
+ */
+export function draftOrderIdempotencyTag(requestId: string): string {
+  return `upt-request:${requestId}`;
+}
+
+/**
  * Variables for `draftOrderCreate`. Kept pure and separate from the API call so
  * `scripts/validate-admin-graphql.mjs` can check the payload against the real
  * `DraftOrderInput` type — a document can be valid while its variables use a
  * field Shopify has since removed.
  */
 export function buildDraftOrderInput(input: {
+  requestId: string;
   requestNumber: string;
   customerEmail: string;
   currencyCode: string;
@@ -506,7 +518,11 @@ export function buildDraftOrderInput(input: {
   return {
     email: input.customerEmail,
     note: `UPT plant request ${input.requestNumber}`,
-    tags: [DRAFT_ORDER_TAG, input.requestNumber],
+    tags: [
+      DRAFT_ORDER_TAG,
+      input.requestNumber,
+      draftOrderIdempotencyTag(input.requestId),
+    ],
     lineItems: input.lineItems.map((line) => {
       // A real variant carries its own price and weight; Shopify ignores those
       // fields when `variantId` is set.

@@ -1,5 +1,6 @@
 import type { AdminContext } from "./admin-auth.server";
 import prisma from "../db.server";
+import { requireAdminClient } from "./environment.server";
 import {
   buildExactPlantListingDraft,
   declinedExactPlantIneligibilityReason,
@@ -233,6 +234,11 @@ export async function getDeclinedExactPlantReview(
   };
 }
 
+/**
+ * Stand-in for a real `productCreate` on a demo shop. Never reachable against a
+ * merchant store, where a missing Admin client raises instead so the listing is
+ * recorded as failed and can be retried rather than looking published.
+ */
 function demoProduct(requestItemId: string): { productGid: string; handle: string } {
   const slug = requestItemId.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
   return {
@@ -278,6 +284,7 @@ export async function createExactPlantListing(
   }
 
   try {
+    requireAdminClient(admin, shop, "Creating an EXACT PLANTS product");
     const created = admin
       ? await createExactPlantShopifyProduct(admin, {
           requestItemId: input.requestItemId,

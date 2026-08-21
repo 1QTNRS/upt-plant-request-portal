@@ -3,7 +3,6 @@ import { data, redirect, useActionData, useLoaderData } from "react-router";
 
 import { CustomerRequestPortal } from "../components/customer-request-portal";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
-import { isDevAdminBypass } from "../lib/shop";
 import {
   canUseDemoCustomerLogin,
   destroyCustomerSession,
@@ -12,7 +11,7 @@ import {
 } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
-import { getDisplayRequestNumber } from "../lib/portal";
+import { getDisplayRequestNumber, type CustomerMyRequestRow } from "../lib/portal";
 import {
   findOrCreateCustomer,
   listCustomerRequests,
@@ -26,30 +25,63 @@ const DEMO_CUSTOMER = {
   shopifyCustomerId: "demo-customer-alex",
 };
 
+function toRequestRow(
+  request: Awaited<ReturnType<typeof listCustomerRequests>>[number],
+): CustomerMyRequestRow {
+  return {
+    id: request.id,
+    requestNumber: getDisplayRequestNumber(request),
+    submittedDate: request.submittedDate,
+    plantsRequested: request.items.map((item) => item.plantName).join(", "),
+    status: request.status,
+  };
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const context = await readCustomerContext(request);
   if (!context) throw data("Not found", { status: 404 });
 
-  if (isDevAdminBypass()) {
-    await ensureShopSeeded(context.shop);
-  }
+  // `ensureShopSeeded` refuses anything but a demo shop; this also keeps the
+  // settings row in place for a real shop without seeding it.
+  await ensureShopSeeded(context.shop);
 
   const links = customerPortalRelativeLinks(context.viaAppProxy);
   const signedOut = {
     loggedIn: false as const,
     name: "",
     email: "",
-    myRequests: [] as Array<never>,
+    myRequests: [] as CustomerMyRequestRow[],
     showDemoLogin: canUseDemoCustomerLogin(),
     requestDetailBase: links.home,
+    canSubmitRequests: false,
+    identityError: null as string | null,
   };
 
   if (!context.identity) return signedOut;
 
   const identity = await resolveCustomerIdentity(context.shop, context.identity);
-  // Without an email there is no way to attribute the request or notify anyone,
-  // and guessing would expose one customer's requests to another.
-  if (!identity.email.trim()) return signedOut;
+
+  // Without an email the request cannot be attributed or acknowledged, and
+  // `CustomerProfile` is keyed on (shop, email) so a blank one would collapse
+  // every unidentified shopper into a single shared profile. The customer can
+  // still read the requests already linked to their Shopify account id.
+  if (!identity.email.trim()) {
+    if (!identity.shopifyCustomerId) return signedOut;
+    const requests = await listCustomerRequests(context.shop, {
+      shopifyCustomerId: identity.shopifyCustomerId,
+    });
+    return {
+      loggedIn: true as const,
+      name: identity.name,
+      email: "",
+      showDemoLogin: canUseDemoCustomerLogin(),
+      requestDetailBase: links.home,
+      canSubmitRequests: false,
+      identityError:
+        "We could not read the email address on your store account. Add an email to your account to submit a new plant request.",
+      myRequests: requests.map(toRequestRow),
+    };
+  }
 
   const customer = await findOrCreateCustomer(context.shop, {
     name: identity.name,
@@ -67,6 +99,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     email: customer.email,
     showDemoLogin: canUseDemoCustomerLogin(),
     requestDetailBase: links.home,
+    canSubmitRequests: true,
+    identityError: null as string | null,
     myRequests: requests.map((request) => ({
       id: request.id,
       requestNumber: getDisplayRequestNumber(request),
@@ -159,7 +193,13 @@ export default function CustomerHome() {
       email={loaderData.email}
       myRequests={loaderData.myRequests}
       successMessage={actionData?.successMessage}
-      errors={actionData?.errors}
+      errors={
+        actionData?.errors?.length
+          ? actionData.errors
+          : loaderData.identityError
+            ? [loaderData.identityError]
+            : undefined
+      }
       showDemoLogin={loaderData.showDemoLogin}
       requestDetailHref={(requestId) =>
         `${loaderData.requestDetailBase}/requests/${requestId}`

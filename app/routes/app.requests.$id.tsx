@@ -15,6 +15,7 @@ import {
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
+import { canStubShopifyWrites } from "../lib/environment.server";
 import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
 import { listDeclinedExactPlants } from "../lib/exact-plants.server";
 import {
@@ -40,7 +41,7 @@ import {
 } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 import { uploadPlantPhoto } from "../lib/shopify-ops.server";
-import { localUploadsAllowed, saveLocalUpload } from "../lib/uploads.server";
+import { saveLocalUpload } from "../lib/uploads.server";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -182,13 +183,16 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         const data = Buffer.from(await upload.arrayBuffer());
         let stored: { url: string; shopifyFileId?: string };
         try {
-          stored = await uploadPlantPhoto(admin, {
+          stored = await uploadPlantPhoto(admin, shop, {
             filename: upload.name,
             mimeType: upload.type || "image/jpeg",
             data,
           });
         } catch (error) {
-          if (!localUploadsAllowed()) {
+          // Local disk is ephemeral on a hosted deploy and is not served by
+          // the Shopify CDN, so a failed upload must surface rather than appear
+          // to succeed with a URL that dies at the next deploy.
+          if (!canStubShopifyWrites(shop)) {
             console.error(
               `Shopify Files upload failed for request ${requestId}.`,
               error,

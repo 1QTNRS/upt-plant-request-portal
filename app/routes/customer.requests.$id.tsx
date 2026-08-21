@@ -3,12 +3,9 @@ import { data, useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
-import { isDevAdminBypass } from "../lib/shop";
-import {
-  readCustomerContext,
-  type CustomerIdentity,
-} from "../lib/customer-session.server";
+import { readCustomerContext } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
+import { identityOwnsRequest } from "../lib/customer-identity";
 import {
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
@@ -22,22 +19,6 @@ import { getRequest } from "../lib/portal.server";
 import { offlineAdminClient } from "../lib/offline-admin.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
-function customerOwnsRequest(
-  request: Awaited<ReturnType<typeof getRequest>>,
-  identity: CustomerIdentity,
-) {
-  if (!request) return false;
-  const email = identity.email.trim().toLowerCase();
-  if (email && request.email.trim().toLowerCase() === email) return true;
-  if (
-    identity.shopifyCustomerId &&
-    request.shopifyCustomerId &&
-    identity.shopifyCustomerId === request.shopifyCustomerId
-  ) {
-    return true;
-  }
-  return false;
-}
 
 /**
  * Resolves the visitor and confirms they own the request, or returns null so
@@ -48,14 +29,13 @@ async function authorizeRequest(request: Request, requestId: string) {
   const context = await readCustomerContext(request);
   if (!context) return null;
 
-  if (isDevAdminBypass()) {
-    await ensureShopSeeded(context.shop);
-  }
+  // Never seeds a real shop; keeps the settings row present for one.
+  await ensureShopSeeded(context.shop);
 
   if (!context.identity) return null;
   const identity = await resolveCustomerIdentity(context.shop, context.identity);
   const plantRequest = await getRequest(context.shop, requestId);
-  if (!customerOwnsRequest(plantRequest, identity)) return null;
+  if (!identityOwnsRequest(identity, plantRequest)) return null;
 
   return { context, plantRequest };
 }

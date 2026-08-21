@@ -9,6 +9,7 @@ import type {
 
 import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
+import { isDemoDataEnabled } from "./environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -42,6 +43,22 @@ import {
 
 export const prismaClient = prisma;
 
+export class OfferAlreadyAnsweredError extends Error {
+  constructor() {
+    super("This offer has already been answered.");
+    this.name = "OfferAlreadyAnsweredError";
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "P2002"
+  );
+}
+
 type RequestWithRelations = DbPlantRequest & {
   items: Array<RequestItem & { photos: PhotoReference[] }>;
   offer?:
@@ -64,8 +81,20 @@ const requestInclude = {
   draftOrder: true,
 } as const;
 
+/**
+ * Stock imagery is only ever acceptable on a demo shop. A real offer shows the
+ * exact plant the customer is buying, so an item with no uploaded photo must
+ * render as having no photo rather than borrowing an unrelated one.
+ */
 function placeholderPhoto(seed: string): string {
+  if (!isDemoDataEnabled()) return "";
   return `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/800`;
+}
+
+function withPlaceholderFallback(urls: string[], seed: string): string[] {
+  if (urls.length > 0) return urls;
+  const placeholder = placeholderPhoto(seed);
+  return placeholder ? [placeholder] : [];
 }
 
 function parsePhotoUrls(raw: string | null | undefined): string[] {
@@ -80,10 +109,10 @@ function parsePhotoUrls(raw: string | null | undefined): string[] {
 }
 
 function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantItem {
-  const photoUrls =
-    item.photos.length > 0
-      ? item.photos.map((photo) => photo.url)
-      : [placeholderPhoto(item.id)];
+  const photoUrls = withPlaceholderFallback(
+    item.photos.map((photo) => photo.url),
+    item.id,
+  );
 
   const adminNotes = item.customerRequestNotes ?? "";
 
@@ -102,7 +131,7 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
     customerRequestNotes: item.customerRequestNotes ?? undefined,
     adminNotes,
     customerFacingNotes: item.customerFacingNotes ?? "",
-    photoPreviewUrl: photoUrls[0] ?? placeholderPhoto(item.id),
+    photoPreviewUrl: photoUrls[0] ?? "",
     photoUrls,
   };
 }
@@ -248,6 +277,14 @@ export async function findOrCreateCustomer(
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
 
+  // `CustomerProfile` is keyed on (shop, email). A blank email would collapse
+  // every unidentified shopper into a single shared profile.
+  if (!email) {
+    throw new Error(
+      "A customer email is required. Could not read the signed-in customer's email from Shopify.",
+    );
+  }
+
   if (input.shopifyCustomerId) {
     const byShopify = await prisma.customerProfile.findFirst({
       where: { shop, shopifyCustomerId: input.shopifyCustomerId },
@@ -313,18 +350,28 @@ export async function markRequestViewed(shop: string, requestId: string) {
   });
 }
 
+/**
+ * Mirrors `identityOwnsRequest`: a customer with a Shopify account id sees
+ * requests carrying that id, plus their own pre-account requests matched by
+ * email. Requests already claimed by a *different* account id are never
+ * returned, even when the email happens to match.
+ */
 export async function listCustomerRequests(
   shop: string,
   identity: { email?: string; shopifyCustomerId?: string },
 ): Promise<PlantRequest[]> {
   await expireOverdueOffers(shop);
   const email = identity.email?.trim().toLowerCase();
-  const identityFilters = [
-    email ? { customerEmail: email } : undefined,
-    identity.shopifyCustomerId
-      ? { shopifyCustomerId: identity.shopifyCustomerId }
-      : undefined,
-  ].filter(Boolean) as Array<{ customerEmail?: string; shopifyCustomerId?: string }>;
+  const identityFilters: Array<Record<string, unknown>> = [];
+
+  if (identity.shopifyCustomerId) {
+    identityFilters.push({ shopifyCustomerId: identity.shopifyCustomerId });
+    if (email) {
+      identityFilters.push({ customerEmail: email, shopifyCustomerId: null });
+    }
+  } else if (email) {
+    identityFilters.push({ customerEmail: email, shopifyCustomerId: null });
+  }
 
   if (identityFilters.length === 0) return [];
 
@@ -550,17 +597,16 @@ function offerItemToPlant(
 ): OfferPlantItem {
   const photoUrls = parsePhotoUrls(item.photoUrlsJson);
   const available = item.availability === "available";
+  const displayPhotos = available
+    ? withPlaceholderFallback(photoUrls, item.requestItemId)
+    : [];
   return {
     id: `offer-${requestId}-${index + 1}`,
     sourceItemId: item.requestItemId,
     plantName: item.plantName,
     price: available ? normalizePrice(item.price) : 0,
-    photoUrl: photoUrls[0] ?? placeholderPhoto(item.requestItemId),
-    photoUrls: available
-      ? photoUrls.length > 0
-        ? photoUrls
-        : [placeholderPhoto(item.requestItemId)]
-      : [],
+    photoUrl: displayPhotos[0] ?? "",
+    photoUrls: displayPhotos,
     notesFromUpt: item.customerFacingNotes,
     quantity: normalizeQuantity(item.quantity),
     availability: available ? "available" : "not_available",
@@ -685,54 +731,44 @@ export async function saveCustomerResponse(
     items: input.items,
   };
 
-  const saved = await prisma.customerResponse.upsert({
-    where: { requestId: input.requestId },
-    create: {
-      requestId: input.requestId,
-      customerName: request.customerName,
-      customerEmail: request.customerEmail,
-      shopifyCustomerId: request.shopifyCustomerId,
-      requestNumber: request.requestNumber,
-      offerExpiresAt: request.offer?.expiresAt,
-      fedexUpgradeSelected: input.fedexUpgradeSelected,
-      fedexUpgradePrice: input.fedexUpgradePrice,
-      snapshotJson: JSON.stringify(snapshot),
-      items: {
-        create: input.items.map((item) => ({
-          requestItemId: item.sourceItemId,
-          plantName: item.plantName,
-          choice: item.choice,
-          price: item.price,
-          quantity: item.quantity,
-          customerFacingNotes: item.customerNotes,
-          photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
-          unavailableReason: item.unavailableReason,
-        })),
+  // Create-only. `CustomerResponse.requestId` is unique, so two concurrent
+  // submissions cannot both record a response, and the loser is reported as an
+  // already-answered offer rather than silently overwriting the first answer.
+  try {
+    const saved = await prisma.customerResponse.create({
+      data: {
+        requestId: input.requestId,
+        customerName: request.customerName,
+        customerEmail: request.customerEmail,
+        shopifyCustomerId: request.shopifyCustomerId,
+        requestNumber: request.requestNumber,
+        offerExpiresAt: request.offer?.expiresAt,
+        fedexUpgradeSelected: input.fedexUpgradeSelected,
+        fedexUpgradePrice: input.fedexUpgradePrice,
+        snapshotJson: JSON.stringify(snapshot),
+        items: {
+          create: input.items.map((item) => ({
+            requestItemId: item.sourceItemId,
+            plantName: item.plantName,
+            choice: item.choice,
+            price: item.price,
+            quantity: item.quantity,
+            customerFacingNotes: item.customerNotes,
+            photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
+            unavailableReason: item.unavailableReason,
+          })),
+        },
       },
-    },
-    update: {
-      respondedAt: new Date(),
-      fedexUpgradeSelected: input.fedexUpgradeSelected,
-      fedexUpgradePrice: input.fedexUpgradePrice,
-      snapshotJson: JSON.stringify(snapshot),
-      items: {
-        deleteMany: {},
-        create: input.items.map((item) => ({
-          requestItemId: item.sourceItemId,
-          plantName: item.plantName,
-          choice: item.choice,
-          price: item.price,
-          quantity: item.quantity,
-          customerFacingNotes: item.customerNotes,
-          photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
-          unavailableReason: item.unavailableReason,
-        })),
-      },
-    },
-    include: { items: true },
-  });
+      include: { items: true },
+    });
 
-  return toResponseDto(saved, request.closedAt);
+    return toResponseDto(saved, request.closedAt);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new OfferAlreadyAnsweredError();
+    }
+    throw error;
+  }
 }
 
 export async function closeRequest(
@@ -742,6 +778,11 @@ export async function closeRequest(
 ): Promise<PlantRequest | null> {
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
+
+  // Already closed: keep the original closedAt and do not append another event.
+  if (normalizeRequestStatus(request.status) === "Closed") {
+    return toPlantRequest(request);
+  }
 
   const now = new Date();
   await prisma.$transaction([
@@ -774,11 +815,20 @@ export async function markRequestPaid(
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
 
+  // `orders/paid` is delivered at least once. Redelivery of an order we have
+  // already recorded must not re-close the request or append a second event.
+  const existingOrder = await prisma.shopifyOrderReference.findUnique({
+    where: { requestId },
+  });
+  if (existingOrder?.shopifyOrderGid === order.shopifyOrderGid && request.paidAt) {
+    return toPlantRequest(request);
+  }
+
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await tx.plantRequest.update({
       where: { id: requestId },
-      data: { status: "Closed", closedAt: now, paidAt: now },
+      data: { status: "Closed", closedAt: request.closedAt ?? now, paidAt: now },
     });
     await tx.shopifyOrderReference.upsert({
       where: { requestId },
@@ -855,6 +905,17 @@ export async function saveDraftOrderReference(
       lineItemsJson: JSON.stringify(data.lineItems),
     },
   });
+}
+
+export function parseDraftOrderLineItems(raw: string | null | undefined): DraftOrderLineItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed as DraftOrderLineItem[];
+  } catch {
+    return [];
+  }
 }
 
 export async function getDraftOrder(shop: string, requestId: string) {

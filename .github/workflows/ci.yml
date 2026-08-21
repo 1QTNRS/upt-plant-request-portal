@@ -2,6 +2,11 @@ on: [push, pull_request]
 
 name: CI
 
+env:
+  # The Prisma datasource reads DATABASE_URL. SQLite is enough to generate the
+  # client, validate the schema and run the test suite.
+  DATABASE_URL: file:dev.sqlite
+
 jobs:
   CI:
     name: Node ${{ matrix.node }} and ${{ matrix.manager }}
@@ -69,6 +74,9 @@ jobs:
         run: |
           npm run setup
           npm test
+
+      - name: Run tests
+        run: npx prisma migrate deploy && npm test
 
       - name: Build application
         run: |

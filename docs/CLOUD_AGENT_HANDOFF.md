@@ -118,11 +118,14 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - App proxy `/apps/plant-requests` → `/customer`, **HMAC-verified** (`app/lib/app-proxy.ts`)
 - Offline Admin client for the app-proxy customer path (`app/lib/offline-admin.server.ts`). Goes through `unauthenticated.admin(shop)`, which calls `ensureValidOfflineSession` and therefore refreshes the token under the `expiringOfflineAccessTokens` future flag — the customer draft-order path does not break when the offline token expires.
 - Customer name/email resolved from the Admin API and cached in `CustomerProfile` (`app/lib/customer-identity.server.ts`)
+- Request ownership decided by `identityOwnsRequest` (`app/lib/customer-identity.ts`, pure). A request already claimed by a Shopify account id is **never** reachable by email, so changing an account email cannot reach a stranger's request
 - Draft order create + invoice send (`createDraftOrderForRequest` in `app/lib/shopify-ops.server.ts`), custom lines priced with `originalUnitPriceWithCurrency`
 - FedEx upgrade product lookup via `productByIdentifier`
 - Shopify Files staged upload + `fileCreate`, polling `fileStatus` until `READY` (`uploadPlantPhoto`)
 - `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes, ignores redeliveries for an already-paid request
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
+- Draft orders are idempotent twice over: a recorded `DraftOrderReference` short-circuits, and `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost. Without it a retry bills the customer twice
+- Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
 - EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb), `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
 - Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
 
@@ -205,6 +208,21 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 ### Expiration logic
 
 `expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler.
+
+### Two environment modules, deliberately
+
+| Module | Answers |
+| --- | --- |
+| `app/lib/env.server.ts` | Boot-time contract: `assertProductionEnv()` refuses to start on a bad deploy, `REQUIRED_SHOPIFY_SCOPES` / `grantedScopeWarning()`, `resolveDatabaseUrl()` / `withConnectionLimit()` |
+| `app/lib/environment.server.ts` | Per-request, **shop-scoped** runtime gating: `isDemoDataEnabled(shop)`, `canStubShopifyWrites(shop)`, `requireAdminClient()`, `missingProductionSecrets()` for the Settings panel |
+
+`isProductionRuntime()` delegates to `isProduction()` so there is exactly one
+definition of "in production". **Do not add a second one** — two that can
+disagree is how demo data reaches a real shop or a Shopify write gets silently
+faked.
+
+Demo data and Shopify write stubbing are gated on the *shop*, not just on
+`NODE_ENV`: a real merchant shop is refused even in development.
 
 ### Scheduler
 

@@ -31,6 +31,10 @@ ENV PORT=3000
 ENV HOST=0.0.0.0
 EXPOSE 3000
 
+# Override with a durable database at run time. The default writes inside the
+# container, so it is wiped on every redeploy.
+ENV DATABASE_URL="file:dev.sqlite"
+
 COPY package.json package-lock.json* ./
 # `prisma` and `@prisma/client` are production dependencies, so the Prisma CLI is
 # available at start for `migrate deploy`.

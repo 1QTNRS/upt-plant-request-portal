@@ -9,6 +9,7 @@ import {
 import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
+  draftOrderIdempotencyTag,
   DRAFT_ORDER_TAG,
 } from "./portal";
 
@@ -28,6 +29,7 @@ function lineItems(fedexSelected: boolean) {
 describe("draft order input", () => {
   it("prices custom plant lines with an explicit currency", () => {
     const input = buildDraftOrderInput({
+      requestId: "req_1",
       requestNumber: "REQ2178",
       customerEmail: "customer@example.com",
       currencyCode: "USD",
@@ -46,6 +48,7 @@ describe("draft order input", () => {
 
   it("does not send the removed originalUnitPrice field", () => {
     const input = buildDraftOrderInput({
+      requestId: "req_1",
       requestNumber: "REQ1",
       customerEmail: "customer@example.com",
       currencyCode: "USD",
@@ -58,17 +61,47 @@ describe("draft order input", () => {
 
   it("tags the draft order so the orders/paid webhook can match it", () => {
     const input = buildDraftOrderInput({
+      requestId: "req_1",
       requestNumber: "REQ2178",
       customerEmail: "customer@example.com",
       currencyCode: "USD",
       lineItems: lineItems(false),
     });
-    assert.deepEqual(input.tags, [DRAFT_ORDER_TAG, "REQ2178"]);
+    // The request number is what `orders/paid` matches on; the per-request tag
+    // is what stops a retry creating a second draft order.
+    assert.deepEqual(input.tags, [
+      DRAFT_ORDER_TAG,
+      "REQ2178",
+      draftOrderIdempotencyTag("req_1"),
+    ]);
     assert.equal(input.note, "UPT plant request REQ2178");
+  });
+
+  it("carries a per-request tag so a retry finds the existing draft order", () => {
+    const first = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ1",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+    });
+    const second = buildDraftOrderInput({
+      requestId: "req_2",
+      requestNumber: "REQ2",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+    });
+    assert.notEqual(
+      first.tags.at(-1),
+      second.tags.at(-1),
+      "two requests must not share an idempotency tag",
+    );
   });
 
   it("uses the real FedEx variant when one was resolved", () => {
     const input = buildDraftOrderInput({
+      requestId: "req_1",
       requestNumber: "REQ2178",
       customerEmail: "customer@example.com",
       currencyCode: "USD",
@@ -83,6 +116,7 @@ describe("draft order input", () => {
 
   it("falls back to a custom FedEx line when no variant was resolved", () => {
     const input = buildDraftOrderInput({
+      requestId: "req_1",
       requestNumber: "REQ2178",
       customerEmail: "customer@example.com",
       currencyCode: "CAD",

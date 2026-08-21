@@ -164,6 +164,7 @@ async function inputSamples() {
       label: "draftOrderCreate($input)",
       type: "DraftOrderInput!",
       value: buildDraftOrderInput({
+        requestId: "cm0requestid",
         requestNumber: "REQ2178",
         customerEmail: "customer@example.com",
         currencyCode: "USD",
@@ -175,6 +176,7 @@ async function inputSamples() {
       label: "draftOrderCreate($input) without a FedEx variant",
       type: "DraftOrderInput!",
       value: buildDraftOrderInput({
+        requestId: "cm0requestid",
         requestNumber: "REQ2178",
         customerEmail: "customer@example.com",
         currencyCode: "USD",

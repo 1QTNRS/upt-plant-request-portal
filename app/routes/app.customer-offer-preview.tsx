@@ -8,6 +8,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
 import { requireAdmin } from "../lib/admin-auth.server";
+import { isDemoDataEnabled } from "../lib/environment.server";
 import {
   handleCustomerOfferAction,
   loadCustomerOfferPage,
@@ -25,6 +26,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop, admin } = await requireAdmin(request);
   const requestId = new URL(request.url).searchParams.get("requestId");
   if (!requestId) return { ok: false };
+
+  // Answering on the customer's behalf would record their accept/reject choices,
+  // create a real draft order and email them a checkout link. Outside
+  // development this page is a read-only preview of the customer offer.
+  if (!isDemoDataEnabled(shop)) return { ok: false };
+
   const form = await request.formData();
   return handleCustomerOfferAction({ shop, requestId, form, admin });
 };

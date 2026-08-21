@@ -57,6 +57,8 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Customer-facing links must go through the storefront app proxy (`customerLinksForShop` / `customerPortalRelativeLinks`). A link to the app's own origin carries no signed identity and renders "Request not available".
 - `ensureShopSeeded` must only ever run under the dev bypass. It previously ran on a production code path and seeded demo requests into the live database.
 - Leftover prototype files (`app/lib/sample-*.ts`, `item-*.ts`, `customer-request-submissions.ts`, etc.) are unused by active routes.
+- Two environment modules exist on purpose: `env.server.ts` is the boot-time contract, `environment.server.ts` is per-request shop-scoped gating (`isDemoDataEnabled`, `canStubShopifyWrites`). `isProductionRuntime()` delegates to `isProduction()`; never add a third definition of "in production".
+- Similarly, `customer-identity.ts` is pure request-ownership authorization and `customer-identity.server.ts` resolves a name/email from the Admin API. Different concerns, similar names.
 
 ### Business rules to preserve
 
