@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Form, useNavigation } from "react-router";
 
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
@@ -27,66 +26,24 @@ const modalButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function FedexWarningModal({
-  open,
-  message,
-  onKeep,
-  onRemove,
-}: {
-  open: boolean;
-  message: string;
-  onKeep: () => void;
-  onRemove: () => void;
-}) {
-  if (!open) return null;
+const buttonStyle: React.CSSProperties = {
+  padding: "8px 16px",
+  borderRadius: "8px",
+  border: "1px solid #c9cccf",
+  background: "#ffffff",
+  font: "inherit",
+  cursor: "pointer",
+};
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px",
-      }}
-    >
-      <div
-        role="presentation"
-        onClick={onKeep}
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.45)",
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="fedex-warning-title"
-        style={{ position: "relative", zIndex: 1001, width: "min(520px, 100%)" }}
-      >
-        <s-box padding="large" borderWidth="base" borderRadius="base" background="base">
-          <s-stack direction="block" gap="base">
-            <s-heading id="fedex-warning-title">
-              Remove FedEx Priority Overnight upgrade?
-            </s-heading>
-            <s-paragraph>{message}</s-paragraph>
-            <s-stack direction="inline" gap="small">
-              <s-button variant="primary" onClick={onKeep}>
-                Keep FedEx Upgrade
-              </s-button>
-              <s-button variant="secondary" onClick={onRemove}>
-                I understand, remove upgrade
-              </s-button>
-            </s-stack>
-          </s-stack>
-        </s-box>
-      </div>
-    </div>
-  );
-}
+const choiceLabelStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  padding: "8px 16px",
+  borderRadius: "8px",
+  border: "1px solid #c9cccf",
+  cursor: "pointer",
+};
 
 function PhotoLightbox({
   state,
@@ -217,6 +174,10 @@ export function CustomerOfferView({
   backHref,
   requestClosed,
   confirmationEmail,
+  formAction,
+  submittedChoices,
+  fedexSelected = true,
+  pendingFedexRemoval = false,
 }: {
   offer: SampleCustomerOffer | null;
   response: CustomerOfferResponse | null;
@@ -225,27 +186,21 @@ export function CustomerOfferView({
   backHref?: string;
   requestClosed: boolean;
   confirmationEmail?: { subject: string; bodyText: string } | null;
+  /**
+   * Where the form posts. Must be the storefront proxy path — React Router
+   * would otherwise render the app's own `/customer/...` path, which does not
+   * exist on the shop's domain and returns a Shopify 404.
+   */
+  formAction?: string;
+  /** Choices the customer already picked, echoed back by the server. */
+  submittedChoices?: Record<string, "accept" | "reject">;
+  fedexSelected?: boolean;
+  /** Set when the customer unchecked FedEx and has to confirm the warning. */
+  pendingFedexRemoval?: boolean;
 }) {
-  const navigation = useNavigation();
-  const [itemChoices, setItemChoices] = useState<Record<string, ItemChoice>>({});
-  const [fedexUpgrade, setFedexUpgrade] = useState(true);
-  const [showFedexModal, setShowFedexModal] = useState(false);
   const [photoLightbox, setPhotoLightbox] = useState<PhotoLightboxState | null>(
     null,
   );
-
-  useEffect(() => {
-    if (!offer) return;
-    setItemChoices(
-      Object.fromEntries(
-        offer.items.map((item) => [
-          item.id,
-          item.availability === "available" ? "accept" : "unavailable",
-        ]),
-      ),
-    );
-    setFedexUpgrade(response?.fedexUpgradeSelected ?? true);
-  }, [offer, response]);
 
   if (!offer) {
     return (
@@ -268,7 +223,6 @@ export function CustomerOfferView({
   const submitted = Boolean(response);
   const acceptedItems = (response?.items ?? []).filter((item) => item.choice === "accept");
   const hasAccepted = acceptedItems.length > 0;
-  const submitting = navigation.state !== "idle";
 
   if (submitted) {
     return (
@@ -316,12 +270,16 @@ export function CustomerOfferView({
                 You did not accept any plants from this offer. Close this request
                 when you are finished. No checkout link will be created.
               </s-text>
-              <Form method="post">
-                <input type="hidden" name="intent" value="close-request" />
-                <s-button variant="primary" type="submit">
+              <form method="post" action={formAction}>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="close-request"
+                  style={buttonStyle}
+                >
                   Close Request
-                </s-button>
-              </Form>
+                </button>
+              </form>
             </s-stack>
           </s-section>
         ) : null}
@@ -402,102 +360,133 @@ export function CustomerOfferView({
         holdMessage={offer.holdMessage}
       />
 
-      <s-section heading="Plants offered to you">
-        <s-stack direction="block" gap="base">
-          {offer.items.map((item) => (
-            <OfferItemCard
-              key={item.id}
-              item={item}
-              choice={itemChoices[item.id] ?? (item.availability === "available" ? "accept" : "unavailable")}
-              onChoice={(choice) =>
-                setItemChoices((current) => ({ ...current, [item.id]: choice }))
-              }
-              onOpenPhotos={() =>
-                setPhotoLightbox({
-                  plantName: item.plantName,
-                  photos: item.photoUrls,
-                  index: 0,
-                })
-              }
-            />
-          ))}
-        </s-stack>
-      </s-section>
-
-      {allUnavailable ? (
-        <s-section>
+      {pendingFedexRemoval ? (
+        /*
+         * Removing the upgrade used to open a JS modal, which never opens on the
+         * storefront. It is now a second server round-trip, so the warning is
+         * still shown and the removal is still an explicit choice.
+         */
+        <s-section heading="Remove the shipping upgrade?">
           <s-stack direction="block" gap="base">
-            <s-text>
-              Unfortunately, none of the requested plants are currently available.
-              Please review the notes below for additional information.
-            </s-text>
-            <Form method="post">
-              <input type="hidden" name="intent" value="close-request" />
-              <s-button variant="primary" type="submit" {...(submitting ? { loading: true } : {})}>
-                Close Request
-              </s-button>
-            </Form>
-          </s-stack>
-        </s-section>
-      ) : (
-        <>
-          <s-section heading="Shipping upgrade">
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
-              <label
-                htmlFor="fedex-upgrade"
-                style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}
-              >
-                <input
-                  id="fedex-upgrade"
-                  type="checkbox"
-                  checked={fedexUpgrade}
-                  onChange={(event) => {
-                    if (event.target.checked) {
-                      setFedexUpgrade(true);
-                      return;
-                    }
-                    setShowFedexModal(true);
-                  }}
-                />
-                <s-text>
-                  {offer.fedexUpgradeLabel}, {formatCurrency(offer.fedexUpgradePrice)}
-                </s-text>
-              </label>
-            </s-box>
-          </s-section>
-
-          <s-section>
-            <Form method="post">
-              <input type="hidden" name="intent" value="submit-response" />
-              <input type="hidden" name="fedexUpgradeSelected" value={fedexUpgrade ? "true" : "false"} />
-              {offer.items.map((item) => (
+            <s-banner tone="warning">
+              <s-text>{fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}</s-text>
+            </s-banner>
+            <form method="post" action={formAction}>
+              <input type="hidden" name="fedexRemovalAcknowledged" value="true" />
+              {purchasable.map((item) => (
                 <input
                   key={item.id}
                   type="hidden"
                   name={`choice-${item.sourceItemId}`}
-                  value={itemChoices[item.id] ?? (item.availability === "available" ? "accept" : "unavailable")}
+                  value={submittedChoices?.[item.sourceItemId] ?? "accept"}
                 />
               ))}
-              <s-button variant="primary" type="submit" {...(submitting ? { loading: true } : {})}>
-                Submit
-              </s-button>
-            </Form>
+              <s-stack direction="inline" gap="small">
+                <button
+                  type="submit"
+                  name="intent"
+                  value="submit-response"
+                  style={buttonStyle}
+                >
+                  Remove it and continue
+                </button>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="keep-fedex"
+                  style={{ ...buttonStyle, fontWeight: 600 }}
+                >
+                  Keep the upgrade
+                </button>
+              </s-stack>
+            </form>
+          </s-stack>
+        </s-section>
+      ) : (
+        <form method="post" action={formAction}>
+          <s-section heading="Plants offered to you">
+            <s-stack direction="block" gap="base">
+              {offer.items.map((item) => (
+                <OfferItemCard
+                  key={item.id}
+                  item={item}
+                  choice={
+                    submittedChoices?.[item.sourceItemId] ??
+                    (item.availability === "available" ? "accept" : "unavailable")
+                  }
+                  onOpenPhotos={() =>
+                    setPhotoLightbox({
+                      plantName: item.plantName,
+                      photos: item.photoUrls,
+                      index: 0,
+                    })
+                  }
+                />
+              ))}
+            </s-stack>
           </s-section>
-        </>
-      )}
 
-      <FedexWarningModal
-        open={showFedexModal}
-        message={fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}
-        onKeep={() => {
-          setFedexUpgrade(true);
-          setShowFedexModal(false);
-        }}
-        onRemove={() => {
-          setFedexUpgrade(false);
-          setShowFedexModal(false);
-        }}
-      />
+          {allUnavailable ? (
+            <s-section>
+              <s-stack direction="block" gap="base">
+                <s-text>
+                  Unfortunately, none of the requested plants are currently
+                  available. Please review the notes below for additional
+                  information.
+                </s-text>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="close-request"
+                  style={{ ...buttonStyle, fontWeight: 600 }}
+                >
+                  Close Request
+                </button>
+              </s-stack>
+            </s-section>
+          ) : (
+            <>
+              <s-section heading="Shipping upgrade">
+                <s-box
+                  padding="base"
+                  borderWidth="base"
+                  borderRadius="base"
+                  background="base"
+                >
+                  <label htmlFor="fedex-upgrade" style={choiceLabelStyle}>
+                    {/*
+                      A real checkbox: unchecked submits nothing, which is
+                      exactly "upgrade removed".
+                    */}
+                    <input
+                      id="fedex-upgrade"
+                      type="checkbox"
+                      name="fedexUpgradeSelected"
+                      value="true"
+                      defaultChecked={fedexSelected}
+                    />
+                    <s-text>
+                      {offer.fedexUpgradeLabel},{" "}
+                      {formatCurrency(offer.fedexUpgradePrice)}
+                    </s-text>
+                  </label>
+                </s-box>
+              </s-section>
+
+              <s-section>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="submit-response"
+                  style={{ ...buttonStyle, fontWeight: 600 }}
+                >
+                  Submit
+                </button>
+              </s-section>
+            </>
+          )}
+        </form>
+      )}
 
       {photoLightbox ? (
         <PhotoLightbox
@@ -515,12 +504,10 @@ export function CustomerOfferView({
 function OfferItemCard({
   item,
   choice,
-  onChoice,
   onOpenPhotos,
 }: {
   item: OfferPlantItem;
   choice: ItemChoice;
-  onChoice: (choice: "accept" | "reject") => void;
   onOpenPhotos: () => void;
 }) {
   const available = item.availability === "available";
@@ -581,19 +568,25 @@ function OfferItemCard({
         </s-stack>
 
         {available ? (
+          /*
+           * Native radios inside the submitting form. A choice held in React
+           * state and mirrored into a hidden input submits the default for every
+           * item when the page does not hydrate, which it never does through the
+           * app proxy — the customer would silently accept everything.
+           */
           <s-stack direction="inline" gap="small">
-            <s-button
-              variant={choice === "accept" ? "primary" : "secondary"}
-              onClick={() => onChoice("accept")}
-            >
-              Accept
-            </s-button>
-            <s-button
-              variant={choice === "reject" ? "primary" : "secondary"}
-              onClick={() => onChoice("reject")}
-            >
-              Reject
-            </s-button>
+            {(["accept", "reject"] as const).map((option) => (
+              <label key={option} style={choiceLabelStyle}>
+                <input
+                  type="radio"
+                  name={`choice-${item.sourceItemId}`}
+                  value={option}
+                  defaultChecked={choice === option}
+                  required
+                />
+                <s-text>{option === "accept" ? "Accept" : "Reject"}</s-text>
+              </label>
+            ))}
           </s-stack>
         ) : (
           <s-text color="subdued">

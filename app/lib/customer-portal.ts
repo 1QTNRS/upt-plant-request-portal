@@ -49,3 +49,23 @@ export function portalFormAction(context: { viaAppProxy: boolean }): string {
 export function portalHome(context: { viaAppProxy: boolean }): string {
   return customerPortalRelativeLinks(context.viaAppProxy).home;
 }
+
+/**
+ * The accept/reject choices in a submitted offer form, keyed by request item.
+ *
+ * Read from `choice-<sourceItemId>` radios rather than a hidden mirror of React
+ * state, so the values are whatever the customer actually selected even when the
+ * page has not hydrated. Only `accept` and `reject` are honoured; an item the
+ * shop marked unavailable is informational and carries no control.
+ */
+export function readOfferChoices(
+  form: FormData,
+): Record<string, "accept" | "reject"> {
+  const choices: Record<string, "accept" | "reject"> = {};
+  for (const [key, value] of form.entries()) {
+    if (!key.startsWith("choice-")) continue;
+    if (value !== "accept" && value !== "reject") continue;
+    choices[key.slice("choice-".length)] = value;
+  }
+  return choices;
+}

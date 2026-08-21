@@ -7,6 +7,7 @@ import { APP_PROXY_BASE_PATH, CUSTOMER_PORTAL_PATH } from "./app-proxy";
 import {
   portalFormAction,
   portalHome,
+  readOfferChoices,
   readPlantLines,
   withExtraRow,
   withoutRow,
@@ -117,6 +118,91 @@ describe("plant rows", () => {
     assert.deepEqual(withoutRow([{ plantName: "A", notes: "" }], 0), [
       { plantName: "", notes: "" },
     ]);
+  });
+});
+
+describe("offer response choices", () => {
+  it("reads the accept and reject radios the customer selected", () => {
+    assert.deepEqual(
+      readOfferChoices(form({ "choice-item_1": "accept", "choice-item_2": "reject" })),
+      { item_1: "accept", item_2: "reject" },
+    );
+  });
+
+  it("ignores fields that are not choices", () => {
+    assert.deepEqual(
+      readOfferChoices(
+        form({
+          intent: "submit-response",
+          fedexUpgradeSelected: "true",
+          "choice-item_1": "accept",
+        }),
+      ),
+      { item_1: "accept" },
+    );
+  });
+
+  it("ignores anything that is not accept or reject", () => {
+    // `unavailable` is derived from the offer, never taken from the form, so a
+    // forged value cannot turn an unavailable plant into a purchasable one.
+    assert.deepEqual(
+      readOfferChoices(
+        form({ "choice-item_1": "unavailable", "choice-item_2": "whatever" }),
+      ),
+      {},
+    );
+  });
+
+  it("returns nothing for a form with no choices", () => {
+    assert.deepEqual(readOfferChoices(form({ intent: "close-request" })), {});
+  });
+});
+
+describe("the offer response works without JavaScript", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "app", "components", "customer-offer-view.tsx"),
+    "utf8",
+  );
+
+  it("submits accept and reject as native radios", () => {
+    // Held in React state and mirrored into a hidden input, every item would
+    // submit its default — accept for anything available — creating a draft
+    // order for plants the customer meant to reject.
+    assert.match(source, /type="radio"/);
+    assert.match(source, /name=\{`choice-\$\{item\.sourceItemId\}`\}/);
+    assert.match(source, /defaultChecked=\{choice === option\}/);
+  });
+
+  it("has no hidden mirror of the choices", () => {
+    assert.ok(
+      !/type="hidden"[\s\S]{0,120}name=\{`choice-\$\{item\.id\}`\}/.test(source),
+      "a hidden mirror of client state would submit stale defaults",
+    );
+  });
+
+  it("submits FedEx as a real checkbox, checked by default", () => {
+    // An unchecked checkbox submits nothing, which is exactly "upgrade removed".
+    assert.match(source, /type="checkbox"\s*\n\s*name="fedexUpgradeSelected"/);
+    assert.match(source, /defaultChecked=\{fedexSelected\}/);
+  });
+
+  it("keeps the removal warning as an explicit confirmation", () => {
+    assert.match(source, /pendingFedexRemoval/);
+    assert.match(source, /name="fedexRemovalAcknowledged"/);
+    assert.match(source, /value="keep-fedex"/);
+  });
+
+  it("uses plain forms with an explicit action", () => {
+    assert.ok(!/<Form\b/.test(source));
+    for (const match of source.matchAll(/<form([^>]*)>/g)) {
+      assert.match(match[1], /action=\{formAction\}/);
+    }
+  });
+
+  it("holds no client state for anything that affects checkout", () => {
+    // The photo lightbox is the only remaining state and is decorative.
+    const stateHooks = [...source.matchAll(/useState<([^>]*)>/g)].map((m) => m[1]);
+    assert.deepEqual(stateHooks, ["PhotoLightboxState | null"]);
   });
 });
 
