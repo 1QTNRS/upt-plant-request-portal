@@ -16,10 +16,16 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import { canStubShopifyWrites } from "../lib/environment.server";
-import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
+import {
+  listEmailsForRequest,
+  notifyOfferReady,
+  redeliverEmailMessage,
+} from "../lib/emails.server";
 import { listExactPlantCandidates } from "../lib/exact-plants.server";
+import { createPaymentLinkForRequest } from "../lib/offer-response.server";
 import {
   formatCurrency,
+  formatDateTime,
   getDisplayRequestNumber,
   requestStatusTone,
   UNAVAILABLE_REASON_OPTIONS,
@@ -34,6 +40,7 @@ import {
 import {
   addItemPhotos,
   getCustomerResponse,
+  getDraftOrder,
   getRequest,
   markRequestViewed,
   sendOffer,
@@ -124,14 +131,36 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const response = plantRequest
     ? await getCustomerResponse(shop, requestId)
     : null;
-  const emails = plantRequest ? await listEmailsForRequest(shop, requestId) : [];
+  // Dates are formatted here because the outbox rows are rendered as text.
+  const emails = plantRequest
+    ? (await listEmailsForRequest(shop, requestId)).map((email) => ({
+        ...email,
+        createdAt: formatDateTime(email.createdAt),
+        sentAt: email.sentAt ? formatDateTime(email.sentAt) : null,
+      }))
+    : [];
+  const draftOrder = plantRequest ? await getDraftOrder(shop, requestId) : null;
 
   const declinedExactPlants = plantRequest
     ? await listExactPlantCandidates(shop, requestId)
     : [];
 
-  return { requestId, plantRequest, response, emails, declinedExactPlants };
+  return {
+    requestId,
+    plantRequest,
+    response,
+    emails,
+    paymentLink: draftOrder?.invoiceUrl ?? null,
+    declinedExactPlants,
+  };
 };
+
+/** A retry that did not deliver has to say why, or it looks like it worked. */
+function undeliveredMessage(error?: string | null): string {
+  return error
+    ? `Still undelivered: ${error}`
+    : "Still undelivered. Check that RESEND_API_KEY and EMAIL_FROM are set for this deployment.";
+}
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
   const { shop, admin } = await requireAdmin(request);
@@ -226,6 +255,38 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         await notifyOfferReady(shop, requestId, appUrl);
       }
       return { ok: true, sent: Boolean(updated) };
+    }
+
+    // `sendOffer` commits the offer and moves the request out of New, so it
+    // refuses to run a second time. Without this, an offer-ready email that
+    // failed after that commit could never be sent at all.
+    if (intent === "resend-offer-email") {
+      const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
+      const message = await notifyOfferReady(shop, requestId, appUrl);
+      if (message?.status === "sent") return { ok: true };
+      return { ok: false, error: undeliveredMessage(message?.error) };
+    }
+
+    if (intent === "retry-email") {
+      const message = await redeliverEmailMessage(
+        shop,
+        String(form.get("emailId") || ""),
+      );
+      if (!message) {
+        return { ok: false, error: "That email is no longer in the outbox." };
+      }
+      if (message.status === "sent") return { ok: true };
+      return { ok: false, error: undeliveredMessage(message.error) };
+    }
+
+    if (intent === "create-payment-link") {
+      const result = await createPaymentLinkForRequest({
+        shop,
+        requestId,
+        admin,
+      });
+      if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true };
     }
   } catch (error) {
     return {
@@ -487,6 +548,109 @@ function PlantItemCard({
   );
 }
 
+type OutboxMessage = Awaited<ReturnType<typeof loader>>["emails"][number];
+
+const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
+  request_received: "Request received",
+  admin_new_request: "New request (admin)",
+  offer_ready: "Offer ready",
+  confirmation: "Selections confirmed",
+  checkout_link: "Payment link",
+  expiration_reminder: "Expiration reminder",
+  compliance_data_request: "Customer data request",
+};
+
+function emailStatusTone(
+  status: string,
+): "success" | "warning" | "critical" | "info" {
+  switch (status) {
+    case "sent":
+      return "success";
+    case "failed":
+      return "critical";
+    case "preview":
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
+/**
+ * The outbox for this request. A failed message used to exist only as one line
+ * in the hosting provider's log, so nobody found out until a customer asked why
+ * they had heard nothing.
+ */
+function EmailSection({ emails }: { emails: OutboxMessage[] }) {
+  const undelivered = emails.filter((email) => email.status !== "sent");
+
+  return (
+    <s-section heading="Emails">
+      <s-stack direction="block" gap="base">
+        {undelivered.length > 0 ? (
+          <s-banner tone="critical">
+            <s-text>
+              {undelivered.length === 1
+                ? "1 email for this request has not been delivered."
+                : `${undelivered.length} emails for this request have not been delivered.`}{" "}
+              Retry each one below once the cause is fixed. The hourly maintenance
+              run also retries them.
+            </s-text>
+          </s-banner>
+        ) : null}
+
+        {emails.length === 0 ? (
+          <s-text color="subdued">
+            No emails have been queued for this request yet.
+          </s-text>
+        ) : (
+          emails.map((email) => (
+            <s-box
+              key={email.id}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
+            >
+              <s-stack direction="block" gap="small">
+                <s-stack direction="inline" gap="base">
+                  <s-text>
+                    <strong>
+                      {EMAIL_TEMPLATE_LABELS[email.templateKey] ?? email.templateKey}
+                    </strong>
+                  </s-text>
+                  <s-badge tone={emailStatusTone(email.status)}>
+                    {email.status}
+                  </s-badge>
+                </s-stack>
+                <s-text color="subdued">To {email.toEmail}</s-text>
+                <s-text color="subdued">
+                  {email.sentAt
+                    ? `Sent ${email.sentAt}`
+                    : `Queued ${email.createdAt} · ${email.attempts} delivery attempt(s)`}
+                </s-text>
+                {email.error ? (
+                  <s-banner tone="critical">
+                    <s-text>{email.error}</s-text>
+                  </s-banner>
+                ) : null}
+                {email.status === "sent" ? null : (
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="retry-email" />
+                    <input type="hidden" name="emailId" value={email.id} />
+                    <s-button variant="secondary" type="submit">
+                      Retry delivery
+                    </s-button>
+                  </Form>
+                )}
+              </s-stack>
+            </s-box>
+          ))
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
 const EXPIRATION_OPTIONS: { days: OfferExpirationDays; label: string }[] = [
   { days: 3, label: "3 days" },
   { days: 5, label: "5 days" },
@@ -496,9 +660,12 @@ const EXPIRATION_OPTIONS: { days: OfferExpirationDays; label: string }[] = [
 function SendOfferSection({
   status,
   sentOffer,
+  offerEmail,
 }: {
   status: RequestStatus;
   sentOffer?: SentOffer;
+  /** The outbox row, which is the only evidence the customer was told. */
+  offerEmail?: OutboxMessage;
 }) {
   const [expirationDays, setExpirationDays] = useState<OfferExpirationDays>(3);
   const navigation = useNavigation();
@@ -507,11 +674,35 @@ function SendOfferSection({
     navigation.formData?.get("intent") === "send-offer";
 
   if (sentOffer) {
+    const delivered = offerEmail?.status === "sent";
     return (
       <s-stack direction="block" gap="base">
-        <s-banner tone="success">
-          <s-text>Offer sent to customer</s-text>
-        </s-banner>
+        {delivered ? (
+          <s-banner tone="success">
+            <s-text>Offer sent to customer</s-text>
+          </s-banner>
+        ) : (
+          /*
+           * The offer is committed and the request is no longer New, so the
+           * banner used to claim the customer had been told whether or not the
+           * email ever left the building.
+           */
+          <s-stack direction="block" gap="base">
+            <s-banner tone="critical">
+              <s-text>
+                The offer is live but the offer-ready email has not reached the
+                customer{offerEmail?.error ? `: ${offerEmail.error}` : ""}. They
+                have no idea it is waiting, and the hold is already running.
+              </s-text>
+            </s-banner>
+            <Form method="post">
+              <input type="hidden" name="intent" value="resend-offer-email" />
+              <s-button variant="primary" type="submit">
+                Send the offer email again
+              </s-button>
+            </Form>
+          </s-stack>
+        )}
         <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
           <s-stack direction="block" gap="base">
             <s-stack direction="block" gap="small">
@@ -648,12 +839,47 @@ function DeclinedExactPlantsSection({
   );
 }
 
+/**
+ * A draft order is only ever created from the customer's own submission, and
+ * re-submitting an answered offer is refused, so a Shopify failure at that
+ * moment left an accepted request with no way to pay. This is the way back.
+ */
+function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
+  if (paymentLink) {
+    return (
+      <s-stack direction="block" gap="small">
+        <s-text color="subdued">Payment link</s-text>
+        <s-link href={paymentLink}>{paymentLink}</s-link>
+      </s-stack>
+    );
+  }
+
+  return (
+    <s-stack direction="block" gap="base">
+      <s-banner tone="critical">
+        <s-text>
+          This customer accepted plants but no Shopify draft order exists, so
+          they have no way to pay. Create the payment link and email it to them.
+        </s-text>
+      </s-banner>
+      <Form method="post">
+        <input type="hidden" name="intent" value="create-payment-link" />
+        <s-button variant="primary" type="submit">
+          Create payment link and email it
+        </s-button>
+      </Form>
+    </s-stack>
+  );
+}
+
 function CustomerResponseSection({
   response,
   status,
+  paymentLink,
 }: {
   response: Awaited<ReturnType<typeof getCustomerResponse>>;
   status: RequestStatus;
+  paymentLink: string | null;
 }) {
   if (!response) {
     return (
@@ -704,6 +930,9 @@ function CustomerResponseSection({
                 </s-text>
               ))
             )}
+            {accepted.length > 0 ? (
+              <PaymentLinkSection paymentLink={paymentLink} />
+            ) : null}
           </s-stack>
         </s-box>
 
@@ -727,7 +956,8 @@ function CustomerResponseSection({
 }
 
 export default function RequestDetail() {
-  const { plantRequest, response, declinedExactPlants } = useLoaderData<typeof loader>();
+  const { plantRequest, response, emails, paymentLink, declinedExactPlants } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
   // The action already returned these; without this the page silently ignored a
@@ -813,13 +1043,17 @@ export default function RequestDetail() {
         <SendOfferSection
           status={plantRequest.status}
           sentOffer={plantRequest.sentOffer}
+          offerEmail={emails.find((email) => email.templateKey === "offer_ready")}
         />
       </s-section>
 
       <CustomerResponseSection
         response={response}
         status={plantRequest.status}
+        paymentLink={paymentLink}
       />
+
+      <EmailSection emails={emails} />
 
       <DeclinedExactPlantsSection
         requestId={plantRequest.id}
