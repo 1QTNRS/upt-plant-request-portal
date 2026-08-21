@@ -25,6 +25,11 @@ export const REQUIRED_SHOPIFY_SCOPES = [
   "write_products",
   "read_publications",
   "write_publications",
+  // Configuring an app proxy requires this scope. Without it the [app_proxy]
+  // block does not take effect, so https://<shop>/apps/plant-requests — the
+  // only address customers ever see — 404s on the storefront.
+  // https://shopify.dev/docs/apps/build/online-store/app-proxies
+  "write_app_proxy",
 ] as const;
 
 export function isProduction(): boolean {

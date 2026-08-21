@@ -257,12 +257,13 @@ at `https://upt-plant-request-portal.onrender.com/customer` with subpath
 
 Install the app on the UPT store and approve the access request. Confirm the
 screen lists product and publication permissions — without them the app cannot
-create EXACT PLANTS listings or publish to Online Store and POS.
+create EXACT PLANTS listings or publish to Online Store and POS — and the app
+proxy permission, without which the storefront customer portal 404s.
 
 ```
 write_draft_orders, read_draft_orders, read_orders, read_customers,
 write_files, read_files, read_products, write_products,
-read_publications, write_publications
+read_publications, write_publications, write_app_proxy
 ```
 
 **If the app was installed before these scopes were added, you must approve
