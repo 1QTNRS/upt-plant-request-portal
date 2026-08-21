@@ -7,6 +7,7 @@ import {
   closeRequest,
   getCustomerResponse,
   getRequest,
+  getShopSettings,
   listCustomerRequests,
   listRequests,
   saveCustomerResponse,
@@ -153,5 +154,83 @@ describe("plant request persistence", () => {
     assert.equal(closed?.status, "Closed");
     const reloaded = await getRequest(shop, created.id);
     assert.ok(reloaded?.closedAt);
+  });
+});
+
+/**
+ * These three all used to read a row and then insert it if it was missing,
+ * which races its own unique index the moment two requests arrive together —
+ * either from one instance serving concurrent requests, or from the several
+ * instances render.yaml allows scaling to.
+ */
+describe("concurrent writes", () => {
+  const raceShop = `${DEMO_SHOP}-race`;
+
+  const reset = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: raceShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: raceShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: raceShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: raceShop } });
+  };
+
+  before(reset);
+  after(reset);
+
+  it("gives every concurrent submission its own request number", async () => {
+    const created = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        submitCustomerRequest(raceShop, {
+          name: `Racer ${i}`,
+          email: `racer-${i}@example.com`,
+          items: [{ plantName: `Plant ${i}` }],
+        }),
+      ),
+    );
+
+    const numbers = created.map((request) => request.requestNumber);
+    assert.equal(new Set(numbers).size, numbers.length, `duplicate: ${numbers}`);
+  });
+
+  it("does not fail a first-time customer who submits twice at once", async () => {
+    // Both submissions find no profile, so both used to insert one and the
+    // loser's request was lost to a unique-constraint error.
+    const email = "double-clicker@example.com";
+    const results = await Promise.allSettled(
+      Array.from({ length: 4 }, (_, i) =>
+        submitCustomerRequest(raceShop, {
+          name: "Double Clicker",
+          email,
+          items: [{ plantName: `Plant ${i}` }],
+        }),
+      ),
+    );
+
+    const rejected = results.filter((result) => result.status === "rejected");
+    assert.deepEqual(
+      rejected.map((result) => (result as PromiseRejectedResult).reason?.message),
+      [],
+    );
+    assert.equal(
+      await prisma.customerProfile.count({ where: { shop: raceShop, email } }),
+      1,
+    );
+  });
+
+  it("serves the first page load after install from several loaders at once", async () => {
+    const freshShop = `${DEMO_SHOP}-first-load`;
+    await prisma.shopSettings.deleteMany({ where: { shop: freshShop } });
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, () => getShopSettings(freshShop)),
+    );
+
+    const rejected = results.filter((result) => result.status === "rejected");
+    assert.deepEqual(
+      rejected.map((result) => (result as PromiseRejectedResult).reason?.message),
+      [],
+    );
+    assert.equal(await prisma.shopSettings.count({ where: { shop: freshShop } }), 1);
+
+    await prisma.shopSettings.deleteMany({ where: { shop: freshShop } });
   });
 });
