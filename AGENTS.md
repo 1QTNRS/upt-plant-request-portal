@@ -73,7 +73,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 
 ### Business rules to preserve
 
-- Statuses stored: New / Pending / Closed / Expired. Customer label for Pending: **Needs Payment**.
+- Statuses stored: New / Pending / Closed / Expired. Customer label for Pending: **Needs Payment**, or **No Payment Needed** when nothing on the offer is payable. Labels change, stored statuses do not.
 - No quantity field on the customer form; quantity is 1. No Budget in the active customer workflow.
 - Offer snapshots freeze after send. FedEx is optional, default on, excluded from plant analytics, never listed in EXACT PLANTS.
 - Draft orders only for accepted plants. `orders/paid` closes the request.

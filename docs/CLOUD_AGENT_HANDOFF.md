@@ -420,8 +420,22 @@ available plant unanswered, naming each one, rather than defaulting to `accept`.
 Do not reintroduce a default; a pre-checked Accept turns an unread offer into a
 purchase for anyone who just presses Submit.
 
-The photo lightbox is the one remaining piece of client state. It is decorative
-and nothing about checkout depends on it.
+The component holds **no client state at all**. Every photo the offer froze is
+rendered as a plain `<img>`; a lightbox behind a click handler showed the
+storefront customer only the first photo of the plant they were buying.
+
+The page also has to stop offering what it cannot deliver:
+
+- Past `offer.expiresAtIso` it renders an expired state — no countdown, no
+  "reserved for you", no radios, no Submit. The hold, not the stored status,
+  decides this: the expiry sweep may not have run, and the moment the hold ends
+  the plant is an EXACT PLANTS candidate for public sale.
+- A **closed** request never shows a checkout link, and a paid one confirms the
+  payment instead (`requestPaid` / `paidAt` from `loadCustomerOfferPage`).
+- An answer that left nothing payable always has a **Close Request** action,
+  whether the customer rejected everything or UPT had nothing available.
+- The customer is never shown the confirmation email. The admin outbox on the
+  request page is where queued mail is read.
 
 ### Two environment modules, deliberately
 
@@ -553,7 +567,7 @@ Genuinely optional, deliberately not done:
 ## Business rules future agents must preserve
 
 1. **Do not rebuild** the portal. Extend the Prisma-backed React Router app.
-2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display: Pending → **Needs Payment** (label only).
+2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display: Pending → **Needs Payment** (label only), or **No Payment Needed** when the offer and the answer left nothing payable (`offerHasPayableItems`). Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
 3. Customer form: plant name required; notes optional; **no quantity UI**; quantity defaults to 1. **Budget stays out** of the form, customer-facing details, and active workflow. Do not drop `RequestItem.budget` unless a migration is actually required.
 4. Name/email come from the customer account when possible. Customers see only their own requests.
 5. Offer snapshots freeze name, price, photos, notes, availability after send. Do not edit customer-facing offer fields after send.
