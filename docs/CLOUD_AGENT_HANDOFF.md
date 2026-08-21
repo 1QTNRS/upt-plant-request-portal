@@ -190,6 +190,17 @@ Local `/uploads/...` paths are made absolute against `SHOPIFY_APP_URL` when used
 
 ### EXACT PLANTS creation
 
+Eligibility is `exactPlantReleaseReason` (`app/lib/exact-plants.ts`), the one
+rule used by the listing queue, the review form and analytics. Candidates are
+queried from **offer items**, not from customer responses: an offer that simply
+expired has no response rows, so starting from the response would silently miss
+every unanswered expired offer.
+
+`EXACT_PLANT_ITEM_TAG_PREFIX` still reads `upt-declined-item:` although expired
+offers are now eligible too. It is the Shopify idempotency tag — renaming it
+would orphan the products already created under it and allow duplicates.
+
+
 Implemented as an **admin-approved** path only. Customer reject does not create a product. Review form prefills title, price, weight, photos. It must not prefill or publish customer-facing notes, customer identity, request info, or response info. Cancel creates nothing.
 
 ### Online Store / POS publishing
@@ -212,6 +223,71 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 ### Expiration logic
 
 `expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler.
+
+### App proxy pages never hydrate — build them as plain HTML
+
+A page served through the app proxy is fetched by Shopify and rendered on the
+storefront, so its `/assets/...` URLs resolve against the **shop's** domain and
+the client bundle never loads. Anything that depends on React state is dead
+there, and the client router is worse than useless: it rewrites form actions and
+links to the app's own paths (`/customer/...`), which do not exist on the shop
+domain and return a Shopify 404.
+
+Rules for `app/routes/customer*`:
+
+1. Use a plain `<form>`, never React Router's `<Form>`.
+2. Every input the server reads must have a real `name` and `defaultValue`.
+   Hidden inputs mirroring React state submit empty values.
+3. Buttons that change the form must be `type="submit"` with an `intent`, not
+   `onClick`.
+4. Form actions and redirects must be storefront paths — use
+   `portalFormAction()` / `portalHome()` / `customerPortalRelativeLinks()`.
+5. **Never use React Router's `?index`.** React Router strips `index` from the
+   request URL before a loader sees it, so Shopify signs a query string
+   containing `index` that the app then verifies without it: the app proxy HMAC
+   never matches and the visitor is treated as signed out. Post to a real route
+   (`customer.submit.tsx`) instead.
+
+6. **Prefer GET for anything that only changes the form's shape.** "Add another
+   plant" and "Remove plant" submit the form with `formMethod="get"` to the
+   portal path: the browser puts the typed values in the query string and the
+   page re-renders with one more (or one fewer) row. A proxied **POST** to those
+   endpoints returned **"Bad Request"** on the real store, while a GET to the
+   same path serves fine — so only the final submission uses POST.
+
+`app/lib/customer-portal.test.ts` enforces 1–6 for the request form.
+
+`write_app_proxy` is in the scope list because configuring an app proxy requires
+it. It was missing, which is a plausible contributor to proxy misbehaviour;
+adding it means the merchant has to approve the scopes again.
+
+#### The offer response follows the same rules
+
+`app/components/customer-offer-view.tsx` has had the same treatment.
+Accept/Reject are native radios named `choice-<sourceItemId>` inside the one
+submitting form; FedEx is a real checkbox whose unchecked state submits nothing,
+which is exactly "upgrade removed". The form posts to
+`/apps/plant-requests/requests/:id`.
+
+Removing FedEx is a **two-step server round-trip**: the first submit returns
+`pendingFedexRemoval`, which renders the Settings warning with "Remove it and
+continue" / "Keep the upgrade" and carries the choices forward as hidden inputs.
+Nothing is recorded until the customer chooses. The JS modal it replaced never
+opened on the storefront.
+
+`readOfferChoices` only honours `accept` and `reject`; `unavailable` is always
+derived from the offer, so a forged field cannot make an unavailable plant
+purchasable.
+
+**Nothing is pre-selected.** Every available plant needs a deliberate Accept or
+Reject: the radios carry `required`, and — because that only binds a real
+browser — `handleCustomerOfferAction` refuses a submission that leaves any
+available plant unanswered, naming each one, rather than defaulting to `accept`.
+Do not reintroduce a default; a pre-checked Accept turns an unread offer into a
+purchase for anyone who just presses Submit.
+
+The photo lightbox is the one remaining piece of client state. It is decorative
+and nothing about checkout depends on it.
 
 ### Two environment modules, deliberately
 
@@ -341,6 +417,7 @@ Genuinely optional, deliberately not done:
 7. Draft orders only for **accepted** exact plants (plus FedEx if selected).
 8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired.
 9. **Declined item** means: UPT marked Available, UPT created an exact-plant offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available.
+9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never for a paid or Closed request.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
 11. Listing prefill/publish: title, price, weight, selected exact-plant photos only. Exclude customer-facing notes/disclaimers, customer identity, request information, and customer response information.
 12. One Shopify product per declined item. Retries/refreshes/repeated response processing must not duplicate. On failure, keep the rejection and allow idempotent retry.

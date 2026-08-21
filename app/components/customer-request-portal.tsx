@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { Form, useNavigation } from "react-router";
 
 import {
   computeTimeRemaining,
@@ -9,19 +7,22 @@ import {
   type RequestStatus,
 } from "../lib/portal";
 
-type PlantLine = {
-  key: string;
+export type PlantLine = {
   plantName: string;
   notes: string;
 };
 
-function createPlantLine(): PlantLine {
-  return {
-    key: `plant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    plantName: "",
-    notes: "",
-  };
-}
+export const EMPTY_PLANT_LINE: PlantLine = { plantName: "", notes: "" };
+
+const fieldStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  marginTop: "8px",
+  padding: "8px",
+  borderRadius: "8px",
+  border: "1px solid #c9cccf",
+  font: "inherit",
+};
 
 const buttonStyle: React.CSSProperties = {
   padding: "8px 16px",
@@ -41,6 +42,9 @@ export function CustomerRequestPortal({
   requestDetailHref,
   showDemoLogin,
   formAction,
+  browseAction,
+  plantLines = [EMPTY_PLANT_LINE],
+  canSubmit = true,
 }: {
   loggedIn: boolean;
   name: string;
@@ -51,15 +55,19 @@ export function CustomerRequestPortal({
   requestDetailHref: (requestId: string) => string;
   showDemoLogin: boolean;
   formAction?: string;
+  /**
+   * Where the add and remove buttons navigate to with GET. The storefront page
+   * itself, so the customer never leaves it.
+   */
+  browseAction?: string;
+  /**
+   * Rows come from the server. Adding and removing a row is a form submission
+   * rather than client state, because an app proxy page serves its assets from
+   * the shop's domain and so never hydrates.
+   */
+  plantLines?: PlantLine[];
+  canSubmit?: boolean;
 }) {
-  const navigation = useNavigation();
-  const [plantLines, setPlantLines] = useState<PlantLine[]>([createPlantLine()]);
-
-  useEffect(() => {
-    if (successMessage) {
-      setPlantLines([createPlantLine()]);
-    }
-  }, [successMessage]);
 
   if (!loggedIn) {
     return (
@@ -71,7 +79,7 @@ export function CustomerRequestPortal({
               request.
             </s-text>
             {showDemoLogin ? (
-              <Form method="post" action={formAction}>
+              <form method="post" action={formAction}>
                 <input type="hidden" name="intent" value="demo-login" />
                 <s-stack direction="block" gap="base">
                   <s-button variant="primary" type="submit">
@@ -83,7 +91,7 @@ export function CustomerRequestPortal({
                     Customer Account authentication.
                   </s-text>
                 </s-stack>
-              </Form>
+              </form>
             ) : (
               <s-text color="subdued">
                 Open this page from your Shopify account while logged in.
@@ -115,13 +123,12 @@ export function CustomerRequestPortal({
         </s-stack>
       </s-section>
 
-      <Form method="post" action={formAction}>
-        <input type="hidden" name="intent" value="submit-request" />
+      <form method="post" action={formAction}>
         <s-section heading="Plants requested">
           <s-stack direction="block" gap="large">
             {plantLines.map((line, index) => (
               <s-box
-                key={line.key}
+                key={index}
                 padding="base"
                 borderWidth="base"
                 borderRadius="base"
@@ -129,73 +136,56 @@ export function CustomerRequestPortal({
               >
                 <s-stack direction="block" gap="base">
                   <s-heading>Plant {index + 1}</s-heading>
-                  <input type="hidden" name={`plantName-${index}`} value={line.plantName} />
-                  <input type="hidden" name={`notes-${index}`} value={line.notes} />
-                  <s-text-field
-                    label="Plant Name"
-                    value={line.plantName}
-                    required
-                    onChange={(event) =>
-                      setPlantLines((current) =>
-                        current.map((entry) =>
-                          entry.key === line.key
-                            ? { ...entry, plantName: event.currentTarget.value }
-                            : entry,
-                        ),
-                      )
-                    }
-                  />
+                  <label>
+                    <s-text>Plant Name</s-text>
+                    <input
+                      type="text"
+                      name={`plantName-${index}`}
+                      defaultValue={line.plantName}
+                      required
+                      style={fieldStyle}
+                    />
+                  </label>
                   <label>
                     <s-text>Notes (optional)</s-text>
                     <textarea
-                      value={line.notes}
-                      onChange={(event) =>
-                        setPlantLines((current) =>
-                          current.map((entry) =>
-                            entry.key === line.key
-                              ? { ...entry, notes: event.target.value }
-                              : entry,
-                          ),
-                        )
-                      }
+                      name={`notes-${index}`}
+                      defaultValue={line.notes}
                       rows={3}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        marginTop: "8px",
-                        padding: "8px",
-                        borderRadius: "8px",
-                        border: "1px solid #c9cccf",
-                        font: "inherit",
-                        resize: "vertical",
-                      }}
+                      style={{ ...fieldStyle, resize: "vertical" }}
                     />
                   </label>
-                  {plantLines.length > 1 && (
+                  {plantLines.length > 1 ? (
                     <button
-                      type="button"
+                      type="submit"
+                      name="removePlant"
+                      value={String(index)}
+                      formMethod="get"
+                      formAction={browseAction}
+                      formNoValidate
                       style={buttonStyle}
-                      onClick={() =>
-                        setPlantLines((current) =>
-                          current.length === 1
-                            ? current
-                            : current.filter((entry) => entry.key !== line.key),
-                        )
-                      }
                     >
                       Remove plant
                     </button>
-                  )}
+                  ) : null}
                 </s-stack>
               </s-box>
             ))}
             <input type="hidden" name="itemCount" value={plantLines.length} />
+            {/*
+              formMethod="get" turns this into a navigation rather than a POST:
+              the browser puts the typed values in the query string, the page
+              re-renders with one more row, and the customer stays on the same
+              storefront URL.
+            */}
             <button
-              type="button"
+              type="submit"
+              name="addPlant"
+              value="1"
+              formMethod="get"
+              formAction={browseAction}
+              formNoValidate
               style={buttonStyle}
-              onClick={() =>
-                setPlantLines((current) => [...current, createPlantLine()])
-              }
             >
               Add another plant
             </button>
@@ -215,15 +205,17 @@ export function CustomerRequestPortal({
         )}
 
         <s-section>
-          <s-button
-            variant="primary"
+          <button
             type="submit"
-            {...(navigation.state !== "idle" ? { loading: true } : {})}
+            name="intent"
+            value="submit-request"
+            disabled={!canSubmit}
+            style={{ ...buttonStyle, fontWeight: 600 }}
           >
             Submit request
-          </s-button>
+          </button>
         </s-section>
-      </Form>
+      </form>
 
       <s-section heading="My Requests">
         {myRequests.length === 0 ? (

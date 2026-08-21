@@ -1,8 +1,9 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { data, useLoaderData } from "react-router";
+import { data, useActionData, useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
+import { readOfferChoices } from "../lib/customer-portal";
 import { readCustomerContext } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { identityOwnsRequest } from "../lib/customer-identity";
@@ -55,16 +56,21 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       requestClosed: false,
       confirmationEmail: null,
       backHref: customerPortalRelativeLinks(false).home,
+      formAction: "",
     };
   }
 
   const { context, plantRequest } = authorized;
   const page = await loadCustomerOfferPage(context.shop, requestId);
+  const links = customerPortalRelativeLinks(context.viaAppProxy);
   return {
     forbidden: false as const,
     request: plantRequest,
     ...page,
-    backHref: customerPortalRelativeLinks(context.viaAppProxy).home,
+    backHref: links.home,
+    // The storefront path for this page. React Router would otherwise render
+    // the app's own /customer/requests/:id, which 404s on the shop's domain.
+    formAction: links.requestDetail(requestId),
   };
 };
 
@@ -75,15 +81,58 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const { context } = authorized;
   const form = await request.formData();
+  const intent = String(form.get("intent") || "");
+  const choices = readOfferChoices(form);
+
+  // Keeping the upgrade returns to the form with it checked again.
+  if (intent === "keep-fedex") {
+    return {
+      ok: false as const,
+      pendingFedexRemoval: false,
+      submittedChoices: choices,
+      fedexSelected: true,
+      error: null as string | null,
+    };
+  }
+
+  // Removing the upgrade has to be confirmed against the warning from Settings.
+  // The modal that used to do this never opens on the storefront, so it becomes
+  // a second round-trip that carries the customer's choices forward.
+  if (
+    intent === "submit-response" &&
+    String(form.get("fedexUpgradeSelected")) !== "true" &&
+    String(form.get("fedexRemovalAcknowledged")) !== "true"
+  ) {
+    return {
+      ok: false as const,
+      pendingFedexRemoval: true,
+      submittedChoices: choices,
+      fedexSelected: false,
+      error: null as string | null,
+    };
+  }
+
   // The portal is served through the app proxy and so has no merchant session;
   // the stored offline token is what lets an accepted offer become a real
   // Shopify draft order.
   const admin = await offlineAdminClient(context.shop);
-  return handleCustomerOfferAction({ shop: context.shop, requestId, form, admin });
+  const result = await handleCustomerOfferAction({
+    shop: context.shop,
+    requestId,
+    form,
+    admin,
+  });
+  return {
+    error: null as string | null,
+    ...result,
+    pendingFedexRemoval: false,
+    submittedChoices: choices,
+  };
 };
 
 export default function CustomerRequestDetail() {
   const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
 
   if (data.forbidden) {
     return (
@@ -133,6 +182,11 @@ export default function CustomerRequestDetail() {
       backHref={data.backHref}
       requestClosed={data.requestClosed}
       confirmationEmail={data.confirmationEmail}
+      formAction={data.formAction}
+      submittedChoices={actionData?.submittedChoices}
+      fedexSelected={actionData?.fedexSelected ?? true}
+      pendingFedexRemoval={actionData?.pendingFedexRemoval ?? false}
+      error={actionData?.error ?? null}
     />
   );
 }
