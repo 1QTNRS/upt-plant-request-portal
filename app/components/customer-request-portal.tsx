@@ -238,7 +238,9 @@ export function CustomerRequestPortal({
                   </s-table-cell>
                   <s-table-cell>
                     <s-badge tone={requestStatusTone(request.status as RequestStatus)}>
-                      {formatCustomerStatusLabel(request.status)}
+                      {formatCustomerStatusLabel(request.status, {
+                        hasPayableItems: request.hasPayableItems,
+                      })}
                     </s-badge>
                   </s-table-cell>
                 </s-table-row>

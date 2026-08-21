@@ -85,6 +85,8 @@ export type PlantRequest = {
   paidAt?: string;
   items: PlantItem[];
   sentOffer?: SentOffer;
+  /** Undefined until an offer has been sent. See `offerHasPayableItems`. */
+  hasPayableItems?: boolean;
 };
 
 export type CustomerMyRequestRow = {
@@ -93,6 +95,8 @@ export type CustomerMyRequestRow = {
   submittedDate: string;
   plantsRequested: string;
   status: RequestStatus;
+  /** Undefined until an offer has been sent. */
+  hasPayableItems?: boolean;
 };
 
 export type CustomerResponseItem = {
@@ -154,9 +158,46 @@ export function normalizeRequestStatus(status: string): RequestStatus {
   return "New";
 }
 
-export function formatCustomerStatusLabel(status: RequestStatus): string {
-  if (status === "Pending") return "Needs Payment";
+export const NEEDS_PAYMENT_LABEL = "Needs Payment";
+
+export const NOTHING_TO_PAY_LABEL = "No Payment Needed";
+
+/**
+ * Pending is stored from the moment the offer is sent and nothing revises it
+ * when the answer leaves nothing to buy, so the label — not the status — is
+ * what has to tell a customer who rejected every plant, or who was offered
+ * nothing available, that no money is owed.
+ */
+export function formatCustomerStatusLabel(
+  status: RequestStatus,
+  options: { hasPayableItems?: boolean } = {},
+): string {
+  if (status === "Pending") {
+    return options.hasPayableItems === false
+      ? NOTHING_TO_PAY_LABEL
+      : NEEDS_PAYMENT_LABEL;
+  }
   return status;
+}
+
+/**
+ * Whether anything on a sent offer can still be paid for.
+ *
+ * The offer freezes which plants were purchasable and the answer decides how
+ * many of those the customer wanted, so an offer with nothing available and an
+ * answer that rejected everything are both unpayable. An unanswered offer still
+ * is: the customer can accept until the hold ends.
+ */
+export function offerHasPayableItems(input: {
+  offerItems: Array<{ availability: string }>;
+  responseChoices?: string[] | null;
+}): boolean {
+  const purchasable = input.offerItems.some(
+    (item) => item.availability === "available",
+  );
+  if (!purchasable) return false;
+  if (!input.responseChoices) return true;
+  return input.responseChoices.includes("accept");
 }
 
 export function normalizeUnavailableReason(

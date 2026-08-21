@@ -26,6 +26,7 @@ import {
   normalizeRequestStatus,
   normalizeUnavailableReason,
   normalizeWeight,
+  offerHasPayableItems,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
@@ -82,7 +83,7 @@ type RequestWithRelations = DbPlantRequest & {
         items: OfferItem[];
       })
     | null;
-  response?: DbCustomerResponse | null;
+  response?: (DbCustomerResponse & { items: Array<{ choice: string }> }) | null;
   draftOrder?: {
     invoiceUrl: string | null;
     shopifyDraftOrderGid: string | null;
@@ -113,7 +114,9 @@ const requestInclude = {
     orderBy: REQUEST_ITEM_ORDER,
   },
   offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
-  response: true,
+  // Only the choices: enough to tell a request that can still take money from
+  // one whose answer left nothing to buy, without loading every snapshot.
+  response: { include: { items: { select: { choice: true } } } },
   draftOrder: true,
 } as const;
 
@@ -197,6 +200,14 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
     paidAt: request.paidAt ? formatDateTime(request.paidAt) : undefined,
     items: request.items.map(toPlantItem),
     sentOffer: request.offer ? toSentOffer(request.offer, request.id) : undefined,
+    hasPayableItems: request.offer
+      ? offerHasPayableItems({
+          offerItems: request.offer.items,
+          responseChoices: request.response
+            ? request.response.items.map((item) => item.choice)
+            : null,
+        })
+      : undefined,
   };
 }
 

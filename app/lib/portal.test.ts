@@ -13,6 +13,7 @@ import {
   matchesAdminSearch,
   normalizeRequestStatus,
   normalizeUnavailableReason,
+  offerHasPayableItems,
   parseRequestNumber,
   plantRevenueFromLines,
   primaryBehaviorFlag,
@@ -44,6 +45,58 @@ describe("status mapping", () => {
     assert.equal(formatCustomerStatusLabel("New"), "New");
     assert.equal(normalizeRequestStatus("Purchased"), "Closed");
     assert.equal(normalizeRequestStatus("Offer Sent"), "Pending");
+  });
+
+  /*
+   * The stored status stays Pending — closing these requests would drop their
+   * declined plants out of the EXACT PLANTS review queue — so the label is what
+   * has to stop asking for money that will never be collected.
+   */
+  it("does not label a request with nothing payable Needs Payment", () => {
+    assert.equal(
+      formatCustomerStatusLabel("Pending", { hasPayableItems: false }),
+      "No Payment Needed",
+    );
+    assert.equal(
+      formatCustomerStatusLabel("Pending", { hasPayableItems: true }),
+      "Needs Payment",
+    );
+    // No offer sent yet: the label follows the status as before.
+    assert.equal(formatCustomerStatusLabel("Pending", {}), "Needs Payment");
+    assert.equal(
+      formatCustomerStatusLabel("Closed", { hasPayableItems: false }),
+      "Closed",
+    );
+  });
+
+  it("decides what is payable from the offer and the answer", () => {
+    const available = { availability: "available" };
+    const notAvailable = { availability: "not_available" };
+
+    // Unanswered: the customer can still accept until the hold ends.
+    assert.equal(
+      offerHasPayableItems({ offerItems: [available, notAvailable] }),
+      true,
+    );
+    assert.equal(
+      offerHasPayableItems({ offerItems: [notAvailable, notAvailable] }),
+      false,
+      "UPT had nothing available, so there was never anything to buy",
+    );
+    assert.equal(
+      offerHasPayableItems({
+        offerItems: [available, available],
+        responseChoices: ["reject", "reject"],
+      }),
+      false,
+    );
+    assert.equal(
+      offerHasPayableItems({
+        offerItems: [available, available],
+        responseChoices: ["reject", "accept"],
+      }),
+      true,
+    );
   });
 
   it("normalizes unavailable reason labels to the production set", () => {
