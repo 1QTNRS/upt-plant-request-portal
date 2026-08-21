@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { isProduction } from "./env.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -250,7 +251,12 @@ const SEED_REQUESTS: SeedRequest[] = [
   },
 ];
 
-export async function ensureShopSeeded(shop: string): Promise<void> {
+/**
+ * Creates the shop's settings row if it does not exist. Safe in production, and
+ * separate from `ensureShopSeeded` so a real shop gets its settings without also
+ * getting the demo requests.
+ */
+export async function ensureShopSettings(shop: string): Promise<void> {
   await prisma.shopSettings.upsert({
     where: { shop },
     update: {},
@@ -260,6 +266,21 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
       adminNotificationEmail: process.env.UPT_ADMIN_EMAIL || "",
     },
   });
+}
+
+/**
+ * Populates a shop with the REQ1–REQ8 demo requests, and ensures its settings
+ * row either way.
+ *
+ * Refuses to create demo data in production: this is called from every admin
+ * loader, so without the guard it would have filed eight fake requests from
+ * invented customers into the live UPT store the first time anyone opened the
+ * app.
+ */
+export async function ensureShopSeeded(shop: string): Promise<void> {
+  await ensureShopSettings(shop);
+
+  if (isProduction()) return;
 
   const legacySeedNumbers: Record<string, string> = {
     "UPT-REQ-2026-000001": "REQ1",
