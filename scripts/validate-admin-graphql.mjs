@@ -148,6 +148,7 @@ async function inputSamples() {
     buildExactPlantInventoryInput,
     buildExactPlantProductCreateInput,
     buildExactPlantVariantInput,
+    planExactPlantMedia,
   } = await import("../app/lib/exact-plants.ts");
 
   const lineItems = buildDraftOrderLineItems({
@@ -255,6 +256,30 @@ async function inputSamples() {
       label: "productUpdate($product)",
       type: "ProductUpdateInput!",
       value: { id: "gid://shopify/Product/1", title: "Monstera Thai Constellation" },
+    },
+    {
+      label: "productUpdate($media)",
+      type: "[CreateMediaInput!]",
+      value: planExactPlantMedia({
+        existing: [
+          {
+            id: "gid://shopify/MediaImage/1",
+            sourceUrl: "https://cdn.shopify.com/s/files/1/0/removed.jpg",
+          },
+        ],
+        title: "Monstera Thai Constellation",
+        photoUrls: ["https://cdn.shopify.com/s/files/1/0/photo.jpg"],
+      }).create,
+    },
+    {
+      label: "fileUpdate($files)",
+      type: "[FileUpdateInput!]!",
+      value: [
+        {
+          id: "gid://shopify/MediaImage/1",
+          referencesToRemove: ["gid://shopify/Product/1"],
+        },
+      ],
     },
   ];
 }

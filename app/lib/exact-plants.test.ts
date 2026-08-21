@@ -12,6 +12,7 @@ import {
   isExactPlantEligible,
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
+  planExactPlantMedia,
 } from "./exact-plants";
 
 /** An available plant offered on a request that has not been paid. */
@@ -251,5 +252,92 @@ describe("shopify product payload", () => {
     assert.equal(isOnlineStorePublicationHandle(null), false);
     assert.equal(isPosPublicationHandle(undefined), false);
     assert.equal(isOnlineStorePublicationHandle(""), false);
+  });
+});
+
+describe("reconciling product media with the approved photos", () => {
+  const first = "https://cdn.shopify.com/s/files/1/0/one.jpg";
+  const second = "https://cdn.shopify.com/s/files/1/0/two.jpg";
+
+  it("asks for nothing when the product already carries the approved photos", () => {
+    const plan = planExactPlantMedia({
+      existing: [
+        { id: "gid://shopify/MediaImage/1", sourceUrl: `${first}?v=1` },
+        { id: "gid://shopify/MediaImage/2", imageUrl: `${second}?v=99` },
+      ],
+      title: "Thai Constellation Exact",
+      photoUrls: [first, second],
+    });
+    assert.deepEqual(plan, { create: [], detachMediaIds: [] });
+  });
+
+  it("replaces the media when the admin removed a photo", () => {
+    const plan = planExactPlantMedia({
+      existing: [
+        { id: "gid://shopify/MediaImage/1", sourceUrl: first },
+        { id: "gid://shopify/MediaImage/2", sourceUrl: second },
+      ],
+      title: "Thai Constellation Exact",
+      photoUrls: [first],
+    });
+    assert.deepEqual(plan.create, [
+      {
+        originalSource: first,
+        alt: "Thai Constellation Exact",
+        mediaContentType: "IMAGE",
+      },
+    ]);
+    assert.deepEqual(plan.detachMediaIds, [
+      "gid://shopify/MediaImage/1",
+      "gid://shopify/MediaImage/2",
+    ]);
+  });
+
+  it("replaces the media when the admin reordered the photos", () => {
+    const plan = planExactPlantMedia({
+      existing: [
+        { id: "gid://shopify/MediaImage/1", sourceUrl: first },
+        { id: "gid://shopify/MediaImage/2", sourceUrl: second },
+      ],
+      title: "Thai Constellation Exact",
+      photoUrls: [second, first],
+    });
+    assert.deepEqual(
+      plan.create.map((media) => media.originalSource),
+      [second, first],
+      "the approved order is what the product ends up with",
+    );
+    assert.equal(plan.detachMediaIds.length, 2);
+  });
+
+  it("re-creates media it cannot recognize rather than leaving it published", () => {
+    // Shopify serves media it created from a URL at a fresh address, so an
+    // unmatched photo is the normal case and must not be mistaken for approved.
+    const plan = planExactPlantMedia({
+      existing: [{ id: "gid://shopify/MediaImage/9", imageUrl: null }],
+      title: "Thai Constellation Exact",
+      photoUrls: [first],
+    });
+    assert.equal(plan.create.length, 1);
+    assert.deepEqual(plan.detachMediaIds, ["gid://shopify/MediaImage/9"]);
+  });
+
+  it("strips every photo when the admin approved none", () => {
+    const plan = planExactPlantMedia({
+      existing: [{ id: "gid://shopify/MediaImage/1", sourceUrl: first }],
+      title: "Thai Constellation Exact",
+      photoUrls: [],
+    });
+    assert.deepEqual(plan.create, []);
+    assert.deepEqual(plan.detachMediaIds, ["gid://shopify/MediaImage/1"]);
+  });
+
+  it("ignores a photo Shopify could never fetch", () => {
+    const plan = planExactPlantMedia({
+      existing: [],
+      title: "Thai Constellation Exact",
+      photoUrls: ["data:image/png;base64,AAAA"],
+    });
+    assert.deepEqual(plan, { create: [], detachMediaIds: [] });
   });
 });

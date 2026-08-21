@@ -286,6 +286,18 @@ export function buildExactPlantInventoryInput(input: {
   };
 }
 
+export function buildExactPlantMediaInput(input: {
+  title: string;
+  photoUrls: string[];
+  appUrl?: string;
+}) {
+  return hostedPhotoUrls(input.photoUrls, input.appUrl).map((url) => ({
+    originalSource: url,
+    alt: input.title,
+    mediaContentType: "IMAGE" as const,
+  }));
+}
+
 export function buildExactPlantProductCreateInput(input: {
   requestItemId: string;
   title: string;
@@ -302,11 +314,63 @@ export function buildExactPlantProductCreateInput(input: {
       tags: [EXACT_PLANTS_COLLECTION_TITLE, declinedItemTag(input.requestItemId)],
       collectionsToJoin: [input.collectionId],
     },
-    media: hostedPhotoUrls(input.photoUrls, input.appUrl).map((url) => ({
-      originalSource: url,
-      alt: input.title,
-      mediaContentType: "IMAGE" as const,
-    })),
+    media: buildExactPlantMediaInput(input),
   };
+}
+
+export type ExistingProductMedia = {
+  id: string;
+  /** `MediaImage.originalSource.url`: where Shopify fetched the media from. */
+  sourceUrl?: string | null;
+  /** `MediaImage.image.url`: where Shopify serves it now. */
+  imageUrl?: string | null;
+};
+
+export type ExactPlantMediaPlan = {
+  create: ReturnType<typeof buildExactPlantMediaInput>;
+  detachMediaIds: string[];
+};
+
+/**
+ * A CDN address without the `?v=` version, which changes on its own.
+ */
+function mediaUrlKey(url: string | null | undefined): string | null {
+  const withoutQuery = (url ?? "").trim().split(/[?#]/)[0];
+  return withoutQuery ? withoutQuery.toLowerCase() : null;
+}
+
+/**
+ * How to make a product's media equal the approved photo set, in order.
+ *
+ * Media Shopify created from a URL is served from a fresh address, so an
+ * approved photo cannot be matched to the media made from it with certainty.
+ * The plan is therefore all or nothing: when the product's media does not
+ * already line up with the approved set, append the whole set and detach
+ * everything that was there before. Appending before detaching gives the
+ * approved order without a reorder call and never leaves the product with no
+ * image, and anything the match missed is re-created rather than left behind —
+ * a photo the admin removed must not stay published.
+ */
+export function planExactPlantMedia(input: {
+  existing: ExistingProductMedia[];
+  title: string;
+  photoUrls: string[];
+  appUrl?: string;
+}): ExactPlantMediaPlan {
+  const create = buildExactPlantMediaInput(input);
+  const matches =
+    input.existing.length === create.length &&
+    create.every((media, index) => {
+      const key = mediaUrlKey(media.originalSource);
+      const current = input.existing[index];
+      return (
+        key !== null &&
+        (mediaUrlKey(current.sourceUrl) === key ||
+          mediaUrlKey(current.imageUrl) === key)
+      );
+    });
+
+  if (matches) return { create: [], detachMediaIds: [] };
+  return { create, detachMediaIds: input.existing.map((media) => media.id) };
 }
 
