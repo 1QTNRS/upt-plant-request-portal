@@ -781,6 +781,73 @@ async function publishProductToOnlineStoreAndPos(
       ),
     );
   }
+
+  await unpublishExactPlantFromOtherChannels(admin, productId, [onlineStoreId, posId]);
+}
+
+/**
+ * Removes the listing from any sales channel other than Online Store and POS.
+ *
+ * Publishing to two channels does not keep a product off the others: a channel
+ * set to publish new products automatically picks it up on creation. On the
+ * development store Shopify recorded "Product was included on Microsoft
+ * Copilot" one second after `productCreate`, attributed to no app, on a product
+ * this code had not published anywhere yet. An EXACT PLANTS listing is a single
+ * physical plant, so an unintended channel is a place it can be sold twice.
+ */
+async function unpublishExactPlantFromOtherChannels(
+  admin: GraphqlClient,
+  productId: string,
+  allowedPublicationIds: string[],
+): Promise<void> {
+  const allowed = new Set(allowedPublicationIds);
+  const result = await adminGraphql<{
+    product: {
+      resourcePublicationsV2: {
+        nodes: Array<{ publication: { id: string } | null }>;
+      };
+    } | null;
+  }>(
+    admin,
+    `#graphql
+      query ExactPlantPublications($id: ID!) {
+        product(id: $id) {
+          resourcePublicationsV2(first: 50) {
+            nodes { publication { id } }
+          }
+        }
+      }
+    `,
+    { id: productId },
+  );
+
+  const unwanted = (result.product?.resourcePublicationsV2.nodes ?? [])
+    .flatMap((node) => (node.publication?.id ? [node.publication.id] : []))
+    .filter((id) => !allowed.has(id));
+  if (unwanted.length === 0) return;
+
+  const removed = await adminGraphql<{
+    publishableUnpublish: { userErrors: Array<{ message: string }> };
+  }>(
+    admin,
+    `#graphql
+      mutation UnpublishExactPlant($id: ID!, $input: [PublicationInput!]!) {
+        publishableUnpublish(id: $id, input: $input) {
+          userErrors { message }
+        }
+      }
+    `,
+    { id: productId, input: unwanted.map((publicationId) => ({ publicationId })) },
+  );
+
+  if (removed.publishableUnpublish.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        removed.publishableUnpublish.userErrors,
+        "Could not remove the product from other sales channels.",
+      ),
+    );
+  }
 }
 
 async function setExactPlantVariantPriceAndWeight(

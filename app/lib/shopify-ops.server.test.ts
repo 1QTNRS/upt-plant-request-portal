@@ -85,6 +85,20 @@ const LISTING_RESPONSES: Responses = {
   ActivateExactPlantInventory: { inventoryActivate: { userErrors: [] } },
   AddExactPlantToCollection: { collectionAddProducts: { userErrors: [] } },
   PublishExactPlant: { publishablePublish: { userErrors: [] } },
+  // Shopify auto-publishes new products to any channel set to do so, so the
+  // product comes back on a third channel the app never asked for.
+  ExactPlantPublications: {
+    product: {
+      resourcePublicationsV2: {
+        nodes: [
+          { publication: { id: ONLINE_STORE_PUBLICATION } },
+          { publication: { id: POS_PUBLICATION } },
+          { publication: { id: "gid://shopify/Publication/3" } },
+        ],
+      },
+    },
+  },
+  UnpublishExactPlant: { publishableUnpublish: { userErrors: [] } },
   ...publications([
     { id: ONLINE_STORE_PUBLICATION, catalog: appCatalog("online_store") },
     { id: POS_PUBLICATION, catalog: appCatalog("pos") },
@@ -226,6 +240,38 @@ describe("EXACT PLANTS listing on Shopify", () => {
       { publicationId: ONLINE_STORE_PUBLICATION },
       { publicationId: POS_PUBLICATION },
     ]);
+  });
+
+  it("takes the listing off a channel Shopify published it to by itself", async () => {
+    const calls = await listOnePlant();
+
+    // Publishing to two channels does not keep a product off the others: a
+    // channel set to auto-publish picks it up at creation. On the dev store
+    // Shopify recorded "Product was included on Microsoft Copilot" a second
+    // after productCreate, attributed to no app.
+    assert.deepEqual(callOf(calls, "UnpublishExactPlant").variables.input, [
+      { publicationId: "gid://shopify/Publication/3" },
+    ]);
+  });
+
+  it("does not unpublish when the listing is only on the two intended channels", async () => {
+    const calls = await listOnePlant({
+      ExactPlantPublications: {
+        product: {
+          resourcePublicationsV2: {
+            nodes: [
+              { publication: { id: ONLINE_STORE_PUBLICATION } },
+              { publication: { id: POS_PUBLICATION } },
+            ],
+          },
+        },
+      },
+    });
+
+    assert.equal(
+      calls.some((call) => call.operation === "UnpublishExactPlant"),
+      false,
+    );
   });
 
   it("asks Shopify for app catalogs, which is the only way catalog is not null", async () => {
