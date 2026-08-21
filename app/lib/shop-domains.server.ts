@@ -15,6 +15,10 @@ const SHOP_DOMAINS_QUERY = `#graphql
     shop {
       myshopifyDomain
       primaryDomain { host }
+      # Deprecated in favour of domainsPaginated, which does not exist on Shop
+      # in 2025-10 — the deprecation notice points at a field the version does
+      # not have. Revisit when bumping the API version.
+      domains { host }
     }
   }
 `;
@@ -23,6 +27,7 @@ type ShopDomainsResult = {
   shop: {
     myshopifyDomain: string | null;
     primaryDomain: { host: string | null } | null;
+    domains: Array<{ host: string | null }> | null;
   } | null;
 };
 
@@ -55,9 +60,14 @@ async function fetchShopDomains(
     throw new Error(body.errors.map((error) => error.message).join("; "));
   }
 
+  // Every domain, not just the primary one: a shop serving an apex/www split or
+  // an international domain would otherwise have submissions from its other
+  // hosts refused, and only submissions — a GET carries no Origin, so the portal
+  // reads fine and only writes fail, which is a miserable thing to diagnose.
   return [
     body.data?.shop?.myshopifyDomain,
     body.data?.shop?.primaryDomain?.host,
+    ...(body.data?.shop?.domains ?? []).map((domain) => domain.host),
   ]
     .map((host) => host?.trim().toLowerCase())
     .filter((host): host is string => Boolean(host));
