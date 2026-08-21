@@ -148,7 +148,10 @@ export default function CustomerRequestSubmit() {
         `${portal.requestDetailBase}/requests/${requestId}`
       }
       formAction={portal.formAction}
-      plantLines={actionData?.plantLines ?? [EMPTY_PLANT_LINE]}
+      browseAction={portal.browseAction}
+      plantLines={
+        actionData?.plantLines ?? portal.plantLines ?? [EMPTY_PLANT_LINE]
+      }
       canSubmit={portal.canSubmitRequests}
     />
   );

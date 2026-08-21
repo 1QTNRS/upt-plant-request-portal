@@ -248,7 +248,18 @@ Rules for `app/routes/customer*`:
    never matches and the visitor is treated as signed out. Post to a real route
    (`customer.submit.tsx`) instead.
 
-`app/lib/customer-portal.test.ts` enforces 1–5 for the request form.
+6. **Prefer GET for anything that only changes the form's shape.** "Add another
+   plant" and "Remove plant" submit the form with `formMethod="get"` to the
+   portal path: the browser puts the typed values in the query string and the
+   page re-renders with one more (or one fewer) row. A proxied **POST** to those
+   endpoints returned **"Bad Request"** on the real store, while a GET to the
+   same path serves fine — so only the final submission uses POST.
+
+`app/lib/customer-portal.test.ts` enforces 1–6 for the request form.
+
+`write_app_proxy` is in the scope list because configuring an app proxy requires
+it. It was missing, which is a plausible contributor to proxy misbehaviour;
+adding it means the merchant has to approve the scopes again.
 
 #### The offer response follows the same rules
 

@@ -28,7 +28,8 @@ export default function CustomerHome() {
         `${portal.requestDetailBase}/requests/${requestId}`
       }
       formAction={portal.formAction}
-      plantLines={[EMPTY_PLANT_LINE]}
+      browseAction={portal.browseAction}
+      plantLines={portal.plantLines ?? [EMPTY_PLANT_LINE]}
       canSubmit={portal.canSubmitRequests}
     />
   );

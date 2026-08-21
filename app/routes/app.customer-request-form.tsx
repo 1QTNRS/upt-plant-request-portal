@@ -9,8 +9,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   CustomerRequestPortal,
   EMPTY_PLANT_LINE,
-  type PlantLine,
 } from "../components/customer-request-portal";
+import { plantLinesFromQuery, readPlantLines } from "../lib/customer-portal";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { isDemoDataEnabled } from "../lib/environment.server";
 import { notifyNewRequest } from "../lib/emails.server";
@@ -61,6 +61,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       myRequests: [] as CustomerMyRequestRow[],
       showDemoLogin: false,
       previewNotice: PREVIEW_NOTICE as string | null,
+      plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
     };
   }
 
@@ -77,6 +78,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     myRequests,
     showDemoLogin: true,
     previewNotice: null as string | null,
+    plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
   };
 };
 
@@ -86,52 +88,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") || "");
 
   if (!isDemoDataEnabled(shop)) {
-    return { errors: [PREVIEW_NOTICE], successMessage: null };
-  }
-
-  if (intent === "add-plant") {
-    return {
-      errors: [],
-      successMessage: null,
-      plantLines: [...readPlantLines(form), { plantName: "", notes: "" }],
-    };
-  }
-
-  const removeMatch = intent.match(/^remove-plant-(\d+)$/);
-  if (removeMatch) {
-    const remaining = readPlantLines(form).filter(
-      (_line, index) => index !== Number(removeMatch[1]),
-    );
-    return {
-      errors: [],
-      successMessage: null,
-      plantLines: remaining.length > 0 ? remaining : [{ plantName: "", notes: "" }],
-    };
+    return { errors: [PREVIEW_NOTICE], successMessage: null, plantLines: null };
   }
 
   if (intent !== "submit-request") {
-    return { errors: ["Unknown action"], successMessage: null };
+    return { errors: ["Unknown action"], successMessage: null, plantLines: null };
   }
 
-  const itemCount = Number(form.get("itemCount") || 0);
-  const items: Array<{ plantName: string; notes?: string }> = [];
-  for (let index = 0; index < itemCount; index += 1) {
-    const plantName = String(form.get(`plantName-${index}`) || "").trim();
-    items.push({
-      plantName,
-      notes: String(form.get(`notes-${index}`) || "").trim() || undefined,
-    });
-  }
+  const submitted = readPlantLines(form);
+  const items = submitted.map((line) => ({
+    plantName: line.plantName.trim(),
+    notes: line.notes.trim() || undefined,
+  }));
 
   const errors: string[] = [];
-  if (items.length === 0 || items.every((item) => !item.plantName)) {
+  if (items.every((item) => !item.plantName)) {
     errors.push("Add at least one plant with a name.");
   }
   if (items.some((item) => !item.plantName)) {
     errors.push("Each plant row needs a plant name or should be removed.");
   }
   if (errors.length > 0) {
-    return { errors, successMessage: null };
+    return { errors, successMessage: null, plantLines: submitted };
   }
 
   const created = await submitCustomerRequest(shop, {
@@ -142,21 +120,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return {
     errors: [],
+    plantLines: null,
     successMessage: `Request submitted. Your request number is ${created.requestNumber}. We'll notify you when matching plants become available.`,
   };
 };
-
-function readPlantLines(form: FormData): PlantLine[] {
-  const count = Math.max(1, Math.min(Number(form.get("itemCount") || 1) || 1, 20));
-  const lines: PlantLine[] = [];
-  for (let index = 0; index < count; index += 1) {
-    lines.push({
-      plantName: String(form.get(`plantName-${index}`) ?? ""),
-      notes: String(form.get(`notes-${index}`) ?? ""),
-    });
-  }
-  return lines;
-}
 
 export default function CustomerRequestForm() {
   const loaderData = useLoaderData<typeof loader>();
@@ -181,7 +148,10 @@ export default function CustomerRequestForm() {
         `/app/customer-offer-preview?requestId=${requestId}`
       }
       formAction="/app/customer-request-form"
-      plantLines={actionData?.plantLines ?? [EMPTY_PLANT_LINE]}
+      browseAction="/app/customer-request-form"
+      plantLines={
+        actionData?.plantLines ?? loaderData.plantLines ?? [EMPTY_PLANT_LINE]
+      }
       canSubmit={loaderData.previewNotice === null}
     />
   );
