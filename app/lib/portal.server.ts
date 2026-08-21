@@ -50,6 +50,22 @@ export class OfferAlreadyAnsweredError extends Error {
   }
 }
 
+/**
+ * The hold ran out before the customer's answer was saved.
+ *
+ * Reading the request runs the expiry sweep first, so a customer submitting as
+ * their hold lapses expires their own offer and then meets this. That is the
+ * expected shape of it, not a narrow window: the reminder email exists to make
+ * people answer at the last minute. It has to reach the customer as a message
+ * rather than an unhandled error, or their choices are lost behind a crash page.
+ */
+export class OfferExpiredError extends Error {
+  constructor() {
+    super("This offer has expired.");
+    this.name = "OfferExpiredError";
+  }
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -739,7 +755,7 @@ export async function saveCustomerResponse(
   const request = await loadRequest(shop, input.requestId);
   if (!request) throw new Error("Request not found.");
   if (normalizeRequestStatus(request.status) === "Expired") {
-    throw new Error("This offer has expired.");
+    throw new OfferExpiredError();
   }
 
   const snapshot = {

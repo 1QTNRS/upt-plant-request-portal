@@ -7,6 +7,7 @@ import {
   getRequest,
   getShopSettings,
   OfferAlreadyAnsweredError,
+  OfferExpiredError,
   saveCustomerResponse,
 } from "./portal.server";
 import { notifyCheckoutLink, notifyConfirmation } from "./emails.server";
@@ -206,6 +207,15 @@ export async function handleCustomerOfferAction(input: {
     // Lost a race with a concurrent submit of the same offer.
     if (error instanceof OfferAlreadyAnsweredError) {
       return { ok: true as const, alreadySubmitted: true as const };
+    }
+    // The hold lapsed between loading the page and submitting it, which the
+    // expiry sweep inside the read makes the customer's own submit trigger.
+    if (error instanceof OfferExpiredError) {
+      return {
+        ok: false as const,
+        error:
+          "This offer expired before your answer reached us. Please contact us and we will see whether the plant is still available.",
+      };
     }
     throw error;
   }

@@ -50,9 +50,12 @@ export function readCronSecret(request: Request): string | null {
  * sitting in Pending forever.
  */
 export async function shopsWithPortalData(): Promise<string[]> {
+  // groupBy pushes the DISTINCT into SQL. Prisma applies `distinct` on
+  // findMany in memory, so this hourly job was reading every request and every
+  // session row across the wire to produce a list of one.
   const [requests, sessions] = await Promise.all([
-    prisma.plantRequest.findMany({ distinct: ["shop"], select: { shop: true } }),
-    prisma.session.findMany({ distinct: ["shop"], select: { shop: true } }),
+    prisma.plantRequest.groupBy({ by: ["shop"] }),
+    prisma.session.groupBy({ by: ["shop"] }),
   ]);
   return [
     ...new Set([

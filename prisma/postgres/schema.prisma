@@ -94,6 +94,9 @@ model PlantRequest {
   @@unique([shop, requestNumber])
   @@index([shop, status])
   @@index([shop, customerEmail])
+  // listCustomerRequests matches on the Shopify account id first; without this
+  // every customer opening their own list scanned the shop's whole table.
+  @@index([shop, shopifyCustomerId])
   @@index([shop, submittedAt])
 }
 
@@ -281,4 +284,6 @@ model EmailMessage {
   @@index([shop, createdAt])
   @@index([requestId])
   @@index([shop, status])
+  // The hourly maintenance run counts reminders by template, twice per shop.
+  @@index([shop, templateKey])
 }

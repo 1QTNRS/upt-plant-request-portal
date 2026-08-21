@@ -75,6 +75,42 @@ function form(fields: Record<string, string>): FormData {
   return data;
 }
 
+describe("an offer that lapses while the customer is answering", () => {
+  before(purge);
+  after(purge);
+
+  it("tells the customer rather than crashing on them", async () => {
+    const { requestId, first, second } = await offeredRequest();
+
+    // Reading the request runs the expiry sweep, so a customer submitting as
+    // their hold lapses expires their own offer. The reminder email exists to
+    // make people answer at the last minute, so this is the expected shape.
+    await prisma.offer.update({
+      where: { requestId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(
+      "error" in result && result.error ? result.error : "",
+      /expired before your answer reached us/,
+    );
+    // Nothing was recorded, so the plant is released rather than half-sold.
+    assert.equal(await getCustomerResponse(shop, requestId), null);
+  });
+});
+
 describe("an offer answer must be deliberate", () => {
   before(purge);
   after(purge);
