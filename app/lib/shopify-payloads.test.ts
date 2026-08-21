@@ -46,6 +46,8 @@ describe("draft order input", () => {
         originalUnitPriceWithCurrency: { amount: "285.00", currencyCode: "USD" },
         quantity: 1,
         weight: { value: 4.5, unit: "POUNDS" },
+        // Without this Shopify collects no delivery address for a live plant.
+        requiresShipping: true,
       },
     ]);
   });
@@ -155,6 +157,8 @@ describe("draft order input", () => {
       originalUnitPriceWithCurrency: { amount: "15.00", currencyCode: "CAD" },
       quantity: 1,
       weight: { value: 0, unit: "POUNDS" },
+      // The upgrade is the shipping, so it is not itself shipped.
+      requiresShipping: false,
     });
   });
 });

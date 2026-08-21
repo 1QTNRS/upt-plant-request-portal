@@ -559,6 +559,13 @@ export function buildDraftOrderInput(input: {
         },
         quantity: line.quantity,
         weight: { value: line.weightLbs, unit: "POUNDS" as const },
+        // Shopify defaults a custom line item to requiresShipping: false, and a
+        // draft order with nothing shippable collects no delivery address and
+        // quotes no shipping. UPT ships live plants: without this the merchant
+        // gets a paid order with a weight, a customer, and nowhere to send it.
+        // The FedEx line above is the shipping upgrade itself, so it stays
+        // unshippable and is priced from its own variant.
+        requiresShipping: line.kind === "plant",
       };
     }),
   };
