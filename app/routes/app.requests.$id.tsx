@@ -17,7 +17,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { canStubShopifyWrites } from "../lib/environment.server";
 import { listEmailsForRequest, notifyOfferReady } from "../lib/emails.server";
-import { listDeclinedExactPlants } from "../lib/exact-plants.server";
+import { listExactPlantCandidates } from "../lib/exact-plants.server";
 import {
   formatCurrency,
   getDisplayRequestNumber,
@@ -127,7 +127,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const emails = plantRequest ? await listEmailsForRequest(shop, requestId) : [];
 
   const declinedExactPlants = plantRequest
-    ? await listDeclinedExactPlants(shop, requestId)
+    ? await listExactPlantCandidates(shop, requestId)
     : [];
 
   return { requestId, plantRequest, response, emails, declinedExactPlants };
@@ -587,7 +587,7 @@ function DeclinedExactPlantsSection({
   items,
 }: {
   requestId: string;
-  items: Awaited<ReturnType<typeof listDeclinedExactPlants>>;
+  items: Awaited<ReturnType<typeof listExactPlantCandidates>>;
 }) {
   const returnTo = `/app/requests/${requestId}`;
   return (

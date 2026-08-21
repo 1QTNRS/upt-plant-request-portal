@@ -5,13 +5,15 @@ import prisma from "../db.server";
 import {
   createExactPlantListing,
   ExactPlantListingError,
-  getDeclinedExactPlantReview,
-  listDeclinedExactPlants,
+  getExactPlantReview,
+  listExactPlantCandidates,
 } from "./exact-plants.server";
 import {
   getCustomerResponse,
   saveCustomerResponse,
   sendOffer,
+  expireOverdueOffers,
+  markRequestPaid,
   submitCustomerRequest,
   updateRequestItem,
 } from "./portal.server";
@@ -23,6 +25,8 @@ async function createOfferedRequest(options?: {
   rejectAvailable?: boolean;
   acceptAvailable?: boolean;
   includeUnavailable?: boolean;
+  /** Skip the customer response entirely, as an unanswered offer would. */
+  respond?: boolean;
 }) {
   const created = await submitCustomerRequest(shop, {
     name: "Alex Rivera",
@@ -62,6 +66,14 @@ async function createOfferedRequest(options?: {
   }
 
   await sendOffer(shop, created.id, 5);
+
+  if (options?.respond === false) {
+    return {
+      request: created,
+      availableId: available.id,
+      unavailableId: unavailable?.id,
+    };
+  }
 
   const choice =
     options?.acceptAvailable ? "accept" : options?.rejectAvailable === false ? "accept" : "reject";
@@ -135,13 +147,13 @@ describe("declined exact plant listings", () => {
     });
     assert.equal(listings.length, 0);
 
-    const declined = await listDeclinedExactPlants(shop, request.id);
+    const declined = await listExactPlantCandidates(shop, request.id);
     assert.equal(declined.length, 1);
     assert.equal(declined[0]?.requestItemId, availableId);
     assert.equal(declined[0]?.weightLbs, 9.5);
     assert.equal(declined.some((item) => item.requestItemId === unavailableId), false);
 
-    const review = await getDeclinedExactPlantReview(shop, availableId);
+    const review = await getExactPlantReview(shop, availableId);
     assert.equal(review.listing, null);
     assert.equal(review.draft.title, "Thai Constellation Exact");
     assert.equal(review.draft.price, 175);
@@ -177,7 +189,7 @@ describe("declined exact plant listings", () => {
     const item = await prisma.requestItem.findUnique({ where: { id: availableId } });
     assert.equal(item?.itemStatus, "Listed");
 
-    const listedRows = await listDeclinedExactPlants(shop);
+    const listedRows = await listExactPlantCandidates(shop);
     const listedRow = listedRows.find((row) => row.requestItemId === availableId);
     assert.equal(listedRow?.title, "Thai Constellation Showcase");
     assert.equal(listedRow?.price, 189);
@@ -255,7 +267,7 @@ describe("declined exact plant listings", () => {
           weightLbs: 9.5,
           photoUrls: [],
         }),
-      /Accepted/,
+      /accepted this plant and their hold has not expired/,
     );
 
     if (unavailableId) {
@@ -272,6 +284,134 @@ describe("declined exact plant listings", () => {
       );
     }
 
-    assert.equal((await listDeclinedExactPlants(shop)).every((row) => row.requestItemId !== availableId), true);
+    assert.equal((await listExactPlantCandidates(shop)).every((row) => row.requestItemId !== availableId), true);
+  });
+});
+
+/** Pushes the offer's hold into the past and runs the expiry sweep. */
+async function expireOffer(requestId: string) {
+  await prisma.offer.update({
+    where: { requestId },
+    data: { expiresAt: new Date(Date.now() - 60 * 60 * 1000) },
+  });
+  await expireOverdueOffers(shop);
+}
+
+describe("expired offers release their exact plants", () => {
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  it("releases a plant the customer accepted but never paid for", async () => {
+    const { request, availableId, unavailableId } = await createOfferedRequest({
+      acceptAvailable: true,
+    });
+    // Still held while the offer is live.
+    assert.equal(
+      (await listExactPlantCandidates(shop, request.id)).length,
+      0,
+      "an accepted plant must stay held until the offer expires",
+    );
+
+    await expireOffer(request.id);
+    assert.equal(
+      (await prisma.plantRequest.findUniqueOrThrow({ where: { id: request.id } }))
+        .status,
+      "Expired",
+    );
+
+    const candidates = await listExactPlantCandidates(shop, request.id);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].requestItemId, availableId);
+    assert.equal(candidates[0].releaseReason, "accepted_unpaid_expired");
+    assert.equal(
+      candidates.some((row) => row.requestItemId === unavailableId),
+      false,
+      "a Not Available plant is never released",
+    );
+  });
+
+  it("releases a plant the customer never answered", async () => {
+    const { request, availableId } = await createOfferedRequest({ respond: false });
+    assert.equal((await listExactPlantCandidates(shop, request.id)).length, 0);
+
+    await expireOffer(request.id);
+
+    const candidates = await listExactPlantCandidates(shop, request.id);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].requestItemId, availableId);
+    assert.equal(candidates[0].releaseReason, "never_responded_expired");
+  });
+
+  it("prefills the review form from the admin's own values, not the customer's", async () => {
+    const { request, availableId } = await createOfferedRequest({ respond: false });
+    await expireOffer(request.id);
+
+    const review = await getExactPlantReview(shop, availableId);
+    assert.equal(review.releaseReason, "never_responded_expired");
+    assert.equal(review.draft.title, "Thai Constellation Exact");
+    assert.equal(review.draft.price, 175);
+    assert.equal(review.draft.weightLbs, 9.5);
+    assert.equal(review.draft.photoUrls.length, 2);
+    // Customer-facing notes and identity must never reach a public product.
+    const serialized = JSON.stringify(review.draft);
+    assert.equal(serialized.includes("scar"), false);
+    assert.equal(serialized.includes("Alex Rivera"), false);
+    assert.equal(serialized.includes(request.requestNumber), false);
+  });
+
+  it("creates the product only after approval, once", async () => {
+    const { request, availableId } = await createOfferedRequest({ respond: false });
+    await expireOffer(request.id);
+
+    assert.equal(await prisma.exactPlantListing.count({ where: { shop } }), 0);
+
+    const first = await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Thai Constellation Exact",
+      price: 199,
+      weightLbs: 9.5,
+      photoUrls: ["https://picsum.photos/seed/thai-one/800/800"],
+    });
+    assert.equal(first.status, "listed");
+    assert.ok(first.shopifyProductGid);
+
+    const second = await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Renamed",
+      price: 250,
+      weightLbs: 1,
+      photoUrls: [],
+    });
+    assert.equal(second.shopifyProductGid, first.shopifyProductGid);
+    assert.equal(second.title, first.title, "a retry must not duplicate or rename");
+    assert.equal(await prisma.exactPlantListing.count({ where: { shop } }), 1);
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: availableId } }))
+        .itemStatus,
+      "Listed",
+    );
+  });
+
+  it("never releases a plant from a paid, closed request", async () => {
+    const { request, availableId } = await createOfferedRequest({
+      acceptAvailable: true,
+    });
+    await markRequestPaid(shop, request.id, {
+      shopifyOrderGid: "gid://shopify/Order/1",
+      orderNumber: "#1001",
+      plantRevenue: 175,
+    });
+    assert.equal((await listExactPlantCandidates(shop, request.id)).length, 0);
+    await assert.rejects(
+      () => getExactPlantReview(shop, availableId),
+      /paid and closed/,
+    );
   });
 });

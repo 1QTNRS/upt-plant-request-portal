@@ -11,9 +11,10 @@ import { requireAdmin } from "../lib/admin-auth.server";
 import {
   createExactPlantListing,
   ExactPlantListingError,
-  getDeclinedExactPlantReview,
+  getExactPlantReview,
 } from "../lib/exact-plants.server";
 import { formatCurrency } from "../lib/portal";
+import { EXACT_PLANT_RELEASE_LABELS } from "../lib/exact-plants";
 
 const inputStyle = {
   width: "100%",
@@ -44,7 +45,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const returnTo = safeReturnTo(new URL(request.url).searchParams.get("returnTo"));
 
   try {
-    const review = await getDeclinedExactPlantReview(shop, itemId);
+    const review = await getExactPlantReview(shop, itemId);
     return { ok: true as const, review, returnTo, error: null as string | null };
   } catch (error) {
     const message =
@@ -151,13 +152,18 @@ export default function ExactPlantListingReview() {
         Back
       </s-link>
       <s-section>
-        <s-banner tone="info">
-          <s-text>
-            Review and edit this declined exact plant before creating a Shopify
-            product. Nothing is published until you approve. Customer notes,
-            identity, and request details are not included.
-          </s-text>
-        </s-banner>
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="small">
+            <s-badge>{EXACT_PLANT_RELEASE_LABELS[review.releaseReason]}</s-badge>
+          </s-stack>
+          <s-banner tone="info">
+            <s-text>
+              Review and edit this exact plant before creating a Shopify product.
+              Nothing is published until you approve. Customer notes, identity,
+              and request details are not included.
+            </s-text>
+          </s-banner>
+        </s-stack>
       </s-section>
 
       {formError ? (

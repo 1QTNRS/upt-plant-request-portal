@@ -190,6 +190,17 @@ Local `/uploads/...` paths are made absolute against `SHOPIFY_APP_URL` when used
 
 ### EXACT PLANTS creation
 
+Eligibility is `exactPlantReleaseReason` (`app/lib/exact-plants.ts`), the one
+rule used by the listing queue, the review form and analytics. Candidates are
+queried from **offer items**, not from customer responses: an offer that simply
+expired has no response rows, so starting from the response would silently miss
+every unanswered expired offer.
+
+`EXACT_PLANT_ITEM_TAG_PREFIX` still reads `upt-declined-item:` although expired
+offers are now eligible too. It is the Shopify idempotency tag — renaming it
+would orphan the products already created under it and allow duplicates.
+
+
 Implemented as an **admin-approved** path only. Customer reject does not create a product. Review form prefills title, price, weight, photos. It must not prefill or publish customer-facing notes, customer identity, request info, or response info. Cancel creates nothing.
 
 ### Online Store / POS publishing
@@ -388,6 +399,7 @@ Genuinely optional, deliberately not done:
 7. Draft orders only for **accepted** exact plants (plus FedEx if selected).
 8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired.
 9. **Declined item** means: UPT marked Available, UPT created an exact-plant offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available.
+9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never for a paid or Closed request.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
 11. Listing prefill/publish: title, price, weight, selected exact-plant photos only. Exclude customer-facing notes/disclaimers, customer identity, request information, and customer response information.
 12. One Shopify product per declined item. Retries/refreshes/repeated response processing must not duplicate. On failure, keep the rejection and allow idempotent retry.

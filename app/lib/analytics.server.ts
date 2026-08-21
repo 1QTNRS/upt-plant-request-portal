@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { exactPlantReleaseReason } from "./exact-plants";
 import {
   computeBehaviorFlags,
   computeNoPaymentRate,
@@ -170,6 +171,17 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     purchased: 0,
   };
 
+  /**
+   * Why an offered exact plant did not sell. Kept apart because they mean
+   * different things: a decline is a judgement on the plant, an unpaid hold is a
+   * checkout problem, and silence is a reachability problem.
+   */
+  const releasedItems = {
+    customerDeclined: 0,
+    acceptedUnpaidExpired: 0,
+    neverRespondedExpired: 0,
+  };
+
   type PlantBucket = {
     plantName: string;
     requestCount: number;
@@ -216,6 +228,29 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
         itemFunnel.purchased += 1;
         bumpPlant(item.plantName, "purchaseCount");
         bumpPlant(item.plantName, "revenue", item.price * item.quantity);
+      }
+    }
+
+    // Counted from the offer, so an offer that expired with no response at all
+    // is still counted. Availability and payment are checked by
+    // `exactPlantReleaseReason`, which is the same rule the listing queue uses.
+    for (const offerItem of request.offer?.items ?? []) {
+      const choice = request.response?.items.find(
+        (entry) => entry.requestItemId === offerItem.requestItemId,
+      )?.choice;
+      const reason = exactPlantReleaseReason({
+        hasOfferItem: true,
+        offerAvailability: offerItem.availability,
+        responseChoice: choice,
+        requestStatus: request.status,
+        paidAt: request.paidAt,
+      });
+      if (reason === "customer_declined") releasedItems.customerDeclined += 1;
+      if (reason === "accepted_unpaid_expired") {
+        releasedItems.acceptedUnpaidExpired += 1;
+      }
+      if (reason === "never_responded_expired") {
+        releasedItems.neverRespondedExpired += 1;
       }
     }
   }
@@ -378,6 +413,13 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       ...statusCounts,
       closeRate: percent(statusCounts.closed, statusCounts.total),
       expirationRate: percent(statusCounts.expired, statusCounts.total),
+    },
+    releasedItems: {
+      ...releasedItems,
+      total:
+        releasedItems.customerDeclined +
+        releasedItems.acceptedUnpaidExpired +
+        releasedItems.neverRespondedExpired,
     },
     itemFunnel: {
       ...itemFunnel,

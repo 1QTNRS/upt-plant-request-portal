@@ -22,43 +22,94 @@ export type ExactPlantListingRecord = ExactPlantListingDraft & {
   lastError?: string;
 };
 
+/**
+ * Idempotency tag on the Shopify product. The `declined` wording predates
+ * expired offers becoming eligible; it is kept because renaming it would orphan
+ * the products already created under it and allow duplicates.
+ */
 export function declinedItemTag(requestItemId: string): string {
   return `${EXACT_PLANT_ITEM_TAG_PREFIX}${requestItemId}`;
 }
 
-export function isDeclinedExactPlant(input: {
-  offerAvailability?: string | null;
-  responseChoice?: string | null;
-}): boolean {
-  return (
-    input.offerAvailability === "available" && input.responseChoice === "reject"
-  );
-}
+/**
+ * Why an exact plant is no longer held for the customer who was offered it, and
+ * so may be listed publicly. Kept distinct because they mean different things
+ * commercially and analytics reports them separately.
+ */
+export type ExactPlantReleaseReason =
+  | "customer_declined"
+  | "accepted_unpaid_expired"
+  | "never_responded_expired";
 
-export function declinedExactPlantIneligibilityReason(input: {
+export const EXACT_PLANT_RELEASE_LABELS: Record<ExactPlantReleaseReason, string> = {
+  customer_declined: "Customer Declined",
+  accepted_unpaid_expired: "Customer Accepted but Unpaid/Expired",
+  never_responded_expired: "Customer Never Responded/Expired",
+};
+
+export type ExactPlantEligibilityInput = {
   hasOfferItem: boolean;
   offerAvailability?: string | null;
+  /** Undefined or null when the customer never answered the offer. */
   responseChoice?: string | null;
-}): string | null {
+  requestStatus?: string | null;
+  /** Truthy once the request has been paid for. */
+  paidAt?: unknown;
+};
+
+/**
+ * The reason this item may be listed, or null when it is not eligible.
+ *
+ * An item is only ever released while it is not promised to anyone: the
+ * customer declined it, or their hold lapsed unpaid. A plant UPT marked Not
+ * Available is never eligible — there is no exact plant to sell — and a paid or
+ * closed request is never touched.
+ */
+export function exactPlantReleaseReason(
+  input: ExactPlantEligibilityInput,
+): ExactPlantReleaseReason | null {
+  if (!input.hasOfferItem) return null;
+  if (input.offerAvailability !== "available") return null;
+  // A sold plant stays sold; completed requests are out of scope entirely.
+  if (input.paidAt) return null;
+  if (input.requestStatus === "Closed") return null;
+
+  if (input.responseChoice === "reject") return "customer_declined";
+
+  if (input.requestStatus === "Expired") {
+    if (input.responseChoice === "accept") return "accepted_unpaid_expired";
+    if (!input.responseChoice) return "never_responded_expired";
+  }
+
+  return null;
+}
+
+export function isExactPlantEligible(input: ExactPlantEligibilityInput): boolean {
+  return exactPlantReleaseReason(input) !== null;
+}
+
+/** A message explaining why this item cannot be listed, for the review form. */
+export function exactPlantIneligibilityReason(
+  input: ExactPlantEligibilityInput,
+): string | null {
+  if (exactPlantReleaseReason(input)) return null;
+
   if (!input.hasOfferItem) {
     return "This item was never offered as an exact plant.";
   }
-  if (input.offerAvailability === "not_available") {
+  if (input.offerAvailability !== "available") {
     return "UPT Not Available items cannot become EXACT PLANTS listings.";
   }
+  if (input.paidAt || input.requestStatus === "Closed") {
+    return "This request has been paid and closed, so the plant is sold.";
+  }
   if (input.responseChoice === "accept") {
-    return "Accepted items cannot become EXACT PLANTS listings.";
+    return "The customer accepted this plant and their hold has not expired yet.";
   }
   if (input.responseChoice === "unavailable") {
     return "Unavailable items cannot become EXACT PLANTS listings.";
   }
-  if (input.responseChoice !== "reject") {
-    return "Only plants the customer rejected after an exact-plant offer can be listed.";
-  }
-  if (input.offerAvailability !== "available") {
-    return "Only plants UPT marked Available can become EXACT PLANTS listings.";
-  }
-  return null;
+  return "This plant is still being held for the customer. It becomes eligible once they decline it or the offer expires unpaid.";
 }
 
 export function buildExactPlantListingDraft(input: {

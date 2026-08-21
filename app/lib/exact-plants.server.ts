@@ -3,8 +3,9 @@ import prisma from "../db.server";
 import { requireAdminClient } from "./environment.server";
 import {
   buildExactPlantListingDraft,
-  declinedExactPlantIneligibilityReason,
-  isDeclinedExactPlant,
+  exactPlantIneligibilityReason,
+  exactPlantReleaseReason,
+  type ExactPlantReleaseReason,
   parsePhotoUrlList,
   shopifyAdminProductUrl,
   shopifyStorefrontProductUrl,
@@ -24,10 +25,11 @@ export class ExactPlantListingError extends Error {
   }
 }
 
-export type DeclinedExactPlantRow = {
+export type ExactPlantCandidateRow = {
   requestItemId: string;
   requestId: string;
   requestNumber: string;
+  releaseReason: ExactPlantReleaseReason;
   title: string;
   price: number;
   weightLbs: number;
@@ -42,11 +44,12 @@ export type DeclinedExactPlantRow = {
   } | null;
 };
 
-export type DeclinedExactPlantReview = {
+export type ExactPlantReview = {
   requestItemId: string;
   requestId: string;
+  releaseReason: ExactPlantReleaseReason;
   draft: ExactPlantListingDraft;
-  listing: DeclinedExactPlantRow["listing"];
+  listing: ExactPlantCandidateRow["listing"];
 };
 
 function listingDto(
@@ -57,7 +60,7 @@ function listingDto(
     shopifyProductHandle: string | null;
     lastError: string | null;
   } | null,
-): DeclinedExactPlantRow["listing"] {
+): ExactPlantCandidateRow["listing"] {
   if (!listing) return null;
   const status: ExactPlantListingStatus =
     listing.status === "listed" && listing.shopifyProductGid ? "listed" : "failed";
@@ -97,14 +100,21 @@ function toListingRecord(
   };
 }
 
-export async function listDeclinedExactPlants(
+/**
+ * Every exact plant that is no longer held for the customer it was offered to.
+ *
+ * Queried from the offer rather than from the customer's response, because an
+ * offer that simply expired has no response rows at all — starting from the
+ * response would silently miss every unanswered expired offer.
+ */
+export async function listExactPlantCandidates(
   shop: string,
   requestId?: string,
-): Promise<DeclinedExactPlantRow[]> {
-  const responses = await prisma.responseItem.findMany({
+): Promise<ExactPlantCandidateRow[]> {
+  const offerItems = await prisma.offerItem.findMany({
     where: {
-      choice: "reject",
-      response: {
+      availability: "available",
+      offer: {
         request: {
           shop,
           ...(requestId ? { id: requestId } : {}),
@@ -115,8 +125,8 @@ export async function listDeclinedExactPlants(
       requestItem: {
         include: {
           exactPlantListing: true,
-          offerItems: true,
           photos: { orderBy: { sortOrder: "asc" as const } },
+          responseItems: true,
           request: true,
         },
       },
@@ -124,53 +134,50 @@ export async function listDeclinedExactPlants(
     orderBy: { id: "asc" },
   });
 
-  return responses.flatMap((responseItem) => {
-    const item = responseItem.requestItem;
-    const offerItem = item.offerItems[0];
-    if (
-      !isDeclinedExactPlant({
-        offerAvailability: offerItem?.availability,
-        responseChoice: responseItem.choice,
-      })
-    ) {
-      return [];
-    }
+  return offerItems.flatMap((offerItem) => {
+    const item = offerItem.requestItem;
+    const responseItem = item.responseItems[0];
+    const reason = exactPlantReleaseReason({
+      hasOfferItem: true,
+      offerAvailability: offerItem.availability,
+      responseChoice: responseItem?.choice,
+      requestStatus: item.request.status,
+      paidAt: item.request.paidAt,
+    });
+    if (!reason) return [];
 
-    const photoUrls =
-      parsePhotoUrlList(offerItem.photoUrlsJson).length > 0
-        ? parsePhotoUrlList(offerItem.photoUrlsJson)
-        : item.photos.map((photo) => photo.url);
+    const offerPhotos = parsePhotoUrlList(offerItem.photoUrlsJson);
     const draft = buildExactPlantListingDraft({
       plantName: offerItem.plantName || item.offeredName || item.plantName,
       offeredName: offerItem.plantName || item.offeredName,
       price: offerItem.price,
       weightLbs: offerItem.weightLbs,
-      photoUrls,
+      photoUrls:
+        offerPhotos.length > 0 ? offerPhotos : item.photos.map((photo) => photo.url),
     });
-
-    const listing = listingDto(shop, item.exactPlantListing);
 
     return [
       {
         requestItemId: item.id,
         requestId: item.requestId,
         requestNumber: item.request.requestNumber,
+        releaseReason: reason,
         title: item.exactPlantListing?.title || draft.title,
         price: item.exactPlantListing?.price ?? draft.price,
         weightLbs: item.exactPlantListing?.weightLbs ?? draft.weightLbs,
         photoUrls: item.exactPlantListing
           ? parsePhotoUrlList(item.exactPlantListing.photoUrlsJson)
           : draft.photoUrls,
-        listing,
+        listing: listingDto(shop, item.exactPlantListing),
       },
     ];
   });
 }
 
-export async function getDeclinedExactPlantReview(
+export async function getExactPlantReview(
   shop: string,
   requestItemId: string,
-): Promise<DeclinedExactPlantReview> {
+): Promise<ExactPlantReview> {
   const item = await prisma.requestItem.findFirst({
     where: { id: requestItemId, request: { shop } },
     include: {
@@ -183,21 +190,23 @@ export async function getDeclinedExactPlantReview(
   });
 
   if (!item) {
-    throw new ExactPlantListingError("Declined exact plant not found.");
+    throw new ExactPlantListingError("Exact plant not found.");
   }
 
   const offerItem = item.offerItems[0];
-  const responseItem =
-    item.responseItems.find((entry) => entry.choice === "reject") ??
-    item.responseItems[0];
-  const reason = declinedExactPlantIneligibilityReason({
+  const responseItem = item.responseItems[0];
+  const eligibility = {
     hasOfferItem: Boolean(offerItem),
     offerAvailability: offerItem?.availability,
     responseChoice: responseItem?.choice,
-  });
-  if (reason || !offerItem) {
+    requestStatus: item.request.status,
+    paidAt: item.request.paidAt,
+  };
+  const releaseReason = exactPlantReleaseReason(eligibility);
+  if (!releaseReason || !offerItem) {
     throw new ExactPlantListingError(
-      reason ?? "This item was never offered as an exact plant.",
+      exactPlantIneligibilityReason(eligibility) ??
+        "This item was never offered as an exact plant.",
     );
   }
 
@@ -222,6 +231,7 @@ export async function getDeclinedExactPlantReview(
   return {
     requestItemId: item.id,
     requestId: item.requestId,
+    releaseReason,
     draft: item.exactPlantListing
       ? {
           title: item.exactPlantListing.title,
@@ -270,7 +280,7 @@ export async function createExactPlantListing(
     photoUrls: input.photoUrls.filter((url) => url.trim().length > 0),
   };
 
-  await getDeclinedExactPlantReview(shop, input.requestItemId);
+  await getExactPlantReview(shop, input.requestItemId);
 
   const existing = await prisma.exactPlantListing.findUnique({
     where: { requestItemId: input.requestItemId },
