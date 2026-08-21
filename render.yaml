@@ -64,8 +64,10 @@ services:
       # so there is no reason to make a human invent, paste and store one.
       - key: CRON_SECRET
         generateValue: true
-      # Resend. Until the sending domain is verified, every message stays in the
-      # EmailMessage outbox with status `preview` and no customer is notified.
+      # Resend. Without RESEND_API_KEY every message stays in the EmailMessage
+      # outbox as `preview`. With a key but an unverified sending domain Resend
+      # answers 403 and the row becomes `failed` — either way no customer is
+      # notified, and the hourly maintenance job retries the failures.
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM

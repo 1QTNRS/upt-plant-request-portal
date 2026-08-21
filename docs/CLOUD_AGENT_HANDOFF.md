@@ -54,7 +54,7 @@ Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ
 | Draft orders | Code complete and schema-validated; the customer path now gets an offline Admin client. **Not yet run against a live store** |
 | Shopify Files photo upload | Code complete; waits for `fileStatus: READY`. **Not yet run against a live store** |
 | EXACT PLANTS product create + collection + Online Store/POS publish | Code complete and schema-validated. **Not yet run against a live store** |
-| Email delivery | Outbox + Resend client with retries and error reporting; without `RESEND_API_KEY` messages stay `preview` and production logs a warning per message |
+| Email delivery | Outbox + Resend client with retries, error reporting and an hourly redelivery sweep; without `RESEND_API_KEY` messages stay `preview`, and with a key but an unverified sending domain Resend returns 403 and the row becomes `failed`. Production logs a warning per undelivered message, and the admin request page shows the outbox |
 | Expiration reminders | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Verified end to end |
 | Privacy/compliance webhooks | All three mandatory topics subscribed and implemented |
 | Deployment | **Render** is the chosen target: `render.yaml` declares the PostgreSQL database, the Docker web service and the offer-maintenance cron job. Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
@@ -205,7 +205,19 @@ Implemented in GraphQL (`publishablePublish` to catalogs titled `Online Store` a
 
 ### Emails
 
-Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Transient Resend failures are retried; a permanent failure is summarized into `EmailMessage.error`. Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+
+`preview` and `failed` are different states with different causes: `preview` means no `RESEND_API_KEY`, so nothing was attempted; `failed` means Resend refused the send — a 403 for an unverified `EMAIL_FROM` domain is the likely first one. Do not describe an unverified domain as leaving messages in `preview`.
+
+Nothing is lost once a send fails:
+
+- `queueEmail` retries an existing row whose status is anything but `sent`, so the `(shop, idempotencyKey)` dedup no longer makes one lost message permanent.
+- `runOfferMaintenance` sweeps `queued` / `failed` / `preview` rows oldest-first, bounded per run and by `EmailMessage.attempts` (`MAX_DELIVERY_ATTEMPTS`), which is roughly a day of hourly retries.
+- Every send carries `Idempotency-Key: EmailMessage.id`, which Resend honours for 24 hours, so a retry after a lost reply cannot put a second copy in the customer's inbox. Resend's own message id is stored in `providerMessageId`.
+- The Resend `fetch` has a 10 second `AbortSignal.timeout`. Without it a hung `api.resend.com` held the customer's own form POST open for the whole retry loop, for a plant request that was already committed.
+- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "create payment link and email it" action. `bodyText` is deliberately not sent to the browser: it contains payment links.
+
+The expiration reminder goes only to customers who either never answered or accepted something — never to one who rejected every plant — and an accepted-but-unpaid reminder leads with the recorded `DraftOrderReference.invoiceUrl` rather than inviting them to review an offer they already answered.
 
 Customer-facing links in emails are storefront proxy URLs
 (`https://{shop}/apps/plant-requests/...`) built by `customerLinksForShop`. A link

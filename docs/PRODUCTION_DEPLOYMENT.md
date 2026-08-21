@@ -191,10 +191,16 @@ already-expired offer is a no-op. Verified by running it twice in a row.
 3. Set `EMAIL_FROM` to an address on that verified domain.
 
 **Why the domain step matters.** Resend rejects sends from an unverified domain
-with a 403. Until it is verified, every message is stored in the `EmailMessage`
-outbox with status `preview` and no customer is notified — including offer-ready
-and checkout emails. The app logs a warning for every undelivered message in
-production, and records a 403 with a pointer back to the Domains page.
+with a 403, which the app records on the message as `failed` with a pointer back
+to the Domains page. That is a different state from a missing `RESEND_API_KEY`,
+which leaves the message as `preview` because nothing was ever attempted.
+Neither state notifies the customer — including offer-ready and checkout emails —
+and the app logs a warning for every undelivered message in production.
+
+Both are recoverable. The hourly offer-maintenance job retries `queued`, `failed`
+and `preview` messages oldest-first, so everything queued before the key and the
+domain were in place is delivered on the next run; the admin request page also
+shows the outbox per request with a retry button.
 
 ---
 
