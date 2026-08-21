@@ -53,7 +53,7 @@ api_version = "2025-10"
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 # Merchants must re-approve after this change.
-scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications"
+scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications,write_app_proxy"
 
 [app_proxy]
 # Must be an absolute URL — this is the address Shopify forwards storefront

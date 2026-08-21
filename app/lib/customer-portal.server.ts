@@ -1,7 +1,13 @@
 import { data } from "react-router";
 
+import type { PlantLine } from "../components/customer-request-portal";
+
 import { customerPortalRelativeLinks } from "./app-proxy";
-import { portalFormAction } from "./customer-portal";
+import {
+  plantLinesFromQuery,
+  portalFormAction,
+  portalHome,
+} from "./customer-portal";
 import { resolveCustomerIdentity } from "./customer-identity.server";
 import {
   canUseDemoCustomerLogin,
@@ -30,6 +36,9 @@ export type CustomerPortalData = {
   identityError: string | null;
   submittedMessage: string | null;
   formAction: string;
+  browseAction: string;
+  /** Rows carried in the query string by the add/remove buttons. */
+  plantLines: PlantLine[] | null;
 };
 
 function toRequestRow(
@@ -55,11 +64,14 @@ export async function loadCustomerPortal(
   await ensureShopSeeded(context.shop);
 
   const links = customerPortalRelativeLinks(context.viaAppProxy);
-  const submittedNumber = new URL(request.url).searchParams.get("submitted");
+  const search = new URL(request.url).searchParams;
+  const submittedNumber = search.get("submitted");
   const shared = {
     showDemoLogin: canUseDemoCustomerLogin(),
     requestDetailBase: links.home,
     formAction: portalFormAction(context),
+    browseAction: portalHome(context),
+    plantLines: plantLinesFromQuery(search),
     submittedMessage: submittedNumber
       ? `Request submitted. Your request number is ${submittedNumber}. We'll notify you when matching plants become available.`
       : null,

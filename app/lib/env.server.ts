@@ -25,6 +25,9 @@ export const REQUIRED_SHOPIFY_SCOPES = [
   "write_products",
   "read_publications",
   "write_publications",
+  // Required to configure the app proxy that serves the storefront customer
+  // portal. See https://shopify.dev/docs/apps/build/online-store/app-proxies
+  "write_app_proxy",
 ] as const;
 
 export function isProduction(): boolean {

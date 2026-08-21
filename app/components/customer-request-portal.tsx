@@ -42,6 +42,7 @@ export function CustomerRequestPortal({
   requestDetailHref,
   showDemoLogin,
   formAction,
+  browseAction,
   plantLines = [EMPTY_PLANT_LINE],
   canSubmit = true,
 }: {
@@ -54,6 +55,11 @@ export function CustomerRequestPortal({
   requestDetailHref: (requestId: string) => string;
   showDemoLogin: boolean;
   formAction?: string;
+  /**
+   * Where the add and remove buttons navigate to with GET. The storefront page
+   * itself, so the customer never leaves it.
+   */
+  browseAction?: string;
   /**
    * Rows come from the server. Adding and removing a row is a form submission
    * rather than client state, because an app proxy page serves its assets from
@@ -152,8 +158,10 @@ export function CustomerRequestPortal({
                   {plantLines.length > 1 ? (
                     <button
                       type="submit"
-                      name="intent"
-                      value={`remove-plant-${index}`}
+                      name="removePlant"
+                      value={String(index)}
+                      formMethod="get"
+                      formAction={browseAction}
                       formNoValidate
                       style={buttonStyle}
                     >
@@ -164,10 +172,18 @@ export function CustomerRequestPortal({
               </s-box>
             ))}
             <input type="hidden" name="itemCount" value={plantLines.length} />
+            {/*
+              formMethod="get" turns this into a navigation rather than a POST:
+              the browser puts the typed values in the query string, the page
+              re-renders with one more row, and the customer stays on the same
+              storefront URL.
+            */}
             <button
               type="submit"
-              name="intent"
-              value="add-plant"
+              name="addPlant"
+              value="1"
+              formMethod="get"
+              formAction={browseAction}
               formNoValidate
               style={buttonStyle}
             >

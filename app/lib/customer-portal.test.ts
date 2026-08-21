@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 
 import { APP_PROXY_BASE_PATH, CUSTOMER_PORTAL_PATH } from "./app-proxy";
 import {
+  plantLinesFromQuery,
   portalFormAction,
   portalHome,
   readOfferChoices,
@@ -52,6 +53,81 @@ describe("customer portal form target", () => {
   it("keeps the customer on the storefront after submitting", () => {
     assert.equal(portalHome(context(true)), APP_PROXY_BASE_PATH);
     assert.ok(!portalHome(context(true)).startsWith(CUSTOMER_PORTAL_PATH));
+  });
+});
+
+describe("adding and removing rows through the query string", () => {
+  /*
+   * The add and remove buttons submit the form with GET rather than POST. A GET
+   * is the same request shape as the page load the storefront already serves,
+   * and a proxied POST to the row endpoints returned "Bad Request" on the real
+   * store. The browser serializes the typed values into the query string.
+   */
+  const query = (params: Record<string, string>) => new URLSearchParams(params);
+
+  it("does nothing for an ordinary page load", () => {
+    assert.equal(plantLinesFromQuery(query({})), null);
+    assert.equal(plantLinesFromQuery(query({ submitted: "REQ1" })), null);
+  });
+
+  it("adds a row and keeps what was typed", () => {
+    assert.deepEqual(
+      plantLinesFromQuery(
+        query({
+          itemCount: "1",
+          "plantName-0": "Monstera",
+          "notes-0": "variegated",
+          addPlant: "1",
+        }),
+      ),
+      [
+        { plantName: "Monstera", notes: "variegated" },
+        { plantName: "", notes: "" },
+      ],
+    );
+  });
+
+  it("removes the row that was clicked and keeps the others", () => {
+    assert.deepEqual(
+      plantLinesFromQuery(
+        query({
+          itemCount: "3",
+          "plantName-0": "A",
+          "plantName-1": "B",
+          "plantName-2": "C",
+          removePlant: "1",
+        }),
+      ),
+      [
+        { plantName: "A", notes: "" },
+        { plantName: "C", notes: "" },
+      ],
+    );
+  });
+
+  it("removes the first row when index 0 is clicked", () => {
+    // `removePlant=0` is falsy as a string; it must still be honoured.
+    assert.deepEqual(
+      plantLinesFromQuery(
+        query({ itemCount: "2", "plantName-0": "A", "plantName-1": "B", removePlant: "0" }),
+      ),
+      [{ plantName: "B", notes: "" }],
+    );
+  });
+
+  it("ignores a nonsense remove index rather than dropping a row", () => {
+    const rows = plantLinesFromQuery(
+      query({ itemCount: "2", "plantName-0": "A", "plantName-1": "B", removePlant: "x" }),
+    );
+    assert.equal(rows?.length, 2);
+  });
+
+  it("caps what a hand-written URL can ask for", () => {
+    assert.equal(plantLinesFromQuery(query({ itemCount: "9999", addPlant: "1" }))?.length, 20);
+    const long = plantLinesFromQuery(
+      query({ itemCount: "1", "notes-0": "x".repeat(5000), addPlant: "1" }),
+    );
+    assert.equal(long?.[0].notes.length, 500);
   });
 });
 
@@ -257,8 +333,20 @@ describe("the request form works without JavaScript", () => {
 
   it("adds and removes rows with submit buttons, not onClick handlers", () => {
     assert.ok(!source.includes("onClick"), "onClick does nothing without hydration");
-    assert.match(source, /value="add-plant"/);
-    assert.match(source, /value=\{`remove-plant-\$\{index\}`\}/);
+    assert.match(source, /name="addPlant"/);
+    assert.match(source, /name="removePlant"/);
+  });
+
+  it("adds and removes rows with GET, not a proxied POST", () => {
+    // A proxied POST to the row endpoints returned "Bad Request" on the real
+    // store; a GET is the same request shape as the page load beside it.
+    const buttons = [...source.matchAll(/<button[\s\S]*?>/g)].map((m) => m[0]);
+    const rowButtons = buttons.filter((b) => /addPlant|removePlant/.test(b));
+    assert.equal(rowButtons.length, 2);
+    for (const button of rowButtons) {
+      assert.match(button, /formMethod="get"/);
+      assert.match(button, /formAction=\{browseAction\}/);
+    }
   });
 
   it("uses a plain form, not the client router's Form", () => {
