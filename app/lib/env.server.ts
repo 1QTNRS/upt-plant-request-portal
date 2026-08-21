@@ -78,10 +78,34 @@ export function resolveScopes(): string[] {
   return configured?.length ? configured : [...REQUIRED_SHOPIFY_SCOPES];
 }
 
+/**
+ * Everything a granted scope list actually covers.
+ *
+ * Shopify treats `write_x` as including `read_x` and does **not** echo the read
+ * scope back in the granted list. A correctly installed store reports
+ * `write_products` alone, so comparing the raw strings claims `read_products`
+ * was refused. That put a permanent "this store has not approved …" warning on
+ * every admin page of a store that had approved everything, training the
+ * merchant to ignore the one message that matters when a scope really is
+ * missing.
+ */
+function coveredScopes(granted: string[]): Set<string> {
+  const covered = new Set<string>();
+  for (const raw of granted) {
+    const scope = raw.trim();
+    if (!scope) continue;
+    covered.add(scope);
+    if (scope.startsWith("write_")) {
+      covered.add(`read_${scope.slice("write_".length)}`);
+    }
+  }
+  return covered;
+}
+
 /** Scopes the deployment is missing relative to what the app actually calls. */
 export function missingScopes(granted: string[]): string[] {
-  const set = new Set(granted.map((scope) => scope.trim()));
-  return REQUIRED_SHOPIFY_SCOPES.filter((scope) => !set.has(scope));
+  const covered = coveredScopes(granted);
+  return REQUIRED_SHOPIFY_SCOPES.filter((scope) => !covered.has(scope));
 }
 
 /**

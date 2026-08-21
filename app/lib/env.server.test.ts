@@ -160,6 +160,27 @@ describe("granted scope warning", () => {
       null,
     );
   });
+
+  it("stays silent for the scope string a correctly installed store reports", () => {
+    // Verbatim from the offline session on upt-plant-request-dev.myshopify.com
+    // after approving every requested scope. Shopify folds each `read_x` into
+    // the `write_x` that implies it.
+    assert.equal(
+      grantedScopeWarning(
+        "read_customers,read_orders,write_app_proxy,write_draft_orders," +
+          "write_files,write_products,write_publications",
+      ),
+      null,
+    );
+  });
+
+  it("counts a write scope as granting the read scope it implies", () => {
+    assert.deepEqual(missingScopes(["write_products"]).includes("read_products"), false);
+  });
+
+  it("still reports a read scope with no write scope to imply it", () => {
+    assert.deepEqual(missingScopes(["write_products"]).includes("read_orders"), true);
+  });
 });
 
 describe("scope resolution", () => {
