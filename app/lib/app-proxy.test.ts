@@ -141,7 +141,10 @@ describe("app proxy configuration", () => {
       "utf8",
     );
     const block = toml.slice(toml.indexOf("[app_proxy]"));
-    assert.equal(block.match(/^url\s*=\s*"([^"]*)"/m)?.[1], CUSTOMER_PORTAL_PATH);
+    // `url` is the absolute address Shopify forwards to; only its path has to
+    // match the route this module builds links against.
+    const url = block.match(/^url\s*=\s*"([^"]*)"/m)?.[1] ?? "";
+    assert.equal(new URL(url).pathname, CUSTOMER_PORTAL_PATH);
     assert.equal(block.match(/^subpath\s*=\s*"([^"]*)"/m)?.[1], APP_PROXY_SUBPATH);
     assert.equal(block.match(/^prefix\s*=\s*"([^"]*)"/m)?.[1], APP_PROXY_PREFIX);
   });
