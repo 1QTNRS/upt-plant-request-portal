@@ -17,7 +17,7 @@ There is a single web service. Standard commands live in `package.json` scripts;
 - Lint: `npm run lint` — ESLint.
 - Typecheck: `npm run typecheck` — `react-router typegen && tsc --noEmit`.
 - Build: `npm run build` — React Router (Vite) production build.
-- Tests: `npm test` — `tsx --test app/lib/*.test.ts`. Some suites hit the database, so run `npm run setup` first.
+- Tests: `npm test` — `tsx --test --test-concurrency=1 app/lib/*.test.ts`. Some suites hit the database, so run `npm run setup` first. Keep the runner serial: the DB-backed suites share one database, and running their files in parallel caused SQLite lock timeouts on CI runners.
 - DB setup: `npm run setup` — generates the client and applies migrations for whichever provider `DATABASE_URL` names (creates `prisma/dev.sqlite` when unset).
 - Seed: `node scripts/prisma.mjs db seed` (also runs via `ensureShopSeeded` under the dev bypass only).
 - Shopify call validation: `npm run validate-graphql` — fetches the live Admin schema and checks every `#graphql` document plus the variable payloads. **Needs network.** Run after touching any Shopify call.

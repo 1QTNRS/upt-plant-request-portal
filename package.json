@@ -24,7 +24,7 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "test": "tsx --test app/lib/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 app/lib/*.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
