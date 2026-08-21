@@ -57,7 +57,7 @@ Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ
 | Email delivery | Outbox + Resend client with retries and error reporting; without `RESEND_API_KEY` messages stay `preview` and production logs a warning per message |
 | Expiration reminders | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Verified end to end |
 | Privacy/compliance webhooks | All three mandatory topics subscribed and implemented |
-| Deployment | Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
+| Deployment | **Render** is the chosen target: `render.yaml` declares the PostgreSQL database, the Docker web service and the offer-maintenance cron job. Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
 | Unused `app/lib/sample-*.ts`, `item-*.ts`, `customer-*-submissions.ts` localStorage modules | Leftover prototype. **Active routes do not import them.** Do not resurrect them as the source of truth |
 
 ---
@@ -210,6 +210,8 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 
 `POST /cron/offer-maintenance` (`app/lib/scheduler.server.ts`) runs `expireOverdueOffers` and `notifyExpirationReminders` for every shop with portal data. Requires `Authorization: Bearer $CRON_SECRET` (constant-time compare) and returns 404 until `CRON_SECRET` is set. Safe to call repeatedly: a reminder is only sent once per request. `GET` is accepted because some hosted schedulers cannot issue `POST`.
 
+In production this is driven by the `upt-offer-maintenance` Render cron job, which runs `scripts/run-offer-maintenance.mjs` hourly. That script is intentionally dependency-free (global `fetch` only) so the cron job does not install the app's dependency tree, and it exits non-zero on any failure so Render marks the run failed. Render cron jobs do not receive `RENDER_EXTERNAL_URL`, so `render.yaml` passes the web service's `RENDER_EXTERNAL_HOSTNAME` in as `APP_HOSTNAME`, and reads `CRON_SECRET` from the web service so there is one value to rotate.
+
 `GET /healthz` returns 503 when the database is unreachable.
 
 ### Customer authentication
@@ -238,7 +240,7 @@ Last verified on `cursor/production-readiness-blockers-7617`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 92 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 110 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
@@ -280,13 +282,16 @@ No known application-code work remains. Everything left needs an account action,
 a hosting decision, or a live store — all of it enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
 
-1. Provision PostgreSQL and a container host; set `DATABASE_URL` (runbook §1–2)
-2. Set the real `application_url` / redirect URLs and run `shopify app deploy` (§3)
-3. Install on the UPT store and approve the scopes (§4)
-4. Resend API key + verified sending domain (§5)
-5. `CRON_SECRET` and an hourly call to `/cron/offer-maintenance` (§6)
-6. Confirm the FedEx product handle and the admin notification email (§7–8)
-7. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS, `orders/paid` (§9–12)
+1. Apply `render.yaml` as a Render Blueprint and supply the six prompted secrets (runbook §1–2)
+2. Confirm the database, web service and cron job came up (§3–4)
+3. Resend API key + verified sending domain (§5)
+4. Enable database backups (§6)
+5. Point the Shopify app at the Render URL, install, approve scopes, confirm the FedEx handle (§7)
+6. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS, `orders/paid` (§8)
+
+Blocked on the user for one committed value: `shopify.app.toml`'s
+`application_url` needs the real Render hostname. Shopify's TOML does not support
+environment variables, so it cannot be derived at runtime.
 
 Genuinely optional, deliberately not done:
 
@@ -344,3 +349,7 @@ app, and do not reimplement anything listed there as an account action.
 | `app/routes/customer*.tsx` | Customer portal |
 | `app/routes/webhooks.orders.paid.tsx` | Payment close |
 | `shopify.app.toml` | Scopes, webhooks, app proxy |
+| `render.yaml` | Render Blueprint: PostgreSQL, web service, cron job. Checked against the app by `app/lib/render-blueprint.test.ts` |
+| `scripts/run-offer-maintenance.mjs` | Render cron job entry point |
+| `scripts/prisma.mjs` | Prisma CLI wrapper; picks the schema from `DATABASE_URL` |
+| `scripts/validate-admin-graphql.mjs` | Validates Shopify calls against the live Admin schema |

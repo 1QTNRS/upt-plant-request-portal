@@ -18,6 +18,7 @@
     "prisma:sync-schema": "node scripts/prisma-schema.mjs --sync",
     "prisma:check-schema": "node scripts/prisma-schema.mjs --check",
     "validate-graphql": "tsx scripts/validate-admin-graphql.mjs",
+    "cron:offer-maintenance": "node scripts/run-offer-maintenance.mjs",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
@@ -70,7 +71,8 @@
     "prettier": "^3.6.2",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3",
-    "vite": "^6.3.6"
+    "vite": "^6.3.6",
+    "yaml": "^2.9.0"
   },
   "workspaces": {
     "packages": [

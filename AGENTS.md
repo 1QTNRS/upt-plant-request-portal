@@ -2,7 +2,7 @@
 
 Read **[docs/CLOUD_AGENT_HANDOFF.md](docs/CLOUD_AGENT_HANDOFF.md)** before changing this app. It is the durable handoff for Cloud Agents: what is live, what is still demo, Shopify gaps, business rules, and productionization steps.
 
-Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Every remaining production blocker is an account action, a hosting decision, or a live-store verification — not code. Do not reimplement anything listed there.
+Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Production hosting is **Render** (Docker web service, managed PostgreSQL, cron job), declared in `render.yaml`. Every remaining blocker there is an account action or a live-store verification — not code. Do not reimplement anything listed there, and edit `render.yaml` rather than configuring Render by hand.
 
 Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed React Router app on the existing working branch. Do not resurrect `app/lib/sample-*.ts` or other localStorage prototype modules as the source of truth.
 

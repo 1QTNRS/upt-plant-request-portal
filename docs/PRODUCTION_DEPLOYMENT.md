@@ -1,11 +1,17 @@
-# UPT Plant Request Portal — production deployment runbook
+# UPT Plant Request Portal — Render deployment runbook
+
+Target: **Render** — a Docker Web Service, managed **Render PostgreSQL**, and a
+Render **Cron Job** for offer expiry and reminders. All three are declared in
+[`render.yaml`](../render.yaml) at the repository root.
 
 Everything that could be done in code is done. What remains needs a credential,
-an authorization, a hosting decision, or a live store — none of which can be
-produced from a build environment.
+an authorization, or a live store. Work through the sections in order; each
+states **what to do**, **who can do it**, and **exactly where**. Nothing below
+asks you to write code.
 
-Work through the sections in order. Each blocker states **what to do**, **who can
-do it**, and **exactly where**. Nothing below asks you to write code.
+> **Do not point this at the live UPT store yet.** Sections 1–6 stand up the
+> infrastructure. Section 7 is the Shopify connection, and section 8 is the live
+> verification — do those only when you are ready.
 
 ---
 
@@ -13,141 +19,213 @@ do it**, and **exactly where**. Nothing below asks you to write code.
 
 | # | Blocker | Who | Where |
 | --- | --- | --- | --- |
-| 1 | Choose and provision a PostgreSQL database | **You** | Your hosting provider's dashboard |
-| 2 | Choose and provision a host for the app | **You** | Your hosting provider's dashboard |
-| 3 | Point the Shopify app at that host and deploy the config | **You** | Shopify Partner dashboard + `shopify app deploy` |
-| 4 | Install the app on the UPT store and approve the scopes | **You** | Shopify admin install screen |
-| 5 | Create the Resend API key and verify the sending domain | **You** | Resend dashboard |
-| 6 | Generate `CRON_SECRET` and schedule the maintenance call | **You** | Wherever you host cron |
-| 7 | Confirm the FedEx upgrade product handle | **You** | Shopify admin → Products |
-| 8 | Set the admin notification email | **You** | Portal admin → Settings |
-| 9 | Live draft-order verification | You run it, I can fix any failure | Storefront + Shopify admin |
-| 10 | Live Shopify Files verification | You run it, I can fix any failure | Portal admin → request detail |
-| 11 | Live EXACT PLANTS + Online Store/POS verification | You run it, I can fix any failure | Storefront + Shopify admin |
-| 12 | Live `orders/paid` verification | You run it, I can fix any failure | Shopify admin → Orders |
+| 1 | Apply the Blueprint (creates all three resources) | **You** | Render Dashboard → New → Blueprint |
+| 2 | Supply the six prompted secret values | **You** | Same flow, or each service's Environment tab |
+| 3 | Confirm the database and web service came up | **You** | Render Dashboard |
+| 4 | Confirm the cron job runs | **You** | Render Dashboard → upt-offer-maintenance |
+| 5 | Resend API key + verified sending domain | **You** | Resend Dashboard |
+| 6 | Enable database backups | **You** | Render Dashboard → upt-portal-db |
+| 7 | Point the Shopify app at Render, install, approve scopes | **You** | Shopify Partner dashboard + store admin |
+| 8 | Live verification of draft orders, Files, EXACT PLANTS, payment | You run it, I fix any failure | Storefront + Shopify admin |
 
-Items 1–8 are account actions I cannot perform. Items 9–12 need a live store; run
-them and send me any error and I will fix the code.
+**What I still need before I can finish anything:** the Render web service URL
+(section 1). `shopify.app.toml` has a template placeholder for `application_url`
+and Shopify's TOML does not support environment variables, so that value has to
+be committed. Send me the hostname and I will commit it.
 
 ---
 
-## 1. PostgreSQL database — **decision + credential needed from you**
+## 1. Apply the Blueprint — **account action**
 
-**Why this is a blocker.** SQLite was writing to a file inside the container.
-Every restart or redeploy lost every plant request, and a second instance was
-impossible. The app now refuses to start in production on a SQLite URL.
+**Where:** [Render Dashboard](https://dashboard.render.com) → **New** →
+**Blueprint** → select this repository → choose this branch.
 
-**What to do.** Provision a managed PostgreSQL 16 database and copy its
-connection string. Any of these work; pick whichever matches where you host the
-app (section 2):
+Render reads `render.yaml` and creates:
 
-| Provider | Where |
-| --- | --- |
-| Fly.io Postgres | `fly postgres create`, or Fly dashboard → Postgres |
-| Railway | Railway dashboard → New → Database → PostgreSQL |
-| Render | Render dashboard → New → PostgreSQL |
-| Neon | Neon console → New Project |
-| Supabase | Supabase dashboard → New project → Settings → Database |
-| Heroku | Heroku dashboard → Resources → Heroku Postgres |
+| Resource | Type | Plan | Notes |
+| --- | --- | --- | --- |
+| `upt-portal-db` | Render PostgreSQL 16 | `basic-256mb` | Private network only |
+| `upt-plant-request-portal` | Web Service (Docker) | `starter` | Health check `/healthz` |
+| `upt-offer-maintenance` | Cron Job (Node) | `starter` | Hourly, `0 * * * *` |
 
-**What I need from you.** The connection string, set as the `DATABASE_URL`
-environment variable on the app host:
+**Costs you are agreeing to.** All three are paid tiers, deliberately:
+
+- The **free PostgreSQL tier is deleted after 30 days**, and this database is the
+  only record of every plant request ever submitted. `render.yaml` pins
+  `basic-256mb` to prevent that.
+- Render **does not allow the free plan for cron jobs** at all.
+- A **free web service spins down when idle**, and a cold start would make the
+  storefront portal and Shopify webhooks time out.
+
+Change the `plan:` values in `render.yaml` if you want larger instances. The
+smallest paid tiers are ample for this workload — 16 small tables and a handful
+of requests a day.
+
+**Region.** `render.yaml` uses `oregon` for all three. Keep them in the same
+region: the database is reachable on the private network only, and the web
+service connects to it over that network.
+
+---
+
+## 2. Supply the prompted secrets — **account action**
+
+Render prompts for every value marked `sync: false` during the Blueprint flow.
+You can also set them later per service under **Environment**.
+
+| Variable | Value | Where to get it |
+| --- | --- | --- |
+| `SHOPIFY_API_KEY` | Client ID | Shopify Partner dashboard → Apps → UPT Plant Request Portal → Configuration |
+| `SHOPIFY_API_SECRET` | Client secret | Same page (`shopify app env show` prints both) |
+| `SHOPIFY_APP_URL` | `https://upt-plant-request-portal.onrender.com` | Render gives you this after section 1. **No trailing slash.** |
+| `CRON_SECRET` | `openssl rand -hex 32` | Generate it yourself |
+| `RESEND_API_KEY` | Sending API key | Resend Dashboard (section 5) |
+| `EMAIL_FROM` | `UPT Plant Requests <noreply@unsolicitedplanttalks.com>` | Must be on a domain verified in Resend |
+| `UPT_ADMIN_EMAIL` | Your ops address | Fallback for admin notifications and customer data requests |
+
+You do **not** need to set:
+
+- `DATABASE_URL` — Render injects the database's connection string.
+- `PORT`, `NODE_ENV`, `HOST` — set by `render.yaml` and the Dockerfile.
+- `SCOPES` — the app uses the list in `app/lib/env.server.ts`, which a test keeps
+  identical to `shopify.app.toml`.
+- `CRON_SECRET` on the cron job — it reads the web service's value, so there is
+  one value to rotate rather than two.
+
+**Never set** `DEV_SHOP` or `ALLOW_CUSTOMER_DEMO_LOGIN` on Render. The app
+refuses to boot with the latter, and both are development-only.
+
+If a required value is missing or wrong, the deploy **fails immediately** with a
+message naming the variable, rather than starting up in a degraded state. A
+`SHOPIFY_APP_URL` on `http://`, a SQLite `DATABASE_URL`, `SHOPIFY_API_KEY=devkey`
+and an incomplete `SCOPES` list are all rejected the same way.
+
+---
+
+## 3. Confirm the database and web service — **account action**
+
+1. **Render → upt-portal-db** shows **Available**.
+2. **Render → upt-plant-request-portal** → **Logs**. On first boot you should see
+   the migrations applied, then the server start:
+
+   ```
+   Applying migration `20260820120000_init`
+   All migrations have been successfully applied.
+   [react-router-serve] http://localhost:3000 (http://0.0.0.0:3000)
+   ```
+
+   Migrations run at container start, so no manual step is needed — on this
+   deploy or any future one.
+3. The service reaches **Live** once `/healthz` returns 200. Check it yourself:
+
+   ```bash
+   curl https://upt-plant-request-portal.onrender.com/healthz
+   # {"status":"ok"}
+   ```
+
+   `/healthz` returns 503 when the database is unreachable, which is what lets
+   Render pull a broken instance out of rotation.
+
+4. Sanity-check that the storefront portal is closed to unsigned requests:
+
+   ```bash
+   curl -o /dev/null -w '%{http_code}\n' \
+     'https://upt-plant-request-portal.onrender.com/customer?logged_in_customer_id=1'
+   # 404
+   ```
+
+   Customer requests are only served through Shopify's app proxy, which signs
+   them. A 200 here would mean anyone could read customers' requests.
+
+---
+
+## 4. Confirm the cron job — **account action**
+
+**Where:** Render Dashboard → **upt-offer-maintenance**.
+
+Click **Trigger Run** and read the logs. A healthy run looks like:
 
 ```
-postgresql://USER:PASSWORD@HOST:5432/DBNAME?schema=public&sslmode=require
+POST https://upt-plant-request-portal.onrender.com/cron/offer-maintenance
+  unsolicited-plant-talks.myshopify.com: 1 expired, 1 reminder(s) sent
+Ran at 2026-08-21T03:00:00.000Z: 1 shop(s), 1 offer(s) expired, 1 reminder(s) sent.
 ```
 
-Most managed providers require `sslmode=require`. Nothing else is needed — the
-container applies the migrations itself on first boot.
+Before the store is connected it will report `No shops with portal data`, which
+is correct and exits 0.
 
-**Sizing.** The smallest tier any of these offer is ample. The schema is 16 small
-tables and the portal handles a few requests a day.
+**What it does.** Flips unpaid offers past their hold to **Expired**, and emails
+a reminder for offers expiring within 24 hours. Nothing was driving the reminders
+before, so they were never sent and offers only expired when someone happened to
+open a page.
 
-**Already verified:** the migrations apply to an empty PostgreSQL 16 database and
-the full test suite passes against PostgreSQL as well as SQLite.
+**Alerting.** The job exits non-zero on any failure — a wrong `CRON_SECRET`, an
+unreachable service, or a per-shop error — so Render marks the run failed. Turn
+on failure notifications under the cron job's **Settings**. A silently failing
+cron job means offers stop expiring, which no one would notice.
 
----
-
-## 2. Application host — **decision needed from you**
-
-**What to do.** Pick a host that can run a Docker container with a persistent
-public HTTPS URL. The committed `Dockerfile` is production-ready and was built
-and booted end to end; it needs no changes.
-
-Requirements:
-
-- Runs a container image, or builds from the `Dockerfile`
-- Gives a stable HTTPS hostname (Shopify rejects `http://` app URLs)
-- Lets you set environment variables / secrets
-- One instance is enough; more than one is safe now that the database is shared
-
-Fly.io, Railway, Render and Heroku all satisfy this. **Do not** use a
-serverless/edge platform that recycles instances aggressively — Shopify OAuth
-sessions live in PostgreSQL so that is safe, but the platform must support a
-long-running Node process.
-
-**Environment variables to set on the host.** `.env.example` is the full
-reference. Required:
-
-| Variable | Value |
-| --- | --- |
-| `NODE_ENV` | `production` |
-| `DATABASE_URL` | from section 1 |
-| `SHOPIFY_API_KEY` | from section 3 |
-| `SHOPIFY_API_SECRET` | from section 3 |
-| `SHOPIFY_APP_URL` | the host's public HTTPS URL, no trailing slash |
-| `CRON_SECRET` | from section 6 |
-| `RESEND_API_KEY` | from section 5 |
-| `EMAIL_FROM` | from section 5 |
-
-Leave `SCOPES` unset — the app uses the list in `app/lib/env.server.ts`, which a
-test keeps identical to `shopify.app.toml`. Never set `DEV_SHOP` or
-`ALLOW_CUSTOMER_DEMO_LOGIN` in production; the app refuses to boot with the
-latter.
-
-The app refuses to start if any required value is missing or obviously wrong, so
-a misconfigured deploy fails immediately and loudly rather than silently falling
-back to demo behaviour. Health check endpoint: `GET /healthz`.
+Hourly is safe: a reminder is only ever sent once per request, and expiring an
+already-expired offer is a no-op. Verified by running it twice in a row.
 
 ---
 
-## 3. Shopify app credentials and URLs — **account action needed from you**
+## 5. Resend — **account action**
+
+**Where:** [Resend Dashboard](https://resend.com).
+
+1. **Domains → Add Domain.** Add `unsolicitedplanttalks.com` (or whichever domain
+   offer emails should come from), then add the DKIM and SPF records Resend shows
+   you at your DNS provider. Wait for **Verified**.
+2. **API Keys → Create API Key** with **Sending access**. That is
+   `RESEND_API_KEY`.
+3. Set `EMAIL_FROM` to an address on that verified domain.
+
+**Why the domain step matters.** Resend rejects sends from an unverified domain
+with a 403. Until it is verified, every message is stored in the `EmailMessage`
+outbox with status `preview` and no customer is notified — including offer-ready
+and checkout emails. The app logs a warning for every undelivered message in
+production, and records a 403 with a pointer back to the Domains page.
+
+---
+
+## 6. Database backups — **account action**
+
+**Where:** Render Dashboard → **upt-portal-db** → **Recovery** / **Backups**.
+
+Confirm automatic backups are on and note the retention window. Plant requests
+are the only record of what a customer asked for, and nothing else in the system
+can reconstruct them.
+
+---
+
+## 7. Connect the Shopify app — **account action**
+
+Do this when you are ready to point the app at the real store.
+
+### 7a. Partner dashboard
 
 **Where:** [Shopify Partner dashboard](https://partners.shopify.com) → **Apps** →
 **UPT Plant Request Portal** → **Configuration**.
 
-**What to do.**
-
-1. Copy the **Client ID** into `SHOPIFY_API_KEY` and the **Client secret** into
-   `SHOPIFY_API_SECRET` on the app host. (`shopify app env show` prints both.)
-2. Set **App URL** to your `SHOPIFY_APP_URL`.
-3. Add these **Allowed redirection URLs**:
-   - `https://YOUR-APP-URL/auth/callback`
-   - `https://YOUR-APP-URL/auth/shopify/callback`
-4. From a checkout of this branch, run `shopify app deploy`. That pushes the
-   scopes, webhook subscriptions (including the three compliance topics) and the
-   app proxy configuration from `shopify.app.toml`.
+1. Set **App URL** to your Render URL.
+2. Add these **Allowed redirection URLs**:
+   - `https://upt-plant-request-portal.onrender.com/auth/callback`
+   - `https://upt-plant-request-portal.onrender.com/auth/shopify/callback`
+3. From a checkout of this branch, run `shopify app deploy`. That pushes the
+   scopes, the webhook subscriptions (including the three mandatory privacy
+   topics) and the app proxy configuration from `shopify.app.toml`.
 
 `shopify.app.toml` still has the template placeholder
-`application_url = "https://shopify.dev/apps/default-app-home"`. Shopify's TOML
-does not support environment variables, so this has to be your real URL. Tell me
-the hostname and I will commit it; otherwise `shopify app deploy` will prompt you
-to update it.
+`application_url = "https://shopify.dev/apps/default-app-home"`. Send me the
+Render hostname and I will commit the real value; otherwise `shopify app deploy`
+prompts you to update it.
 
-**Why I cannot do this.** It requires a Shopify Partner login.
+### 7b. Install and approve scopes
 
----
+**Where:** the install/approval screen in the Shopify admin.
 
-## 4. Install on the UPT store and approve scopes — **account action needed from you**
-
-**Where:** the install/approval screen the Shopify admin shows you.
-
-**What to do.** Install (or reinstall) the app on the UPT store and approve the
-access request. Confirm the approval screen lists product and publication
-permissions — the app cannot create EXACT PLANTS listings or publish to Online
-Store and POS without them.
-
-The full scope list is:
+Install the app on the UPT store and approve the access request. Confirm the
+screen lists product and publication permissions — without them the app cannot
+create EXACT PLANTS listings or publish to Online Store and POS.
 
 ```
 write_draft_orders, read_draft_orders, read_orders, read_customers,
@@ -156,177 +234,94 @@ read_publications, write_publications
 ```
 
 **If the app was installed before these scopes were added, you must approve
-again** — an existing token does not gain scopes retroactively. Verify
-afterwards by opening `/app` in the Shopify admin: it should load without
-redirecting to an authorization screen.
+again** — an existing token does not gain scopes retroactively. Verify by opening
+`/app` in the Shopify admin: it should load without redirecting to an
+authorization screen.
 
-**Why I cannot do this.** Only a store owner or staff member with the right
-permissions can grant an app access to a store.
+### 7c. Store settings
 
----
-
-## 5. Resend — **account action needed from you**
-
-**Where:** [Resend dashboard](https://resend.com).
-
-**What to do.**
-
-1. **Domains → Add Domain.** Add `unsolicitedplanttalks.com` (or whichever domain
-   you want offer emails to come from) and add the DKIM and SPF DNS records
-   Resend shows you at your DNS provider. Wait for the domain to show
-   **Verified**.
-2. **API Keys → Create API Key** with **Sending access**. Copy it into
-   `RESEND_API_KEY` on the app host.
-3. Set `EMAIL_FROM` to an address on that verified domain, for example
-   `UPT Plant Requests <noreply@unsolicitedplanttalks.com>`.
-
-**Why the domain step matters.** Resend rejects sends from an unverified domain
-with a 403. Until then every message is stored in the `EmailMessage` outbox with
-status `preview` and nothing reaches the customer — including offer-ready and
-checkout emails. The app now logs a warning for every undelivered message in
-production, and a 403 is recorded with a pointer to the Domains page.
-
-**Why I cannot do this.** It needs a Resend account and DNS access.
+1. **Shopify admin → Products.** Confirm a product exists with the handle
+   `upgrade-to-fedex-priority-overnight-for-just-15-extra`. If the real handle
+   differs, change it on the portal's **Settings** page. When the handle
+   resolves, the FedEx upgrade is added to draft orders as that real variant at
+   its Shopify price; when it does not, the app falls back to a custom line item
+   priced from Settings — the customer is charged correctly, but the order does
+   not reference the product and your product reporting will not see it.
+2. **Portal admin → Settings.** Set the admin notification email.
 
 ---
 
-## 6. `CRON_SECRET` and the scheduler — **account action needed from you**
+## 8. Live verification — **run these, then send me any failure**
 
-**What to do.**
+These need a real Admin API session, which cannot be reached from a build
+environment. Every Shopify call has been validated against the live Admin
+`2025-10` schema (`npm run validate-graphql`), which is as far as static
+verification goes. Run each one and send me the error text if anything fails.
 
-1. Generate a secret: `openssl rand -hex 32`.
-2. Set it as `CRON_SECRET` on the app host.
-3. Schedule an hourly authenticated request:
+### 8a. Draft order
 
-```bash
-curl -fsS -X POST https://YOUR-APP-URL/cron/offer-maintenance \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
-
-Any scheduler works — GitHub Actions `schedule`, Fly.io Machines cron, Railway
-cron, Render Cron Job, Heroku Scheduler, or a plain crontab. Hourly is
-recommended; the endpoint is safe to call more often because a reminder is only
-ever sent once per request.
-
-**What it does.** Flips unpaid offers past their hold to **Expired**, and emails
-an expiration reminder for offers expiring within 24 hours. Nothing was calling
-the reminder function before, so reminders were never sent and offers only
-expired when someone happened to open a page.
-
-**Verify it.** The response is JSON, and a non-2xx status means the run failed:
-
-```json
-{"ranAt":"2026-08-21T00:00:00.000Z","shops":[{"shop":"...","expired":1,"remindersSent":1}]}
-```
-
-The route returns 404 until `CRON_SECRET` is set, so it cannot be reached on an
-unconfigured deploy.
-
-**Why I cannot do this.** The secret has to be generated by you and stored where
-your scheduler can read it.
-
----
-
-## 7. FedEx upgrade product handle — **store check needed from you**
-
-**Where:** Shopify admin → **Products**, then the portal's **Settings** page.
-
-**What to do.** Confirm a product exists with the handle the portal expects:
-
-```
-upgrade-to-fedex-priority-overnight-for-just-15-extra
-```
-
-If the real handle differs, change it on the portal's Settings page.
-
-**Why it matters.** When the handle resolves, the FedEx upgrade is added to the
-draft order as that real product variant at its real Shopify price. When it does
-not, the app falls back to a custom line item priced from Settings — the customer
-is still charged correctly, but the order does not reference the product and your
-product reporting will not see it.
-
----
-
-## 8. Admin notification email — **store check needed from you**
-
-**Where:** portal admin → **Settings** → admin notification email.
-
-**What to do.** Set the address that should receive new-request notifications.
-This address also receives the export when a customer files a data request under
-`customers/data_request`; if it is blank, that export cannot be delivered and the
-app only logs a warning. `UPT_ADMIN_EMAIL` works as a fallback.
-
----
-
-## 9–12. Live verification — **run these on the store, then send me any failure**
-
-These need a real Admin API session against the UPT store, which cannot be
-reached from a build environment. Every call has been validated against the live
-Shopify Admin `2025-10` schema (`npm run validate-graphql`), which is as far as
-static verification goes. Run each one and send me the error text if anything
-fails.
-
-### 9. Draft order
-
-1. As a logged-in customer on the storefront, open
+1. As a logged-in customer, open
    `https://YOUR-STORE/apps/plant-requests`.
-2. Submit a request; in the portal admin mark the plant Available, set a price
+2. Submit a request. In the portal admin, mark the plant Available, set a price
    and weight, and send the offer.
 3. As the customer, **Accept** with the FedEx upgrade left checked.
-4. **Check in Shopify admin → Orders → Drafts:** one draft order exists, tagged
-   `upt-plant-request` and with the request number (for example `REQ12`), with the
-   plant line at your price and weight and a FedEx line.
-5. Confirm the customer received the Shopify invoice email and that its checkout
-   link works.
+4. **Shopify admin → Orders → Drafts:** one draft order, tagged
+   `upt-plant-request` and with the request number (e.g. `REQ12`), the plant line
+   at your price and weight, and a FedEx line.
+5. Confirm the customer received the Shopify invoice email and its checkout link
+   works.
 
-Watch for: `Money` or currency errors on the plant line, and whether the plant
-line requires shipping the way you expect. Custom line items do not set
-`requiresShipping` explicitly, so Shopify's default applies — if shipping rates
-do not appear at checkout, tell me and I will set it.
+Watch for whether the plant line requires shipping the way you expect. Custom
+line items do not set `requiresShipping`, so Shopify's default applies — if
+shipping rates do not appear at checkout, tell me and I will set it.
 
-### 10. Shopify Files
+### 8b. Shopify Files
 
 1. In the portal admin, open a **New** request and upload two exact-plant photos.
-2. **Check in Shopify admin → Content → Files:** both photos are listed.
-3. Confirm the offer preview shows `cdn.shopify.com` URLs, not `/uploads/...`.
+2. **Shopify admin → Content → Files:** both photos are listed.
+3. Confirm the offer preview shows `cdn.shopify.com` URLs.
 
-Uploads now wait for Shopify to finish processing each file before reading its
-CDN URL, which is what previously made them fall back to local disk. If a photo
-still lands on `/uploads/...`, send me the admin log line.
+Uploads wait for Shopify to finish processing each file before reading its CDN
+URL, which is what previously made them fail intermittently. There is **no**
+local-disk fallback in production — a failed upload now shows an error on the
+request detail page instead of silently storing a photo that would disappear on
+the next deploy. If you see that error, send me the message.
 
-### 11. EXACT PLANTS listing, Online Store and POS
+### 8c. EXACT PLANTS, Online Store and POS
 
 1. Offer an **Available** exact plant and have the customer **Reject** it.
 2. **Confirm no product was created yet** — this is the rule that matters most.
-3. In the portal admin, open **EXACT PLANTS**, review the item, edit the title or
-   price, and **Approve**.
-4. **Check in Shopify admin → Products:** exactly one product, in the **EXACT
-   PLANTS** collection, with your edited values and the uploaded photos.
+3. Portal admin → **EXACT PLANTS** → review the item, edit the title or price,
+   **Approve**.
+4. **Shopify admin → Products:** exactly one product, in the **EXACT PLANTS**
+   collection, with your edited values and the uploaded photos.
 5. **Check the product's Sales channels:** **Online Store** and **Point of Sale**
    only, nothing else.
-6. **Approve again.** No second product may appear; your edits should be applied
-   to the same product.
+6. **Approve again.** No second product may appear, and your edits should land on
+   the same product.
 
-### 12. Payment closes the request
+### 8d. Payment closes the request
 
-1. Pay one of the draft-order invoices from step 9.
-2. **Check the portal admin:** the request moves to **Closed** and the accepted
-   plants show **Sold**.
+1. Pay one of the draft-order invoices from 8a.
+2. **Portal admin:** the request moves to **Closed** and the accepted plants show
+   **Sold**.
 
 The webhook matches on the draft order's tag, which Shopify copies to the paid
 order, with the order note as a fallback. If a request stays **Pending** after
-payment, send me the app log line beginning `ORDERS_PAID for` — it now records
-exactly why an order did not match.
+payment, send me the log line beginning `ORDERS_PAID for` — it records exactly
+why an order did not match.
 
 ---
 
 ## After go-live
 
-- **Back up the database.** Enable your provider's automated backups. Plant
-  requests are the only record of what a customer asked for.
 - **Watch the outbox.** `EmailMessage` rows with status `failed` mean a customer
   did not receive an offer or checkout link.
-- **Alert on the cron.** A non-2xx from `/cron/offer-maintenance` means offers
-  are not expiring and reminders are not going out.
+- **Watch the cron job.** A failed run means offers are not expiring and
+  reminders are not going out.
+- **Rotate `CRON_SECRET`** on the web service only; the cron job reads it from
+  there.
 - **Re-run `npm run validate-graphql`** before bumping the Shopify API version.
   It fetches the live schema and checks both the queries and the payloads.
+- **Scaling up** is safe: sessions and all portal data live in PostgreSQL. Raise
+  `numInstances` in `render.yaml`.
