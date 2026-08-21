@@ -227,6 +227,8 @@ describe("shopify product payload", () => {
 
   it("matches Online Store and POS publications only", () => {
     assert.equal(isOnlineStorePublicationHandle("online_store"), true);
+    // Verbatim from a real store: Shopify reports the POS channel as `pos`.
+    assert.equal(isPosPublicationHandle("pos"), true);
     assert.equal(isPosPublicationHandle("point_of_sale"), true);
     assert.equal(isOnlineStorePublicationHandle("shop"), false);
     assert.equal(isPosPublicationHandle("google_and_youtube"), false);

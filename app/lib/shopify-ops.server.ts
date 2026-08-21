@@ -9,7 +9,7 @@ import {
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
   ONLINE_STORE_APP_HANDLE,
-  POS_APP_HANDLE,
+  POS_APP_HANDLES,
   buildExactPlantProductCreateInput,
 } from "./exact-plants";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
@@ -737,7 +737,7 @@ export async function resolveOnlineStoreAndPosPublications(
   if (!onlineStoreId || !posId) {
     const missing = [
       !onlineStoreId ? `Online Store (${ONLINE_STORE_APP_HANDLE})` : null,
-      !posId ? `POS (${POS_APP_HANDLE})` : null,
+      !posId ? `POS (${POS_APP_HANDLES.join(" or ")})` : null,
     ]
       .filter(Boolean)
       .join(" and ");

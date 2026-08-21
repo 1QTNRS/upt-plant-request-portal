@@ -177,7 +177,14 @@ export function shopifyStorefrontProductUrl(
  * is stable and untranslated.
  */
 export const ONLINE_STORE_APP_HANDLE = "online_store";
-export const POS_APP_HANDLE = "point_of_sale";
+
+/**
+ * Shopify reports the Point of Sale channel as `pos`, not `point_of_sale`.
+ * Read verbatim from a store, where the catalog titled "Channel Catalog … for
+ * Point of Sale" is backed by an app whose handle is `pos`. Both spellings are
+ * accepted because the longer one is what Shopify's own documentation implies.
+ */
+export const POS_APP_HANDLES = ["pos", "point_of_sale"] as const;
 
 export function isOnlineStorePublicationHandle(
   handle: string | null | undefined,
@@ -188,7 +195,8 @@ export function isOnlineStorePublicationHandle(
 export function isPosPublicationHandle(
   handle: string | null | undefined,
 ): boolean {
-  return handle?.trim().toLowerCase() === POS_APP_HANDLE;
+  const normalized = handle?.trim().toLowerCase();
+  return POS_APP_HANDLES.some((candidate) => candidate === normalized);
 }
 
 /**

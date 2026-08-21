@@ -87,7 +87,7 @@ const LISTING_RESPONSES: Responses = {
   PublishExactPlant: { publishablePublish: { userErrors: [] } },
   ...publications([
     { id: ONLINE_STORE_PUBLICATION, catalog: appCatalog("online_store") },
-    { id: POS_PUBLICATION, catalog: appCatalog("point_of_sale") },
+    { id: POS_PUBLICATION, catalog: appCatalog("pos") },
     { id: "gid://shopify/Publication/3", catalog: appCatalog("shop") },
   ]),
 };
@@ -209,7 +209,7 @@ describe("sales channel publications", () => {
       },
       {
         id: POS_PUBLICATION,
-        catalog: { ...appCatalog("point_of_sale"), title: "Point de vente" },
+        catalog: { ...appCatalog("pos"), title: "Point de vente" },
       },
     ]);
     assert.deepEqual(resolved, {
@@ -224,7 +224,7 @@ describe("sales channel publications", () => {
     ]).catch((thrown: Error) => thrown);
 
     assert.ok(error instanceof Error);
-    assert.match(error.message, /POS \(point_of_sale\)/);
+    assert.match(error.message, /POS \(pos or point_of_sale\)/);
     assert.match(error.message, /Apps and sales channels/);
     assert.equal(/scope/i.test(error.message), false);
   });
