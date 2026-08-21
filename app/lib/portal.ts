@@ -686,7 +686,31 @@ export function buildExpirationReminderEmail(input: {
   requestNumber: string;
   expiresAt: string;
   offerLink: string;
+  /** Set when the customer has already accepted and still owes payment. */
+  invoiceUrl?: string;
 }): { subject: string; bodyText: string } {
+  // This is the last thing the customer hears before the hold lapses, so it has
+  // to ask for the one thing that is actually outstanding.
+  if (input.invoiceUrl) {
+    return {
+      subject: `Reminder: complete payment before your UPT plant hold ends (${input.requestNumber})`,
+      bodyText: [
+        `Hi ${input.customerName || "there"},`,
+        "",
+        `The plants you accepted on ${input.requestNumber} are held for you until ${input.expiresAt}. Complete your payment before then to keep them.`,
+        "",
+        "Complete your payment:",
+        input.invoiceUrl,
+        "",
+        "Your offer:",
+        input.offerLink,
+        "",
+        "Thank you,",
+        "Unsolicited Plant Talks",
+      ].join("\n"),
+    };
+  }
+
   return {
     subject: `Reminder: your UPT plant offer expires soon (${input.requestNumber})`,
     bodyText: [

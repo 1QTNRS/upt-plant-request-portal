@@ -10,6 +10,14 @@
 export const DEV_DATABASE_URL = "file:dev.sqlite";
 
 /**
+ * Sender used when EMAIL_FROM is unset. Lives here rather than in
+ * emails.server.ts so environment.server.ts can name it in the Settings panel
+ * without importing the outbox, which imports environment.server.ts back.
+ */
+export const DEFAULT_EMAIL_FROM =
+  "UPT Plant Requests <noreply@unsolicitedplanttalks.com>";
+
+/**
  * Kept in code, not only in shopify.app.toml, so the runtime OAuth request and
  * the deployed app configuration cannot drift. Must equal the `scopes` value in
  * shopify.app.toml — `app/lib/env.server.test.ts` asserts that.
@@ -134,6 +142,16 @@ export function grantedScopeWarning(
   );
 }
 
+/**
+ * Accepts what Resend accepts in `from`: a bare address, or a display name
+ * followed by the address in angle brackets.
+ */
+export function isValidEmailFrom(value: string): boolean {
+  const bracketed = /<([^<>]+)>\s*$/.exec(value.trim());
+  const address = (bracketed ? bracketed[1] : value).trim();
+  return /^[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+$/.test(address);
+}
+
 export type EnvProblem = { variable: string; message: string };
 
 /**
@@ -176,6 +194,19 @@ export function productionEnvProblems(env: NodeJS.ProcessEnv): EnvProblem[] {
       variable: "DATABASE_URL",
       message:
         "must not be a SQLite file in production; container filesystems are ephemeral and SQLite cannot be shared between instances",
+    });
+  }
+
+  // Not listed as required above: an unset EMAIL_FROM falls back to
+  // DEFAULT_EMAIL_FROM (surfaced in Settings by missingProductionSecrets), and
+  // refusing to boot over it would take a running deploy down. A value Resend
+  // rejects on every send is worth catching before the first offer email.
+  const emailFrom = env.EMAIL_FROM?.trim();
+  if (emailFrom && !isValidEmailFrom(emailFrom)) {
+    problems.push({
+      variable: "EMAIL_FROM",
+      message:
+        'must be an email address, optionally with a display name: "UPT Plant Requests <noreply@example.com>"',
     });
   }
 
