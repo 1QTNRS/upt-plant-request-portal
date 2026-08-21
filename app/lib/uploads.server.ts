@@ -1,6 +1,20 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { isProduction } from "./env.server";
+
+/**
+ * Whether a failed Shopify Files upload may fall back to the local filesystem.
+ *
+ * Never in production. A photo on the container's disk disappears on the next
+ * deploy and is invisible to every other instance, so the offer snapshot it was
+ * frozen into would end up pointing at a dead URL. Failing the upload is
+ * recoverable — a phantom photo is not.
+ */
+export function localUploadsAllowed(): boolean {
+  return !isProduction();
+}
+
 export async function saveLocalUpload(
   shop: string,
   itemId: string,
