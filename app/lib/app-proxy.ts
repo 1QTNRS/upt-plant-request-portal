@@ -12,6 +12,51 @@ export const APP_PROXY_BASE_PATH = `/${APP_PROXY_PREFIX}/${APP_PROXY_SUBPATH}`;
 export const CUSTOMER_PORTAL_PATH = "/customer";
 
 /**
+ * Where `server.js` parks the storefront `Origin` of a proxied form submission.
+ *
+ * React Router 7.12 rejects an action whose `Origin` header does not match the
+ * host in `request.url`. Shopify's app proxy forwards the storefront's `Origin`
+ * to the app's own hostname, so every proxied POST looked like a cross-site
+ * attack and came back as a bare "Bad Request" before any route ran. `server.js`
+ * moves the header aside for proxy requests and this module decides whether the
+ * origin was really a storefront of the signed shop — a check the framework
+ * cannot make, because only the app can verify Shopify's signature.
+ *
+ * The header is stripped from every incoming request first, so a client cannot
+ * set it itself.
+ */
+export const APP_PROXY_ORIGIN_HEADER = "x-shopify-app-proxy-origin";
+
+/** Hostname of an `Origin` header, or null when it is absent or unparseable. */
+export function originHost(origin: string | null | undefined): string | null {
+  if (!origin || origin === "null") return null;
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a withheld storefront origin belongs to the shop that signed the
+ * request.
+ *
+ * This is what keeps the relaxed origin check safe. Shopify signs whatever it
+ * proxies, including a cross-site form post aimed at the storefront, so the
+ * signature alone cannot tell a customer's own submission from a forged one —
+ * the origin can, because a browser sets it to the page the form came from and
+ * `shop` is covered by the signature.
+ */
+export function storefrontOriginIsAllowed(
+  origin: string | null | undefined,
+  allowedHosts: readonly string[],
+): boolean {
+  const host = originHost(origin);
+  if (!host) return false;
+  return allowedHosts.some((allowed) => allowed.trim().toLowerCase() === host);
+}
+
+/**
  * Recomputes the app proxy signature.
  *
  * Shopify signs proxied requests by sorting the query parameters, joining

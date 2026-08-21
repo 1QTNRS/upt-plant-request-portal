@@ -80,6 +80,7 @@ module.exports = {
     {
       files: [
         ".eslintrc.cjs",
+        "server.js",
         "vite.config.{js,ts}",
         ".graphqlrc.{js,ts}",
         "shopify.server.{js,ts}",

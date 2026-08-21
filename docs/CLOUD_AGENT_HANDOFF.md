@@ -50,7 +50,7 @@ Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ
 | Customer request + offer UI | Production-ready in code |
 | Request numbering `REQn` | Production-ready in code |
 | Shopify Admin OAuth / embedded admin | Implemented via Shopify app template; **not usable in the headless Cloud VM** |
-| Customer authentication | App proxy requests are HMAC-verified and the customer's real name/email is read from the Admin API. Unsigned requests are refused in production. Customer Account OAuth is still not implemented and is not needed for the app-proxy flow |
+| Customer authentication | App proxy requests are HMAC-verified, writes must also come from a storefront of the signed shop, and the customer's real name/email is read from the Admin API. Unsigned requests are refused in production. Customer Account OAuth is still not implemented and is not needed for the app-proxy flow |
 | Draft orders | Code complete and schema-validated; the customer path now gets an offline Admin client. **Not yet run against a live store** |
 | Shopify Files photo upload | Code complete; waits for `fileStatus: READY`. **Not yet run against a live store** |
 | EXACT PLANTS product create + collection + Online Store/POS publish | Code complete and schema-validated. **Not yet run against a live store** |
@@ -247,11 +247,51 @@ Rules for `app/routes/customer*`:
 6. **Prefer GET for anything that only changes the form's shape.** "Add another
    plant" and "Remove plant" submit the form with `formMethod="get"` to the
    portal path: the browser puts the typed values in the query string and the
-   page re-renders with one more (or one fewer) row. A proxied **POST** to those
-   endpoints returned **"Bad Request"** on the real store, while a GET to the
-   same path serves fine — so only the final submission uses POST.
+   page re-renders with one more (or one fewer) row. This is a readability
+   choice, not a workaround: those round-trips carry no side effects, so a URL
+   the customer can reload is the right shape for them.
 
 `app/lib/customer-portal.test.ts` enforces 1–6 for the request form.
+
+#### Why proxied POSTs used to return "Bad Request"
+
+React Router **7.12** added a cross-origin check that rejects a form submission
+whose `Origin` header does not match the host in `request.url`, and the app
+proxy always produces that mismatch: the customer's page is on the shop's
+domain, Shopify forwards the request to `upt-plant-request-portal.onrender.com`,
+and the storefront `Origin` comes along with it. The check runs in
+`handleDocumentRequest` **before any route**, so the reply was a bare
+`Bad Request` with nothing in it — no route, no shop, no signature, and the same
+body for every cause. `package.json` allows `^7.12.0` and there is no committed
+lockfile, so the app started failing the moment a rebuild resolved 7.12 or later,
+without a code change.
+
+React Router's own escape hatch, `allowedActionOrigins`, is a build-wide static
+list. It cannot say "this shop's storefront", and widening it would relax the
+same check for `/app/*`, where the merchant's session cookie is precisely what
+cross-site protection exists for. So:
+
+- `server.js` (this is why the app no longer uses `react-router-serve`) moves the
+  `Origin` header of a **signed** mutation aimed at `/customer` into
+  `x-shopify-app-proxy-origin`, and strips that header from every inbound
+  request first so a caller cannot pick the origin the app will check.
+- `forwardedOriginIsTrusted` in `app/lib/customer-session.server.ts` then
+  requires the withheld origin to be a storefront host of the **signed** shop,
+  which is a check only the app can make. Shopify signs whatever it proxies,
+  including a cross-site post aimed at the storefront, so the signature alone
+  cannot tell a customer's own submission from a forged one — the origin can.
+- `storefrontHostsForShop` (`app/lib/shop-domains.server.ts`) is that host list:
+  the shop's `.myshopify.com` domain always, plus `shop.primaryDomain.host` from
+  the Admin API, cached for an hour. The primary domain matters because a live
+  store serves the proxy page on its **custom** domain, so the origin will not
+  equal the signed `shop`. `APP_PROXY_STOREFRONT_ORIGINS` (comma separated) is
+  the escape hatch when the Admin API cannot be asked yet.
+
+A refused origin is logged with the shop and the hosts that were expected, so
+this failure can never again present as an unexplained `Bad Request`.
+
+Do not "fix" a future proxy 400 by widening `allowedActionOrigins`, and do not
+route customer writes through GET to dodge the check.
 
 `write_app_proxy` is in the scope list because configuring an app proxy requires
 it. It was missing, which is a plausible contributor to proxy misbehaviour;
@@ -311,6 +351,7 @@ In production this is driven by the `upt-offer-maintenance` Render cron job, whi
 ### Customer authentication
 
 - App proxy requests are HMAC-verified (`appProxySignatureIsValid`) before any identity is trusted. The shop comes from the signed `shop` parameter, never from `DEV_SHOP`/`DEMO_SHOP`.
+- A proxied **write** must additionally come from a storefront of that signed shop (`forwardedOriginIsTrusted`). Shopify signs whatever it proxies, so the signature alone does not distinguish a customer's own submission from a cross-site one.
 - `logged_in_customer_id` is resolved to a real name and email via the Admin API (`resolveCustomerIdentity`), cached in `CustomerProfile`. Without an email the portal treats the visitor as signed out rather than guessing.
 - Unsigned requests to `/customer` return 404 in production.
 - Local demo: cookie session, “Continue as logged in customer” → Alex Rivera (`alex.rivera@example.com`). Unavailable in production regardless of `ALLOW_CUSTOMER_DEMO_LOGIN`.
@@ -334,7 +375,7 @@ Last verified on `cursor/production-readiness-blockers-7617`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 110 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 230 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
@@ -445,7 +486,9 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/analytics.server.ts` | Dashboard analytics |
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
-| `app/lib/customer-session.server.ts` | Customer cookie / proxy identity |
+| `app/lib/customer-session.server.ts` | Customer cookie / proxy identity, including the storefront origin check |
+| `app/lib/shop-domains.server.ts` | Storefront hostnames a proxied submission may come from |
+| `server.js` | Production server. Replaces `react-router-serve` only to hand the app-proxy `Origin` to the app |
 | `app/routes/app.*.tsx` | Admin UI |
 | `app/routes/customer*.tsx` | Customer portal |
 | `app/routes/webhooks.orders.paid.tsx` | Payment close |
