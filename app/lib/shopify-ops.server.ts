@@ -1051,7 +1051,9 @@ async function updateExactPlantProduct(
     `,
     {
       product: { id: product.id, title: input.title },
-      media: plan.create.length > 0 ? plan.create : null,
+      // Left off rather than sent empty, so Shopify sees no media argument at
+      // all when the product already carries the approved photos.
+      media: plan.create.length > 0 ? plan.create : undefined,
     },
   );
 

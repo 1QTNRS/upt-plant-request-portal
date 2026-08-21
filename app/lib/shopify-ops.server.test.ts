@@ -296,7 +296,7 @@ describe("retrying an EXACT PLANTS listing after the admin edited the photos", (
       { photoUrls: [EXISTING_PHOTO] },
     );
 
-    assert.equal(callOf(calls, "UpdateExactPlantProduct").variables.media, null);
+    assert.equal(callOf(calls, "UpdateExactPlantProduct").variables.media, undefined);
     assert.equal(
       calls.some((call) => call.operation === "DetachExactPlantMedia"),
       false,
