@@ -209,6 +209,48 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 
 `expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler.
 
+### App proxy pages never hydrate — build them as plain HTML
+
+A page served through the app proxy is fetched by Shopify and rendered on the
+storefront, so its `/assets/...` URLs resolve against the **shop's** domain and
+the client bundle never loads. Anything that depends on React state is dead
+there, and the client router is worse than useless: it rewrites form actions and
+links to the app's own paths (`/customer/...`), which do not exist on the shop
+domain and return a Shopify 404.
+
+Rules for `app/routes/customer*`:
+
+1. Use a plain `<form>`, never React Router's `<Form>`.
+2. Every input the server reads must have a real `name` and `defaultValue`.
+   Hidden inputs mirroring React state submit empty values.
+3. Buttons that change the form must be `type="submit"` with an `intent`, not
+   `onClick`.
+4. Form actions and redirects must be storefront paths — use
+   `portalFormAction()` / `portalHome()` / `customerPortalRelativeLinks()`.
+5. **Never use React Router's `?index`.** React Router strips `index` from the
+   request URL before a loader sees it, so Shopify signs a query string
+   containing `index` that the app then verifies without it: the app proxy HMAC
+   never matches and the visitor is treated as signed out. Post to a real route
+   (`customer.submit.tsx`) instead.
+
+`app/lib/customer-portal.test.ts` enforces 1–5 for the request form.
+
+#### Known remaining gap: the offer accept/reject form
+
+`app/components/customer-offer-view.tsx` has not had this treatment. Its
+accept/reject choices and the FedEx checkbox are React state mirrored into hidden
+inputs, and the real controls sit outside the submitting form. Its form action
+also still resolves to `/customer/requests/:id`, which is a Shopify 404 on the
+storefront.
+
+**Do not "fix" only the action.** Today the 404 makes the page unusable but
+safe. With a corrected action and no hydration it would submit every item's
+default — `accept` for anything available, FedEx on — regardless of what the
+customer clicked, creating a draft order for plants they meant to reject. The
+controls have to move inside the form and become native inputs at the same time
+as the action is corrected. Unchecked checkboxes submit nothing, which is the
+right semantics for the optional FedEx upgrade.
+
 ### Two environment modules, deliberately
 
 | Module | Answers |
