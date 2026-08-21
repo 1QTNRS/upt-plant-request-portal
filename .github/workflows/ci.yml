@@ -10,6 +10,24 @@ jobs:
       matrix:
         node: [20.19.0, 22, 24]
         manager: ['npm', 'yarn', 'pnpm']
+
+    services:
+      # The portal runs on PostgreSQL in production, so the migrations and the
+      # test suite are exercised against a real PostgreSQL as well as SQLite.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: upt_portal_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -32,8 +50,27 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
-      - name: Validate Prisma
-        run: npx prisma generate && npx prisma validate
+      - name: Validate both Prisma schemas
+        run: npm run prisma:validate
+
+      # The PostgreSQL schema is generated from the SQLite one. This fails the
+      # build when only one of the two was updated.
+      - name: Check the PostgreSQL schema is in sync
+        run: npm run prisma:check-schema
+
+      - name: Test against SQLite
+        run: |
+          npm run setup
+          npm test
+
+      - name: Test against PostgreSQL
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/upt_portal_ci
+        run: |
+          npm run setup
+          npm test
 
       - name: Build application
-        run: npm run build
+        run: |
+          npm run prisma:generate
+          npm run build

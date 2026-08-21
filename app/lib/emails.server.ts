@@ -37,6 +37,33 @@ async function queueEmail(input: {
   return delivered;
 }
 
+export const DEFAULT_EMAIL_FROM =
+  "UPT Plant Requests <noreply@unsolicitedplanttalks.com>";
+
+/** Resend's error body is JSON; its `message` is what a human needs to see. */
+export function summarizeResendError(status: number, body: string): string {
+  let message = body.trim();
+  try {
+    const parsed = JSON.parse(body) as { message?: string; name?: string };
+    if (parsed.message) {
+      message = parsed.name ? `${parsed.name}: ${parsed.message}` : parsed.message;
+    }
+  } catch {
+    // Not JSON; fall through to the raw body.
+  }
+  if (status === 403 && /domain|verif/i.test(message)) {
+    message += " Verify the EMAIL_FROM domain in the Resend dashboard under Domains.";
+  }
+  return `Resend responded ${status}: ${message}`.slice(0, 1000);
+}
+
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const DELIVERY_ATTEMPTS = 3;
+
+function retryDelayMs(attempt: number): number {
+  return 250 * 2 ** attempt;
+}
+
 async function deliverEmail(
   id: string,
   toEmail: string,
@@ -44,9 +71,16 @@ async function deliverEmail(
   bodyText: string,
 ) {
   const resendKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || "UPT Plant Requests <noreply@unsolicitedplanttalks.com>";
+  const from = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
 
   if (!resendKey) {
+    if (process.env.NODE_ENV === "production") {
+      // Customers never receive offer or checkout links in this state, so it
+      // must be visible in the logs rather than only as an outbox row.
+      console.warn(
+        `RESEND_API_KEY is not set: "${subject}" for ${toEmail} was stored but not delivered.`,
+      );
+    }
     await prisma.emailMessage.update({
       where: { id },
       data: { status: "preview" },
@@ -54,44 +88,44 @@ async function deliverEmail(
     return prisma.emailMessage.findUnique({ where: { id } });
   }
 
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [toEmail],
-        subject,
-        text: bodyText,
-      }),
-    });
+  let lastError = "Unknown email error";
 
-    if (!response.ok) {
-      const error = await response.text();
-      await prisma.emailMessage.update({
-        where: { id },
-        data: { status: "failed", error: error.slice(0, 1000) },
+  for (let attempt = 0; attempt < DELIVERY_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ from, to: [toEmail], subject, text: bodyText }),
       });
-      return prisma.emailMessage.findUnique({ where: { id } });
+
+      if (response.ok) {
+        await prisma.emailMessage.update({
+          where: { id },
+          data: { status: "sent", sentAt: new Date(), error: null },
+        });
+        return prisma.emailMessage.findUnique({ where: { id } });
+      }
+
+      lastError = summarizeResendError(response.status, await response.text());
+      // A rejected address or unverified domain will be rejected again.
+      if (!RETRYABLE_STATUSES.has(response.status)) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Unknown email error";
     }
 
-    await prisma.emailMessage.update({
-      where: { id },
-      data: { status: "sent", sentAt: new Date() },
-    });
-  } catch (error) {
-    await prisma.emailMessage.update({
-      where: { id },
-      data: {
-        status: "failed",
-        error: error instanceof Error ? error.message : "Unknown email error",
-      },
-    });
+    if (attempt < DELIVERY_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
+    }
   }
 
+  console.error(`Could not deliver "${subject}" to ${toEmail}: ${lastError}`);
+  await prisma.emailMessage.update({
+    where: { id },
+    data: { status: "failed", error: lastError },
+  });
   return prisma.emailMessage.findUnique({ where: { id } });
 }
 
