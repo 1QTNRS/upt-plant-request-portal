@@ -156,9 +156,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 /** A retry that did not deliver has to say why, or it looks like it worked. */
-function undeliveredMessage(error?: string | null): string {
-  return error
-    ? `Still undelivered: ${error}`
+function undeliveredMessage(
+  message?: { status: string; error: string | null } | null,
+): string {
+  if (message?.status === "preview") {
+    // Nothing was attempted, so any error still on the row is from before.
+    return "Not delivered: RESEND_API_KEY is not set for this deployment, so the message is stored but never sent.";
+  }
+  return message?.error
+    ? `Still undelivered: ${message.error}`
     : "Still undelivered. Check that RESEND_API_KEY and EMAIL_FROM are set for this deployment.";
 }
 
@@ -264,7 +270,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const appUrl = process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
       const message = await notifyOfferReady(shop, requestId, appUrl);
       if (message?.status === "sent") return { ok: true };
-      return { ok: false, error: undeliveredMessage(message?.error) };
+      return { ok: false, error: undeliveredMessage(message) };
     }
 
     if (intent === "retry-email") {
@@ -276,7 +282,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         return { ok: false, error: "That email is no longer in the outbox." };
       }
       if (message.status === "sent") return { ok: true };
-      return { ok: false, error: undeliveredMessage(message.error) };
+      return { ok: false, error: undeliveredMessage(message) };
     }
 
     if (intent === "create-payment-link") {
@@ -691,8 +697,8 @@ function SendOfferSection({
             <s-banner tone="critical">
               <s-text>
                 The offer is live but the offer-ready email has not reached the
-                customer{offerEmail?.error ? `: ${offerEmail.error}` : ""}. They
-                have no idea it is waiting, and the hold is already running.
+                customer. They have no idea it is waiting, and the hold is
+                already running. The Emails section below has the reason.
               </s-text>
             </s-banner>
             <Form method="post">
