@@ -5,10 +5,15 @@ import prisma from "../db.server";
 import {
   createPaymentLinkForRequest,
   handleCustomerOfferAction,
+  loadCustomerOfferPage,
 } from "./offer-response.server";
+import { formatCustomerStatusLabel } from "./portal";
 import {
   getCustomerResponse,
   getDraftOrder,
+  getRequest,
+  listCustomerRequests,
+  markRequestPaid,
   parseDraftOrderLineItems,
   sendOffer,
   submitCustomerRequest,
@@ -380,5 +385,155 @@ describe("the admin can create a missing payment link", () => {
 
     assert.equal(result.ok, false);
     assert.match("error" in result ? result.error : "", /has not answered/);
+  });
+});
+
+/**
+ * The stored status stays Pending on purpose. Closing a request whose customer
+ * rejected everything would take its declined plant out of the EXACT PLANTS
+ * review queue, because `exactPlantReleaseReason` requires an open request.
+ */
+describe("what the customer is told is owed", () => {
+  before(purge);
+  after(purge);
+
+  /** An offer where UPT could supply nothing at all. */
+  async function nothingAvailable() {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Philodendron Spiritus Sancti" }],
+    });
+    await updateRequestItem(shop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "not_available",
+      unavailableReason: "not in our current inventory",
+    });
+    await sendOffer(shop, created.id, 3);
+    return created.id;
+  }
+
+  it("asks for payment while the customer can still accept something", async () => {
+    const { requestId } = await offeredRequest();
+    const request = await getRequest(shop, requestId);
+
+    assert.equal(request?.status, "Pending");
+    assert.equal(request?.hasPayableItems, true);
+    assert.equal(
+      formatCustomerStatusLabel(request!.status, {
+        hasPayableItems: request!.hasPayableItems,
+      }),
+      "Needs Payment",
+    );
+  });
+
+  it("stops asking for payment once every plant was rejected", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Pending", "the declined plant stays reviewable");
+    assert.equal(request?.hasPayableItems, false);
+    assert.equal(
+      formatCustomerStatusLabel(request!.status, {
+        hasPayableItems: request!.hasPayableItems,
+      }),
+      "No Payment Needed",
+    );
+  });
+
+  it("never asks for payment on an offer with nothing available", async () => {
+    const requestId = await nothingAvailable();
+    const request = await getRequest(shop, requestId);
+
+    assert.equal(request?.status, "Pending");
+    assert.equal(request?.hasPayableItems, false);
+  });
+
+  it("carries the same answer into the customer's own request list", async () => {
+    const requestId = await nothingAvailable();
+    const rows = await listCustomerRequests(shop, {
+      email: "alex.rivera@example.com",
+    });
+    const row = rows.find((entry) => entry.id === requestId);
+
+    assert.equal(row?.hasPayableItems, false);
+  });
+
+  it("says nothing about payment before an offer has been sent", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Hoya Lacunosa" }],
+    });
+    const request = await getRequest(shop, created.id);
+
+    assert.equal(request?.status, "New");
+    assert.equal(request?.hasPayableItems, undefined);
+  });
+});
+
+describe("the customer offer page", () => {
+  before(purge);
+  after(purge);
+
+  it("never hands the customer the internal confirmation email", async () => {
+    // It contained their address, the subject line, the whole body and the
+    // payment link, and on a rejected offer it asserted accepted items.
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const page = await loadCustomerOfferPage(shop, requestId);
+    assert.ok(!("confirmationEmail" in page));
+    assert.ok(page.response);
+  });
+
+  it("reports a paid request as paid rather than as awaiting checkout", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const beforePayment = await loadCustomerOfferPage(shop, requestId);
+    assert.equal(beforePayment.requestPaid, false);
+    assert.equal(beforePayment.requestClosed, false);
+    assert.ok(beforePayment.invoiceUrl);
+
+    await markRequestPaid(shop, requestId, {
+      shopifyOrderGid: "gid://shopify/Order/1",
+      orderNumber: "#1001",
+      plantRevenue: 250,
+    });
+
+    const afterPayment = await loadCustomerOfferPage(shop, requestId);
+    assert.equal(afterPayment.requestPaid, true);
+    assert.equal(afterPayment.requestClosed, true);
+    assert.ok(afterPayment.paidAt, "the page states when the payment arrived");
   });
 });

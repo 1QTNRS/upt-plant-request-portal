@@ -47,7 +47,8 @@ export default function CustomerOfferPreview() {
       fedexRemovalWarning={data.fedexRemovalWarning}
       backHref="/app/customer-request-form"
       requestClosed={data.requestClosed}
-      confirmationEmail={data.confirmationEmail}
+      requestPaid={data.requestPaid}
+      paidAt={data.paidAt}
     />
   );
 }

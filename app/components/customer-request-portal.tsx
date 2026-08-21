@@ -2,6 +2,7 @@
 import {
   computeTimeRemaining,
   formatCustomerStatusLabel,
+  isOfferExpired,
   requestStatusTone,
   type CustomerMyRequestRow,
   type RequestStatus,
@@ -266,6 +267,32 @@ export function OfferExpiryBanner({
   urgencyMessage: string;
   holdMessage: string;
 }) {
+  /*
+   * The hold decides what this says, not the day the offer was sent. Once it
+   * lapses the plant becomes an EXACT PLANTS candidate for public sale, so
+   * "reserved for you" and a countdown would contradict what the listing queue
+   * is already doing with it.
+   */
+  if (isOfferExpired(expiresAtIso)) {
+    return (
+      <s-banner tone="critical">
+        <s-stack direction="block" gap="small">
+          <s-text>
+            <strong>This offer has expired</strong>
+          </s-text>
+          <s-text>
+            The hold ended on {expiresAt}. These plants are no longer reserved
+            for you and this offer can no longer be answered.
+          </s-text>
+          <s-text>
+            Contact us if you are still interested and we will check whether the
+            plant is available.
+          </s-text>
+        </s-stack>
+      </s-banner>
+    );
+  }
+
   const remaining = computeTimeRemaining(expiresAtIso);
   return (
     <s-banner tone="warning">

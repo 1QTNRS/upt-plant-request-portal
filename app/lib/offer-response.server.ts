@@ -1,4 +1,3 @@
-import { buildConfirmationEmail } from "./portal";
 import {
   buildCustomerOffer,
   closeRequest,
@@ -23,7 +22,8 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
       invoiceUrl: null as string | null,
       fedexRemovalWarning: settings.fedexRemovalWarning,
       requestClosed: false,
-      confirmationEmail: null as ReturnType<typeof buildConfirmationEmail> | null,
+      requestPaid: false,
+      paidAt: null as string | null,
     };
   }
 
@@ -31,28 +31,6 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
   const response = await getCustomerResponse(shop, requestId);
   const request = await getRequest(shop, requestId);
   const draft = await getDraftOrder(shop, requestId);
-  const confirmationEmail =
-    response && offer
-      ? buildConfirmationEmail({
-          customerName: offer.customerName,
-          customerEmail: offer.customerEmail,
-          requestNumber: offer.requestNumber,
-          acceptedItems: response.items
-            .filter((item) => item.choice === "accept")
-            .map((item) => ({
-              plantName: item.plantName,
-              price: item.price,
-              quantity: item.quantity,
-              customerNotes: item.customerNotes,
-            })),
-          fedexSelected: response.fedexUpgradeSelected,
-          fedexPrice: response.fedexUpgradePrice,
-          fedexDisclaimer: response.fedexUpgradeSelected
-            ? undefined
-            : settings.fedexRemovalWarning,
-          invoiceUrl: draft?.invoiceUrl ?? undefined,
-        })
-      : null;
 
   return {
     offer,
@@ -60,7 +38,8 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
     invoiceUrl: draft?.invoiceUrl ?? null,
     fedexRemovalWarning: settings.fedexRemovalWarning,
     requestClosed: request?.status === "Closed",
-    confirmationEmail,
+    requestPaid: Boolean(request?.paidAt),
+    paidAt: request?.paidAt ?? null,
   };
 }
 

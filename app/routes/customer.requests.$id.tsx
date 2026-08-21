@@ -54,7 +54,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       invoiceUrl: null,
       fedexRemovalWarning: "",
       requestClosed: false,
-      confirmationEmail: null,
+      requestPaid: false,
+      paidAt: null,
       backHref: customerPortalRelativeLinks(false).home,
       formAction: "",
     };
@@ -181,7 +182,8 @@ export default function CustomerRequestDetail() {
       fedexRemovalWarning={data.fedexRemovalWarning}
       backHref={data.backHref}
       requestClosed={data.requestClosed}
-      confirmationEmail={data.confirmationEmail}
+      requestPaid={data.requestPaid}
+      paidAt={data.paidAt}
       formAction={data.formAction}
       submittedChoices={actionData?.submittedChoices}
       fedexSelected={actionData?.fedexSelected ?? true}
