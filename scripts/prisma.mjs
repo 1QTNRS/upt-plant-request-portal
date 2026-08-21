@@ -55,10 +55,17 @@ const [command, commandArgs] = existsSync(localBin)
   ? [localBin, args]
   : ["npx", ["prisma", ...args]];
 
+// `prisma db seed` runs the seed command as a subprocess, and that command uses
+// locally installed binaries (`tsx`). Invoking the binary directly skips the
+// PATH that `npx` would have set up, so add it back.
+const binDir = path.join(REPO_ROOT, "node_modules", ".bin");
 const child = spawn(command, commandArgs, {
   cwd: REPO_ROOT,
   stdio: "inherit",
-  env: process.env,
+  env: {
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+  },
 });
 
 child.on("exit", (code, signal) => {
