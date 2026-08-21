@@ -260,7 +260,7 @@ describe("Render blueprint: cron job", () => {
 
 describe("Render runbook", () => {
   /** Every value Render will prompt for, across all services. */
-  const prompted = blueprint.services
+  const prompted = (blueprint.services ?? [])
     .flatMap((service) => service.envVars ?? [])
     .filter((entry) => entry.sync === false)
     .map((entry) => entry.key)
