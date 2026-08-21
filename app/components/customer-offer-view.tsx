@@ -129,6 +129,7 @@ export function CustomerOfferView({
   // A closed request has nothing left to collect: paid through `orders/paid`,
   // or closed by the customer once they had rejected everything.
   const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;
+  const holdEnded = isOfferExpired(offer.expiresAtIso) && !requestClosed;
 
   if (submitted) {
     return (
@@ -161,7 +162,25 @@ export function CustomerOfferView({
         {hasAccepted && invoiceUrl && !requestClosed ? (
           <s-section>
             <s-stack direction="block" gap="base">
-              <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
+              {holdEnded ? (
+                /*
+                 * The hold has lapsed, and an expired unpaid request releases
+                 * its plants for review as EXACT PLANTS listings. The invoice
+                 * Shopify issued is still payable, so the link stays — but
+                 * presenting it as a live hold would be a promise this page
+                 * cannot keep, and paying against it is no longer guaranteed
+                 * to get the plant.
+                 */
+                <s-banner tone="warning">
+                  <s-text>
+                    Your hold ended{offer.expiresAt ? ` on ${offer.expiresAt}` : ""}.
+                    Please contact us before paying — we can no longer guarantee
+                    these plants are still reserved for you.
+                  </s-text>
+                </s-banner>
+              ) : (
+                <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
+              )}
               <s-text color="subdued">{offer.customerEmail}</s-text>
               <s-link href={invoiceUrl}>Continue to Checkout</s-link>
             </s-stack>

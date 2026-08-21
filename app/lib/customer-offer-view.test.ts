@@ -306,3 +306,39 @@ describe("the customer is not shown internal email copy", () => {
     );
   });
 });
+
+describe("a hold that lapsed before payment", () => {
+  const lapsed = render({
+    offer: offer({ expiresAt: yesterday() }),
+    response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+    invoiceUrl: "https://upt.myshopify.com/invoice/abc",
+    fedexRemovalWarning: "",
+    requestClosed: false,
+  });
+
+  it("stops claiming the plants are still held", () => {
+    // An expired unpaid request releases its plants for EXACT PLANTS review,
+    // so promising they are reserved is a promise this page cannot keep.
+    assert.match(lapsed, /Your hold ended/);
+    assert.match(lapsed, /contact us before paying/);
+    assert.ok(!lapsed.includes("still held for you"));
+    assert.ok(!lapsed.includes("emailed this link to you just in case"));
+  });
+
+  it("leaves the invoice reachable, because Shopify will still take it", () => {
+    assert.match(lapsed, /Continue to Checkout/);
+  });
+
+  it("says nothing about a lapsed hold while the offer is live", () => {
+    const live = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+      invoiceUrl: "https://upt.myshopify.com/invoice/abc",
+      fedexRemovalWarning: "",
+      requestClosed: false,
+    });
+
+    assert.ok(!live.includes("Your hold ended"));
+    assert.match(live, /emailed this link to you just in case/);
+  });
+});
