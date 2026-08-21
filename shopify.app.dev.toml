@@ -68,7 +68,7 @@ api_version = "2025-10"
 [access_scopes]
 # Must match the production scopes, or a dev session will not exercise the same
 # permissions. app/lib/shopify-config.test.ts asserts this.
-scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications"
+scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications,write_app_proxy"
 
 [app_proxy]
 # Rewritten by the CLI alongside application_url.
