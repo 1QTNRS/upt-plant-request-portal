@@ -257,3 +257,51 @@ describe("Render blueprint: cron job", () => {
     );
   });
 });
+
+describe("Render runbook", () => {
+  /** Every value Render will prompt for, across all services. */
+  const prompted = blueprint.services
+    .flatMap((service) => service.envVars ?? [])
+    .filter((entry) => entry.sync === false)
+    .map((entry) => entry.key)
+    .filter((key): key is string => Boolean(key))
+    .sort();
+
+  /** Keys named in the runbook's "supply the prompted secrets" table. */
+  const documented = (() => {
+    const doc = readFileSync(
+      path.join(REPO_ROOT, "docs", "PRODUCTION_DEPLOYMENT.md"),
+      "utf8",
+    );
+    const section = doc.slice(
+      doc.indexOf("## 2. Supply the prompted secrets"),
+      doc.indexOf("You do **not** need to set"),
+    );
+    return [...section.matchAll(/^\|\s*`([A-Z0-9_]+)`\s*\|/gm)]
+      .map((match) => match[1])
+      .sort();
+  })();
+
+  // The runbook is the only place that tells the operator what Render will ask
+  // for. If it drifts from the blueprint they either miss a value or hunt for
+  // one that no longer exists.
+  it("documents exactly the values Render prompts for", () => {
+    assert.deepEqual(documented, prompted);
+  });
+
+  it("states the right number of prompted values", () => {
+    const doc = readFileSync(
+      path.join(REPO_ROOT, "docs", "PRODUCTION_DEPLOYMENT.md"),
+      "utf8",
+    );
+    const words = [
+      "zero", "one", "two", "three", "four", "five",
+      "six", "seven", "eight", "nine", "ten",
+    ];
+    assert.match(
+      doc,
+      new RegExp(`Supply the ${words[prompted.length]} prompted secret`),
+      `the summary table should say "${words[prompted.length]} prompted secret values"`,
+    );
+  });
+});
