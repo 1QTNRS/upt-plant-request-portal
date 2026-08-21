@@ -8,6 +8,7 @@ import {
   productionEnvProblems,
   REQUIRED_SHOPIFY_SCOPES,
   resolveScopes,
+  withConnectionLimit,
 } from "./env.server";
 
 const VALID_PRODUCTION_ENV: NodeJS.ProcessEnv = {
@@ -91,6 +92,36 @@ describe("production environment validation", () => {
   it("does not validate outside production", () => {
     assert.deepEqual(productionEnvProblems({ NODE_ENV: "production" }).length > 0, true);
     assert.deepEqual(missingScopes([...REQUIRED_SHOPIFY_SCOPES]), []);
+  });
+});
+
+describe("database connection pool", () => {
+  // Prisma's default pool is sized from the host's CPU count, not the fraction
+  // of a CPU the plan grants, and a Render Postgres instance under 8 GB accepts
+  // 100 connections in total.
+  it("caps the pool on the connection string Render injects", () => {
+    const limited = withConnectionLimit(
+      "postgresql://user:pass@dpg-abc123-a:5432/upt_portal",
+    );
+    assert.match(limited, /\?connection_limit=\d+$/);
+    const limit = Number(limited.match(/connection_limit=(\d+)/)![1]);
+    assert.ok(limit > 0 && limit <= 20, `${limit} is not a sane pool size`);
+  });
+
+  it("appends to a connection string that already has parameters", () => {
+    assert.equal(
+      withConnectionLimit("postgresql://u:p@host:5432/db?sslmode=require"),
+      "postgresql://u:p@host:5432/db?sslmode=require&connection_limit=10",
+    );
+  });
+
+  it("leaves an explicitly configured limit alone", () => {
+    const url = "postgresql://u:p@host:5432/db?connection_limit=25";
+    assert.equal(withConnectionLimit(url), url);
+  });
+
+  it("does not touch a SQLite URL, which has no pool", () => {
+    assert.equal(withConnectionLimit("file:dev.sqlite"), "file:dev.sqlite");
   });
 });
 

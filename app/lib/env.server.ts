@@ -31,9 +31,31 @@ export function isProduction(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/**
+ * Connections each instance may open. Prisma otherwise sizes its pool as
+ * `physical CPUs * 2 + 1`, counted from the machine the container runs on
+ * rather than the fraction of a CPU the plan grants — Render publishes
+ * RENDER_CPU_COUNT precisely because a process cannot see its own share. On a
+ * big host that default is tens of connections per instance, against the 100 a
+ * Render Postgres instance under 8 GB allows, so scaling out could exhaust the
+ * database. Ten leaves room for far more instances than this portal will need.
+ */
+const POSTGRES_CONNECTION_LIMIT = 10;
+
+/**
+ * Render injects the database's connection string verbatim and a Blueprint
+ * cannot append to it, so the pool size has to be applied here. An explicit
+ * `connection_limit` in DATABASE_URL still wins.
+ */
+export function withConnectionLimit(url: string): string {
+  if (!/^postgres(ql)?:\/\//i.test(url)) return url;
+  if (/[?&]connection_limit=/.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}connection_limit=${POSTGRES_CONNECTION_LIMIT}`;
+}
+
 export function resolveDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
-  if (url) return url;
+  if (url) return withConnectionLimit(url);
   if (isProduction()) {
     throw new Error(
       "DATABASE_URL is required in production. Set it to a PostgreSQL connection string.",
