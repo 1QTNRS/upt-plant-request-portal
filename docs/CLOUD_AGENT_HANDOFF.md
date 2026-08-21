@@ -116,7 +116,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 
 - Admin OAuth via `@shopify/shopify-app-react-router` (`app/shopify.server.ts`, API version October 2025 / `2025-10`)
 - App proxy `/apps/plant-requests` → `/customer`, **HMAC-verified** (`app/lib/app-proxy.ts`)
-- Offline Admin client for the app-proxy customer path (`app/lib/offline-admin.server.ts`)
+- Offline Admin client for the app-proxy customer path (`app/lib/offline-admin.server.ts`). Goes through `unauthenticated.admin(shop)`, which calls `ensureValidOfflineSession` and therefore refreshes the token under the `expiringOfflineAccessTokens` future flag — the customer draft-order path does not break when the offline token expires.
 - Customer name/email resolved from the Admin API and cached in `CustomerProfile` (`app/lib/customer-identity.server.ts`)
 - Draft order create + invoice send (`createDraftOrderForRequest` in `app/lib/shopify-ops.server.ts`), custom lines priced with `originalUnitPriceWithCurrency`
 - FedEx upgrade product lookup via `productByIdentifier`
@@ -175,7 +175,11 @@ Implemented. Accepted plant lines include title, qty 1, price, weight. FedEx lin
 
 ### Shopify Files
 
-Implemented with local fallback. Admin photo upload on New requests uses Files when `admin` exists, otherwise `public/uploads/` or data URLs. `fileCreate` is asynchronous, so `uploadPlantPhoto` polls `fileStatus` until `READY` before reading the CDN URL. Local `/uploads/...` paths are made absolute against `SHOPIFY_APP_URL` when used as EXACT PLANTS media; `data:` URLs cannot be published and approving with no fetchable photo reports an error.
+Admin photo upload on New requests uses Files when `admin` exists, otherwise `public/uploads/` or data URLs. `fileCreate` is asynchronous, so `uploadPlantPhoto` polls `fileStatus` until `READY` before reading the CDN URL.
+
+The local-disk fallback is **development only** (`localUploadsAllowed()`): that disk is ephemeral and per-instance, so in production a fallback photo would disappear on the next deploy after being frozen into a sent offer snapshot. In production a failed upload surfaces on the request detail page instead. Do not reinstate an unconditional fallback.
+
+Local `/uploads/...` paths are made absolute against `SHOPIFY_APP_URL` when used as EXACT PLANTS media; `data:` URLs cannot be published and approving with no fetchable photo reports an error.
 
 ### EXACT PLANTS creation
 
@@ -234,7 +238,7 @@ Last verified on `cursor/production-readiness-blockers-7617`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 85 passing, against **both** SQLite and PostgreSQL 16 |
+| `npm test` | 92 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
@@ -260,7 +264,8 @@ exists. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12
 - Headless Cloud VM cannot run `shopify app dev` (needs Partner login + tunnel).
 - Demo listing products are not real Shopify products; GID looks like `gid://shopify/Product/upt-{itemId}`.
 - `shopify.app.toml` still has the template placeholder `application_url = "https://shopify.dev/apps/default-app-home"` and matching redirect URLs. These need the real host and cannot come from an environment variable.
-- Custom draft-order plant lines do not set `requiresShipping`, so Shopify's default applies. Confirm shipping rates appear at checkout during the live draft-order test.
+- Custom draft-order plant lines do not set `requiresShipping`. Shopify does not document its default and it cannot be tested without a live store, so setting it would be guessing at checkout behaviour. Confirm shipping rates appear at checkout during the live draft-order test and set it then if they do not.
+- The CLA workflow was deleted on the production-readiness branch, but it is a `pull_request_target` workflow, which GitHub always runs from the **base** branch. It therefore keeps failing on PR #24 until that deletion is merged to `main`, and disappears for PRs opened afterwards.
 - Unused localStorage prototype modules remain in `app/lib/` and can confuse agents; they are not the live data layer.
 - `RequestNumberSequence.year` is a leftover of the old yearly scheme; do not reintroduce `UPT-REQ-YYYY-000001`.
 - Existing local DBs may still contain leftover `UPT-REQ-2026-000008` / `000009` rows from earlier demos; display maps those to `REQ8` / `REQ9`. Official seeds remap `UPT-REQ-2026-000001`–`000007` and `000099` → `REQ1`–`REQ8`.
