@@ -164,6 +164,20 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
   };
 }
 
+/**
+ * Flips Pending requests whose hold has run out to Expired.
+ *
+ * Called from every request loader, every list, the analytics page and the
+ * hourly cron, so several sweeps overlap constantly — a single admin page load
+ * fires more than one. Each request is therefore claimed with a conditional
+ * update and only the sweep that actually changed the row writes the history
+ * entry; otherwise two sweeps both saw the same overdue offer and both appended
+ * "Offer expired before payment".
+ *
+ * The claims run as one batch rather than a transaction per request. This is on
+ * the critical path of a user's page load, and it is slowest exactly when the
+ * backlog is largest, which is the first page load after a quiet period.
+ */
 export async function expireOverdueOffers(shop: string, now = new Date()): Promise<number> {
   const pending = await prisma.plantRequest.findMany({
     where: {
@@ -172,27 +186,31 @@ export async function expireOverdueOffers(shop: string, now = new Date()): Promi
       paidAt: null,
       offer: { expiresAt: { lte: now } },
     },
-    include: { offer: true },
+    select: { id: true },
   });
+  if (pending.length === 0) return 0;
 
+  const claimed: string[] = [];
   for (const request of pending) {
-    await prisma.$transaction([
-      prisma.plantRequest.update({
-        where: { id: request.id },
-        data: { status: "Expired", expiredAt: now },
-      }),
-      prisma.statusEvent.create({
-        data: {
-          requestId: request.id,
-          fromStatus: "Pending",
-          toStatus: "Expired",
-          reason: "Offer expired before payment",
-        },
-      }),
-    ]);
+    const { count } = await prisma.plantRequest.updateMany({
+      where: { id: request.id, shop, status: "Pending", paidAt: null },
+      data: { status: "Expired", expiredAt: now },
+    });
+    if (count === 1) claimed.push(request.id);
   }
 
-  return pending.length;
+  if (claimed.length > 0) {
+    await prisma.statusEvent.createMany({
+      data: claimed.map((requestId) => ({
+        requestId,
+        fromStatus: "Pending",
+        toStatus: "Expired",
+        reason: "Offer expired before payment",
+      })),
+    });
+  }
+
+  return claimed.length;
 }
 
 async function loadRequest(
@@ -826,10 +844,15 @@ export async function markRequestPaid(
 
   const now = new Date();
   await prisma.$transaction(async (tx) => {
-    await tx.plantRequest.update({
-      where: { id: requestId },
+    // Two copies of the same delivery can both read paidAt as null before
+    // either writes — Shopify delivers at least once and more than one instance
+    // may be running. Claiming the row decides which one owns the close, so the
+    // history gets a single "Payment completed" entry rather than one per copy.
+    const claim = await tx.plantRequest.updateMany({
+      where: { id: requestId, shop, paidAt: null },
       data: { status: "Closed", closedAt: request.closedAt ?? now, paidAt: now },
     });
+    const alreadyPaid = claim.count === 0;
     await tx.shopifyOrderReference.upsert({
       where: { requestId },
       create: {
@@ -864,14 +887,16 @@ export async function markRequestPaid(
         data: { itemStatus: "Sold", purchasedAt: now },
       });
     }
-    await tx.statusEvent.create({
-      data: {
-        requestId,
-        fromStatus: request.status,
-        toStatus: "Closed",
-        reason: "Payment completed",
-      },
-    });
+    if (!alreadyPaid) {
+      await tx.statusEvent.create({
+        data: {
+          requestId,
+          fromStatus: request.status,
+          toStatus: "Closed",
+          reason: "Payment completed",
+        },
+      });
+    }
   });
 
   return getRequest(shop, requestId);
