@@ -137,6 +137,53 @@ variable payloads the server sends. Run it after touching any Shopify call and
 before bumping the API version — document validation alone does not catch a
 removed input field, which is how `originalUnitPrice` shipped.
 
+It is necessary and **not sufficient**. Everything in the next section validated
+cleanly and was still wrong.
+
+### Shopify facts the schema and the docs do not tell you
+
+Each of these was found by asking a real store and would have shipped otherwise.
+Re-check them when bumping the API version.
+
+| What the documentation implies | What a store actually returns |
+| --- | --- |
+| `Publication.name` is deprecated, "use `Catalog.title`" | `catalog` is **null** unless the query passes `catalogType`. With `catalogType: APP` the title reads `Channel Catalog 329323446315 for Online Store` — and is translated into the merchant's admin language. Title matching cannot work; match `AppCatalog.apps.nodes.handle` |
+| The POS channel handle is `point_of_sale` | It is **`pos`**. Both are accepted in `POS_APP_HANDLES` |
+| `Shop.domains` is deprecated, "use `domainsPaginated`" | `domainsPaginated` does not exist on `Shop` in 2025-10; `validate-graphql` rejects it |
+| A granted scope list echoes what was requested | Shopify folds `read_x` into the `write_x` that implies it. A store that approved everything reports `write_products` and no `read_products` — see `coveredScopes` in `env.server.ts`. `currentAppInstallation.accessScopes` returns the *expanded* list, so the two sources disagree by design |
+| `inventorySetQuantities` takes quantities | On 2025-10 it also **requires** `ignoreCompareQuantity`, which is deprecated ahead of the 2026-01 redesign — and deprecated input fields are hidden from a default introspection, so the validator could not see it until it was told to ask |
+
+### Verifying against the dev store without a browser
+
+The app is installed on `upt-plant-request-dev.myshopify.com`, and the whole
+workflow can be driven over HTTP:
+
+- **Customer** — sign a query string the way `appProxySignatureIsValid` verifies
+  it and send it with the storefront `Origin`. Signatures are only valid for
+  five minutes.
+- **Admin** — mint a Shopify session token (HS256 over the app's client secret,
+  with `iss`/`dest`/`aud` for the shop) and send it as `id_token`. Because a
+  valid offline session exists, `authenticate.admin` loads it rather than
+  attempting a token exchange, and the route gets a **real** Admin API client.
+  Two gotchas: send a browser `User-Agent`, or `isbot` returns 410 Gone; and the
+  offline session expires hourly, after which `authenticate.admin` refuses to
+  reuse it. Any customer request through the proxy renews it, because
+  `unauthenticated.admin` refreshes with the stored refresh token.
+- **Database and store internals** — a Render one-off job
+  (`POST /v1/services/{id}/jobs`) runs Node inside the deployed image with
+  `DATABASE_URL` and the offline token in scope. Render execs the start command
+  without a shell, so keep pipes and redirects out of it.
+
+**Never point a Prisma command at the live database as a shadow database.**
+`prisma migrate diff --shadow-database-url "$DATABASE_URL"` reads like an
+inspection command and is not: Prisma empties whatever it is given as a shadow
+database. Run against the live dev database it destroyed every row, including
+the Shopify offline session, which no amount of app-side credentials can
+recreate. It was recovered with Render point-in-time recovery (available on all
+paid plans; 3 days on Hobby, 7 on Pro) by restoring to a new instance, copying
+the `Session` row back, and deleting the instance. `migrate dev`, `migrate reset`
+and `db push` are the same class of hazard.
+
 ---
 
 ## Shopify integrations still requiring merchant authorization or secrets
@@ -422,16 +469,16 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/production-readiness-blockers-7617`:
+Last verified on `cursor/dev-store-verification-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 230 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 307 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
 | `npm run prisma:check-schema` | pass |
-| `npm run validate-graphql` | pass (17 documents + 9 variable payloads against live Admin `2025-10`) |
+| `npm run validate-graphql` | pass (23 documents + 10 variable payloads against live Admin `2025-10`) |
 | `npm run build` | pass |
 | `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
 | GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |
@@ -442,8 +489,17 @@ wrong-secret requests see nothing), the scheduler expiring an offer and sending
 exactly one reminder, and the production env guard refusing to boot on six
 misconfigurations.
 
-Live Shopify Admin mutations were still **not** executed — no merchant session
-exists. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12.
+The dev store `upt-plant-request-dev.myshopify.com` now has the app installed
+with a live offline session, so the Admin API is reachable and the whole
+workflow can be driven against it — see "Verifying against the dev store"
+above. What that has confirmed so far: the granted scope list, the publication
+handles, the shop's currency and weight unit, and that the app proxy, customer
+identity resolution and offline token refresh all work end to end.
+
+**Both Render services deploy from `cursor/production-readiness-blockers-7617`**
+with `autoDeploy: yes`. Work on any other branch reaches the dev service only by
+deploying a specific commit id through the API, and the next push to the tracked
+branch replaces it. Merge before relying on anything being live.
 
 ---
 
