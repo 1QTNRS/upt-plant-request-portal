@@ -280,6 +280,61 @@ describe("concurrent writes", () => {
   });
 });
 
+describe("availability", () => {
+  const availabilityShop = `${DEMO_SHOP}-availability-test`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: availabilityShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: availabilityShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: availabilityShop } });
+    await prisma.requestNumberSequence.deleteMany({
+      where: { shop: availabilityShop },
+    });
+  };
+
+  before(purge);
+  after(purge);
+
+  it("forgets the unavailable reason once the plant is available again", async () => {
+    const created = await submitCustomerRequest(availabilityShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera Albo" }],
+    });
+    const itemId = created.items[0].id;
+
+    await updateRequestItem(availabilityShop, {
+      requestId: created.id,
+      itemId,
+      availability: "not_available",
+      unavailableReason: "available in 2+ mos",
+    });
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: itemId } }))
+        .unavailableReason,
+      "available in 2+ mos",
+    );
+
+    await updateRequestItem(availabilityShop, {
+      requestId: created.id,
+      itemId,
+      availability: "available",
+      price: 92,
+      weightLbs: 2,
+    });
+
+    const item = await prisma.requestItem.findUniqueOrThrow({
+      where: { id: itemId },
+    });
+    assert.equal(item.availability, "available");
+    assert.equal(
+      item.unavailableReason,
+      null,
+      "a stale reason would prefill the next flip to Not Available",
+    );
+  });
+});
+
 describe("plants keep the order the customer typed them", () => {
   const orderShop = `${DEMO_SHOP}-ordering-test`;
 
