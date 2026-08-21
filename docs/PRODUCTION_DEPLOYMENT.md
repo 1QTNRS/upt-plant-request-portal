@@ -77,7 +77,6 @@ You can also set them later per service under **Environment**.
 | `SHOPIFY_API_KEY` | Client ID | Shopify Partner dashboard → Apps → UPT Plant Request Portal → Configuration |
 | `SHOPIFY_API_SECRET` | Client secret | Same page (`shopify app env show` prints both) |
 | `SHOPIFY_APP_URL` | `https://upt-plant-request-portal.onrender.com` | Render gives you this after section 1. **No trailing slash.** |
-| `CRON_SECRET` | `openssl rand -hex 32` | Generate it yourself |
 | `RESEND_API_KEY` | Sending API key | Resend Dashboard (section 5) |
 | `EMAIL_FROM` | `UPT Plant Requests <noreply@unsolicitedplanttalks.com>` | Must be on a domain verified in Resend |
 | `UPT_ADMIN_EMAIL` | Your ops address | Fallback for admin notifications and customer data requests |
@@ -85,11 +84,12 @@ You can also set them later per service under **Environment**.
 You do **not** need to set:
 
 - `DATABASE_URL` — Render injects the database's connection string.
+- `CRON_SECRET` — Render generates it on the web service, and the cron job reads
+  it from there. It is a shared secret between two Render services that nothing
+  else needs to know, so there is no reason for you to invent or store one.
 - `PORT`, `NODE_ENV`, `HOST` — set by `render.yaml` and the Dockerfile.
 - `SCOPES` — the app uses the list in `app/lib/env.server.ts`, which a test keeps
   identical to `shopify.app.toml`.
-- `CRON_SECRET` on the cron job — it reads the web service's value, so there is
-  one value to rotate rather than two.
 
 **Never set** `DEV_SHOP` or `ALLOW_CUSTOMER_DEMO_LOGIN` on Render. The app
 refuses to boot with the latter, and both are development-only.
@@ -319,8 +319,8 @@ why an order did not match.
   did not receive an offer or checkout link.
 - **Watch the cron job.** A failed run means offers are not expiring and
   reminders are not going out.
-- **Rotate `CRON_SECRET`** on the web service only; the cron job reads it from
-  there.
+- **Rotate `CRON_SECRET`** by clearing it on the web service and re-syncing the
+  Blueprint, which generates a new value; the cron job picks it up from there.
 - **Re-run `npm run validate-graphql`** before bumping the Shopify API version.
   It fetches the live schema and checks both the queries and the payloads.
 - **Scaling up** is safe: sessions and all portal data live in PostgreSQL. Raise

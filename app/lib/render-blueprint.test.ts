@@ -126,16 +126,20 @@ describe("Render blueprint: web service", () => {
   });
 
   it("prompts for secrets instead of committing them", () => {
-    for (const key of [
-      "SHOPIFY_API_KEY",
-      "SHOPIFY_API_SECRET",
-      "CRON_SECRET",
-      "RESEND_API_KEY",
-    ]) {
+    for (const key of ["SHOPIFY_API_KEY", "SHOPIFY_API_SECRET", "RESEND_API_KEY"]) {
       const entry = envVar(web, key);
       assert.equal(entry?.sync, false, `${key} must use sync: false`);
       assert.equal(entry?.value, undefined, `${key} must not have a committed value`);
     }
+  });
+
+  it("has Render generate CRON_SECRET rather than asking a human for one", () => {
+    // It is shared between two Render services and nothing outside Render needs
+    // it, so it is one less secret to invent, paste and store.
+    const entry = envVar(web, "CRON_SECRET");
+    assert.equal(entry?.generateValue, true);
+    assert.equal(entry?.value, undefined);
+    assert.equal(entry?.sync, undefined);
   });
 
   it("never enables the demo login or the dev bypass", () => {
