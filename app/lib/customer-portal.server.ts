@@ -25,6 +25,16 @@ import { ensureShopSeeded } from "./seed-demo.server";
  * adding or removing a plant row, or when validation fails. Keeping one loader
  * means the two cannot drift.
  */
+/**
+ * Shown when the app cannot reach Shopify to identify the visitor. It has to
+ * read as our problem, not theirs: the customer's account is fine and there is
+ * nothing for them to change.
+ */
+export const CUSTOMER_LOOKUP_UNAVAILABLE =
+  "We can't reach your store account right now, so we can't load your requests " +
+  "or take a new one. This is a problem on our side — please try again in a few " +
+  "minutes.";
+
 export type CustomerPortalData = {
   loggedIn: boolean;
   name: string;
@@ -108,8 +118,9 @@ export async function loadCustomerPortal(
         name: identity.name,
         email: "",
         canSubmitRequests: false,
-        identityError:
-          "We could not read the email address on your store account. Add an email to your account to submit a new plant request.",
+        identityError: identity.shopUnreachable
+          ? CUSTOMER_LOOKUP_UNAVAILABLE
+          : "We could not read the email address on your store account. Add an email to your account to submit a new plant request.",
         myRequests: requests.map(toRequestRow),
       },
     };
