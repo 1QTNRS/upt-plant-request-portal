@@ -95,6 +95,44 @@ export function appProxySignatureIsValid(
   return timingSafeEqual(expectedBytes, providedBytes);
 }
 
+/**
+ * How stale a proxied request's signature may be.
+ *
+ * Shopify signs every hop it forwards at the moment it forwards it, so a
+ * legitimate request is always seconds old — a customer sitting on a page does
+ * not age the signature, because the next navigation or form post is signed
+ * afresh. Five minutes is therefore pure tolerance for clock skew between
+ * Shopify and this app.
+ */
+export const APP_PROXY_MAX_AGE_SECONDS = 300;
+
+/**
+ * Whether a signed request is recent enough to act on.
+ *
+ * Without this a signature is a bearer token for that customer's identity that
+ * never expires, and the full signed URL is easy to come by: it lands in the
+ * request log of every hop. A captured URL replayed an hour later returned the
+ * customer's own request list, which is exactly what "a customer may only ever
+ * see their own requests" is supposed to prevent.
+ */
+export function appProxyRequestIsFresh(
+  search: URLSearchParams,
+  options: { maxAgeSeconds?: number; now?: number } = {},
+): boolean {
+  const maxAge = options.maxAgeSeconds ?? APP_PROXY_MAX_AGE_SECONDS;
+  const now = options.now ?? Date.now();
+
+  const raw = search.get("timestamp");
+  if (!raw) return false;
+
+  const signedAt = Number(raw);
+  if (!Number.isFinite(signedAt)) return false;
+
+  // Skew is tolerated in both directions: a clock ahead of Shopify's would
+  // otherwise reject every request with no clue why.
+  return Math.abs(now / 1000 - signedAt) <= maxAge;
+}
+
 export type CustomerPortalLinks = {
   /** "My Requests" list. */
   home: string;

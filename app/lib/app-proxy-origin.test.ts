@@ -10,6 +10,7 @@ import {
 import {
   APP_PROXY_ORIGIN_HEADER as SERVER_HEADER,
   APP_PROXY_TARGET_PATH,
+  redactUrl,
   withholdAppProxyOrigin,
 } from "../../server.js";
 
@@ -102,6 +103,45 @@ describe("app proxy origin handoff", () => {
       req.headers[APP_PROXY_ORIGIN_HEADER],
       "https://evil.example.com",
     );
+  });
+});
+
+describe("request log redaction", () => {
+  it("keeps a signed customer identity out of the log", () => {
+    const logged = redactUrl(
+      "/customer?shop=upt.myshopify.com&logged_in_customer_id=8946190319659" +
+        "&path_prefix=%2Fapps%2Fplant-requests&timestamp=1787342302&signature=12c12055eb",
+    );
+    assert.equal(logged.includes("8946190319659"), false);
+    assert.equal(logged.includes("12c12055eb"), false);
+    assert.equal(logged.includes("1787342302"), false);
+    // Still useful: the route and the shop survive.
+    assert.equal(logged.startsWith("/customer?"), true);
+    assert.equal(logged.includes("shop=upt.myshopify.com"), true);
+    assert.equal(logged.includes("signature=[redacted]"), true);
+  });
+
+  it("keeps the embedded admin session token out of the log", () => {
+    const logged = redactUrl("/app/requests/req_1?embedded=1&id_token=eyJhbGciOi.J9.sig");
+    assert.equal(logged.includes("eyJhbGciOi"), false);
+    assert.equal(logged.includes("embedded=1"), true);
+  });
+
+  it("keeps what the customer typed out of the log", () => {
+    const logged = redactUrl(
+      "/customer/submit?itemCount=1&plantName-0=Monstera&notes-0=for%20my%20mother",
+    );
+    assert.equal(logged.includes("Monstera"), false);
+    assert.equal(logged.includes("mother"), false);
+    assert.equal(logged.includes("itemCount=1"), true);
+  });
+
+  it("redacts a parameter nobody has thought about yet", () => {
+    assert.equal(redactUrl("/x?surprise=value"), "/x?surprise=[redacted]");
+  });
+
+  it("leaves a URL with no query string alone", () => {
+    assert.equal(redactUrl("/healthz"), "/healthz");
   });
 });
 

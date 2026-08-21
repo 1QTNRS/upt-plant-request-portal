@@ -2,6 +2,7 @@ import { createCookie } from "react-router";
 
 import {
   APP_PROXY_ORIGIN_HEADER,
+  appProxyRequestIsFresh,
   appProxySignatureIsValid,
   storefrontOriginIsAllowed,
 } from "./app-proxy";
@@ -63,6 +64,17 @@ export function readAppProxyContext(
   if (!search.has("signature")) return null;
 
   if (!appProxySignatureIsValid(search, process.env.SHOPIFY_API_SECRET ?? "")) {
+    return null;
+  }
+
+  // A valid signature is a bearer token for this customer's identity, and the
+  // signed URL travels through logs and referrers. Shopify re-signs every hop,
+  // so refusing a stale one costs nothing and bounds a replay to minutes.
+  if (!appProxyRequestIsFresh(search)) {
+    console.warn(
+      `Refused a stale app proxy request for ${search.get("shop") ?? "unknown shop"} ` +
+        `signed at ${search.get("timestamp") ?? "no timestamp"}.`,
+    );
     return null;
   }
 
