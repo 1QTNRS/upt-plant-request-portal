@@ -60,6 +60,16 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Leftover prototype files (`app/lib/sample-*.ts`, `item-*.ts`, `customer-request-submissions.ts`, etc.) are unused by active routes.
 - Two environment modules exist on purpose: `env.server.ts` is the boot-time contract, `environment.server.ts` is per-request shop-scoped gating (`isDemoDataEnabled`, `canStubShopifyWrites`). `isProductionRuntime()` delegates to `isProduction()`; never add a third definition of "in production".
 - Similarly, `customer-identity.ts` is pure request-ownership authorization and `customer-identity.server.ts` resolves a name/email from the Admin API. Different concerns, similar names.
+- **Never hand a live database to a Prisma command as a shadow database.** `prisma migrate diff --shadow-database-url "$DATABASE_URL"` reads like inspection and is not: Prisma empties the shadow database. Run against the dev store's database it destroyed every row including the Shopify offline session. `migrate dev`, `migrate reset` and `db push` are the same hazard.
+- Shopify folds `read_x` into the `write_x` that implies it, so a correctly installed store's granted list omits the read scopes. Compare through `coveredScopes` (`env.server.ts`), never as raw strings.
+- Both Render services deploy from `cursor/production-readiness-blockers-7617` with auto-deploy on. Deploying another branch's commit by id works but is replaced by the next push to that branch.
+- The dev store contradicts Shopify's own docs in several places (null `Publication.catalog`, POS handle `pos`, missing `Shop.domainsPaginated`). The handoff has the table; check it before trusting a deprecation notice.
+
+### Security invariants
+
+- App proxy signatures expire after five minutes (`appProxyRequestIsFresh`). A valid signature is a bearer token for that customer's identity; without expiry a captured URL replayed an hour later returned their request list.
+- The request log keeps an **allow list** of query parameters whose values may be written (`redactUrl` in `server.js`). `signature`, `logged_in_customer_id`, `id_token` and everything the customer typed are redacted. A new parameter is redacted by default — keep it that way.
+- `server.js` withholds the storefront `Origin` from React Router's cross-origin check for signed app-proxy requests only, and the app decides (`forwardedOriginIsTrusted`). Do not widen `allowedActionOrigins` instead: it is build-wide and would relax the same check for the embedded admin, where the merchant's session cookie is the thing being protected.
 
 ### Business rules to preserve
 
@@ -68,4 +78,5 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Offer snapshots freeze after send. FedEx is optional, default on, excluded from plant analytics, never listed in EXACT PLANTS.
 - Draft orders only for accepted plants. `orders/paid` closes the request.
 - A Declined Item is Available + offered + customer Reject. Not the same as UPT Not Available. Do not auto-publish. Admin review/approve only. One Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only.
+- An EXACT PLANTS listing is **one physical plant**: its variant tracks inventory, holds one unit, and denies oversell. Stock it before publishing, or it goes live showing as sold out.
 - A customer may only ever see their own requests. App-proxy identity is only trustworthy after the HMAC check in `app/lib/app-proxy.ts`; never read `logged_in_customer_id` without it.
