@@ -1130,12 +1130,10 @@ export async function createExactPlantShopifyProduct(
       productGid: existing.id,
       handle: existing.handle,
     });
-  }
-  const collection = await findOrCreateExactPlantsCollection(admin);
 
-  if (existing) {
     // A retry after an edit on the review form must land the edited values on
     // the one product for this item rather than create a second one.
+    const collection = await findOrCreateExactPlantsCollection(admin);
     const refreshed = await updateExactPlantProduct(admin, existing, input);
     await addProductToCollection(admin, collection.id, refreshed.id);
     await publishProductToOnlineStoreAndPos(admin, refreshed.id);
@@ -1146,6 +1144,7 @@ export async function createExactPlantShopifyProduct(
     };
   }
 
+  const collection = await findOrCreateExactPlantsCollection(admin);
   const created = await adminGraphql<{
     productCreate: {
       product: {
