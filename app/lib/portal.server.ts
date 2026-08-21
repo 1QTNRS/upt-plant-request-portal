@@ -169,6 +169,8 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
     customerFacingNotes: item.customerFacingNotes ?? "",
     photoPreviewUrl: photoUrls[0] ?? "",
     photoUrls,
+    // Only the real rows, never the demo placeholder, which has nothing to edit.
+    photos: item.photos.map((photo) => ({ id: photo.id, url: photo.url })),
   };
 }
 
@@ -566,17 +568,95 @@ export async function addItemPhotos(
     throw new Error("Photos can only be added before an offer is sent.");
   }
 
-  const currentCount =
-    request.items.find((item) => item.id === itemId)?.photos.length ?? 0;
+  const existing = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const known = new Set(existing.map((photo) => photo.url));
+
+  // The same URL twice is always a mistake — a double-submitted form or a
+  // re-pasted link — and it freezes into the offer snapshot on send.
+  const fresh = photos.filter((photo) => {
+    if (known.has(photo.url)) return false;
+    known.add(photo.url);
+    return true;
+  });
+  if (fresh.length === 0) return getRequest(shop, requestId);
 
   await prisma.photoReference.createMany({
-    data: photos.map((photo, index) => ({
+    data: fresh.map((photo, index) => ({
       itemId,
       url: photo.url,
       shopifyFileId: photo.shopifyFileId,
-      sortOrder: currentCount + index,
+      sortOrder: existing.length + index,
     })),
   });
+
+  return getRequest(shop, requestId);
+}
+
+/** Photos in display order, renumbered from zero so gaps cannot accumulate. */
+async function resequencePhotos(itemId: string, orderedIds: string[]): Promise<void> {
+  await prisma.$transaction(
+    orderedIds.map((id, index) =>
+      prisma.photoReference.update({ where: { id }, data: { sortOrder: index } }),
+    ),
+  );
+}
+
+function assertPhotosEditable(request: RequestWithRelations): void {
+  if (normalizeRequestStatus(request.status) !== "New") {
+    throw new Error("Photos can only be changed before an offer is sent.");
+  }
+}
+
+export async function removeItemPhoto(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  photoId: string,
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  if (!photos.some((photo) => photo.id === photoId)) return getRequest(shop, requestId);
+
+  await prisma.photoReference.delete({ where: { id: photoId } });
+  await resequencePhotos(
+    itemId,
+    photos.filter((photo) => photo.id !== photoId).map((photo) => photo.id),
+  );
+
+  return getRequest(shop, requestId);
+}
+
+/**
+ * Moves one photo one place earlier or later.
+ *
+ * The first photo is the one the customer sees first, so ordering is a real
+ * editorial decision rather than a nicety — and it is frozen into the offer
+ * snapshot the moment the offer is sent.
+ */
+export async function moveItemPhoto(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  photoId: string,
+  direction: "up" | "down",
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const from = photos.findIndex((photo) => photo.id === photoId);
+  if (from === -1) return getRequest(shop, requestId);
+
+  const to = direction === "up" ? from - 1 : from + 1;
+  if (to < 0 || to >= photos.length) return getRequest(shop, requestId);
+
+  const ordered = photos.map((photo) => photo.id);
+  [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+  await resequencePhotos(itemId, ordered);
 
   return getRequest(shop, requestId);
 }

@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import prisma from "../db.server";
 import { DEMO_SHOP } from "./shop";
 import {
+  addItemPhotos,
   buildCustomerOffer,
   closeRequest,
   getCustomerResponse,
@@ -11,6 +12,8 @@ import {
   getShopSettings,
   listCustomerRequests,
   listRequests,
+  moveItemPhoto,
+  removeItemPhoto,
   saveCustomerResponse,
   sendOffer,
   submitCustomerRequest,
@@ -314,5 +317,116 @@ describe("plants keep the order the customer typed them", () => {
       const loaded = await getRequest(orderShop, created.id);
       assert.deepEqual(loaded?.items.map((item) => item.plantName), typed);
     }
+  });
+});
+
+describe("exact plant photos before the offer is sent", () => {
+  const photoShop = `${DEMO_SHOP}-photo-test`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: photoShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: photoShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: photoShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: photoShop } });
+  };
+
+  before(purge);
+  after(purge);
+
+  const photosOf = async (requestId: string, itemId: string) => {
+    const request = await getRequest(photoShop, requestId);
+    return request?.items.find((item) => item.id === itemId)?.photos ?? [];
+  };
+
+  it("adds, reorders and removes, and refuses a duplicate", async () => {
+    const created = await submitCustomerRequest(photoShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera Albo" }],
+    });
+    const itemId = created.items[0].id;
+
+    await addItemPhotos(photoShop, created.id, itemId, [
+      { url: "https://cdn.example.com/a.jpg" },
+      { url: "https://cdn.example.com/b.jpg" },
+      { url: "https://cdn.example.com/c.jpg" },
+    ]);
+    assert.deepEqual(
+      (await photosOf(created.id, itemId)).map((photo) => photo.url),
+      [
+        "https://cdn.example.com/a.jpg",
+        "https://cdn.example.com/b.jpg",
+        "https://cdn.example.com/c.jpg",
+      ],
+    );
+
+    // A re-pasted link or a double-submitted form freezes into the snapshot.
+    await addItemPhotos(photoShop, created.id, itemId, [
+      { url: "https://cdn.example.com/b.jpg" },
+    ]);
+    assert.equal((await photosOf(created.id, itemId)).length, 3);
+
+    const [, second] = await photosOf(created.id, itemId);
+    await moveItemPhoto(photoShop, created.id, itemId, second.id, "up");
+    assert.deepEqual(
+      (await photosOf(created.id, itemId)).map((photo) => photo.url),
+      [
+        "https://cdn.example.com/b.jpg",
+        "https://cdn.example.com/a.jpg",
+        "https://cdn.example.com/c.jpg",
+      ],
+    );
+
+    const first = (await photosOf(created.id, itemId))[0];
+    await moveItemPhoto(photoShop, created.id, itemId, first.id, "up");
+    assert.equal(
+      (await photosOf(created.id, itemId))[0].url,
+      "https://cdn.example.com/b.jpg",
+      "moving the first photo up is a no-op, not a wrap-around",
+    );
+
+    await removeItemPhoto(photoShop, created.id, itemId, first.id);
+    const remaining = await photosOf(created.id, itemId);
+    assert.deepEqual(remaining.map((photo) => photo.url), [
+      "https://cdn.example.com/a.jpg",
+      "https://cdn.example.com/c.jpg",
+    ]);
+
+    // Renumbered from zero, so a later move cannot land on a stale gap.
+    const rows = await prisma.photoReference.findMany({
+      where: { itemId },
+      orderBy: { sortOrder: "asc" },
+    });
+    assert.deepEqual(rows.map((row) => row.sortOrder), [0, 1]);
+  });
+
+  it("refuses to change photos once the offer is frozen", async () => {
+    const created = await submitCustomerRequest(photoShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Hoya Callistophylla" }],
+    });
+    const itemId = created.items[0].id;
+    await addItemPhotos(photoShop, created.id, itemId, [
+      { url: "https://cdn.example.com/frozen.jpg" },
+    ]);
+    await updateRequestItem(photoShop, {
+      requestId: created.id,
+      itemId,
+      availability: "available",
+      price: 100,
+      weightLbs: 2,
+    });
+    await sendOffer(photoShop, created.id, 3);
+
+    const [photo] = await photosOf(created.id, itemId);
+    await assert.rejects(
+      () => removeItemPhoto(photoShop, created.id, itemId, photo.id),
+      /before an offer is sent/,
+    );
+    await assert.rejects(
+      () => moveItemPhoto(photoShop, created.id, itemId, photo.id, "down"),
+      /before an offer is sent/,
+    );
   });
 });
