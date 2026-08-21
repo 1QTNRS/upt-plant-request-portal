@@ -172,52 +172,74 @@ export async function createDraftOrderForRequest(
 
     shopifyDraftOrderGid = created.draftOrderCreate.draftOrder?.id;
     invoiceUrl = created.draftOrderCreate.draftOrder?.invoiceUrl ?? undefined;
-
-    if (shopifyDraftOrderGid) {
-      const sent = await adminGraphql<{
-        draftOrderInvoiceSend: {
-          draftOrder: { id: string; invoiceUrl: string | null } | null;
-          userErrors: Array<{ field: string[] | null; message: string }>;
-        };
-      }>(
-        admin,
-        `#graphql
-          mutation SendPlantRequestInvoice($id: ID!) {
-            draftOrderInvoiceSend(id: $id) {
-              draftOrder { id invoiceUrl }
-              userErrors { field message }
-            }
-          }
-        `,
-        { id: shopifyDraftOrderGid },
-      );
-
-      // A silent failure here means the customer never receives the Shopify
-      // invoice, so it has to surface rather than fall through to the
-      // "checkout pending" placeholder.
-      if (sent.draftOrderInvoiceSend.userErrors.length > 0) {
-        throw new Error(
-          sent.draftOrderInvoiceSend.userErrors
-            .map((error) => error.message)
-            .join("; "),
-        );
-      }
-      invoiceUrl =
-        sent.draftOrderInvoiceSend.draftOrder?.invoiceUrl ?? invoiceUrl;
-    }
   }
 
   if (!invoiceUrl) {
     invoiceUrl = `${customerLinksForShop(shop).requestDetail(input.requestId)}?checkout=pending`;
   }
 
+  // Recorded before the invoice is sent: the draft order already exists in
+  // Shopify at this point, and losing the reference would let a retry create a
+  // second one for the same request.
   await saveDraftOrderReference(shop, input.requestId, {
     shopifyDraftOrderGid,
     invoiceUrl,
     lineItems,
   });
 
+  if (admin && shopifyDraftOrderGid) {
+    await sendDraftOrderInvoice(admin, shopifyDraftOrderGid, input.requestNumber);
+  }
+
   return { invoiceUrl, shopifyDraftOrderGid, lineItems };
+}
+
+/**
+ * Asks Shopify to email its own invoice for the draft order.
+ *
+ * Best effort: the portal sends its own checkout email with the same invoice
+ * URL, so a failure here is logged rather than thrown — it must not undo a
+ * draft order the customer can already pay. The `userErrors` used to be
+ * discarded entirely, which hid a store with invoice emails misconfigured.
+ */
+async function sendDraftOrderInvoice(
+  admin: GraphqlClient,
+  draftOrderGid: string,
+  requestNumber: string,
+): Promise<void> {
+  try {
+    const sent = await adminGraphql<{
+      draftOrderInvoiceSend: {
+        draftOrder: { id: string } | null;
+        userErrors: Array<{ field: string[] | null; message: string }>;
+      };
+    }>(
+      admin,
+      `#graphql
+        mutation SendPlantRequestInvoice($id: ID!) {
+          draftOrderInvoiceSend(id: $id) {
+            draftOrder { id }
+            userErrors { field message }
+          }
+        }
+      `,
+      { id: draftOrderGid },
+    );
+
+    const errors = sent.draftOrderInvoiceSend.userErrors;
+    if (errors.length > 0) {
+      console.error(
+        `Shopify would not send the draft order invoice for ${requestNumber}: ${errors
+          .map((error) => error.message)
+          .join("; ")}`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Could not send the draft order invoice for ${requestNumber}.`,
+      error,
+    );
+  }
 }
 
 export { plantRevenueFromLines };
