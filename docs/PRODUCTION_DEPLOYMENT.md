@@ -139,6 +139,14 @@ and an incomplete `SCOPES` list are all rejected the same way.
    Customer requests are only served through Shopify's app proxy, which signs
    them. A 200 here would mean anyone could read customers' requests.
 
+5. Confirm which commit is live: **Render → upt-plant-request-portal → Events**
+   names the deployed commit. The service uses `autoDeployTrigger: checksPass`,
+   so it only picks up a commit after CI goes green — expect a few minutes'
+   lag after a push, and no deploy at all from a red build.
+
+   The commit is deliberately not exposed on `/healthz`; that endpoint is public
+   and unauthenticated.
+
 ---
 
 ## 4. Confirm the cron job — **account action**
