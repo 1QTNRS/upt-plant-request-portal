@@ -19,6 +19,7 @@ type EnvVar = {
   key?: string;
   value?: string;
   sync?: boolean;
+  generateValue?: boolean;
   fromDatabase?: { name: string; property: string };
   fromService?: { name: string; type: string; envVarKey?: string; property?: string };
   fromGroup?: string;
