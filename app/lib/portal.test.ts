@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildConfirmationEmail,
   buildDraftOrderLineItems,
+  buildExpirationReminderEmail,
   computeBehaviorFlags,
   formatCustomerStatusLabel,
   formatRequestNumber,
@@ -153,6 +154,38 @@ describe("confirmation email", () => {
     assert.match(email.bodyText, /https:\/\/checkout.example\/pay/);
     assert.doesNotMatch(email.bodyText, /Rejected/);
     assert.doesNotMatch(email.bodyText, /Fiddle Leaf/);
+  });
+});
+
+describe("expiration reminder email", () => {
+  const base = {
+    customerName: "Alex Rivera",
+    requestNumber: "REQ1",
+    expiresAt: "2026-08-22T12:00:00.000Z",
+    offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+  };
+
+  it("asks an unanswered customer to review the offer", () => {
+    const email = buildExpirationReminderEmail(base);
+    assert.match(email.subject, /expires soon/);
+    assert.match(email.bodyText, /Review your offer/);
+    assert.match(email.bodyText, /apps\/plant-requests/);
+  });
+
+  it("leads with the payment link when the customer already accepted", () => {
+    // This is the last thing they hear before the hold lapses, and "review your
+    // offer" is not what someone who has already accepted needs to do.
+    const email = buildExpirationReminderEmail({
+      ...base,
+      invoiceUrl: "https://shop.example.com/invoices/abc123",
+    });
+
+    assert.match(email.subject, /complete payment/i);
+    assert.ok(
+      email.bodyText.indexOf("https://shop.example.com/invoices/abc123") <
+        email.bodyText.indexOf(base.offerLink),
+    );
+    assert.doesNotMatch(email.bodyText, /Review your offer/);
   });
 });
 
