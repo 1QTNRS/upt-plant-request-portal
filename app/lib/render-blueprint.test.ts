@@ -35,6 +35,7 @@ type Service = {
   dockerCommand?: string;
   dockerfilePath?: string;
   healthCheckPath?: string;
+  autoDeployTrigger?: string;
   envVars?: EnvVar[];
 };
 
@@ -152,6 +153,25 @@ describe("Render blueprint: web service", () => {
   });
 });
 
+describe("Render blueprint: auto-deploys", () => {
+  // Render's documented values. `autoDeploy` is deprecated in favour of this
+  // field, and Render silently rejects an unrecognised value on apply.
+  const DOCUMENTED_TRIGGERS = ["commit", "checksPass", "off"];
+
+  for (const service of blueprint.services ?? []) {
+    it(`${service.name} waits for CI instead of deploying every commit`, () => {
+      assert.ok(
+        DOCUMENTED_TRIGGERS.includes(service.autoDeployTrigger ?? ""),
+        `autoDeployTrigger "${service.autoDeployTrigger}" is not one of ${DOCUMENTED_TRIGGERS.join(", ")}`,
+      );
+      // CI runs the full suite against both SQLite and PostgreSQL. Omitting the
+      // field would default a new service to `commit`, which puts unverified
+      // code in front of the store.
+      assert.equal(service.autoDeployTrigger, "checksPass");
+    });
+  }
+});
+
 describe("Render blueprint: cron job", () => {
   it("runs a script that exists", () => {
     const command = cron?.startCommand ?? cron?.dockerCommand ?? "";
@@ -186,6 +206,35 @@ describe("Render blueprint: cron job", () => {
     const hostname = envVar(cron, "APP_HOSTNAME");
     assert.equal(hostname?.fromService?.envVarKey, "RENDER_EXTERNAL_HOSTNAME");
     assert.equal(hostname?.fromService?.name, web?.name);
+  });
+
+  it("pins the Node version instead of letting Render infer one", () => {
+    // package.json `engines` has no upper bound (">=22.12"), and Render resolves
+    // it with node-version-alias, which returns the newest release in existence.
+    // Without this pin the job would silently follow Node's release train.
+    const pinned = envVar(cron, "NODE_VERSION")?.value;
+    assert.ok(pinned, "the cron job must pin NODE_VERSION");
+    const dockerfile = readFileSync(path.join(REPO_ROOT, "Dockerfile"), "utf8");
+    const imageMajor = dockerfile.match(/^FROM node:(\d+)/m)?.[1];
+    assert.equal(
+      pinned.split(".")[0],
+      imageMajor,
+      "the cron job runs a different Node major than the web service image",
+    );
+  });
+
+  it("skips the dependency install, having no dependencies to install", () => {
+    assert.equal(envVar(cron, "SKIP_INSTALL_DEPS")?.value, "true");
+    const script = readFileSync(
+      path.join(REPO_ROOT, "scripts", "run-offer-maintenance.mjs"),
+      "utf8",
+    );
+    for (const [, specifier] of script.matchAll(/^import .* from "([^"]+)";/gm)) {
+      assert.ok(
+        specifier.startsWith("node:"),
+        `${specifier} is not a builtin, so SKIP_INSTALL_DEPS would break the job`,
+      );
+    }
   });
 
   it("posts to the route the app serves", () => {
