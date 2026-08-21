@@ -211,6 +211,41 @@ describe("declined exact plant listings", () => {
     assert.equal(listingCount, 1);
   });
 
+  it("lets only one of two simultaneous approvals create the product", async () => {
+    const { availableId } = await createOfferedRequest();
+    const approve = () =>
+      createExactPlantListing(undefined, shop, {
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        photoUrls: [],
+      });
+
+    // Two admin clicks, or one click and a retried POST. Before the claim both
+    // passed the "already listed?" read and both called productCreate, leaving
+    // a published product in the store that no row pointed at.
+    const results = await Promise.allSettled([approve(), approve()]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+
+    assert.equal(fulfilled.length, 1, "exactly one approval may create the product");
+    assert.equal(rejected.length, 1);
+    assert.match(
+      (rejected[0] as PromiseRejectedResult).reason.message,
+      /already being listed/,
+    );
+
+    assert.equal(
+      await prisma.exactPlantListing.count({ where: { requestItemId: availableId } }),
+      1,
+    );
+    const row = await prisma.exactPlantListing.findUnique({
+      where: { requestItemId: availableId },
+    });
+    assert.equal(row?.status, "listed");
+  });
+
   it("keeps the rejection and allows an idempotent retry after listing failure", async () => {
     const { request, availableId } = await createOfferedRequest();
     const failingAdmin = {
