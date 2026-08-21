@@ -7,7 +7,7 @@ import {
 } from "../components/customer-request-portal";
 import { loadCustomerPortal } from "../lib/customer-portal.server";
 import {
-  portalHome,
+  portalRedirectTarget,
   readPlantLines,
   withExtraRow,
   withoutRow,
@@ -50,7 +50,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { context } = await loadCustomerPortal(request);
-  const home = portalHome(context);
+  const home = portalRedirectTarget(context);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
 
