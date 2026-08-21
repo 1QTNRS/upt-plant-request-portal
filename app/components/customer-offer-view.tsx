@@ -178,6 +178,7 @@ export function CustomerOfferView({
   submittedChoices,
   fedexSelected = true,
   pendingFedexRemoval = false,
+  error,
 }: {
   offer: SampleCustomerOffer | null;
   response: CustomerOfferResponse | null;
@@ -197,6 +198,8 @@ export function CustomerOfferView({
   fedexSelected?: boolean;
   /** Set when the customer unchecked FedEx and has to confirm the warning. */
   pendingFedexRemoval?: boolean;
+  /** Validation message from the last submission, e.g. an unanswered plant. */
+  error?: string | null;
 }) {
   const [photoLightbox, setPhotoLightbox] = useState<PhotoLightboxState | null>(
     null,
@@ -373,14 +376,16 @@ export function CustomerOfferView({
             </s-banner>
             <form method="post" action={formAction}>
               <input type="hidden" name="fedexRemovalAcknowledged" value="true" />
-              {purchasable.map((item) => (
-                <input
-                  key={item.id}
-                  type="hidden"
-                  name={`choice-${item.sourceItemId}`}
-                  value={submittedChoices?.[item.sourceItemId] ?? "accept"}
-                />
-              ))}
+              {purchasable
+                .filter((item) => submittedChoices?.[item.sourceItemId])
+                .map((item) => (
+                  <input
+                    key={item.id}
+                    type="hidden"
+                    name={`choice-${item.sourceItemId}`}
+                    value={submittedChoices![item.sourceItemId]}
+                  />
+                ))}
               <s-stack direction="inline" gap="small">
                 <button
                   type="submit"
@@ -404,15 +409,28 @@ export function CustomerOfferView({
         </s-section>
       ) : (
         <form method="post" action={formAction}>
+          {error ? (
+            <s-section>
+              <s-banner tone="critical">
+                <s-text>{error}</s-text>
+              </s-banner>
+            </s-section>
+          ) : null}
+
           <s-section heading="Plants offered to you">
             <s-stack direction="block" gap="base">
+              <s-text color="subdued">
+                Choose Accept or Reject for each available plant. Nothing is
+                selected for you.
+              </s-text>
               {offer.items.map((item) => (
                 <OfferItemCard
                   key={item.id}
                   item={item}
                   choice={
-                    submittedChoices?.[item.sourceItemId] ??
-                    (item.availability === "available" ? "accept" : "unavailable")
+                    item.availability === "available"
+                      ? submittedChoices?.[item.sourceItemId]
+                      : "unavailable"
                   }
                   onOpenPhotos={() =>
                     setPhotoLightbox({
@@ -507,7 +525,8 @@ function OfferItemCard({
   onOpenPhotos,
 }: {
   item: OfferPlantItem;
-  choice: ItemChoice;
+  /** Undefined until the customer picks one; nothing is pre-selected. */
+  choice?: ItemChoice;
   onOpenPhotos: () => void;
 }) {
   const available = item.availability === "available";

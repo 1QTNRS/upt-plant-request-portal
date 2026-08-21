@@ -264,6 +264,13 @@ opened on the storefront.
 derived from the offer, so a forged field cannot make an unavailable plant
 purchasable.
 
+**Nothing is pre-selected.** Every available plant needs a deliberate Accept or
+Reject: the radios carry `required`, and — because that only binds a real
+browser — `handleCustomerOfferAction` refuses a submission that leaves any
+available plant unanswered, naming each one, rather than defaulting to `accept`.
+Do not reintroduce a default; a pre-checked Accept turns an unread offer into a
+purchase for anyone who just presses Submit.
+
 The photo lightbox is the one remaining piece of client state. It is decorative
 and nothing about checkout depends on it.
 

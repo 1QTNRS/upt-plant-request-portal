@@ -91,6 +91,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       pendingFedexRemoval: false,
       submittedChoices: choices,
       fedexSelected: true,
+      error: null as string | null,
     };
   }
 
@@ -107,6 +108,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       pendingFedexRemoval: true,
       submittedChoices: choices,
       fedexSelected: false,
+      error: null as string | null,
     };
   }
 
@@ -120,7 +122,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     form,
     admin,
   });
-  return { ...result, pendingFedexRemoval: false, submittedChoices: choices };
+  return {
+    error: null as string | null,
+    ...result,
+    pendingFedexRemoval: false,
+    submittedChoices: choices,
+  };
 };
 
 export default function CustomerRequestDetail() {
@@ -179,6 +186,7 @@ export default function CustomerRequestDetail() {
       submittedChoices={actionData?.submittedChoices}
       fedexSelected={actionData?.fedexSelected ?? true}
       pendingFedexRemoval={actionData?.pendingFedexRemoval ?? false}
+      error={actionData?.error ?? null}
     />
   );
 }

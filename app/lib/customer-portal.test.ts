@@ -199,6 +199,41 @@ describe("the offer response works without JavaScript", () => {
     }
   });
 
+  it("pre-selects nothing, so every answer is deliberate", () => {
+    // A pre-checked Accept turns an unread offer into a purchase for anyone who
+    // just presses Submit.
+    assert.ok(
+      !/submittedChoices\?\.\[item\.sourceItemId\] \?\?\s*\n?\s*\(item\.availability === "available" \? "accept"/.test(
+        source,
+      ),
+      "an available plant must not default to accept",
+    );
+    assert.match(source, /required/);
+  });
+
+  it("does not invent an answer when carrying choices through the FedEx warning", () => {
+    assert.ok(
+      !/name=\{`choice-\$\{item\.sourceItemId\}`\}\s*\n\s*value=\{submittedChoices\?\.\[item\.sourceItemId\] \?\? "accept"\}/.test(
+        source,
+      ),
+    );
+    assert.match(source, /\.filter\(\(item\) => submittedChoices\?\.\[item\.sourceItemId\]\)/);
+  });
+
+  it("never defaults a missing choice to accept on the server", () => {
+    // `required` is a browser-only guard; the server is what actually protects
+    // the customer from an unanswered plant becoming a purchase.
+    const server = readFileSync(
+      path.join(REPO_ROOT, "app", "lib", "offer-response.server.ts"),
+      "utf8",
+    );
+    assert.ok(
+      !server.includes('|| "accept"'),
+      "a missing choice must be refused, not treated as an accept",
+    );
+    assert.match(server, /missingChoices/);
+  });
+
   it("holds no client state for anything that affects checkout", () => {
     // The photo lightbox is the only remaining state and is decorative.
     const stateHooks = [...source.matchAll(/useState<([^>]*)>/g)].map((m) => m[1]);
