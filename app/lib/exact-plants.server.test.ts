@@ -225,25 +225,87 @@ describe("declined exact plant listings", () => {
     // Two admin clicks, or one click and a retried POST. Before the claim both
     // passed the "already listed?" read and both called productCreate, leaving
     // a published product in the store that no row pointed at.
+    //
+    // Whether the two calls interleave or the first finishes before the second
+    // starts depends on how fast the database is, so the assertion is on the
+    // outcome either ordering has to produce: one plant, one product.
     const results = await Promise.allSettled([approve(), approve()]);
-    const fulfilled = results.filter((r) => r.status === "fulfilled");
-    const rejected = results.filter((r) => r.status === "rejected");
-
-    assert.equal(fulfilled.length, 1, "exactly one approval may create the product");
-    assert.equal(rejected.length, 1);
-    assert.match(
-      (rejected[0] as PromiseRejectedResult).reason.message,
-      /already being listed/,
-    );
+    const listed = results
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => (r as PromiseFulfilledResult<{ shopifyProductGid?: string | null }>).value);
+    const refused = results.filter((r) => r.status === "rejected");
 
     assert.equal(
       await prisma.exactPlantListing.count({ where: { requestItemId: availableId } }),
       1,
+      "one declined item gets one listing row",
     );
+    assert.equal(new Set(listed.map((row) => row.shopifyProductGid)).size, 1);
+    for (const rejection of refused) {
+      assert.match(
+        (rejection as PromiseRejectedResult).reason.message,
+        /already being listed/,
+      );
+    }
+
     const row = await prisma.exactPlantListing.findUnique({
       where: { requestItemId: availableId },
     });
     assert.equal(row?.status, "listed");
+  });
+
+  it("refuses an approval while another is already creating the product", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        status: "creating",
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        createExactPlantListing(undefined, shop, {
+          requestItemId: availableId,
+          title: "Thai Constellation Showcase",
+          price: 189,
+          weightLbs: 9.5,
+          photoUrls: [],
+        }),
+      /already being listed/,
+    );
+  });
+
+  it("takes over a claim left behind by a process that died", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        status: "creating",
+      },
+    });
+    // Older than the stale-claim window, so the plant does not stay unlistable.
+    await prisma.exactPlantListing.update({
+      where: { requestItemId: availableId },
+      data: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    const created = await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Thai Constellation Showcase",
+      price: 189,
+      weightLbs: 9.5,
+      photoUrls: [],
+    });
+    assert.equal(created.status, "listed");
   });
 
   it("keeps the rejection and allows an idempotent retry after listing failure", async () => {
