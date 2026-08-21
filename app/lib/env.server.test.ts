@@ -11,6 +11,7 @@ import {
   resolveScopes,
   withConnectionLimit,
 } from "./env.server";
+import { missingProductionSecrets } from "./environment.server";
 
 const VALID_PRODUCTION_ENV: NodeJS.ProcessEnv = {
   NODE_ENV: "production",
@@ -60,6 +61,47 @@ describe("production environment validation", () => {
       SHOPIFY_APP_URL: "http://portal.example.com",
     });
     assert.deepEqual(problems, ["SHOPIFY_APP_URL"]);
+  });
+
+  it("rejects an EMAIL_FROM Resend cannot send from", () => {
+    for (const value of ["noreply", "UPT Plant Requests", "noreply@localhost"]) {
+      assert.deepEqual(
+        problemVariables({ ...VALID_PRODUCTION_ENV, EMAIL_FROM: value }),
+        ["EMAIL_FROM"],
+        `${value} should be rejected`,
+      );
+    }
+  });
+
+  it("accepts EMAIL_FROM with or without a display name", () => {
+    for (const value of [
+      "noreply@unsolicitedplanttalks.com",
+      "UPT Plant Requests <noreply@unsolicitedplanttalks.com>",
+    ]) {
+      assert.deepEqual(
+        productionEnvProblems({ ...VALID_PRODUCTION_ENV, EMAIL_FROM: value }),
+        [],
+        `${value} should be accepted`,
+      );
+    }
+  });
+
+  it("does not refuse to boot merely because EMAIL_FROM is unset", () => {
+    // It falls back to DEFAULT_EMAIL_FROM, and taking a running deploy down
+    // over it would be worse than the fallback. Settings reports it instead.
+    assert.deepEqual(productionEnvProblems(VALID_PRODUCTION_ENV), []);
+
+    const original = process.env.EMAIL_FROM;
+    delete process.env.EMAIL_FROM;
+    try {
+      const reported = missingProductionSecrets().find(
+        (secret) => secret.name === "EMAIL_FROM",
+      );
+      assert.ok(reported, "Settings must name it");
+      assert.match(reported.reason, /noreply@unsolicitedplanttalks\.com/);
+    } finally {
+      if (original !== undefined) process.env.EMAIL_FROM = original;
+    }
   });
 
   it("rejects the customer demo login in production", () => {

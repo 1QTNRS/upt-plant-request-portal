@@ -57,11 +57,14 @@ describe("customers/data_request", () => {
     assert.equal(exports[0].customer.name, "James Chen");
   });
 
-  it("queues the export to the configured admin address", async () => {
+  it("hands the export to the outbox rather than leaving it in the table", async () => {
     await prisma.emailMessage.deleteMany({
       where: { shop, templateKey: "compliance_data_request" },
     });
-    await handleCustomerDataRequest(shop, { customer: { id: 7654321 } });
+    await handleCustomerDataRequest(shop, {
+      customer: { id: 7654321 },
+      data_request: { id: 55501 },
+    });
 
     const queued = await prisma.emailMessage.findFirst({
       where: { shop, templateKey: "compliance_data_request" },
@@ -69,6 +72,34 @@ describe("customers/data_request", () => {
     assert.ok(queued, "a data request must produce an outbox message");
     assert.equal(queued.toEmail, ADMIN_EMAIL);
     assert.match(queued.bodyText, /alex\.rivera@example\.com/);
+    // Nothing reads a `queued` row. Writing one straight to the table left this
+    // export undelivered while the webhook logged success — and this is one of
+    // Shopify's mandatory privacy topics, with a response deadline attached.
+    assert.notEqual(
+      queued.status,
+      "queued",
+      "delivery must have been attempted, not merely recorded",
+    );
+    assert.equal(queued.idempotencyKey, "compliance_data_request:55501");
+  });
+
+  it("produces one export when Shopify redelivers the same request", async () => {
+    await prisma.emailMessage.deleteMany({
+      where: { shop, templateKey: "compliance_data_request" },
+    });
+    const payload = {
+      customer: { id: 7654321 },
+      data_request: { id: 55502 },
+    };
+    await handleCustomerDataRequest(shop, payload);
+    await handleCustomerDataRequest(shop, payload);
+
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: { shop, templateKey: "compliance_data_request" },
+      }),
+      1,
+    );
   });
 
   it("returns nothing when the payload identifies no customer", async () => {
