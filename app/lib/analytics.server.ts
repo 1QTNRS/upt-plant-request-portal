@@ -141,15 +141,29 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     )
     .reduce((sum, request) => sum + plantRevenue(request), 0);
 
+  // Closed does not mean paid: a customer closing their own request, or an
+  // admin closing one by hand, leaves paidAt null. Counting those as revenue
+  // reported money nobody sent, and reported it right beside a correctly-zero
+  // "revenue this month" — the larger, wrong number being the one that reads
+  // like a total.
   const revenueFromClosed = requests
-    .filter((request) => request.status === "Closed")
+    .filter((request) => request.status === "Closed" && request.paidAt)
     .reduce((sum, request) => sum + plantRevenue(request), 0);
 
   const revenueLostExpired = requests
     .filter((request) => request.status === "Expired")
     .reduce((sum, request) => {
+      const declined = new Set(
+        (request.response?.items ?? [])
+          .filter((item) => item.choice === "reject")
+          .map((item) => item.requestItemId),
+      );
+      // A plant the customer turned down was never at risk of being lost to a
+      // missed deadline, and counting it here also double-counts it against
+      // releasedItems.customerDeclined, which the two are kept apart to avoid.
       const offered = (request.offer?.items ?? []).filter(
-        (item) => item.availability === "available",
+        (item) =>
+          item.availability === "available" && !declined.has(item.requestItemId),
       );
       return (
         sum +
