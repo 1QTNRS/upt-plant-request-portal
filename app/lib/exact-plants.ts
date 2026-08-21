@@ -167,17 +167,28 @@ export function shopifyStorefrontProductUrl(
   return `https://${shop}/products/${handle}`;
 }
 
-export function isOnlineStorePublicationTitle(title: string): boolean {
-  return title.trim().toLowerCase() === "online store";
+/**
+ * Sales channels are identified by the handle of the app behind the
+ * publication, not by the catalog title.
+ *
+ * `Publication.catalog` is null unless the query filters on a `catalogType`,
+ * and with `catalogType: APP` the title reads "Channel Catalog <id> for Online
+ * Store" and is translated into the merchant's admin language. The app handle
+ * is stable and untranslated.
+ */
+export const ONLINE_STORE_APP_HANDLE = "online_store";
+export const POS_APP_HANDLE = "point_of_sale";
+
+export function isOnlineStorePublicationHandle(
+  handle: string | null | undefined,
+): boolean {
+  return handle?.trim().toLowerCase() === ONLINE_STORE_APP_HANDLE;
 }
 
-export function isPosPublicationTitle(title: string): boolean {
-  const normalized = title.trim().toLowerCase();
-  return (
-    normalized === "point of sale" ||
-    normalized === "pos" ||
-    normalized === "shopify pos"
-  );
+export function isPosPublicationHandle(
+  handle: string | null | undefined,
+): boolean {
+  return handle?.trim().toLowerCase() === POS_APP_HANDLE;
 }
 
 /**
@@ -213,6 +224,58 @@ export function exactPlantMediaError(
     "None of the selected photos are hosted where Shopify can fetch them. " +
     "Re-upload the photos on the request so they are stored in Shopify Files, then approve the listing again."
   );
+}
+
+/**
+ * An EXACT PLANTS listing is one specific physical plant, so the variant has to
+ * track inventory and refuse oversell. Without this the default variant is
+ * untracked — unlimited stock — and the same plant can be sold repeatedly.
+ */
+export function buildExactPlantVariantInput(input: {
+  variantId: string;
+  price: number;
+  weightLbs: number;
+}) {
+  return {
+    id: input.variantId,
+    price: normalizePrice(input.price).toFixed(2),
+    inventoryPolicy: "DENY" as const,
+    inventoryItem: {
+      tracked: true,
+      measurement: {
+        weight: { value: normalizeWeight(input.weightLbs), unit: "POUNDS" as const },
+      },
+    },
+  };
+}
+
+/** There is exactly one of each exact plant. */
+export const EXACT_PLANT_STOCK_QUANTITY = 1;
+
+/**
+ * `ignoreCompareQuantity` is deprecated in 2025-10 but still mandatory there:
+ * without it, or a `compareQuantity` on every entry, Shopify rejects the
+ * mutation with "The compareQuantity argument must be given to each quantity or
+ * ignored using ignoreCompareQuantity". Its replacement,
+ * `InventoryQuantityInput.changeFromQuantity`, does not exist until 2026-01, so
+ * this has to be revisited when the API version is bumped.
+ */
+export function buildExactPlantInventoryInput(input: {
+  inventoryItemId: string;
+  locationId: string;
+}) {
+  return {
+    name: "available",
+    reason: "correction",
+    ignoreCompareQuantity: true,
+    quantities: [
+      {
+        inventoryItemId: input.inventoryItemId,
+        locationId: input.locationId,
+        quantity: EXACT_PLANT_STOCK_QUANTITY,
+      },
+    ],
+  };
 }
 
 export function buildExactPlantProductCreateInput(input: {

@@ -172,6 +172,7 @@ export async function handleCustomerOfferAction(input: {
           0,
       })),
       fedexSelected: fedexUpgradeSelected,
+      fedexPrice: saved.fedexUpgradePrice,
     });
   } catch (error) {
     console.error(

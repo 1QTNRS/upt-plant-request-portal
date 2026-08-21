@@ -163,15 +163,24 @@ describe("granted scope warning", () => {
 
   it("stays silent for the scope string a correctly installed store reports", () => {
     // Verbatim from the offline session on upt-plant-request-dev.myshopify.com
-    // after approving every requested scope. Shopify folds each `read_x` into
-    // the `write_x` that implies it.
+    // after approving every requested scope, plus write_inventory, which the
+    // app started calling later. Shopify folds each `read_x` into the `write_x`
+    // that implies it.
     assert.equal(
       grantedScopeWarning(
         "read_customers,read_orders,write_app_proxy,write_draft_orders," +
-          "write_files,write_products,write_publications",
+          "write_files,write_inventory,write_products,write_publications",
       ),
       null,
     );
+  });
+
+  it("asks a token issued before write_inventory to re-approve", () => {
+    const warning = grantedScopeWarning(
+      "read_customers,read_orders,write_app_proxy,write_draft_orders," +
+        "write_files,write_products,write_publications",
+    );
+    assert.match(warning ?? "", /write_inventory/);
   });
 
   it("counts a write scope as granting the read scope it implies", () => {

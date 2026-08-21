@@ -234,6 +234,7 @@ export async function updateShopSettings(
     fedexRemovalWarning?: string;
     adminNotificationEmail?: string;
     fedexVariantGid?: string | null;
+    fedexUpgradePrice?: number;
   },
 ) {
   await getShopSettings(shop);
@@ -251,6 +252,9 @@ export async function updateShopSettings(
         : {}),
       ...(data.fedexVariantGid !== undefined
         ? { fedexVariantGid: data.fedexVariantGid }
+        : {}),
+      ...(data.fedexUpgradePrice !== undefined
+        ? { fedexUpgradePrice: normalizePrice(data.fedexUpgradePrice) }
         : {}),
     },
   });

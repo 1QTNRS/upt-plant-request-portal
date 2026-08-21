@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import prisma from "../db.server";
 import { DEMO_SHOP } from "./shop";
 import {
+  buildCustomerOffer,
   closeRequest,
   getCustomerResponse,
   getRequest,
@@ -14,6 +15,7 @@ import {
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
+  updateShopSettings,
 } from "./portal.server";
 import { ensureShopSeeded } from "./seed-demo.server";
 import { matchesAdminSearch } from "./portal";
@@ -154,6 +156,49 @@ describe("plant request persistence", () => {
     assert.equal(closed?.status, "Closed");
     const reloaded = await getRequest(shop, created.id);
     assert.ok(reloaded?.closedAt);
+  });
+});
+
+describe("FedEx upgrade price", () => {
+  const fedexShop = `${DEMO_SHOP}-fedex`;
+
+  const reset = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: fedexShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: fedexShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: fedexShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: fedexShop } });
+  };
+
+  before(reset);
+  after(reset);
+
+  it("is what the offer quotes once the live variant price is stored", async () => {
+    // Nothing ever wrote this column, so every offer quoted, emailed and froze
+    // the default of 15 while Shopify billed the live variant price.
+    assert.equal((await getShopSettings(fedexShop)).fedexUpgradePrice, 15);
+
+    await updateShopSettings(fedexShop, {
+      fedexVariantGid: "gid://shopify/ProductVariant/42",
+      fedexUpgradePrice: 24.5,
+    });
+    assert.equal((await getShopSettings(fedexShop)).fedexUpgradePrice, 24.5);
+
+    const request = await submitCustomerRequest(fedexShop, {
+      name: "Fedex Tester",
+      email: "fedex@example.com",
+      items: [{ plantName: "Monstera Peru" }],
+    });
+    await updateRequestItem(fedexShop, {
+      requestId: request.id,
+      itemId: request.items[0].id,
+      price: 92,
+      weightLbs: 2,
+      availability: "available",
+    });
+    await sendOffer(fedexShop, request.id, 3);
+
+    const offer = await buildCustomerOffer(fedexShop, request.id);
+    assert.equal(offer?.fedexUpgradePrice, 24.5);
   });
 });
 

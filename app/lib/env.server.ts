@@ -25,6 +25,10 @@ export const REQUIRED_SHOPIFY_SCOPES = [
   "write_products",
   "read_publications",
   "write_publications",
+  // An EXACT PLANTS listing is one physical plant, so its variant has to track
+  // stock. Reading `Location.id` to know where to stock it is covered by the
+  // inventory scopes; every other Location field would need read_locations.
+  "write_inventory",
   // Required to configure the app proxy that serves the storefront customer
   // portal. See https://shopify.dev/docs/apps/build/online-store/app-proxies
   "write_app_proxy",

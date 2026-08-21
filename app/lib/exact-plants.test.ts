@@ -10,8 +10,8 @@ import {
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
   isExactPlantEligible,
-  isOnlineStorePublicationTitle,
-  isPosPublicationTitle,
+  isOnlineStorePublicationHandle,
+  isPosPublicationHandle,
 } from "./exact-plants";
 
 /** An available plant offered on a request that has not been paid. */
@@ -226,10 +226,28 @@ describe("shopify product payload", () => {
   });
 
   it("matches Online Store and POS publications only", () => {
-    assert.equal(isOnlineStorePublicationTitle("Online Store"), true);
-    assert.equal(isPosPublicationTitle("Point of Sale"), true);
-    assert.equal(isPosPublicationTitle("POS"), true);
-    assert.equal(isOnlineStorePublicationTitle("Shop"), false);
-    assert.equal(isPosPublicationTitle("Google & YouTube"), false);
+    assert.equal(isOnlineStorePublicationHandle("online_store"), true);
+    assert.equal(isPosPublicationHandle("point_of_sale"), true);
+    assert.equal(isOnlineStorePublicationHandle("shop"), false);
+    assert.equal(isPosPublicationHandle("google_and_youtube"), false);
+    assert.equal(isOnlineStorePublicationHandle("point_of_sale"), false);
+    assert.equal(isPosPublicationHandle("online_store"), false);
+  });
+
+  it("does not match on the catalog title, which Shopify translates", () => {
+    // With `catalogType: APP` the catalog title reads "Channel Catalog 123 for
+    // Online Store" in English and is translated in other admin languages.
+    assert.equal(isOnlineStorePublicationHandle("Online Store"), false);
+    assert.equal(
+      isOnlineStorePublicationHandle("Channel Catalog 123 for Online Store"),
+      false,
+    );
+    assert.equal(isPosPublicationHandle("Point of Sale"), false);
+  });
+
+  it("treats a publication with no app handle as no match", () => {
+    assert.equal(isOnlineStorePublicationHandle(null), false);
+    assert.equal(isPosPublicationHandle(undefined), false);
+    assert.equal(isOnlineStorePublicationHandle(""), false);
   });
 });

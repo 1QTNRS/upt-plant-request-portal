@@ -502,6 +502,19 @@ export function draftOrderIdempotencyTag(requestId: string): string {
 }
 
 /**
+ * A Shopify search query matching one exact tag.
+ *
+ * The quotes are load-bearing. Every idempotency tag the portal writes contains
+ * a colon, which Shopify's search syntax reads as a field/value separator, so
+ * an unquoted `tag:upt-declined-item:abc` searches for the tag
+ * `upt-declined-item` plus a loose term — matching a different plant's product
+ * and applying this plant's title and price to it.
+ */
+export function tagSearchQuery(tag: string): string {
+  return `tag:'${tag}'`;
+}
+
+/**
  * Variables for `draftOrderCreate`. Kept pure and separate from the API call so
  * `scripts/validate-admin-graphql.mjs` can check the payload against the real
  * `DraftOrderInput` type — a document can be valid while its variables use a
@@ -524,10 +537,19 @@ export function buildDraftOrderInput(input: {
       draftOrderIdempotencyTag(input.requestId),
     ],
     lineItems: input.lineItems.map((line) => {
-      // A real variant carries its own price and weight; Shopify ignores those
-      // fields when `variantId` is set.
+      // The real variant carries the weight, but not the price: the customer
+      // was quoted, emailed and shown an amount when they answered the offer,
+      // and Shopify must bill that rather than whatever the variant costs by
+      // the time they open the invoice.
       if (line.kind === "fedex" && input.fedexVariantGid) {
-        return { variantId: input.fedexVariantGid, quantity: 1 };
+        return {
+          variantId: input.fedexVariantGid,
+          quantity: 1,
+          originalUnitPriceWithCurrency: {
+            amount: line.price.toFixed(2),
+            currencyCode: input.currencyCode,
+          },
+        };
       }
       return {
         title: line.title,

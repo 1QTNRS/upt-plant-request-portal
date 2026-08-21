@@ -1,11 +1,15 @@
 import type { AdminContext } from "./admin-auth.server";
 import { customerLinksForShop } from "./customer-links.server";
 import {
+  buildExactPlantInventoryInput,
+  buildExactPlantVariantInput,
   declinedItemTag,
   exactPlantMediaError,
   EXACT_PLANTS_COLLECTION_TITLE,
-  isOnlineStorePublicationTitle,
-  isPosPublicationTitle,
+  isOnlineStorePublicationHandle,
+  isPosPublicationHandle,
+  ONLINE_STORE_APP_HANDLE,
+  POS_APP_HANDLE,
   buildExactPlantProductCreateInput,
 } from "./exact-plants";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
@@ -15,6 +19,7 @@ import {
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
   plantRevenueFromLines,
+  tagSearchQuery,
   type DraftOrderLineItem,
 } from "./portal";
 import {
@@ -74,11 +79,40 @@ export async function resolveFedexVariant(
 
   const variant = data.productByIdentifier?.variants.nodes[0];
   if (variant) {
-    await updateShopSettings(shop, { fedexVariantGid: variant.id });
-    return { variantGid: variant.id, price: Number.parseFloat(variant.price) || settings.fedexUpgradePrice };
+    const price = Number.parseFloat(variant.price) || settings.fedexUpgradePrice;
+    // The stored price is what the offer quotes, the confirmation email states
+    // and the response snapshot freezes. Nothing else ever wrote it, so it sat
+    // at its default of 15 while Shopify billed the live variant price.
+    await updateShopSettings(shop, {
+      fedexVariantGid: variant.id,
+      fedexUpgradePrice: price,
+    });
+    return { variantGid: variant.id, price };
   }
 
   return { variantGid: settings.fedexVariantGid ?? undefined, price: settings.fedexUpgradePrice };
+}
+
+/**
+ * Brings the stored FedEx upgrade price back in line with Shopify before an
+ * offer freezes it.
+ *
+ * Best effort: quoting a stale price is bad, but refusing to send the offer at
+ * all because Shopify is unreachable is worse.
+ */
+export async function refreshFedexUpgradePrice(
+  admin: GraphqlClient | undefined,
+  shop: string,
+): Promise<void> {
+  if (!admin) return;
+  try {
+    await resolveFedexVariant(admin, shop);
+  } catch (error) {
+    console.error(
+      `Could not refresh the FedEx upgrade price for ${shop}; the offer will quote the stored price.`,
+      error,
+    );
+  }
 }
 
 /**
@@ -127,7 +161,7 @@ async function findDraftOrderByRequestTag(
         }
       }
     `,
-    { query: `tag:'${draftOrderIdempotencyTag(requestId)}'` },
+    { query: tagSearchQuery(draftOrderIdempotencyTag(requestId)) },
   );
   return data.draftOrders.nodes[0] ?? null;
 }
@@ -146,6 +180,8 @@ export async function createDraftOrderForRequest(
       weightLbs: number;
     }>;
     fedexSelected: boolean;
+    /** The upgrade price frozen into the customer's response. */
+    fedexPrice?: number;
   },
 ): Promise<{ invoiceUrl: string; shopifyDraftOrderGid?: string; lineItems: DraftOrderLineItem[] }> {
   // A draft order already recorded for this request is authoritative. Never
@@ -168,7 +204,7 @@ export async function createDraftOrderForRequest(
     acceptedItems: input.acceptedItems,
     fedexSelected: input.fedexSelected,
     fedexLabel: settings.fedexUpgradeLabel,
-    fedexPrice: fedex.price,
+    fedexPrice: input.fedexPrice ?? fedex.price,
   });
 
   if (lineItems.length === 0) {
@@ -503,17 +539,26 @@ function userErrorMessage(
   return message || fallback;
 }
 
+type ExactPlantProduct = {
+  id: string;
+  handle: string;
+  variantId?: string;
+  inventoryItemId?: string;
+};
+
 export async function findExactPlantProductByItemTag(
   admin: GraphqlClient,
   requestItemId: string,
-): Promise<{ id: string; handle: string; variantId?: string } | null> {
+): Promise<ExactPlantProduct | null> {
   const tag = declinedItemTag(requestItemId);
   const data = await adminGraphql<{
     products: {
       nodes: Array<{
         id: string;
         handle: string;
-        variants: { nodes: Array<{ id: string }> };
+        variants: {
+          nodes: Array<{ id: string; inventoryItem: { id: string } }>;
+        };
       }>;
     };
   }>(
@@ -524,20 +569,27 @@ export async function findExactPlantProductByItemTag(
           nodes {
             id
             handle
-            variants(first: 1) { nodes { id } }
+            variants(first: 1) {
+              nodes {
+                id
+                inventoryItem { id }
+              }
+            }
           }
         }
       }
     `,
-    { query: `tag:${tag}` },
+    { query: tagSearchQuery(tag) },
   );
 
   const product = data.products.nodes[0];
   if (!product) return null;
+  const variant = product.variants.nodes[0];
   return {
     id: product.id,
     handle: product.handle,
-    variantId: product.variants.nodes[0]?.id,
+    variantId: variant?.id,
+    inventoryItemId: variant?.inventoryItem.id,
   };
 }
 
@@ -623,12 +675,23 @@ async function addProductToCollection(
   }
 }
 
+/**
+ * `catalogType: APP` is required: without it Shopify returns `catalog: null`
+ * for every publication, so nothing ever matched and no listing could be
+ * published.
+ */
 const PUBLICATIONS_QUERY = `#graphql
   query SalesChannelPublications($after: String) {
-    publications(first: 50, after: $after) {
+    publications(first: 50, after: $after, catalogType: APP) {
       nodes {
         id
-        catalog { title }
+        catalog {
+          ... on AppCatalog {
+            apps(first: 1) {
+              nodes { handle }
+            }
+          }
+        }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -647,17 +710,20 @@ export async function resolveOnlineStoreAndPosPublications(
   do {
     const data: {
       publications: {
-        nodes: Array<{ id: string; catalog?: { title?: string | null } | null }>;
+        nodes: Array<{
+          id: string;
+          catalog?: { apps?: { nodes: Array<{ handle?: string | null }> } } | null;
+        }>;
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
       };
     } = await adminGraphql(admin, PUBLICATIONS_QUERY, { after });
 
     for (const publication of data.publications.nodes) {
-      const title = publication.catalog?.title ?? "";
-      if (!onlineStoreId && isOnlineStorePublicationTitle(title)) {
+      const handle = publication.catalog?.apps?.nodes[0]?.handle;
+      if (!onlineStoreId && isOnlineStorePublicationHandle(handle)) {
         onlineStoreId = publication.id;
       }
-      if (!posId && isPosPublicationTitle(title)) {
+      if (!posId && isPosPublicationHandle(handle)) {
         posId = publication.id;
       }
     }
@@ -670,13 +736,14 @@ export async function resolveOnlineStoreAndPosPublications(
 
   if (!onlineStoreId || !posId) {
     const missing = [
-      !onlineStoreId ? "Online Store" : null,
-      !posId ? "POS" : null,
+      !onlineStoreId ? `Online Store (${ONLINE_STORE_APP_HANDLE})` : null,
+      !posId ? `POS (${POS_APP_HANDLE})` : null,
     ]
       .filter(Boolean)
       .join(" and ");
     throw new Error(
-      `Could not find the ${missing} sales channel publication. Re-approve the app with read_publications and write_publications.`,
+      `This store has no ${missing} sales channel publication. ` +
+        "Add the sales channel to the store in Shopify admin under Settings > Apps and sales channels, then approve the listing again.",
     );
   }
 
@@ -737,17 +804,7 @@ async function setExactPlantVariantPriceAndWeight(
     `,
     {
       productId,
-      variants: [
-        {
-          id: variantId,
-          price: price.toFixed(2),
-          inventoryItem: {
-            measurement: {
-              weight: { value: weightLbs, unit: "POUNDS" },
-            },
-          },
-        },
-      ],
+      variants: [buildExactPlantVariantInput({ variantId, price, weightLbs })],
     },
   );
   if (result.productVariantsBulkUpdate.userErrors.length > 0) {
@@ -760,10 +817,105 @@ async function setExactPlantVariantPriceAndWeight(
   }
 }
 
+const INVENTORY_TARGET_QUERY = `#graphql
+  query ExactPlantInventoryLocation {
+    location { id }
+  }
+`;
+
+const INVENTORY_LEVEL_QUERY = `#graphql
+  query ExactPlantInventoryLevel($inventoryItemId: ID!, $locationId: ID!) {
+    inventoryItem(id: $inventoryItemId) {
+      inventoryLevel(locationId: $locationId) { id }
+    }
+  }
+`;
+
+const INVENTORY_ACTIVATE_MUTATION = `#graphql
+  mutation ActivateExactPlantInventory($inventoryItemId: ID!, $locationId: ID!) {
+    inventoryActivate(
+      inventoryItemId: $inventoryItemId
+      locationId: $locationId
+      available: 1
+    ) {
+      userErrors { message }
+    }
+  }
+`;
+
+const INVENTORY_SET_MUTATION = `#graphql
+  mutation StockExactPlant($input: InventorySetQuantitiesInput!) {
+    inventorySetQuantities(input: $input) {
+      userErrors { message }
+    }
+  }
+`;
+
+/**
+ * Puts exactly one of this plant in stock at the shop's primary location.
+ *
+ * An EXACT PLANTS listing is one specific physical plant, so without a tracked
+ * quantity three customers can buy the same plant. `inventoryQuantities` on
+ * `ProductVariantsBulkInput` is only honoured by `productVariantsBulkCreate`,
+ * so the quantity needs its own call; which call depends on whether Shopify
+ * has already stocked the item at that location.
+ *
+ * Only `Location.id` is read, which `write_inventory` covers — every other
+ * Location field would additionally require `read_locations`.
+ */
+async function stockOneExactPlant(
+  admin: GraphqlClient,
+  inventoryItemId: string,
+): Promise<void> {
+  const target = await adminGraphql<{ location: { id: string } | null }>(
+    admin,
+    INVENTORY_TARGET_QUERY,
+  );
+  const locationId = target.location?.id;
+  if (!locationId) {
+    throw new Error(
+      "This store has no primary location, so the exact plant cannot be stocked.",
+    );
+  }
+
+  const level = await adminGraphql<{
+    inventoryItem: { inventoryLevel: { id: string } | null } | null;
+  }>(admin, INVENTORY_LEVEL_QUERY, { inventoryItemId, locationId });
+
+  if (!level.inventoryItem?.inventoryLevel) {
+    const activated = await adminGraphql<{
+      inventoryActivate: { userErrors: Array<{ message: string }> };
+    }>(admin, INVENTORY_ACTIVATE_MUTATION, { inventoryItemId, locationId });
+    if (activated.inventoryActivate.userErrors.length > 0) {
+      throw new Error(
+        userErrorMessage(
+          activated.inventoryActivate.userErrors,
+          "Could not stock the exact plant at the store's primary location.",
+        ),
+      );
+    }
+    return;
+  }
+
+  const result = await adminGraphql<{
+    inventorySetQuantities: { userErrors: Array<{ message: string }> };
+  }>(admin, INVENTORY_SET_MUTATION, {
+    input: buildExactPlantInventoryInput({ inventoryItemId, locationId }),
+  });
+  if (result.inventorySetQuantities.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        result.inventorySetQuantities.userErrors,
+        "Could not set the exact plant stock to one.",
+      ),
+    );
+  }
+}
+
 /** Applies the admin's approved title, price and weight to an existing product. */
 async function updateExactPlantProduct(
   admin: GraphqlClient,
-  product: { id: string; handle: string; variantId?: string },
+  product: ExactPlantProduct,
   input: { title: string; price: number; weightLbs: number },
 ): Promise<{ id: string; handle: string }> {
   const updated = await adminGraphql<{
@@ -793,17 +945,34 @@ async function updateExactPlantProduct(
     );
   }
 
-  if (product.variantId) {
-    await setExactPlantVariantPriceAndWeight(
-      admin,
-      product.id,
-      product.variantId,
-      input.price,
-      input.weightLbs,
-    );
-  }
+  await priceAndStockExactPlantVariant(admin, product, input);
 
   return updated.productUpdate.product ?? product;
+}
+
+/**
+ * Prices the variant and puts one of it in stock.
+ *
+ * Both must happen before the product is published: publishing an untracked
+ * plant lets several customers buy the same one, and publishing a tracked
+ * plant that has not been stocked yet shows it as sold out.
+ */
+async function priceAndStockExactPlantVariant(
+  admin: GraphqlClient,
+  product: ExactPlantProduct,
+  input: { price: number; weightLbs: number },
+): Promise<void> {
+  if (!product.variantId) return;
+  await setExactPlantVariantPriceAndWeight(
+    admin,
+    product.id,
+    product.variantId,
+    input.price,
+    input.weightLbs,
+  );
+  if (product.inventoryItemId) {
+    await stockOneExactPlant(admin, product.inventoryItemId);
+  }
 }
 
 export async function createExactPlantShopifyProduct(
@@ -841,7 +1010,9 @@ export async function createExactPlantShopifyProduct(
       product: {
         id: string;
         handle: string;
-        variants: { nodes: Array<{ id: string }> };
+        variants: {
+          nodes: Array<{ id: string; inventoryItem: { id: string } }>;
+        };
       } | null;
       userErrors: Array<{ message: string }>;
     };
@@ -856,7 +1027,12 @@ export async function createExactPlantShopifyProduct(
           product {
             id
             handle
-            variants(first: 1) { nodes { id } }
+            variants(first: 1) {
+              nodes {
+                id
+                inventoryItem { id }
+              }
+            }
           }
           userErrors { message }
         }
@@ -881,16 +1057,17 @@ export async function createExactPlantShopifyProduct(
     );
   }
 
-  const variantId = product.variants.nodes[0]?.id;
-  if (variantId) {
-    await setExactPlantVariantPriceAndWeight(
-      admin,
-      product.id,
-      variantId,
-      input.price,
-      input.weightLbs,
-    );
-  }
+  const variant = product.variants.nodes[0];
+  await priceAndStockExactPlantVariant(
+    admin,
+    {
+      id: product.id,
+      handle: product.handle,
+      variantId: variant?.id,
+      inventoryItemId: variant?.inventoryItem.id,
+    },
+    input,
+  );
 
   await addProductToCollection(admin, collection.id, product.id);
   await publishProductToOnlineStoreAndPos(admin, product.id);

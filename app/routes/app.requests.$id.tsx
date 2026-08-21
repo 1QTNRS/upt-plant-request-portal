@@ -40,7 +40,10 @@ import {
   updateRequestItem,
 } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
-import { uploadPlantPhoto } from "../lib/shopify-ops.server";
+import {
+  refreshFedexUpgradePrice,
+  uploadPlantPhoto,
+} from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
 
 function itemStatusTone(
@@ -219,6 +222,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const days = Number(form.get("expirationDays")) as OfferExpirationDays;
       const expirationDays: OfferExpirationDays =
         days === 5 || days === 7 ? days : 3;
+      // The offer freezes the FedEx upgrade price into what the customer sees,
+      // is emailed and is later billed, so read it from Shopify first.
+      await refreshFedexUpgradePrice(admin, shop);
       const updated = await sendOffer(shop, requestId, expirationDays);
       if (updated) {
         const appUrl =
