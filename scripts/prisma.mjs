@@ -9,6 +9,7 @@
  * Usage: node scripts/prisma.mjs migrate deploy
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -40,14 +41,21 @@ if (process.env.NODE_ENV === "production" && !isPostgresUrl(process.env.DATABASE
 }
 
 const schema = schemaPathFor(process.env.DATABASE_URL);
-const args = [
-  "prisma",
-  ...process.argv.slice(2),
-  "--schema",
-  path.relative(REPO_ROOT, schema),
-];
+const args = [...process.argv.slice(2), "--schema", path.relative(REPO_ROOT, schema)];
 
-const child = spawn("npx", args, {
+// Prefer the installed binary over `npx`, which is not guaranteed to be on PATH
+// in a container and would otherwise try to fetch the CLI from the network.
+const localBin = path.join(
+  REPO_ROOT,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "prisma.cmd" : "prisma",
+);
+const [command, commandArgs] = existsSync(localBin)
+  ? [localBin, args]
+  : ["npx", ["prisma", ...args]];
+
+const child = spawn(command, commandArgs, {
   cwd: REPO_ROOT,
   stdio: "inherit",
   env: process.env,
