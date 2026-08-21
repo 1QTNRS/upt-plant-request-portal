@@ -6,6 +6,7 @@ import type {
 } from "react-router";
 import {
   Form,
+  useActionData,
   useFetcher,
   useLoaderData,
   useNavigation,
@@ -188,10 +189,20 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
             data,
           });
         } catch (error) {
-          // Local disk is ephemeral on a hosted deploy and is not served by the
-          // Shopify CDN, so a failed upload must surface rather than appear to
-          // succeed with an unreachable URL.
-          if (!canStubShopifyWrites(shop)) throw error;
+          // Local disk is ephemeral on a hosted deploy and is not served by
+          // the Shopify CDN, so a failed upload must surface rather than appear
+          // to succeed with a URL that dies at the next deploy.
+          if (!canStubShopifyWrites(shop)) {
+            console.error(
+              `Shopify Files upload failed for request ${requestId}.`,
+              error,
+            );
+            throw new Error(
+              `Could not upload ${upload.name} to Shopify Files: ${
+                error instanceof Error ? error.message : "unknown error"
+              }. The photo was not attached — please try again.`,
+            );
+          }
           stored = {
             url: await saveLocalUpload(shop, itemId, {
               filename: upload.name,
@@ -717,7 +728,11 @@ function CustomerResponseSection({
 
 export default function RequestDetail() {
   const { plantRequest, response, declinedExactPlants } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
+  // The action already returned these; without this the page silently ignored a
+  // failed photo upload and looked as though nothing had happened.
+  const actionError = actionData && !actionData.ok ? actionData.error : null;
 
   useEffect(() => {
     const onFocus = () => revalidator.revalidate();
@@ -745,6 +760,14 @@ export default function RequestDetail() {
       <s-link slot="breadcrumb-actions" href="/app">
         Dashboard
       </s-link>
+
+      {actionError ? (
+        <s-section>
+          <s-banner tone="critical">
+            <s-text>{actionError}</s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
 
       <s-section heading="Request summary">
         <s-stack direction="inline" gap="large">

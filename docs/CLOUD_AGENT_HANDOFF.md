@@ -1,12 +1,16 @@
 # UPT Plant Request Portal — Cloud Agent Handoff
 
-Durable status for the next Cloud Agent. Do **not** rebuild this app. Continue from the existing React Router + Prisma implementation on the current working branch.
+Durable status for the next Cloud Agent. Do **not** rebuild this app. Continue from the existing React Router + Prisma implementation.
 
 - Repo: `https://github.com/1qtnrs/upt-plant-request-portal`
-- Working branch: `cursor/productionize-upt-plant-request-portal-f2dd` (base: `main`)
-- Previous branch `cursor/plant-request-portal-persistence-1e21` merged as PR #22
+- PR #22 (Prisma persistence + declined EXACT PLANTS listings) is **merged to `main`**.
+- Working branch: `cursor/production-readiness-blockers-7617` (base: `main`) — production readiness.
+- Pull request: https://github.com/1qtnrs/upt-plant-request-portal/pull/24
 
-**Productionization pass is complete in code.** The remaining work is merchant-side: install the app on the real UPT shop with the expanded scopes, and set the secrets listed under “Secrets the merchant must provide”. Nothing below requires further application development to install.
+**Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) first.** Every remaining
+blocker is an account action, a hosting decision, or a live-store verification.
+There is no known application-code work left. Do not start new work without
+checking that runbook — several items look like code gaps but are credentials.
 
 ---
 
@@ -30,29 +34,10 @@ Implemented end-to-end in app code:
 - Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
-- Settings: FedEx warning text and admin notification email, plus a banner listing any missing production secrets
-- Email outbox rows for request received, admin new-request, offer ready, confirmation, checkout, expiration reminder — deduplicated by idempotency key
-- Signature-verified App Proxy customer identity, with name/email resolved from the Admin API
-- GDPR compliance webhooks (`customers/data_request`, `customers/redact`, `shop/redact`)
-- Scheduled offer expiry + reminder emails via `POST /cron/offer-maintenance`
+- Settings: FedEx warning text and admin notification email
+- Email outbox rows for request received, admin new-request, offer ready, confirmation, checkout, expiration reminder
 
-Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ8` (declined Thai Constellation + Not Available String of Pearls) for listing review. It now runs **only on a demo shop** (see “Production vs demo runtime”). `ensureShopSettings` is the unconditional part: it creates the `ShopSettings` row for any shop without seeding fake requests.
-
----
-
-## Production vs demo runtime
-
-`app/lib/environment.server.ts` is the single gate for every demo affordance.
-
-| Helper | Meaning |
-| --- | --- |
-| `isProductionRuntime()` | `NODE_ENV === "production"`. Independent of `SHOPIFY_API_KEY=devkey`, so a stray dev key cannot open the admin bypass on a deployed instance |
-| `isDemoDataEnabled(shop)` | False in production, false when `UPT_DEMO_DATA=false`, otherwise true only for `DEV_SHOP` / `demo-shop.myshopify.com` |
-| `canStubShopifyWrites(shop)` | Whether a missing Admin API client may be faked rather than raised |
-| `requireAdminClient(admin, shop, op)` | Returns the client, or `undefined` for a demo shop, or throws `MissingAdminSessionError` |
-| `missingProductionSecrets()` | Drives the Settings “Setup required” banner |
-
-What this changed, concretely: on a real merchant shop the app no longer seeds sample requests, no longer serves `picsum.photos` placeholder offer photos, no longer stores base64 data-URL photos when Files upload is unavailable, no longer mints `gid://shopify/Product/upt-{itemId}` stub products, and no longer stores a `?checkout=pending` invoice URL. Each of those now raises instead, so a misconfigured install fails visibly rather than writing fake data the merchant would have to clean up.
+Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ8` (declined Thai Constellation + Not Available String of Pearls) for listing review.
 
 ---
 
@@ -60,33 +45,50 @@ What this changed, concretely: on a real merchant shop the app no longer seeds s
 
 | Area | Status |
 | --- | --- |
-| Prisma request/offer/response/listing persistence | Production-ready. `DATABASE_URL` is now env-driven; SQLite still is not a production scale choice |
-| Admin UI (dashboard, request detail, analytics, settings, EXACT PLANTS) | Production-ready; local Cloud VM uses `SHOPIFY_API_KEY=devkey` bypass |
-| Customer request + offer UI | Production-ready |
-| Request numbering `REQn` | Production-ready |
+| Prisma request/offer/response/listing persistence | Production-ready. `DATABASE_URL` selects the provider; PostgreSQL schema + migration committed and verified |
+| Admin UI (dashboard, request detail, analytics, settings, EXACT PLANTS) | Production-ready in code; local Cloud VM uses `SHOPIFY_API_KEY=devkey` bypass |
+| Customer request + offer UI | Production-ready in code |
+| Request numbering `REQn` | Production-ready in code |
 | Shopify Admin OAuth / embedded admin | Implemented via Shopify app template; **not usable in the headless Cloud VM** |
-| Customer authentication | **Production-ready.** App Proxy requests are HMAC-verified through `authenticate.public.appProxy`; identity comes from the verified `logged_in_customer_id` and name/email are resolved via the Admin API. Cookie login is demo-shop only |
-| Customer authorization | **Production-ready.** `identityOwnsRequest` scopes every read/write; account-claimed requests never fall back to email matching |
-| Draft orders | Production-ready and idempotent (`upt-request:{requestId}` tag + `DraftOrderReference` lookup). Requires a real Admin API session; no stub URL outside the demo shop |
-| Shopify Files photo upload | Production-ready. Requires a real Admin API session; the data-URL/local-disk fallback is demo-shop only |
-| EXACT PLANTS product create + collection + Online Store/POS publish | Production-ready and idempotent, still gated on admin approve. Requires merchant-approved scopes; the demo product GID is demo-shop only |
-| Email delivery | Outbox + Resend client; deduplicated by `(shop, idempotencyKey)`. Without `RESEND_API_KEY` messages stay `preview` |
-| Expiration reminders | **Scheduled.** `POST /cron/offer-maintenance` (bearer `CRON_SECRET`) runs `expireOverdueOffers` + `notifyExpirationReminders` across installed shops. Needs an external scheduler to call it |
-| GDPR compliance webhooks | Implemented (`customers/data_request`, `customers/redact`, `shop/redact`) backed by `app/lib/privacy.server.ts` |
+| Customer authentication | App proxy requests are HMAC-verified and the customer's real name/email is read from the Admin API. Unsigned requests are refused in production. Customer Account OAuth is still not implemented and is not needed for the app-proxy flow |
+| Draft orders | Code complete and schema-validated; the customer path now gets an offline Admin client. **Not yet run against a live store** |
+| Shopify Files photo upload | Code complete; waits for `fileStatus: READY`. **Not yet run against a live store** |
+| EXACT PLANTS product create + collection + Online Store/POS publish | Code complete and schema-validated. **Not yet run against a live store** |
+| Email delivery | Outbox + Resend client with retries and error reporting; without `RESEND_API_KEY` messages stay `preview` and production logs a warning per message |
+| Expiration reminders | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Verified end to end |
+| Privacy/compliance webhooks | All three mandatory topics subscribed and implemented |
+| Deployment | **Render** is the chosen target: `render.yaml` declares the PostgreSQL database, the Docker web service and the offer-maintenance cron job. Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
 | Unused `app/lib/sample-*.ts`, `item-*.ts`, `customer-*-submissions.ts` localStorage modules | Leftover prototype. **Active routes do not import them.** Do not resurrect them as the source of truth |
 
 ---
 
 ## Database / schema architecture
 
-Prisma schema: `prisma/schema.prisma`. Provider: SQLite, URL from `env("DATABASE_URL")` (was hardcoded `file:dev.sqlite`). Migrations:
+Prisma cannot take its datasource provider from an environment variable, so there
+are two schemas and `DATABASE_URL` decides which one is used:
 
-1. `prisma/migrations/20240530213853_create_session_table` — Shopify `Session`
-2. `prisma/migrations/20260820061236_plant_request_portal` — portal tables
-3. `prisma/migrations/20260820073000_exact_plant_listings` — `ExactPlantListing`
-4. `prisma/migrations/20260820160000_email_idempotency_key` — `EmailMessage.idempotencyKey` + unique `(shop, idempotencyKey)`, and an index on `ShopifyOrderReference.shopifyOrderGid`
+| Path | Provider | Used by |
+| --- | --- | --- |
+| `prisma/schema.prisma` | SQLite | Local development (`DATABASE_URL` unset → `file:dev.sqlite`) |
+| `prisma/postgres/schema.prisma` | PostgreSQL | Production. **Generated** from the SQLite schema |
 
-Migration 4 is additive only: a nullable column plus two indexes. No data is dropped or rewritten, and it is safe to run against an existing database. There is still no destructive migration on `RequestItem.budget` — leave that column alone.
+`prisma/postgres/schema.prisma` is generated by `npm run prisma:sync-schema`.
+**Edit `prisma/schema.prisma` and regenerate** — `npm run prisma:check-schema`
+(run in CI) fails when the two drift apart.
+
+`scripts/prisma.mjs` wraps the Prisma CLI and picks the schema from the
+`DATABASE_URL` scheme, so `npm run setup`, `prisma:generate`, `prisma:migrate` and
+`prisma db seed` all work for either provider with no extra flags. It refuses a
+missing or SQLite URL when `NODE_ENV=production`.
+
+SQLite migrations (`prisma/migrations/`):
+
+1. `20240530213853_create_session_table` — Shopify `Session`
+2. `20260820061236_plant_request_portal` — portal tables
+3. `20260820073000_exact_plant_listings` — `ExactPlantListing`
+
+PostgreSQL migrations (`prisma/postgres/migrations/`) are a single squashed
+`20260820120000_init`, since production starts from an empty database.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
@@ -104,92 +106,67 @@ Shop-scoped models (multi-tenant by `shop` string):
 
 Item statuses: `Requested` | `Sourced` | `Offered` | `Sold` | `Unavailable` | `Listed`.
 
-Commands: `npm run setup` (`prisma generate && prisma migrate deploy`), `npx prisma db seed`, `npx prisma validate`.
+Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
+`npm run prisma:validate` (both schemas), `npm run prisma:sync-schema`,
+`npm run prisma:check-schema`, `node scripts/prisma.mjs db seed`.
 
 ---
 
 ## Shopify integrations implemented (in code)
 
-- Admin OAuth via `@shopify/shopify-app-react-router` (`app/shopify.server.ts`, API version October 2025)
-- App proxy `/apps/plant-requests` → `/customer`
-- Draft order create + invoice send (`createDraftOrderForRequest` in `app/lib/shopify-ops.server.ts`)
-- FedEx upgrade product lookup by handle
-- Shopify Files staged upload + `fileCreate` (`uploadPlantPhoto`)
-- `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes
-- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb), `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only
-- Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products
-- Idempotency tag `upt-request:{requestId}` plus a `DraftOrderReference` lookup so retries do not create duplicate draft orders
-- GDPR webhooks (`webhooks.customers.data_request.tsx`, `webhooks.customers.redact.tsx`, `webhooks.shop.redact.tsx`) → `app/lib/privacy.server.ts`
-- `POST /cron/offer-maintenance` for scheduled expiry + reminders
+- Admin OAuth via `@shopify/shopify-app-react-router` (`app/shopify.server.ts`, API version October 2025 / `2025-10`)
+- App proxy `/apps/plant-requests` → `/customer`, **HMAC-verified** (`app/lib/app-proxy.ts`)
+- Offline Admin client for the app-proxy customer path (`app/lib/offline-admin.server.ts`). Goes through `unauthenticated.admin(shop)`, which calls `ensureValidOfflineSession` and therefore refreshes the token under the `expiringOfflineAccessTokens` future flag — the customer draft-order path does not break when the offline token expires.
+- Customer name/email resolved from the Admin API and cached in `CustomerProfile` (`app/lib/customer-identity.server.ts`)
+- Request ownership decided by `identityOwnsRequest` (`app/lib/customer-identity.ts`, pure). A request already claimed by a Shopify account id is **never** reachable by email, so changing an account email cannot reach a stranger's request
+- Draft order create + invoice send (`createDraftOrderForRequest` in `app/lib/shopify-ops.server.ts`), custom lines priced with `originalUnitPriceWithCurrency`
+- FedEx upgrade product lookup via `productByIdentifier`
+- Shopify Files staged upload + `fileCreate`, polling `fileStatus` until `READY` (`uploadPlantPhoto`)
+- `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes, ignores redeliveries for an already-paid request
+- Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
+- Draft orders are idempotent twice over: a recorded `DraftOrderReference` short-circuits, and `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost. Without it a retry bills the customer twice
+- Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
+- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb), `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
+- Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
 
----
+### Verifying Shopify calls without a store
 
-## Idempotency map
-
-Every Shopify-side or state-changing create is guarded. Retries, double clicks and webhook redelivery are safe.
-
-| Operation | Guard |
-| --- | --- |
-| Draft order create | Existing `DraftOrderReference` row, then a Shopify lookup on tag `upt-request:{requestId}` |
-| EXACT PLANTS product create | Unique `ExactPlantListing.requestItemId`, then a Shopify lookup on tag `upt-declined-item:{requestItemId}` |
-| Email send | `EmailMessage` unique `(shop, idempotencyKey)` |
-| Customer offer response | `saveCustomerResponse` creates rather than upserts and raises `OfferAlreadyAnsweredError` on a second answer |
-| Request close (`orders/paid`) | `closeRequest` no-ops when already `Closed`, so redelivery adds no duplicate `StatusEvent` |
-| Payment marking | `markRequestPaid` no-ops when `paidAt` is already set |
-
----
-
-## Privacy and authorization
-
-- App Proxy requests are verified with `authenticate.public.appProxy` before any identity is trusted. An unsigned request with a spoofed `logged_in_customer_id` or `x-shopify-customer-id` header resolves to no customer.
-- `authenticateCustomer` returns both the verified identity and an Admin API client, so the customer portal can create real draft orders.
-- `identityOwnsRequest` (`app/lib/customer-identity.ts`) is the single ownership rule, unit-tested in `customer-identity.test.ts`. When a request is already claimed by a Shopify account, an email-only identity cannot reach it — this closes the shared-email leak.
-- `findOrCreateCustomer` rejects an empty email, so unidentified customers can no longer collapse into one shared profile.
-- Admin routes that used to write demo data as a customer (`app/customer-request-form`, `app/customer-offer-preview`) are read-only previews outside the demo shop.
+`npm run validate-graphql` fetches the live Admin schema for the version in
+`app/shopify.server.ts` and validates every `#graphql` document **and** the
+variable payloads the server sends. Run it after touching any Shopify call and
+before bumping the API version — document validation alone does not catch a
+removed input field, which is how `originalUnitPrice` shipped.
 
 ---
 
 ## Shopify integrations still requiring merchant authorization or secrets
 
-These cannot be completed in the headless Cloud VM and are not verified against a live UPT store. All of them are code-complete; each one needs merchant authorization or a credential:
+Not verifiable in the Cloud VM and not yet run against the live UPT store. See
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12 for the exact steps.
 
-- Merchant **re-approval** of expanded access scopes (see below)
-- Real Shopify Partner app + store install + public tunnel (`shopify app dev`)
-- Live Admin API session (`requireAdmin` returns no `admin` client when `SHOPIFY_API_KEY=devkey`)
+- Merchant install + scope approval on the UPT shop
 - Live draft-order invoices
 - Live Shopify Files CDN
 - Live `productCreate` / collection / publication
-- Outbound email: `RESEND_API_KEY` (optional `EMAIL_FROM`, `UPT_ADMIN_EMAIL`)
-- An external scheduler pointed at `POST /cron/offer-maintenance`
-
----
-
-## Secrets the merchant must provide
-
-`.env.example` is the full list. The admin **Settings** page shows a “Setup required” banner naming whichever of these is missing, so the merchant does not have to read this file.
-
-| Variable | Consequence if missing |
-| --- | --- |
-| `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | No embedded admin OAuth; App Proxy signatures cannot be verified, so no customer can sign in |
-| `SHOPIFY_APP_URL` | OAuth callbacks and email links break |
-| `DATABASE_URL` | App will not boot (Prisma has no datasource) |
-| `RESEND_API_KEY` | Emails stay in the outbox as `preview` and are never delivered |
-| `EMAIL_FROM`, `UPT_ADMIN_EMAIL` | Optional; admin email also settable in Settings |
-| `CRON_SECRET` | `POST /cron/offer-maintenance` rejects every call, so reminders never send |
+- Outbound email: `RESEND_API_KEY` and a verified `EMAIL_FROM` domain
 
 ---
 
 ## Required Shopify scopes
 
-From `shopify.app.toml`:
+Declared in `shopify.app.toml` **and** in `REQUIRED_SHOPIFY_SCOPES`
+(`app/lib/env.server.ts`); `app/lib/env.server.test.ts` asserts they match. The
+app falls back to the code list when `SCOPES` is unset, so the two cannot drift.
 
 ```
 write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications
 ```
 
-Webhooks: `app/uninstalled`, `app/scopes_update`, `orders/paid`, plus the mandatory compliance topics `customers/data_request`, `customers/redact`, `shop/redact`.
+Webhooks: `app/uninstalled`, `app/scopes_update`, `orders/paid`, plus the three
+compliance topics. `api_version` in `shopify.app.toml` must equal `apiVersion` in
+`app/shopify.server.ts`; a test enforces it.
 
-Merchants must re-approve after the product/publication scopes were added. The compliance webhooks are required for App Store distribution and are now declared in `shopify.app.toml` and implemented.
+Merchants must re-approve after the product/publication scopes were added.
 
 ---
 
@@ -197,11 +174,15 @@ Merchants must re-approve after the product/publication scopes were added. The c
 
 ### Draft orders
 
-Implemented. Accepted plant lines include title, qty 1, price, weight. FedEx line is added only when the customer kept the upgrade. Do not create draft orders for rejected-only or all-unavailable responses. Creation is idempotent: an existing `DraftOrderReference` short-circuits, and otherwise the app searches Shopify for tag `upt-request:{requestId}` before creating. The local checkout-pending URL fallback survives only for the demo shop; on a real shop a missing Admin client raises `MissingAdminSessionError`.
+Implemented. Accepted plant lines include title, qty 1, price, weight. FedEx line is added only when the customer kept the upgrade. If GraphQL is unavailable, a local checkout-pending URL is stored. Do not create draft orders for rejected-only or all-unavailable responses.
 
 ### Shopify Files
 
-Implemented. Admin photo upload on New requests uses staged upload + `fileCreate`. The `public/uploads/` and data-URL fallbacks are demo-shop only; on a real shop a missing Admin client raises rather than storing a base64 blob in the database.
+Admin photo upload on New requests uses Files when `admin` exists, otherwise `public/uploads/` or data URLs. `fileCreate` is asynchronous, so `uploadPlantPhoto` polls `fileStatus` until `READY` before reading the CDN URL.
+
+The local-disk fallback is **development only** (`localUploadsAllowed()`): that disk is ephemeral and per-instance, so in production a fallback photo would disappear on the next deploy after being frozen into a sent offer snapshot. In production a failed upload surfaces on the request detail page instead. Do not reinstate an unconditional fallback.
+
+Local `/uploads/...` paths are made absolute against `SHOPIFY_APP_URL` when used as EXACT PLANTS media; `data:` URLs cannot be published and approving with no fetchable photo reports an error.
 
 ### EXACT PLANTS creation
 
@@ -213,32 +194,53 @@ Implemented in GraphQL (`publishablePublish` to catalogs titled `Online Store` a
 
 ### Emails
 
-Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview`. Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder. Every `queueEmail` call carries an idempotency key, enforced by a unique `(shop, idempotencyKey)` index, so a retried action or a redelivered webhook cannot email the customer twice.
+Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Transient Resend failures are retried; a permanent failure is summarized into `EmailMessage.error`. Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+
+Customer-facing links in emails are storefront proxy URLs
+(`https://{shop}/apps/plant-requests/...`) built by `customerLinksForShop`. A link
+to the app's own origin carries no signed identity and renders "Request not
+available", so **never** hand a customer a `{appUrl}/customer/...` link.
 
 ### Payment webhooks
 
-`POST /webhooks/orders/paid` closes the matching request and marks accepted items Sold. Lookup understands `REQ123` and legacy `UPT-REQ-YYYY-NNNNNN`. Both `closeRequest` and `markRequestPaid` are no-ops when the request is already in the target state, so Shopify's at-least-once delivery cannot produce duplicate status events or a second confirmation email.
+`POST /webhooks/orders/paid` closes the matching request and marks accepted items Sold. Lookup understands `REQ123` and legacy `UPT-REQ-YYYY-NNNNNN`. A redelivery for an already-paid request is ignored rather than appending a duplicate status event, and every non-match is logged with the order label.
 
 ### Expiration logic
 
-`expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, and now also on a schedule.
+`expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler.
 
-`POST /cron/offer-maintenance` (`app/routes/cron.offer-maintenance.tsx`) authorizes with a constant-time comparison against `CRON_SECRET`, enumerates installed shops from the `Session` table, and runs `expireOverdueOffers` + `notifyExpirationReminders` for each. Point any external scheduler at it:
+### Two environment modules, deliberately
 
-```bash
-curl -X POST https://<app-url>/cron/offer-maintenance \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
+| Module | Answers |
+| --- | --- |
+| `app/lib/env.server.ts` | Boot-time contract: `assertProductionEnv()` refuses to start on a bad deploy, `REQUIRED_SHOPIFY_SCOPES` / `grantedScopeWarning()`, `resolveDatabaseUrl()` / `withConnectionLimit()` |
+| `app/lib/environment.server.ts` | Per-request, **shop-scoped** runtime gating: `isDemoDataEnabled(shop)`, `canStubShopifyWrites(shop)`, `requireAdminClient()`, `missingProductionSecrets()` for the Settings panel |
 
-`expireOverdueOffers` remains the source of truth for status; the cron endpoint only drives it on a timer.
+`isProductionRuntime()` delegates to `isProduction()` so there is exactly one
+definition of "in production". **Do not add a second one** — two that can
+disagree is how demo data reaches a real shop or a Shopify write gets silently
+faked.
+
+Demo data and Shopify write stubbing are gated on the *shop*, not just on
+`NODE_ENV`: a real merchant shop is refused even in development.
+
+### Scheduler
+
+`POST /cron/offer-maintenance` (`app/lib/scheduler.server.ts`) runs `expireOverdueOffers` and `notifyExpirationReminders` for every shop with portal data. Requires `Authorization: Bearer $CRON_SECRET` (constant-time compare) and returns 404 until `CRON_SECRET` is set. Safe to call repeatedly: a reminder is only sent once per request. `GET` is accepted because some hosted schedulers cannot issue `POST`.
+
+In production this is driven by the `upt-offer-maintenance` Render cron job, which runs `scripts/run-offer-maintenance.mjs` hourly. That script is intentionally dependency-free (global `fetch` only) so the cron job does not install the app's dependency tree, and it exits non-zero on any failure so Render marks the run failed. Render cron jobs do not receive `RENDER_EXTERNAL_URL`, so `render.yaml` passes the web service's `RENDER_EXTERNAL_HOSTNAME` in as `APP_HOSTNAME`, and reads `CRON_SECRET` from the web service so there is one value to rotate. `CRON_SECRET` uses `generateValue: true` rather than `sync: false` — it is shared only between two Render services, so there is no reason to make a human produce it.
+
+`GET /healthz` returns 503 when the database is unreachable.
 
 ### Customer authentication
 
-- Production: the App Proxy request is signature-verified by `authenticate.public.appProxy`, then the verified `logged_in_customer_id` is resolved to name/email through the Admin API. Unverified requests and spoofed identity headers are rejected.
-- Local demo: cookie session, “Continue as logged in customer” → Alex Rivera (`alex.rivera@example.com`). Demo shop only.
-- Customers may only view their own requests, enforced by `identityOwnsRequest`.
-- A proxy-authenticated customer with no resolvable email surfaces an identity error rather than falling through to another profile.
-- Admin demo bypass: `NODE_ENV !== production` and `SHOPIFY_API_KEY=devkey` → shop `DEV_SHOP` or `demo-shop.myshopify.com`.
+- App proxy requests are HMAC-verified (`appProxySignatureIsValid`) before any identity is trusted. The shop comes from the signed `shop` parameter, never from `DEV_SHOP`/`DEMO_SHOP`.
+- `logged_in_customer_id` is resolved to a real name and email via the Admin API (`resolveCustomerIdentity`), cached in `CustomerProfile`. Without an email the portal treats the visitor as signed out rather than guessing.
+- Unsigned requests to `/customer` return 404 in production.
+- Local demo: cookie session, “Continue as logged in customer” → Alex Rivera (`alex.rivera@example.com`). Unavailable in production regardless of `ALLOW_CUSTOMER_DEMO_LOGIN`.
+- Customers may only view their own requests.
+- Admin demo bypass: `NODE_ENV !== production` and `SHOPIFY_API_KEY=devkey` → shop `DEV_SHOP` or `demo-shop.myshopify.com`. `assertProductionEnv` rejects `SHOPIFY_API_KEY=devkey` in production.
+- `ensureShopSeeded` only runs under the dev bypass. **Do not call it from a production code path.**
 
 ### Analytics
 
@@ -252,50 +254,75 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on this branch:
+Last verified on `cursor/production-readiness-blockers-7617`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 37 passing / 19 suites (`portal`, `portal.server`, `exact-plants`, `exact-plants.server`, `customer-identity`, `production-safety.server`) |
+| `npm test` | 110 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
-| `npx prisma validate` | pass |
+| `npm run prisma:validate` | pass (both schemas) |
+| `npm run prisma:check-schema` | pass |
+| `npm run validate-graphql` | pass (17 documents + 9 variable payloads against live Admin `2025-10`) |
 | `npm run build` | pass |
-| GitHub CI (`.github/workflows/ci.yml`) | install → `tsc --noEmit` → lint → prisma generate/validate → build → `prisma migrate deploy && npm test`. **Tests now run in CI.** |
+| `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
+| GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |
 
-New regression coverage added in this pass:
+Also verified in the Cloud VM: the app-proxy authorization boundary (a signed
+request per customer sees only its own requests; unsigned, replayed, tampered and
+wrong-secret requests see nothing), the scheduler expiring an offer and sending
+exactly one reminder, and the production env guard refusing to boot on six
+misconfigurations.
 
-- `customer-identity.test.ts` — ownership matrix for account id vs email, including the shared-email leak
-- `production-safety.server.test.ts` — merchant shops get settings but no sample requests; an offer can be answered only once; `closeRequest` / `markRequestPaid` are idempotent (asserted by comparing the `paidAt` timestamp across repeat calls); email dedupe; cross-account request visibility; customer and shop redaction
-
-Local Cloud VM walkthroughs covered dashboard/search, declined-item review (cancel then approve), listed state, Budget removal, `REQ1` / `REQ2` numbering, App Proxy identity rejection, cron expiry/reminders, and listing-approval idempotency under repeated POSTs. Live Shopify Admin mutations were not executed (no merchant session).
+Live Shopify Admin mutations were still **not** executed — no merchant session
+exists. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12.
 
 ---
 
 ## Known issues
 
 - Headless Cloud VM cannot run `shopify app dev` (needs Partner login + tunnel).
-- Demo listing products are not real Shopify products; GID looks like `gid://shopify/Product/upt-{itemId}`. This is now demo-shop only.
-- The cron endpoint needs an external scheduler; the app does not run its own timer.
+- Demo listing products are not real Shopify products; GID looks like `gid://shopify/Product/upt-{itemId}`.
+- `shopify.app.toml` carries the production Render URLs, committed because Shopify's TOML cannot read environment variables. `app/lib/shopify-config.test.ts` guards them. **Do not run `shopify app dev` against the production app** — use `shopify app config use dev` (`shopify.app.dev.toml`, separate development app), or the React Router dev server, which needs no Shopify app at all.
+- Custom draft-order plant lines do not set `requiresShipping`. Shopify does not document its default and it cannot be tested without a live store, so setting it would be guessing at checkout behaviour. Confirm shipping rates appear at checkout during the live draft-order test and set it then if they do not.
+- The CLA workflow was deleted on the production-readiness branch, but it is a `pull_request_target` workflow, which GitHub always runs from the **base** branch. It therefore keeps failing on PR #24 until that deletion is merged to `main`, and disappears for PRs opened afterwards.
 - Unused localStorage prototype modules remain in `app/lib/` and can confuse agents; they are not the live data layer.
 - `RequestNumberSequence.year` is a leftover of the old yearly scheme; do not reintroduce `UPT-REQ-YYYY-000001`.
 - Existing local DBs may still contain leftover `UPT-REQ-2026-000008` / `000009` rows from earlier demos; display maps those to `REQ8` / `REQ9`. Official seeds remap `UPT-REQ-2026-000001`–`000007` and `000099` → `REQ1`–`REQ8`.
-- No committed lockfile; `.npmrc` `engine-strict=true` (Node `>=20.19 <22 || >=22.12`).
-- SQLite file is local/ephemeral in Cloud VMs unless the environment snapshot includes it.
+- No committed lockfile; `.npmrc` `engine-strict=true` (Node `>=20.19 <22 || >=22.12`). The Dockerfile pins Node 22 for this reason.
+- SQLite file is local/ephemeral in Cloud VMs unless the environment snapshot includes it. Production must use PostgreSQL; the app refuses to boot otherwise.
 
 ---
 
-## Unfinished work (no new product features implied)
+## Unfinished work
 
-Nothing here is application code. Every item is a merchant action, a credential, or an optional infrastructure upgrade.
+No known application-code work remains. Everything left needs an account action,
+a hosting decision, or a live store — all of it enumerated with exact screens in
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
 
-1. Merchant install + scope re-approval on the real UPT shop
-2. Live verification of draft orders, Files, EXACT PLANTS create, Online Store/POS
-3. Resend (or other) production email credentials
-4. Point an external scheduler at `POST /cron/offer-maintenance` with `CRON_SECRET`
-5. Optional: retire unused `sample-*` / localStorage modules
-6. Optional: Postgres (or Shopify-hosted DB) before real production load — `DATABASE_URL` is already env-driven, so this is a provider swap plus a migration re-baseline
-7. Keep the PR draft until the user asks to mark it ready
+**Done:** the Render Blueprint is applied and the web service is live at
+`https://upt-plant-request-portal.onrender.com`, verified from outside —
+`/healthz` 200, unsigned `/customer` 404, `/cron/offer-maintenance` 401 (so
+`CRON_SECRET` is set). `shopify.app.toml` carries the production URLs.
+
+Remaining, all on the user:
+
+1. Confirm the first hourly cron run and the Resend values (runbook §2, §4)
+2. Resend API key + verified sending domain (§5)
+3. Enable database backups (§6)
+4. `shopify app deploy`, then install and approve scopes on the store, and
+   confirm the FedEx product handle (§7)
+5. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS,
+   `orders/paid` (§8)
+
+Nothing is blocked on an agent.
+
+Genuinely optional, deliberately not done:
+
+- Customer Account OAuth. Not needed: the app-proxy flow now yields a verified
+  customer id plus a real name and email from the Admin API.
+- Retiring the unused `sample-*` / localStorage modules. No active route imports
+  them; deleting them is cosmetic and would add review noise here.
 
 ---
 
@@ -316,28 +343,14 @@ Nothing here is application code. Every item is a merchant action, a credential,
 13. Do not create EXACT PLANTS listings for accepted items, UPT Not Available items, never-offered items, or FedEx.
 14. Publish listings only to **Online Store** and **POS**, and add them to the existing **EXACT PLANTS** collection.
 15. Request numbers are `REQ1`, `REQ2`, `REQ2178` — sequential, unpadded, shop-wide.
-16. Demo data and stub Shopify results are demo-shop only. On any other shop, a missing Admin API client must raise, never fake a result. Do not reintroduce unconditional fallbacks.
-17. Customer identity is only ever trusted from a signature-verified App Proxy request. Never read `logged_in_customer_id` or `x-shopify-customer-id` directly off an unverified request.
-18. Every Shopify-side create stays idempotent. Preserve the `upt-request:` / `upt-declined-item:` tags, the email idempotency key, and the no-op guards on `closeRequest` / `markRequestPaid`.
 
 ---
 
-## Exact next recommended productionization steps
+## Exact next productionization steps
 
-Do these in order. This is now a deployment checklist, not a development plan. Do not start by rewriting the app.
-
-1. **Set the environment** from `.env.example`: `DATABASE_URL`, `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, `SCOPES`, `RESEND_API_KEY`, `EMAIL_FROM`, `CRON_SECRET`. Set `NODE_ENV=production`. Confirm the admin Settings page shows no “Setup required” banner.
-2. **Run migrations**: `npx prisma migrate deploy`.
-3. **Install / re-approve** the app on the UPT Shopify shop with the full scope list above. Confirm the token includes `write_products`, `read_publications`, and `write_publications`.
-4. **Deploy** (or `shopify app dev` with a real tunnel) so embedded admin OAuth and the app proxy work, and **verify admin OAuth** on `/app` without `SHOPIFY_API_KEY=devkey`.
-5. **Verify customer sign-in** through the app proxy at `/apps/plant-requests`: a logged-in customer sees only their own requests; a signed-out visitor sees none.
-6. **Live draft-order test**: accept an offered plant → confirm Shopify draft order, weights, FedEx variant, invoice send → repeat the accept and confirm no second draft order.
-7. **Live Files test**: upload exact-plant photos on a New request → confirm Shopify File CDN URLs on the offer.
-8. **Live EXACT PLANTS test**: reject an available offered plant → confirm no product is created → admin review/edit → approve → one product in collection **EXACT PLANTS**, available on Online Store and POS only, not on other channels → second approve does not duplicate.
-9. **Send a real email** (offer-ready + confirmation) and confirm the outbox row flips off `preview`.
-10. **Schedule the cron**: `POST /cron/offer-maintenance` with `Authorization: Bearer $CRON_SECRET`, hourly or daily.
-11. **Confirm the compliance webhooks** respond 200 in the Partner dashboard.
-12. **Only then** consider SQLite → Postgres and deleting unused prototype files.
+See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md). It is ordered, states who
+can perform each step, and names the exact screen. Do not start by rewriting the
+app, and do not reimplement anything listed there as an account action.
 
 ---
 
@@ -355,14 +368,12 @@ Do these in order. This is now a deployment checklist, not a development plan. D
 | `app/lib/analytics.server.ts` | Dashboard analytics |
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
-| `app/lib/environment.server.ts` | Production vs demo gate, `requireAdminClient`, missing-secret report |
-| `app/lib/customer-session.server.ts` | Verified App Proxy identity + Admin client for the customer portal |
-| `app/lib/customer-identity.ts` | `identityOwnsRequest` ownership rule |
-| `app/lib/privacy.server.ts` | GDPR export / redaction |
+| `app/lib/customer-session.server.ts` | Customer cookie / proxy identity |
 | `app/routes/app.*.tsx` | Admin UI |
 | `app/routes/customer*.tsx` | Customer portal |
 | `app/routes/webhooks.orders.paid.tsx` | Payment close |
-| `app/routes/webhooks.customers.*.tsx`, `webhooks.shop.redact.tsx` | GDPR compliance |
-| `app/routes/cron.offer-maintenance.tsx` | Scheduled expiry + reminder emails |
 | `shopify.app.toml` | Scopes, webhooks, app proxy |
-| `.env.example` | Every environment variable |
+| `render.yaml` | Render Blueprint: PostgreSQL, web service, cron job. Checked against the app by `app/lib/render-blueprint.test.ts` |
+| `scripts/run-offer-maintenance.mjs` | Render cron job entry point |
+| `scripts/prisma.mjs` | Prisma CLI wrapper; picks the schema from `DATABASE_URL` |
+| `scripts/validate-admin-graphql.mjs` | Validates Shopify calls against the live Admin schema |

@@ -1,12 +1,16 @@
+import { isProduction } from "./env.server";
 import { DEMO_SHOP, isDevAdminBypass } from "./shop";
 
 /**
  * Production-mode detection is deliberately independent of `isDevAdminBypass()`
  * so that a stray `SHOPIFY_API_KEY=devkey` can never open the local admin bypass
  * on a deployed instance.
+ *
+ * Delegates to `env.server.ts` so there is one definition of "in production" —
+ * two that could disagree is how demo data reaches a real shop.
  */
 export function isProductionRuntime(): boolean {
-  return process.env.NODE_ENV === "production";
+  return isProduction();
 }
 
 /**

@@ -4,19 +4,29 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { requireAdmin, isDevAdminBypass } from "../lib/admin-auth.server";
+import { grantedScopeWarning } from "../lib/env.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await requireAdmin(request);
+  const { session } = await requireAdmin(request);
 
   // eslint-disable-next-line no-undef
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     embedded: !isDevAdminBypass(),
+    scopeWarning: grantedScopeWarning(session?.scope),
   };
 };
 
 export default function App() {
-  const { apiKey, embedded } = useLoaderData<typeof loader>();
+  const { apiKey, embedded, scopeWarning } = useLoaderData<typeof loader>();
+
+  const banner = scopeWarning ? (
+    <s-section>
+      <s-banner tone="critical" heading="Missing Shopify permissions">
+        <s-text>{scopeWarning}</s-text>
+      </s-banner>
+    </s-section>
+  ) : null;
 
   const nav = (
     <s-app-nav>
@@ -48,6 +58,7 @@ export default function App() {
           <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
           <s-link href="/app/settings">Settings</s-link>
         </div>
+        {banner}
         <Outlet />
       </AppProvider>
     );
@@ -56,6 +67,7 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       {nav}
+      {banner}
       <Outlet />
     </AppProvider>
   );

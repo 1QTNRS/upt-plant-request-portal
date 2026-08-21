@@ -1,3 +1,14 @@
 .cache
+.git
+.github
+.react-router
+.shopify
 build
+docs
 node_modules
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+prisma/test.sqlite
+public/uploads
+extensions/*/dist
+*.md

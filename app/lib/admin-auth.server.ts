@@ -5,7 +5,8 @@ export { DEMO_SHOP, isDevAdminBypass };
 
 export type AdminContext = {
   shop: string;
-  session?: { shop: string };
+  /** `scope` is the comma-separated list the merchant actually granted. */
+  session?: { shop: string; scope?: string | null };
   admin?: {
     graphql: (
       query: string,

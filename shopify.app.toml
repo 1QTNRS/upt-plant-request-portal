@@ -1,16 +1,28 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# Production configuration for the UPT Plant Request Portal.
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
+#
+# The URLs below point at the Render web service. Shopify's TOML cannot read
+# environment variables, so they are committed; app/lib/shopify-config.test.ts
+# keeps them consistent with each other and with the routes the app serves.
+#
+# For local development use `shopify app config use dev` (shopify.app.dev.toml)
+# so a tunnel URL never overwrites the production URLs here.
 
 client_id = "e5dc3bb5cce907f9efe94de29a32c9d1"
 name = "UPT Plant Request Portal"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://upt-plant-request-portal.onrender.com"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+# Recommended by Shopify for production apps: `shopify app dev` must never
+# repoint the live app at a temporary tunnel.
+automatically_update_urls_on_dev = false
 include_config_on_deploy = true
 
 [webhooks]
-api_version = "2026-07"
+# Must match ApiVersion in app/shopify.server.ts so webhook payload shapes match
+# the version the Admin API client uses. app/lib/env.server.test.ts asserts this.
+api_version = "2025-10"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"
@@ -24,18 +36,19 @@ api_version = "2026-07"
   uri = "/webhooks/orders/paid"
   topics = [ "orders/paid" ]
 
-  # Mandatory compliance topics for an App Store distribution.
+  # Mandatory privacy topics for App Store distribution.
+  # See https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance
   [[webhooks.subscriptions]]
   uri = "/webhooks/customers/data_request"
-  topics = [ "customers/data_request" ]
+  compliance_topics = [ "customers/data_request" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/customers/redact"
-  topics = [ "customers/redact" ]
+  compliance_topics = [ "customers/redact" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/shop/redact"
-  topics = [ "shop/redact" ]
+  compliance_topics = [ "shop/redact" ]
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -43,12 +56,16 @@ api_version = "2026-07"
 scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications"
 
 [app_proxy]
-url = "/customer"
+# Must be an absolute URL — this is the address Shopify forwards storefront
+# requests to. It was previously the relative path "/customer", which is not a
+# valid URL and left the storefront customer portal unroutable.
+# Storefront address: https://<shop>/apps/plant-requests
+url = "https://upt-plant-request-portal.onrender.com/customer"
 subpath = "plant-requests"
 prefix = "apps"
 
 [auth]
 redirect_urls = [
-  "https://shopify.dev/apps/default-app-home/auth/callback",
-  "https://shopify.dev/apps/default-app-home/auth/shopify/callback",
+  "https://upt-plant-request-portal.onrender.com/auth/callback",
+  "https://upt-plant-request-portal.onrender.com/auth/shopify/callback",
 ]

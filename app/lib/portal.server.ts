@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 
 import prisma from "../db.server";
+import { customerLinksForShop } from "./customer-links.server";
 import { isDemoDataEnabled } from "./environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
@@ -205,16 +206,25 @@ async function loadRequest(
   });
 }
 
+/**
+ * Upserts rather than reads-then-creates. Every admin and customer loader calls
+ * this, and a browser opens several of them at once, so on the first page load
+ * after install two concurrent inserts would race `ShopSettings.shop`'s unique
+ * index and one of them would 500.
+ */
 export async function getShopSettings(shop: string) {
-  const existing = await prisma.shopSettings.findUnique({ where: { shop } });
-  if (existing) return existing;
-
-  return prisma.shopSettings.create({
-    data: {
+  return prisma.shopSettings.upsert({
+    where: { shop },
+    create: {
       shop,
       fedexRemovalWarning: DEFAULT_FEDEX_REMOVAL_WARNING,
       fedexProductHandle: FEDEX_PRODUCT_HANDLE,
     },
+    // Assigning `shop` its own value is a no-op, but the update payload has to
+    // be non-empty: given an empty one Prisma abandons the atomic
+    // `ON CONFLICT DO UPDATE` and emulates the upsert with a read followed by a
+    // write, which is the race this function is trying to avoid.
+    update: { shop },
   });
 }
 
@@ -290,25 +300,27 @@ export async function findOrCreateCustomer(
     }
   }
 
-  const existing = await prisma.customerProfile.findUnique({
+  // Upsert rather than read-then-create: a first-time customer who double
+  // submits raced two inserts against the unique index on (shop, email), and
+  // the loser's request was lost to a 500. Omitting a field leaves the stored
+  // value alone, which is what the read-then-update path used to do.
+  return prisma.customerProfile.upsert({
     where: { shop_email: { shop, email } },
-  });
-  if (existing) {
-    return prisma.customerProfile.update({
-      where: { id: existing.id },
-      data: {
-        name: name || existing.name,
-        shopifyCustomerId: input.shopifyCustomerId ?? existing.shopifyCustomerId,
-      },
-    });
-  }
-
-  return prisma.customerProfile.create({
-    data: {
+    create: {
       shop,
       name: name || email,
       email,
       shopifyCustomerId: input.shopifyCustomerId,
+    },
+    update: {
+      // A no-op that keeps the payload non-empty even when there is nothing to
+      // change, so Prisma emits an atomic `ON CONFLICT DO UPDATE` rather than
+      // emulating the upsert with a racy read-then-write.
+      email,
+      ...(name ? { name } : {}),
+      ...(input.shopifyCustomerId !== undefined
+        ? { shopifyCustomerId: input.shopifyCustomerId }
+        : {}),
     },
   });
 }
@@ -531,7 +543,7 @@ export async function sendOffer(
         sentAt,
         expiresAt,
         expirationDays,
-        offerLink: `/customer/requests/${requestId}`,
+        offerLink: customerLinksForShop(shop).requestDetail(requestId),
         items: {
           create: request.items.map((item) => ({
             requestItemId: item.id,

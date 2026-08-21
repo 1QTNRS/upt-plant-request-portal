@@ -1,0 +1,83 @@
+# Development configuration, for `shopify app dev` with a tunnel.
+#
+# Select it with:
+#
+#   shopify app config use dev
+#
+# and switch back before deploying with:
+#
+#   shopify app config use shopify.app.toml
+#
+# Why this file exists: shopify.app.toml now pins the production URLs to the
+# Render service and sets `automatically_update_urls_on_dev = false`, so a dev
+# session cannot repoint the live app at a temporary tunnel. This config keeps
+# the tunnel workflow available.
+#
+# ---------------------------------------------------------------------------
+# BEFORE FIRST USE: replace client_id below.
+# ---------------------------------------------------------------------------
+# It must be a SEPARATE Shopify app from the production one, because
+# `shopify app dev` rewrites the app's URLs in the Partner dashboard and would
+# otherwise take the production app down for the duration of the session.
+# Create one at https://partners.shopify.com -> Apps -> Create app, then run
+# `shopify app config link` and copy its Client ID here.
+#
+# You do not need any of this to work on the portal locally: the React Router
+# dev server described in AGENTS.md runs the whole app with no Shopify app,
+# tunnel or Partner login. Use this config only when you specifically need real
+# Shopify OAuth, a real Admin API session, or the app proxy.
+
+client_id = "REPLACE_WITH_YOUR_DEVELOPMENT_APP_CLIENT_ID"
+name = "UPT Plant Request Portal (dev)"
+# Overwritten by the CLI on every `shopify app dev`.
+application_url = "https://example.com"
+embedded = true
+
+[build]
+# The point of this config: let the CLI manage the tunnel URLs.
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/paid"
+  topics = [ "orders/paid" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/data_request"
+  compliance_topics = [ "customers/data_request" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/redact"
+  compliance_topics = [ "customers/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/shop/redact"
+  compliance_topics = [ "shop/redact" ]
+
+[access_scopes]
+# Must match the production scopes, or a dev session will not exercise the same
+# permissions. app/lib/shopify-config.test.ts asserts this.
+scopes = "write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications"
+
+[app_proxy]
+# Rewritten by the CLI alongside application_url.
+url = "https://example.com/customer"
+subpath = "plant-requests"
+prefix = "apps"
+
+[auth]
+redirect_urls = [
+  "https://example.com/auth/callback",
+  "https://example.com/auth/shopify/callback",
+]

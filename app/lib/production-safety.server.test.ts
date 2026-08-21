@@ -3,7 +3,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 
 import prisma from "../db.server";
 import { notifyNewRequest } from "./emails.server";
-import { redactCustomerData, redactShopData } from "./privacy.server";
+import { handleCustomerRedact, handleShopRedact } from "./compliance.server";
 import {
   closeRequest,
   listCustomerRequests,
@@ -278,11 +278,10 @@ describe("privacy redaction", () => {
     });
     await notifyNewRequest(shop, target.id);
 
-    const result = await redactCustomerData(shop, {
-      shopifyCustomerId: "3003",
-      email: "erase-me@example.com",
+    const result = await handleCustomerRedact(shop, {
+      customer: { id: "3003", email: "erase-me@example.com" },
     });
-    assert.equal(result.requestsDeleted, 1);
+    assert.equal(result.profilesDeleted, 1);
 
     assert.equal(
       await prisma.plantRequest.count({ where: { id: target.id } }),
@@ -300,7 +299,7 @@ describe("privacy redaction", () => {
 
   it("erases everything for a shop", async () => {
     await offeredRequest();
-    await redactShopData(shop);
+    await handleShopRedact(shop);
 
     assert.equal(await prisma.plantRequest.count({ where: { shop } }), 0);
     assert.equal(await prisma.customerProfile.count({ where: { shop } }), 0);

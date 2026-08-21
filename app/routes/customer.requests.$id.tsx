@@ -1,12 +1,11 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { data, useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
-import {
-  authenticateCustomer,
-  identityOwnsRequest,
-  readCustomerSession,
-} from "../lib/customer-session.server";
+import { customerPortalRelativeLinks } from "../lib/app-proxy";
+import { readCustomerContext } from "../lib/customer-session.server";
+import { resolveCustomerIdentity } from "../lib/customer-identity.server";
+import { identityOwnsRequest } from "../lib/customer-identity";
 import {
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
@@ -17,49 +16,70 @@ import {
   loadCustomerOfferPage,
 } from "../lib/offer-response.server";
 import { getRequest } from "../lib/portal.server";
-import { ensureShopSettings } from "../lib/seed-demo.server";
+import { offlineAdminClient } from "../lib/offline-admin.server";
+import { ensureShopSeeded } from "../lib/seed-demo.server";
 
-const FORBIDDEN = {
-  forbidden: true as const,
-  request: null,
-  offer: null,
-  response: null,
-  invoiceUrl: null,
-  fedexRemovalWarning: "",
-  requestClosed: false,
-  confirmationEmail: null,
-};
+
+/**
+ * Resolves the visitor and confirms they own the request, or returns null so
+ * the caller can render the same "not available" response for a missing
+ * request, a forged id and someone else's request.
+ */
+async function authorizeRequest(request: Request, requestId: string) {
+  const context = await readCustomerContext(request);
+  if (!context) return null;
+
+  // Never seeds a real shop; keeps the settings row present for one.
+  await ensureShopSeeded(context.shop);
+
+  if (!context.identity) return null;
+  const identity = await resolveCustomerIdentity(context.shop, context.identity);
+  const plantRequest = await getRequest(context.shop, requestId);
+  if (!identityOwnsRequest(identity, plantRequest)) return null;
+
+  return { context, plantRequest };
+}
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const session = await readCustomerSession(request);
-  if (!session) return FORBIDDEN;
-
-  await ensureShopSettings(session.shop);
   const requestId = params.id ?? "";
-  const plantRequest = await getRequest(session.shop, requestId);
+  const authorized = await authorizeRequest(request, requestId);
 
-  if (!identityOwnsRequest(session, plantRequest)) return FORBIDDEN;
+  if (!authorized) {
+    return {
+      forbidden: true as const,
+      request: null,
+      offer: null,
+      response: null,
+      invoiceUrl: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      confirmationEmail: null,
+      backHref: customerPortalRelativeLinks(false).home,
+    };
+  }
 
-  const page = await loadCustomerOfferPage(session.shop, requestId);
-  return { forbidden: false as const, request: plantRequest, ...page };
+  const { context, plantRequest } = authorized;
+  const page = await loadCustomerOfferPage(context.shop, requestId);
+  return {
+    forbidden: false as const,
+    request: plantRequest,
+    ...page,
+    backHref: customerPortalRelativeLinks(context.viaAppProxy).home,
+  };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const authenticated = await authenticateCustomer(request);
-  if (!authenticated) return { ok: false as const };
-
-  const { identity, admin } = authenticated;
   const requestId = params.id ?? "";
-  const plantRequest = await getRequest(identity.shop, requestId);
-  if (!identityOwnsRequest(identity, plantRequest)) return { ok: false as const };
+  const authorized = await authorizeRequest(request, requestId);
+  if (!authorized) throw data("Not found", { status: 404 });
 
+  const { context } = authorized;
   const form = await request.formData();
-  return handleCustomerOfferAction({
-    shop: identity.shop,
-    requestId,
-    form,
-    admin,
-  });
+  // The portal is served through the app proxy and so has no merchant session;
+  // the stored offline token is what lets an accepted offer become a real
+  // Shopify draft order.
+  const admin = await offlineAdminClient(context.shop);
+  return handleCustomerOfferAction({ shop: context.shop, requestId, form, admin });
 };
 
 export default function CustomerRequestDetail() {
@@ -74,7 +94,7 @@ export default function CustomerRequestDetail() {
               You can only view your own plant requests. Please log in with the
               customer account that submitted this request.
             </s-text>
-            <s-link href="/customer">Back to My Requests</s-link>
+            <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
       </s-page>
@@ -97,7 +117,7 @@ export default function CustomerRequestDetail() {
             <s-text color="subdued">
               We&apos;ll notify you when your personal offer is ready.
             </s-text>
-            <s-link href="/customer">Back to My Requests</s-link>
+            <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
       </s-page>
@@ -110,7 +130,7 @@ export default function CustomerRequestDetail() {
       response={data.response}
       invoiceUrl={data.invoiceUrl}
       fedexRemovalWarning={data.fedexRemovalWarning}
-      backHref="/customer"
+      backHref={data.backHref}
       requestClosed={data.requestClosed}
       confirmationEmail={data.confirmationEmail}
     />

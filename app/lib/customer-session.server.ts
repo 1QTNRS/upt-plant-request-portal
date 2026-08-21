@@ -1,185 +1,121 @@
 import { createCookie } from "react-router";
 
-import { authenticate } from "../shopify.server";
-import { isProductionRuntime } from "./environment.server";
+import { appProxySignatureIsValid } from "./app-proxy";
+import { isProduction } from "./env.server";
 import { DEMO_SHOP, isDevAdminBypass } from "./shop";
 
-export type AdminGraphqlClient = {
-  graphql: (
-    query: string,
-    options?: { variables?: Record<string, unknown> },
-  ) => Promise<Response>;
-};
-
-export type AuthenticatedCustomer = {
-  identity: CustomerIdentity;
-  /**
-   * Offline Admin API client for the shop that proxied the request. Present
-   * whenever the app has a stored session, and needed so that customer-driven
-   * actions (accepting an offer) can create real Shopify draft orders.
-   */
-  admin?: AdminGraphqlClient;
-};
-
 export type CustomerIdentity = {
-  shop: string;
   email: string;
   name: string;
   shopifyCustomerId?: string;
-  /**
-   * `app-proxy` identities are cryptographically verified by Shopify.
-   * `demo-cookie` identities exist only for local development.
-   */
-  source: "app-proxy" | "demo-cookie";
-  /** True when we have both a contactable email and a stable identity. */
-  canSubmitRequests: boolean;
 };
 
-/** Retained for backwards compatibility with existing call sites. */
-export type CustomerSession = CustomerIdentity;
+export type CustomerSession = CustomerIdentity & {
+  shop: string;
+};
+
+/**
+ * What the portal knows about the current visitor. `shop` is resolved even when
+ * nobody is signed in, so the portal can still render the request form.
+ */
+export type CustomerContext = {
+  shop: string;
+  viaAppProxy: boolean;
+  identity: CustomerIdentity | null;
+};
+
+function cookieSecrets(): string[] {
+  const secret = process.env.SHOPIFY_API_SECRET;
+  if (secret) return [secret];
+  if (isProduction()) {
+    // assertProductionEnv already refuses to boot without a secret; this keeps
+    // the guarantee local to the cookie so a future caller cannot bypass it.
+    throw new Error("SHOPIFY_API_SECRET is required to sign customer session cookies.");
+  }
+  return ["devsecret"];
+}
 
 const customerCookie = createCookie("upt_customer_session", {
   httpOnly: true,
   sameSite: "lax",
+  secure: isProduction(),
   path: "/",
-  secure: isProductionRuntime(),
-  secrets: [process.env.SHOPIFY_API_SECRET || "devsecret"],
+  secrets: cookieSecrets(),
 });
 
-export function canUseDemoCustomerLogin(): boolean {
-  if (isProductionRuntime()) return false;
-  return isDevAdminBypass() || process.env.ALLOW_CUSTOMER_DEMO_LOGIN === "true";
+function devShop(): string {
+  return process.env.DEV_SHOP || DEMO_SHOP;
 }
 
 /**
- * An App Proxy request carries a `signature` query parameter covering the whole
- * query string. Its presence is what tells us to run Shopify's HMAC check
- * instead of falling back to the development cookie.
+ * Identity from a Shopify app proxy request, or null when the request did not
+ * come through the proxy with a valid signature.
  */
-function isAppProxyRequest(request: Request): boolean {
-  return new URL(request.url).searchParams.has("signature");
-}
-
-const CUSTOMER_QUERY = `#graphql
-  query PortalCustomerIdentity($id: ID!) {
-    customer(id: $id) {
-      id
-      email
-      displayName
-      firstName
-      lastName
-    }
-  }
-`;
-
-type ShopifyCustomer = {
-  id: string;
-  email: string | null;
-  displayName: string | null;
-  firstName: string | null;
-  lastName: string | null;
-};
-
-/**
- * The proxy only tells us *which* customer is signed in, never their name or
- * email, so we read those from the Admin API using the `read_customers` scope.
- */
-async function fetchCustomerContactDetails(
-  admin: AdminGraphqlClient | undefined,
-  numericCustomerId: string,
-): Promise<{ email: string; name: string }> {
-  if (!admin) return { email: "", name: "" };
-
-  try {
-    const response = await admin.graphql(CUSTOMER_QUERY, {
-      variables: { id: `gid://shopify/Customer/${numericCustomerId}` },
-    });
-    const body = (await response.json()) as {
-      data?: { customer: ShopifyCustomer | null };
-      errors?: Array<{ message: string }>;
-    };
-    if (body.errors?.length || !body.data?.customer) {
-      return { email: "", name: "" };
-    }
-
-    const customer = body.data.customer;
-    const name =
-      customer.displayName?.trim() ||
-      [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim();
-    return { email: customer.email?.trim().toLowerCase() ?? "", name };
-  } catch {
-    return { email: "", name: "" };
-  }
-}
-
-/**
- * Resolves the signed-in storefront customer, along with the shop's Admin API
- * client when one is available.
- *
- * Returns `null` when nobody is authenticated. Throws Shopify's 400 response
- * when an App Proxy signature is present but invalid, so a forged
- * `logged_in_customer_id` can never reach the data layer.
- */
-export async function authenticateCustomer(
+export function readAppProxyContext(
   request: Request,
-): Promise<AuthenticatedCustomer | null> {
-  if (isAppProxyRequest(request)) {
-    const { session, admin } = await authenticate.public.appProxy(request);
+): { shop: string; loggedInCustomerId: string | null } | null {
+  const search = new URL(request.url).searchParams;
+  if (!search.has("signature")) return null;
 
-    const url = new URL(request.url);
-    // Safe to trust: every one of these params is covered by the verified HMAC.
-    const shop = session?.shop || url.searchParams.get("shop") || "";
-    const loggedInCustomerId = (
-      url.searchParams.get("logged_in_customer_id") || ""
-    ).trim();
+  if (!appProxySignatureIsValid(search, process.env.SHOPIFY_API_SECRET ?? "")) {
+    return null;
+  }
 
-    if (!shop || !loggedInCustomerId) return null;
+  const shop = search.get("shop");
+  if (!shop) return null;
 
-    const contact = await fetchCustomerContactDetails(admin, loggedInCustomerId);
+  return {
+    shop,
+    loggedInCustomerId: search.get("logged_in_customer_id") || null,
+  };
+}
+
+/**
+ * Resolves the shop and, when available, the signed-in customer.
+ *
+ * Returns null when the shop cannot be established — in production that means
+ * the request did not come through the app proxy and must not be served.
+ */
+export async function readCustomerContext(
+  request: Request,
+): Promise<CustomerContext | null> {
+  const proxy = readAppProxyContext(request);
+  if (proxy) {
     return {
-      admin,
-      identity: {
-        shop,
-        email: contact.email,
-        name: contact.name,
-        shopifyCustomerId: loggedInCustomerId,
-        source: "app-proxy",
-        canSubmitRequests: contact.email.length > 0,
-      },
+      shop: proxy.shop,
+      viaAppProxy: true,
+      identity: proxy.loggedInCustomerId
+        ? { email: "", name: "", shopifyCustomerId: proxy.loggedInCustomerId }
+        : null,
     };
   }
 
-  if (!canUseDemoCustomerLogin()) return null;
+  if (isProduction()) return null;
 
+  const session = await readCookieSession(request);
+  return {
+    shop: session?.shop || devShop(),
+    viaAppProxy: false,
+    identity: session
+      ? {
+          email: session.email,
+          name: session.name,
+          shopifyCustomerId: session.shopifyCustomerId,
+        }
+      : null,
+  };
+}
+
+async function readCookieSession(request: Request): Promise<CustomerSession | null> {
   const raw = await customerCookie.parse(request.headers.get("Cookie"));
   if (raw && typeof raw === "object" && "email" in raw) {
-    const cookieSession = raw as Partial<CustomerIdentity>;
-    const email = (cookieSession.email ?? "").trim().toLowerCase();
-    if (!email) return null;
-    return {
-      identity: {
-        shop: cookieSession.shop || process.env.DEV_SHOP || DEMO_SHOP,
-        email,
-        name: cookieSession.name ?? "",
-        shopifyCustomerId: cookieSession.shopifyCustomerId,
-        source: "demo-cookie",
-        canSubmitRequests: true,
-      },
-    };
+    return raw as CustomerSession;
   }
-
   return null;
 }
 
-export async function readCustomerSession(
-  request: Request,
-): Promise<CustomerIdentity | null> {
-  const authenticated = await authenticateCustomer(request);
-  return authenticated?.identity ?? null;
-}
-
 export async function serializeCustomerSession(
-  session: Pick<CustomerIdentity, "shop" | "email" | "name" | "shopifyCustomerId">,
+  session: CustomerSession,
 ): Promise<string> {
   return customerCookie.serialize(session);
 }
@@ -188,4 +124,7 @@ export async function destroyCustomerSession(): Promise<string> {
   return customerCookie.serialize("", { maxAge: 0 });
 }
 
-export { identityOwnsRequest } from "./customer-identity";
+export function canUseDemoCustomerLogin(): boolean {
+  if (isProduction()) return false;
+  return isDevAdminBypass() || process.env.ALLOW_CUSTOMER_DEMO_LOGIN === "true";
+}

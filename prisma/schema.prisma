@@ -8,8 +8,12 @@ generator client {
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
-// SQLite is fine for development and the demo shop. For a hosted deploy point
-// DATABASE_URL at durable storage, because a container filesystem is ephemeral.
+//
+// This is the SQLite schema, used for local development. The PostgreSQL schema
+// used in production lives in prisma/postgres/schema.prisma and is generated
+// from this file by `npm run prisma:sync-schema`; the model blocks must stay
+// byte-identical. `npm run prisma:resolve` picks the right schema from
+// DATABASE_URL, so every prisma script works for either provider.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")

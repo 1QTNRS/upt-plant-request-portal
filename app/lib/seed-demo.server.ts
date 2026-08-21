@@ -252,8 +252,10 @@ const SEED_REQUESTS: SeedRequest[] = [
 ];
 
 /**
- * Every shop needs a settings row. This is the only part of shop bootstrap that
- * is safe to run against a real merchant store.
+ * Creates the shop's settings row if it does not exist. This is the only part of
+ * shop bootstrap that is safe against a real merchant store, and it is separate
+ * from `ensureShopSeeded` so a real shop gets its settings without also getting
+ * the demo requests.
  */
 export async function ensureShopSettings(shop: string): Promise<void> {
   await prisma.shopSettings.upsert({
@@ -267,11 +269,20 @@ export async function ensureShopSettings(shop: string): Promise<void> {
   });
 }
 
+/**
+ * Populates a shop with the REQ1–REQ8 demo requests, and ensures its settings
+ * row either way.
+ *
+ * This is called from every admin loader, so without the guard below it would
+ * file eight fake requests from invented customers into the live UPT store the
+ * first time anyone opened the app.
+ */
 export async function ensureShopSeeded(shop: string): Promise<void> {
   await ensureShopSettings(shop);
 
   // Sample requests and the Alex Rivera demo customer must never reach a real
-  // merchant store, so seeding stops here for anything but a demo shop.
+  // merchant store, so seeding stops here for anything but a demo shop. This is
+  // stricter than a production check: it also refuses a real shop in dev.
   if (!isDemoDataEnabled(shop)) return;
 
   const legacySeedNumbers: Record<string, string> = {
