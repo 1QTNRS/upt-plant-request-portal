@@ -81,6 +81,32 @@ export function missingScopes(granted: string[]): string[] {
   return REQUIRED_SHOPIFY_SCOPES.filter((scope) => !set.has(scope));
 }
 
+/**
+ * Explains what the merchant still has to approve, or null when the access
+ * token already covers everything the app calls.
+ *
+ * Adding a scope to shopify.app.toml does not upgrade an existing token: the
+ * merchant has to approve again. Until they do, the missing permission only
+ * surfaces as an opaque GraphQL error at the moment someone approves an EXACT
+ * PLANTS listing or uploads a photo, which is a poor way to find out.
+ */
+export function grantedScopeWarning(
+  grantedScopes: string | null | undefined,
+): string | null {
+  // No recorded scope means no Shopify session (the local dev bypass), not a
+  // token that granted nothing.
+  if (!grantedScopes?.trim()) return null;
+
+  const missing = missingScopes(grantedScopes.split(","));
+  if (missing.length === 0) return null;
+
+  return (
+    `This store has not approved ${missing.join(", ")}. ` +
+    "Reinstall or re-approve the app from the Shopify admin, or features that " +
+    "need those permissions will fail."
+  );
+}
+
 export type EnvProblem = { variable: string; message: string };
 
 /**

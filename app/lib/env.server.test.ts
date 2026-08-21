@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
+  grantedScopeWarning,
   missingScopes,
   productionEnvProblems,
   REQUIRED_SHOPIFY_SCOPES,
@@ -122,6 +123,42 @@ describe("database connection pool", () => {
 
   it("does not touch a SQLite URL, which has no pool", () => {
     assert.equal(withConnectionLimit("file:dev.sqlite"), "file:dev.sqlite");
+  });
+});
+
+describe("granted scope warning", () => {
+  it("is silent when the token covers everything the app calls", () => {
+    assert.equal(grantedScopeWarning(REQUIRED_SHOPIFY_SCOPES.join(",")), null);
+  });
+
+  it("names the scopes the merchant still has to approve", () => {
+    const warning = grantedScopeWarning(
+      "read_orders,write_draft_orders,read_draft_orders,read_customers",
+    );
+    assert.match(warning ?? "", /write_products/);
+    assert.match(warning ?? "", /write_publications/);
+    assert.match(warning ?? "", /re-approve/i);
+  });
+
+  it("tolerates the whitespace Shopify's scope strings can carry", () => {
+    assert.equal(
+      grantedScopeWarning(REQUIRED_SHOPIFY_SCOPES.join(", ")),
+      null,
+    );
+  });
+
+  it("stays silent when there is no Shopify session at all", () => {
+    // The local dev bypass has no session; that is not a token granting nothing.
+    for (const value of [null, undefined, "", "   "]) {
+      assert.equal(grantedScopeWarning(value), null);
+    }
+  });
+
+  it("ignores extra scopes the store granted beyond what is needed", () => {
+    assert.equal(
+      grantedScopeWarning(`${REQUIRED_SHOPIFY_SCOPES.join(",")},read_themes`),
+      null,
+    );
   });
 });
 
