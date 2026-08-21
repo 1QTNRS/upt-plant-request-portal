@@ -540,9 +540,14 @@ export async function updateRequestItem(
               input.availability === "not_available" ? "Unavailable" : "Requested",
           }
         : {}),
-      ...(input.unavailableReason
-        ? { unavailableReason: normalizeUnavailableReason(input.unavailableReason) }
-        : {}),
+      // A reason left over from a spell as Not Available would prefill itself
+      // the next time the item is flipped back, so it goes when the plant does
+      // become available.
+      ...(input.availability === "available"
+        ? { unavailableReason: null }
+        : input.unavailableReason
+          ? { unavailableReason: normalizeUnavailableReason(input.unavailableReason) }
+          : {}),
       ...(input.price !== undefined ? { price: normalizePrice(input.price) } : {}),
       ...(input.weightLbs !== undefined
         ? { weightLbs: normalizeWeight(input.weightLbs) }

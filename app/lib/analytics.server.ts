@@ -202,6 +202,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
 
   type PlantBucket = {
     plantName: string;
+    offeredNames: Set<string>;
     requestCount: number;
     purchaseCount: number;
     offeredCount: number;
@@ -212,12 +213,13 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
 
   const bumpPlant = (
     plantName: string,
-    field: keyof Omit<PlantBucket, "plantName">,
+    field: keyof Omit<PlantBucket, "plantName" | "offeredNames">,
     amount = 1,
   ) => {
     const key = plantName.trim() || "Unknown";
     const current = plants.get(key) ?? {
       plantName: key,
+      offeredNames: new Set<string>(),
       requestCount: 0,
       purchaseCount: 0,
       offeredCount: 0,
@@ -228,7 +230,23 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     plants.set(key, current);
   };
 
+  const noteOfferedName = (plantName: string, offeredName: string) => {
+    const key = plantName.trim() || "Unknown";
+    const offered = offeredName.trim();
+    const bucket = plants.get(key);
+    if (!bucket || !offered || offered === key) return;
+    bucket.offeredNames.add(offered);
+  };
+
   for (const request of requests) {
+    // Every figure in this table is attributed to the plant the customer asked
+    // for, found through requestItemId. Keying the offer and response figures
+    // on their own plantName instead split every renamed plant into two rows —
+    // one with the requests, one with the purchases — each converting at 0%.
+    const requestedName = new Map(
+      request.items.map((item) => [item.id, item.plantName]),
+    );
+
     for (const item of request.items) {
       itemFunnel.requested += 1;
       bumpPlant(item.plantName, "requestCount");
@@ -236,16 +254,20 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     for (const item of request.offer?.items ?? []) {
       if (item.availability !== "available") continue;
       itemFunnel.offered += 1;
-      bumpPlant(item.plantName, "offeredCount");
+      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
+      bumpPlant(plantName, "offeredCount");
+      noteOfferedName(plantName, item.plantName);
     }
     for (const item of request.response?.items ?? []) {
       if (item.choice !== "accept") continue;
       itemFunnel.accepted += 1;
-      bumpPlant(item.plantName, "acceptedCount");
+      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
+      bumpPlant(plantName, "acceptedCount");
+      noteOfferedName(plantName, item.plantName);
       if (request.paidAt) {
         itemFunnel.purchased += 1;
-        bumpPlant(item.plantName, "purchaseCount");
-        bumpPlant(item.plantName, "revenue", item.price * item.quantity);
+        bumpPlant(plantName, "purchaseCount");
+        bumpPlant(plantName, "revenue", item.price * item.quantity);
       }
     }
 
@@ -400,8 +422,11 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     };
   });
 
-  const plantMetrics = [...plants.values()].map((plant) => ({
+  const plantMetrics = [...plants.values()].map(({ offeredNames, ...plant }) => ({
     ...plant,
+    // What UPT called the plant when it offered it, when that differs from the
+    // requested name. A column rather than a row of its own.
+    offeredName: [...offeredNames].sort().join(", "),
     conversionRate: percent(plant.purchaseCount, plant.requestCount),
   }));
 

@@ -9,8 +9,10 @@ import {
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
   ONLINE_STORE_APP_HANDLE,
+  planExactPlantMedia,
   POS_APP_HANDLES,
   buildExactPlantProductCreateInput,
+  type ExistingProductMedia,
 } from "./exact-plants";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
 import {
@@ -912,12 +914,123 @@ async function stockOneExactPlant(
   }
 }
 
-/** Applies the admin's approved title, price and weight to an existing product. */
+const PRODUCT_MEDIA_QUERY = `#graphql
+  query ExactPlantProductMedia($id: ID!, $after: String) {
+    product(id: $id) {
+      media(first: 50, after: $after) {
+        nodes {
+          id
+          ... on MediaImage {
+            originalSource { url }
+            image { url }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+`;
+
+/**
+ * `fileUpdate` is what 2025-10 offers in place of the deprecated
+ * `productDeleteMedia`. It drops the product's reference to the image rather
+ * than deleting the image, which is the safer of the two here: the photos come
+ * from Shopify Files and a frozen offer snapshot still shows them to the
+ * customer who was offered the plant.
+ */
+const DETACH_PRODUCT_MEDIA_MUTATION = `#graphql
+  mutation DetachExactPlantMedia($files: [FileUpdateInput!]!) {
+    fileUpdate(files: $files) {
+      userErrors { message }
+    }
+  }
+`;
+
+async function listExactPlantProductMedia(
+  admin: GraphqlClient,
+  productId: string,
+): Promise<ExistingProductMedia[]> {
+  const media: ExistingProductMedia[] = [];
+  let after: string | null = null;
+
+  // Paginated because a photo left off the last page would silently stay
+  // published, which is the whole failure being fixed here.
+  do {
+    const data: {
+      product: {
+        media: {
+          nodes: Array<{
+            id: string;
+            originalSource?: { url?: string | null } | null;
+            image?: { url?: string | null } | null;
+          }>;
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      } | null;
+    } = await adminGraphql(admin, PRODUCT_MEDIA_QUERY, { id: productId, after });
+
+    if (!data.product) break;
+    for (const node of data.product.media.nodes) {
+      media.push({
+        id: node.id,
+        sourceUrl: node.originalSource?.url ?? null,
+        imageUrl: node.image?.url ?? null,
+      });
+    }
+    after = data.product.media.pageInfo.hasNextPage
+      ? data.product.media.pageInfo.endCursor
+      : null;
+  } while (after);
+
+  return media;
+}
+
+async function detachExactPlantMedia(
+  admin: GraphqlClient,
+  productId: string,
+  mediaIds: string[],
+): Promise<void> {
+  const result = await adminGraphql<{
+    fileUpdate: { userErrors: Array<{ message: string }> };
+  }>(admin, DETACH_PRODUCT_MEDIA_MUTATION, {
+    files: mediaIds.map((id) => ({ id, referencesToRemove: [productId] })),
+  });
+  if (result.fileUpdate.userErrors.length > 0) {
+    throw new Error(
+      userErrorMessage(
+        result.fileUpdate.userErrors,
+        "Could not remove the photos the admin took off this EXACT PLANTS listing.",
+      ),
+    );
+  }
+}
+
+/**
+ * Applies the admin's approved title, price, weight and photos to an existing
+ * product.
+ *
+ * The photos are the reason this exists: the review form lets the admin remove
+ * and reorder them, and a retry that only sent the title left a photo the admin
+ * had deliberately removed published on the store.
+ */
 async function updateExactPlantProduct(
   admin: GraphqlClient,
   product: ExactPlantProduct,
-  input: { title: string; price: number; weightLbs: number },
+  input: {
+    title: string;
+    price: number;
+    weightLbs: number;
+    photoUrls: string[];
+    appUrl?: string;
+  },
 ): Promise<{ id: string; handle: string }> {
+  const plan = planExactPlantMedia({
+    existing: await listExactPlantProductMedia(admin, product.id),
+    title: input.title,
+    photoUrls: input.photoUrls,
+    appUrl: input.appUrl,
+  });
+
   const updated = await adminGraphql<{
     productUpdate: {
       product: { id: string; handle: string } | null;
@@ -926,14 +1039,22 @@ async function updateExactPlantProduct(
   }>(
     admin,
     `#graphql
-      mutation UpdateExactPlantProduct($product: ProductUpdateInput!) {
-        productUpdate(product: $product) {
+      mutation UpdateExactPlantProduct(
+        $product: ProductUpdateInput!
+        $media: [CreateMediaInput!]
+      ) {
+        productUpdate(product: $product, media: $media) {
           product { id handle }
           userErrors { message }
         }
       }
     `,
-    { product: { id: product.id, title: input.title } },
+    {
+      product: { id: product.id, title: input.title },
+      // Left off rather than sent empty, so Shopify sees no media argument at
+      // all when the product already carries the approved photos.
+      media: plan.create.length > 0 ? plan.create : undefined,
+    },
   );
 
   if (updated.productUpdate.userErrors.length > 0) {
@@ -943,6 +1064,10 @@ async function updateExactPlantProduct(
         "Could not update the existing EXACT PLANTS product.",
       ),
     );
+  }
+
+  if (plan.detachMediaIds.length > 0) {
+    await detachExactPlantMedia(admin, product.id, plan.detachMediaIds);
   }
 
   await priceAndStockExactPlantVariant(admin, product, input);
@@ -985,16 +1110,30 @@ export async function createExactPlantShopifyProduct(
     photoUrls: string[];
     appUrl?: string;
   },
+  /**
+   * Called the moment a product for this plant exists in Shopify, before
+   * anything that could still fail. Everything after this point leaves a
+   * product behind whether it succeeds or not, so the caller needs the chance
+   * to record it.
+   */
+  onProductIdentified?: (product: {
+    productGid: string;
+    handle: string;
+  }) => Promise<void>,
 ): Promise<{ productGid: string; handle: string; collectionGid: string }> {
   const mediaError = exactPlantMediaError(input.photoUrls, input.appUrl);
   if (mediaError) throw new Error(mediaError);
 
   const existing = await findExactPlantProductByItemTag(admin, input.requestItemId);
-  const collection = await findOrCreateExactPlantsCollection(admin);
-
   if (existing) {
+    await onProductIdentified?.({
+      productGid: existing.id,
+      handle: existing.handle,
+    });
+
     // A retry after an edit on the review form must land the edited values on
     // the one product for this item rather than create a second one.
+    const collection = await findOrCreateExactPlantsCollection(admin);
     const refreshed = await updateExactPlantProduct(admin, existing, input);
     await addProductToCollection(admin, collection.id, refreshed.id);
     await publishProductToOnlineStoreAndPos(admin, refreshed.id);
@@ -1005,6 +1144,7 @@ export async function createExactPlantShopifyProduct(
     };
   }
 
+  const collection = await findOrCreateExactPlantsCollection(admin);
   const created = await adminGraphql<{
     productCreate: {
       product: {
@@ -1056,6 +1196,8 @@ export async function createExactPlantShopifyProduct(
       ),
     );
   }
+
+  await onProductIdentified?.({ productGid: product.id, handle: product.handle });
 
   const variant = product.variants.nodes[0];
   await priceAndStockExactPlantVariant(

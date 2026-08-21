@@ -92,7 +92,10 @@ const LISTING_RESPONSES: Responses = {
   ]),
 };
 
-async function listOnePlant(overrides: Responses = {}): Promise<Call[]> {
+async function listOnePlant(
+  overrides: Responses = {},
+  input: { photoUrls?: string[] } = {},
+): Promise<Call[]> {
   const calls: Call[] = [];
   await createExactPlantShopifyProduct(
     fakeAdmin({ ...LISTING_RESPONSES, ...overrides }, calls),
@@ -101,10 +104,51 @@ async function listOnePlant(overrides: Responses = {}): Promise<Call[]> {
       title: "Monstera Thai Constellation",
       price: 285,
       weightLbs: 4.5,
-      photoUrls: ["https://cdn.shopify.com/s/files/1/photo.jpg"],
+      photoUrls: input.photoUrls ?? ["https://cdn.shopify.com/s/files/1/photo.jpg"],
     },
   );
   return calls;
+}
+
+const EXISTING_PHOTO = "https://cdn.shopify.com/s/files/1/kept.jpg";
+const REMOVED_PHOTO = "https://cdn.shopify.com/s/files/1/removed.jpg";
+
+/** Responses for a retry against the product an earlier approval created. */
+function retryResponses(
+  media: Array<{ id: string; originalSource?: { url: string } | null }>,
+): Responses {
+  return {
+    ExactPlantProductByTag: {
+      products: {
+        nodes: [
+          {
+            id: PRODUCT_GID,
+            handle: "monstera-thai-constellation",
+            variants: {
+              nodes: [
+                { id: VARIANT_GID, inventoryItem: { id: INVENTORY_ITEM_GID } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    ExactPlantProductMedia: {
+      product: {
+        media: {
+          nodes: media,
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      },
+    },
+    UpdateExactPlantProduct: {
+      productUpdate: {
+        product: { id: PRODUCT_GID, handle: "monstera-thai-constellation" },
+        userErrors: [],
+      },
+    },
+    DetachExactPlantMedia: { fileUpdate: { userErrors: [] } },
+  };
 }
 
 function callOf(calls: Call[], operation: string): Call {
@@ -190,6 +234,92 @@ describe("EXACT PLANTS listing on Shopify", () => {
     assert.match(query, /publications\(first: 50, after: \$after, catalogType: APP\)/);
     assert.match(query, /\.\.\. on AppCatalog/);
     assert.match(query, /nodes \{ handle \}/);
+  });
+});
+
+describe("retrying an EXACT PLANTS listing after the admin edited the photos", () => {
+  it("adds the approved photos and takes the removed one off the product", async () => {
+    const calls = await listOnePlant(
+      retryResponses([
+        { id: "gid://shopify/MediaImage/1", originalSource: { url: EXISTING_PHOTO } },
+        { id: "gid://shopify/MediaImage/2", originalSource: { url: REMOVED_PHOTO } },
+      ]),
+      { photoUrls: [EXISTING_PHOTO] },
+    );
+
+    assert.deepEqual(callOf(calls, "UpdateExactPlantProduct").variables, {
+      product: { id: PRODUCT_GID, title: "Monstera Thai Constellation" },
+      media: [
+        {
+          originalSource: EXISTING_PHOTO,
+          alt: "Monstera Thai Constellation",
+          mediaContentType: "IMAGE",
+        },
+      ],
+    });
+    assert.deepEqual(callOf(calls, "DetachExactPlantMedia").variables.files, [
+      {
+        id: "gid://shopify/MediaImage/1",
+        referencesToRemove: [PRODUCT_GID],
+      },
+      {
+        id: "gid://shopify/MediaImage/2",
+        referencesToRemove: [PRODUCT_GID],
+      },
+    ]);
+  });
+
+  it("adds the approved photos before removing the old ones", async () => {
+    // The other order leaves the product with no image at all in between.
+    const operations = (
+      await listOnePlant(
+        retryResponses([
+          { id: "gid://shopify/MediaImage/2", originalSource: { url: REMOVED_PHOTO } },
+        ]),
+        { photoUrls: [EXISTING_PHOTO] },
+      )
+    ).map((call) => call.operation);
+    assert.ok(
+      operations.indexOf("UpdateExactPlantProduct") <
+        operations.indexOf("DetachExactPlantMedia"),
+    );
+  });
+
+  it("leaves the media alone when it already matches the approved photos", async () => {
+    const calls = await listOnePlant(
+      retryResponses([
+        {
+          id: "gid://shopify/MediaImage/1",
+          originalSource: { url: `${EXISTING_PHOTO}?v=1712` },
+        },
+      ]),
+      { photoUrls: [EXISTING_PHOTO] },
+    );
+
+    assert.equal(callOf(calls, "UpdateExactPlantProduct").variables.media, undefined);
+    assert.equal(
+      calls.some((call) => call.operation === "DetachExactPlantMedia"),
+      false,
+    );
+  });
+
+  it("still stocks the plant before publishing it on a retry", async () => {
+    const operations = (
+      await listOnePlant(
+        retryResponses([
+          { id: "gid://shopify/MediaImage/1", originalSource: { url: EXISTING_PHOTO } },
+        ]),
+        { photoUrls: [EXISTING_PHOTO] },
+      )
+    ).map((call) => call.operation);
+    assert.ok(
+      operations.indexOf("StockExactPlant") < operations.indexOf("PublishExactPlant"),
+    );
+    assert.equal(
+      operations.filter((operation) => operation === "CreateExactPlantProduct").length,
+      0,
+      "a retry updates the one product for this plant instead of creating another",
+    );
   });
 });
 

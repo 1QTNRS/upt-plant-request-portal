@@ -16,6 +16,7 @@ import {
   offerHasPayableItems,
   parseRequestNumber,
   plantRevenueFromLines,
+  plantRevenueFromPaidOrderLines,
   primaryBehaviorFlag,
   computeTimeRemaining,
 } from "./portal";
@@ -177,6 +178,92 @@ describe("draft orders", () => {
       fedexPrice: 15,
     });
     assert.deepEqual(lines, []);
+  });
+});
+
+/**
+ * The fallback for a paid request with no recorded draft order, so there is no
+ * `kind` to read and the order's own lines are all there is.
+ */
+describe("plant revenue from a paid order's lines", () => {
+  const fedexVariant = "gid://shopify/ProductVariant/44556677";
+  const identity = {
+    variantGid: fedexVariant,
+    upgradeLabel: "FedEx Priority Overnight Upgrade",
+    upgradeSelected: true,
+  };
+
+  it("excludes the upgrade line the merchant renamed", () => {
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Philodendron Spiritus Sancti", price: "400.00", quantity: 1 },
+        {
+          title: "Express Shipping Guarantee",
+          price: "15.00",
+          quantity: 1,
+          variant_id: 44556677,
+        },
+      ],
+      identity,
+    );
+    assert.equal(result.plantRevenue, 400);
+    assert.equal(result.fedexLineCount, 1);
+    assert.equal(result.unidentifiedUpgrade, false);
+  });
+
+  it("counts a plant whose offered name contains Fedex", () => {
+    // The mirror image: the title substrings dropped this $300 plant and kept
+    // the $15 shipping line instead.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Renamed Fedex Exact", price: "300.00", quantity: 1 },
+        {
+          title: "Express Shipping Guarantee",
+          price: "15.00",
+          quantity: 1,
+          admin_graphql_api_variant_id: fedexVariant,
+        },
+      ],
+      identity,
+    );
+    assert.equal(result.plantRevenue, 300);
+  });
+
+  it("falls back to the stored upgrade label when the line carries no variant", () => {
+    // A custom line, which is what the app sends before it has resolved the
+    // FedEx variant on the store.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Monstera Albo Exact", price: "250.00", quantity: 1 },
+        { title: "FedEx Priority Overnight Upgrade", price: "15.00", quantity: 1 },
+      ],
+      { upgradeLabel: identity.upgradeLabel, upgradeSelected: true },
+    );
+    assert.equal(result.plantRevenue, 250);
+    assert.equal(result.fedexLineCount, 1);
+  });
+
+  it("counts every line when the customer removed the upgrade", () => {
+    const result = plantRevenueFromPaidOrderLines(
+      [{ title: "Fedex Special Exact", price: "120.00", quantity: 2 }],
+      { ...identity, upgradeSelected: false },
+    );
+    assert.equal(result.plantRevenue, 240);
+    assert.equal(result.unidentifiedUpgrade, false);
+  });
+
+  it("reports an upgrade it cannot find rather than guessing at one", () => {
+    // Over-stating revenue by the shipping charge is recoverable; silently
+    // dropping a plant from every revenue figure is not.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Anthurium Warocqueanum Exact", price: "500.00", quantity: 1 },
+        { title: "Express Shipping Guarantee", price: "15.00", quantity: 1 },
+      ],
+      { variantGid: fedexVariant, upgradeLabel: "Renamed Upgrade", upgradeSelected: true },
+    );
+    assert.equal(result.plantRevenue, 515);
+    assert.equal(result.unidentifiedUpgrade, true);
   });
 });
 

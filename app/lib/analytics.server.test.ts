@@ -30,6 +30,10 @@ async function seedRequest(options: {
   paidAt?: Date | null;
   prices: number[];
   choices?: Array<"accept" | "reject">;
+  /** What the customer typed, when it differs from `Plant 0`, `Plant 1`, … */
+  requestedNames?: string[];
+  /** What UPT called the plant in the offer, as renaming an exact plant does. */
+  offeredNames?: string[];
 }) {
   const customer = await prisma.customerProfile.upsert({
     where: { shop_email: { shop, email: "test.customer@example.com" } },
@@ -49,8 +53,11 @@ async function seedRequest(options: {
       paidAt: options.paidAt ?? null,
       items: {
         create: options.prices.map((price, index) => ({
-          plantName: `Plant ${index}`,
-          offeredName: `Plant ${index}`,
+          plantName: options.requestedNames?.[index] ?? `Plant ${index}`,
+          offeredName:
+            options.offeredNames?.[index] ??
+            options.requestedNames?.[index] ??
+            `Plant ${index}`,
           quantity: 1,
           price,
           availability: "available",
@@ -71,7 +78,7 @@ async function seedRequest(options: {
       items: {
         create: request.items.map((item, index) => ({
           requestItemId: item.id,
-          plantName: item.plantName,
+          plantName: item.offeredName || item.plantName,
           quantity: 1,
           price: options.prices[index],
           weightLbs: 1,
@@ -108,7 +115,7 @@ async function seedRequest(options: {
         items: {
           create: request.items.map((item, index) => ({
             requestItemId: item.id,
-            plantName: item.plantName,
+            plantName: item.offeredName || item.plantName,
             choice: options.choices![index],
             price: options.prices[index],
             quantity: 1,
@@ -183,5 +190,85 @@ describe("analytics revenue", () => {
 
     const analytics = await getAnalytics(shop, range);
     assert.equal(analytics.financial.revenueLostToExpiredRequests, 800);
+  });
+});
+
+describe("most requested plants", () => {
+  before(reset);
+  after(reset);
+
+  it("keeps a renamed plant on one row and converts against its requests", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ200",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [200],
+      choices: ["accept"],
+      requestedNames: ["Paid Flow Plant"],
+      offeredNames: ["Paid Exact Alocasia"],
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    // Giving an exact plant its own offered name used to split it into a row
+    // holding the request and a row holding the purchase, both at 0%.
+    assert.equal(analytics.plants.mostRequested.length, 1);
+    const plant = analytics.plants.mostRequested[0];
+    assert.equal(plant.plantName, "Paid Flow Plant");
+    assert.equal(plant.offeredName, "Paid Exact Alocasia");
+    assert.equal(plant.requestCount, 1);
+    assert.equal(plant.offeredCount, 1);
+    assert.equal(plant.acceptedCount, 1);
+    assert.equal(plant.purchaseCount, 1);
+    assert.equal(plant.revenue, 200);
+    assert.equal(plant.conversionRate, 100);
+  });
+
+  it("adds up several requests for the same plant under different offered names", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ201",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [300],
+      choices: ["accept"],
+      requestedNames: ["Monstera Albo"],
+      offeredNames: ["Monstera Albo Exact A"],
+    });
+    await seedRequest({
+      requestNumber: "REQ202",
+      status: "Expired",
+      prices: [400],
+      choices: ["reject"],
+      requestedNames: ["Monstera Albo"],
+      offeredNames: ["Monstera Albo Exact B"],
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.plants.mostRequested.length, 1);
+    const plant = analytics.plants.mostRequested[0];
+    assert.equal(plant.plantName, "Monstera Albo");
+    assert.equal(
+      plant.offeredName,
+      "Monstera Albo Exact A, Monstera Albo Exact B",
+      "the offered names belong in a column, not in rows of their own",
+    );
+    assert.equal(plant.requestCount, 2);
+    assert.equal(plant.offeredCount, 2);
+    assert.equal(plant.purchaseCount, 1);
+    assert.equal(plant.conversionRate, 50);
+  });
+
+  it("leaves the offered name blank when UPT did not rename the plant", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ203",
+      status: "Pending",
+      prices: [120],
+      requestedNames: ["Hoya Callistophylla"],
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.plants.mostRequested[0]?.offeredName, "");
   });
 });
