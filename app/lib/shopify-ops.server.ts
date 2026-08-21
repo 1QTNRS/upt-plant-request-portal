@@ -985,11 +985,27 @@ export async function createExactPlantShopifyProduct(
     photoUrls: string[];
     appUrl?: string;
   },
+  /**
+   * Called the moment a product for this plant exists in Shopify, before
+   * anything that could still fail. Everything after this point leaves a
+   * product behind whether it succeeds or not, so the caller needs the chance
+   * to record it.
+   */
+  onProductIdentified?: (product: {
+    productGid: string;
+    handle: string;
+  }) => Promise<void>,
 ): Promise<{ productGid: string; handle: string; collectionGid: string }> {
   const mediaError = exactPlantMediaError(input.photoUrls, input.appUrl);
   if (mediaError) throw new Error(mediaError);
 
   const existing = await findExactPlantProductByItemTag(admin, input.requestItemId);
+  if (existing) {
+    await onProductIdentified?.({
+      productGid: existing.id,
+      handle: existing.handle,
+    });
+  }
   const collection = await findOrCreateExactPlantsCollection(admin);
 
   if (existing) {
@@ -1056,6 +1072,8 @@ export async function createExactPlantShopifyProduct(
       ),
     );
   }
+
+  await onProductIdentified?.({ productGid: product.id, handle: product.handle });
 
   const variant = product.variants.nodes[0];
   await priceAndStockExactPlantVariant(

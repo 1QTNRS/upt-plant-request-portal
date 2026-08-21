@@ -168,9 +168,16 @@ export default function ExactPlantListingReview() {
 
       {formError ? (
         <s-section>
-          <s-banner tone="critical">
-            <s-text>{formError}</s-text>
-          </s-banner>
+          <s-stack direction="block" gap="base">
+            <s-banner tone="critical">
+              <s-text>{formError}</s-text>
+            </s-banner>
+            {review.listing?.productAdminUrl ? (
+              <s-link href={review.listing.productAdminUrl} target="_blank">
+                Open the unpublished Shopify product this attempt created
+              </s-link>
+            ) : null}
+          </s-stack>
         </s-section>
       ) : null}
 

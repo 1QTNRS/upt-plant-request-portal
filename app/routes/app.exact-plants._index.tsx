@@ -64,6 +64,12 @@ export default function ExactPlantsIndex() {
                         <s-text>{item.listing.lastError}</s-text>
                       </s-banner>
                     ) : null}
+                    {item.listing?.status === "failed" &&
+                    item.listing.productAdminUrl ? (
+                      <s-link href={item.listing.productAdminUrl} target="_blank">
+                        Open the unpublished Shopify product this attempt created
+                      </s-link>
+                    ) : null}
                     {listed ? (
                       <s-stack direction="inline" gap="base">
                         <s-badge tone="success">Listed in EXACT PLANTS</s-badge>
