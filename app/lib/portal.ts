@@ -577,6 +577,99 @@ export function plantRevenueFromLines(lines: DraftOrderLineItem[]): number {
     .reduce((sum, line) => sum + line.price * line.quantity, 0);
 }
 
+/** The numeric part of a Shopify GID, or of an id that is already numeric. */
+export function shopifyNumericId(
+  value: string | number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const digits = text.match(/(\d+)$/)?.[1];
+  return digits ?? null;
+}
+
+export type PaidOrderLine = {
+  title?: string | null;
+  name?: string | null;
+  price?: string | number | null;
+  quantity?: number | null;
+  variant_id?: string | number | null;
+  admin_graphql_api_variant_id?: string | null;
+};
+
+export type FedexLineIdentity = {
+  /** `ShopSettings.fedexVariantGid`: the variant the upgrade is billed on. */
+  variantGid?: string | null;
+  /** `ShopSettings.fedexUpgradeLabel`: the title the app gives a custom line. */
+  upgradeLabel?: string | null;
+  /** Whether the customer's frozen response kept the upgrade. */
+  upgradeSelected?: boolean;
+};
+
+export type PaidOrderPlantRevenue = {
+  plantRevenue: number;
+  fedexLineCount: number;
+  /**
+   * True when the customer paid for the upgrade but no line could be identified
+   * as it, so `plantRevenue` includes the shipping charge.
+   */
+  unidentifiedUpgrade: boolean;
+};
+
+function isFedexLine(line: PaidOrderLine, fedex: FedexLineIdentity): boolean {
+  const variantId = shopifyNumericId(fedex.variantGid);
+  if (variantId) {
+    const lineVariantId =
+      shopifyNumericId(line.admin_graphql_api_variant_id) ??
+      shopifyNumericId(line.variant_id);
+    if (lineVariantId) return lineVariantId === variantId;
+  }
+
+  const label = fedex.upgradeLabel?.trim().toLowerCase();
+  if (!label) return false;
+  const title = (line.title ?? line.name ?? "").trim().toLowerCase();
+  return title === label;
+}
+
+/**
+ * Plant revenue from a paid order's own line items. The fallback for a request
+ * with no recorded draft order, where `plantRevenueFromLines` and its explicit
+ * `kind` are unavailable.
+ *
+ * The upgrade is identified by the variant the app bills it on, and failing
+ * that by the exact label the app gives the custom line — both values the app
+ * wrote itself. Filtering on the substrings "fedex" and "priority overnight"
+ * instead counted a renamed shipping line as a plant, and dropped a $300 plant
+ * whose offered name happened to contain "Fedex".
+ *
+ * Nothing is excluded on a guess: an unrecognized line counts as a plant, so
+ * the worst case over-states revenue by the shipping charge rather than losing
+ * a plant, and `unidentifiedUpgrade` reports that it happened.
+ */
+export function plantRevenueFromPaidOrderLines(
+  lines: PaidOrderLine[],
+  fedex: FedexLineIdentity = {},
+): PaidOrderPlantRevenue {
+  let plantRevenue = 0;
+  let fedexLineCount = 0;
+
+  for (const line of lines) {
+    if (isFedexLine(line, fedex)) {
+      fedexLineCount += 1;
+      continue;
+    }
+    const price = Number.parseFloat(String(line.price ?? "0"));
+    const quantity = line.quantity ?? 1;
+    plantRevenue += Number.isFinite(price) ? price * quantity : 0;
+  }
+
+  return {
+    plantRevenue: normalizePrice(plantRevenue),
+    fedexLineCount,
+    unidentifiedUpgrade: Boolean(fedex.upgradeSelected) && fedexLineCount === 0,
+  };
+}
+
 export type ConfirmationEmailInput = {
   customerName: string;
   customerEmail: string;
