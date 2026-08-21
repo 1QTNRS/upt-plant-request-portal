@@ -69,6 +69,8 @@ export type PlantItem = {
   customerFacingNotes: string;
   photoPreviewUrl: string;
   photoUrls: string[];
+  /** Stored photos with their ids, so the admin can remove and reorder them. */
+  photos: Array<{ id: string; url: string }>;
 };
 
 export type PlantRequest = {

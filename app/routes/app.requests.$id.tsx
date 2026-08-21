@@ -43,6 +43,8 @@ import {
   getDraftOrder,
   getRequest,
   markRequestViewed,
+  moveItemPhoto,
+  removeItemPhoto,
   sendOffer,
   updateRequestItem,
 } from "../lib/portal.server";
@@ -211,6 +213,27 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           { url },
         ]);
       }
+      return { ok: true };
+    }
+
+    if (intent === "remove-photo") {
+      await removeItemPhoto(
+        shop,
+        requestId,
+        String(form.get("itemId") || ""),
+        String(form.get("photoId") || ""),
+      );
+      return { ok: true };
+    }
+
+    if (intent === "move-photo") {
+      await moveItemPhoto(
+        shop,
+        requestId,
+        String(form.get("itemId") || ""),
+        String(form.get("photoId") || ""),
+        String(form.get("direction")) === "up" ? "up" : "down",
+      );
       return { ok: true };
     }
 
@@ -487,19 +510,64 @@ function PlantItemCard({
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Exact plant photos</s-text>
               <s-stack direction="inline" gap="base">
-                {item.photoUrls.map((url) => (
-                  <img
-                    key={url}
-                    src={url}
-                    alt={item.offeredName || item.plantName}
-                    width={120}
-                    height={120}
-                    style={{
-                      display: "block",
-                      objectFit: "cover",
-                      borderRadius: "8px",
-                    }}
-                  />
+                {(canEdit && item.photos.length > 0
+                  ? item.photos
+                  : item.photoUrls.map((url) => ({ id: url, url }))
+                ).map((photo, index, all) => (
+                  <s-stack key={photo.id} direction="block" gap="small">
+                    <img
+                      src={photo.url}
+                      alt={item.offeredName || item.plantName}
+                      width={120}
+                      height={120}
+                      style={{
+                        display: "block",
+                        objectFit: "cover",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    {index === 0 ? (
+                      <s-badge tone="info">Customer sees first</s-badge>
+                    ) : null}
+                    {canEdit && item.photos.length > 0 ? (
+                      <s-stack direction="inline" gap="small">
+                        <photoFetcher.Form method="post">
+                          <input type="hidden" name="intent" value="move-photo" />
+                          <input type="hidden" name="itemId" value={item.id} />
+                          <input type="hidden" name="photoId" value={photo.id} />
+                          <input type="hidden" name="direction" value="up" />
+                          <s-button
+                            variant="secondary"
+                            type="submit"
+                            {...(index === 0 ? { disabled: true } : {})}
+                          >
+                            Move left
+                          </s-button>
+                        </photoFetcher.Form>
+                        <photoFetcher.Form method="post">
+                          <input type="hidden" name="intent" value="move-photo" />
+                          <input type="hidden" name="itemId" value={item.id} />
+                          <input type="hidden" name="photoId" value={photo.id} />
+                          <input type="hidden" name="direction" value="down" />
+                          <s-button
+                            variant="secondary"
+                            type="submit"
+                            {...(index === all.length - 1 ? { disabled: true } : {})}
+                          >
+                            Move right
+                          </s-button>
+                        </photoFetcher.Form>
+                        <photoFetcher.Form method="post">
+                          <input type="hidden" name="intent" value="remove-photo" />
+                          <input type="hidden" name="itemId" value={item.id} />
+                          <input type="hidden" name="photoId" value={photo.id} />
+                          <s-button variant="secondary" tone="critical" type="submit">
+                            Remove
+                          </s-button>
+                        </photoFetcher.Form>
+                      </s-stack>
+                    ) : null}
+                  </s-stack>
                 ))}
               </s-stack>
               {canEdit ? (
