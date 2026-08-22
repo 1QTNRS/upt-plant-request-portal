@@ -113,7 +113,7 @@ and an incomplete `SCOPES` list are all rejected the same way.
    ```
    Applying migration `20260820120000_init`
    All migrations have been successfully applied.
-   [react-router-serve] http://localhost:3000 (http://0.0.0.0:3000)
+   [upt-portal] listening on port 3000
    ```
 
    Migrations run at container start, so no manual step is needed — on this

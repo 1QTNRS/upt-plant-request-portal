@@ -47,6 +47,9 @@ RUN npx prisma generate --schema prisma/postgres/schema.prisma \
 
 COPY --from=build /app/build ./build
 COPY public ./public
+# The custom server; see the comment at the top of it for why this is not
+# `react-router-serve`.
+COPY server.js ./server.js
 
 # The app writes nothing to disk in production — photos go to Shopify Files.
 USER node
