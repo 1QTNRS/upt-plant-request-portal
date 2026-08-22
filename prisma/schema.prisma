@@ -100,6 +100,9 @@ model PlantRequest {
   @@unique([shop, requestNumber])
   @@index([shop, status])
   @@index([shop, customerEmail])
+  // listCustomerRequests matches on the Shopify account id first; without this
+  // every customer opening their own list scanned the shop's whole table.
+  @@index([shop, shopifyCustomerId])
   @@index([shop, submittedAt])
 }
 
@@ -275,8 +278,18 @@ model EmailMessage {
   // Stops retries and duplicate form submits from sending the same message
   // twice. Usually "{templateKey}:{requestId}".
   idempotencyKey String?
+  // Delivery attempts actually made against Resend. Bounds the redelivery
+  // sweep so an address Resend will never accept cannot be retried hourly
+  // forever.
+  attempts     Int           @default(0)
+  // Resend's own message id, kept so a support question about a specific
+  // message can be answered from their dashboard.
+  providerMessageId String?
 
   @@unique([shop, idempotencyKey])
   @@index([shop, createdAt])
   @@index([requestId])
+  @@index([shop, status])
+  // The hourly maintenance run counts reminders by template, twice per shop.
+  @@index([shop, templateKey])
 }

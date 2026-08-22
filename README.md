@@ -16,7 +16,7 @@ This app is the Unsolicited Plant Talks plant request portal. Plant requests, of
 - Tests: `npm test`
 - Cloud Agent handoff: [`docs/CLOUD_AGENT_HANDOFF.md`](docs/CLOUD_AGENT_HANDOFF.md)
 
-Required Shopify scopes (merchants must re-approve after install): `write_draft_orders`, `read_draft_orders`, `read_orders`, `read_customers`, `write_files`, `read_files`, `read_products`, `write_products`, `read_publications`, `write_publications`.
+Required Shopify scopes (merchants must re-approve after install): `write_draft_orders`, `read_draft_orders`, `read_orders`, `read_customers`, `write_files`, `read_files`, `read_products`, `write_products`, `read_publications`, `write_publications`, `write_inventory`, `write_app_proxy`.
 
 The `orders/paid` webhook closes a request when payment completes. Unpaid offers expire automatically when their hold window passes. Request numbers are sequential `REQ1`, `REQ2`, `REQ2178`.
 

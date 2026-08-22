@@ -69,6 +69,8 @@ export type PlantItem = {
   customerFacingNotes: string;
   photoPreviewUrl: string;
   photoUrls: string[];
+  /** Stored photos with their ids, so the admin can remove and reorder them. */
+  photos: Array<{ id: string; url: string }>;
 };
 
 export type PlantRequest = {
@@ -85,6 +87,8 @@ export type PlantRequest = {
   paidAt?: string;
   items: PlantItem[];
   sentOffer?: SentOffer;
+  /** Undefined until an offer has been sent. See `offerHasPayableItems`. */
+  hasPayableItems?: boolean;
 };
 
 export type CustomerMyRequestRow = {
@@ -93,6 +97,8 @@ export type CustomerMyRequestRow = {
   submittedDate: string;
   plantsRequested: string;
   status: RequestStatus;
+  /** Undefined until an offer has been sent. */
+  hasPayableItems?: boolean;
 };
 
 export type CustomerResponseItem = {
@@ -154,9 +160,46 @@ export function normalizeRequestStatus(status: string): RequestStatus {
   return "New";
 }
 
-export function formatCustomerStatusLabel(status: RequestStatus): string {
-  if (status === "Pending") return "Needs Payment";
+export const NEEDS_PAYMENT_LABEL = "Needs Payment";
+
+export const NOTHING_TO_PAY_LABEL = "No Payment Needed";
+
+/**
+ * Pending is stored from the moment the offer is sent and nothing revises it
+ * when the answer leaves nothing to buy, so the label — not the status — is
+ * what has to tell a customer who rejected every plant, or who was offered
+ * nothing available, that no money is owed.
+ */
+export function formatCustomerStatusLabel(
+  status: RequestStatus,
+  options: { hasPayableItems?: boolean } = {},
+): string {
+  if (status === "Pending") {
+    return options.hasPayableItems === false
+      ? NOTHING_TO_PAY_LABEL
+      : NEEDS_PAYMENT_LABEL;
+  }
   return status;
+}
+
+/**
+ * Whether anything on a sent offer can still be paid for.
+ *
+ * The offer freezes which plants were purchasable and the answer decides how
+ * many of those the customer wanted, so an offer with nothing available and an
+ * answer that rejected everything are both unpayable. An unanswered offer still
+ * is: the customer can accept until the hold ends.
+ */
+export function offerHasPayableItems(input: {
+  offerItems: Array<{ availability: string }>;
+  responseChoices?: string[] | null;
+}): boolean {
+  const purchasable = input.offerItems.some(
+    (item) => item.availability === "available",
+  );
+  if (!purchasable) return false;
+  if (!input.responseChoices) return true;
+  return input.responseChoices.includes("accept");
 }
 
 export function normalizeUnavailableReason(
@@ -502,6 +545,19 @@ export function draftOrderIdempotencyTag(requestId: string): string {
 }
 
 /**
+ * A Shopify search query matching one exact tag.
+ *
+ * The quotes are load-bearing. Every idempotency tag the portal writes contains
+ * a colon, which Shopify's search syntax reads as a field/value separator, so
+ * an unquoted `tag:upt-declined-item:abc` searches for the tag
+ * `upt-declined-item` plus a loose term — matching a different plant's product
+ * and applying this plant's title and price to it.
+ */
+export function tagSearchQuery(tag: string): string {
+  return `tag:'${tag}'`;
+}
+
+/**
  * Variables for `draftOrderCreate`. Kept pure and separate from the API call so
  * `scripts/validate-admin-graphql.mjs` can check the payload against the real
  * `DraftOrderInput` type — a document can be valid while its variables use a
@@ -524,10 +580,19 @@ export function buildDraftOrderInput(input: {
       draftOrderIdempotencyTag(input.requestId),
     ],
     lineItems: input.lineItems.map((line) => {
-      // A real variant carries its own price and weight; Shopify ignores those
-      // fields when `variantId` is set.
+      // The real variant carries the weight, but not the price: the customer
+      // was quoted, emailed and shown an amount when they answered the offer,
+      // and Shopify must bill that rather than whatever the variant costs by
+      // the time they open the invoice.
       if (line.kind === "fedex" && input.fedexVariantGid) {
-        return { variantId: input.fedexVariantGid, quantity: 1 };
+        return {
+          variantId: input.fedexVariantGid,
+          quantity: 1,
+          originalUnitPriceWithCurrency: {
+            amount: line.price.toFixed(2),
+            currencyCode: input.currencyCode,
+          },
+        };
       }
       return {
         title: line.title,
@@ -537,6 +602,13 @@ export function buildDraftOrderInput(input: {
         },
         quantity: line.quantity,
         weight: { value: line.weightLbs, unit: "POUNDS" as const },
+        // Shopify defaults a custom line item to requiresShipping: false, and a
+        // draft order with nothing shippable collects no delivery address and
+        // quotes no shipping. UPT ships live plants: without this the merchant
+        // gets a paid order with a weight, a customer, and nowhere to send it.
+        // The FedEx line above is the shipping upgrade itself, so it stays
+        // unshippable and is priced from its own variant.
+        requiresShipping: line.kind === "plant",
       };
     }),
   };
@@ -546,6 +618,99 @@ export function plantRevenueFromLines(lines: DraftOrderLineItem[]): number {
   return lines
     .filter((line) => line.kind === "plant")
     .reduce((sum, line) => sum + line.price * line.quantity, 0);
+}
+
+/** The numeric part of a Shopify GID, or of an id that is already numeric. */
+export function shopifyNumericId(
+  value: string | number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const digits = text.match(/(\d+)$/)?.[1];
+  return digits ?? null;
+}
+
+export type PaidOrderLine = {
+  title?: string | null;
+  name?: string | null;
+  price?: string | number | null;
+  quantity?: number | null;
+  variant_id?: string | number | null;
+  admin_graphql_api_variant_id?: string | null;
+};
+
+export type FedexLineIdentity = {
+  /** `ShopSettings.fedexVariantGid`: the variant the upgrade is billed on. */
+  variantGid?: string | null;
+  /** `ShopSettings.fedexUpgradeLabel`: the title the app gives a custom line. */
+  upgradeLabel?: string | null;
+  /** Whether the customer's frozen response kept the upgrade. */
+  upgradeSelected?: boolean;
+};
+
+export type PaidOrderPlantRevenue = {
+  plantRevenue: number;
+  fedexLineCount: number;
+  /**
+   * True when the customer paid for the upgrade but no line could be identified
+   * as it, so `plantRevenue` includes the shipping charge.
+   */
+  unidentifiedUpgrade: boolean;
+};
+
+function isFedexLine(line: PaidOrderLine, fedex: FedexLineIdentity): boolean {
+  const variantId = shopifyNumericId(fedex.variantGid);
+  if (variantId) {
+    const lineVariantId =
+      shopifyNumericId(line.admin_graphql_api_variant_id) ??
+      shopifyNumericId(line.variant_id);
+    if (lineVariantId) return lineVariantId === variantId;
+  }
+
+  const label = fedex.upgradeLabel?.trim().toLowerCase();
+  if (!label) return false;
+  const title = (line.title ?? line.name ?? "").trim().toLowerCase();
+  return title === label;
+}
+
+/**
+ * Plant revenue from a paid order's own line items. The fallback for a request
+ * with no recorded draft order, where `plantRevenueFromLines` and its explicit
+ * `kind` are unavailable.
+ *
+ * The upgrade is identified by the variant the app bills it on, and failing
+ * that by the exact label the app gives the custom line — both values the app
+ * wrote itself. Filtering on the substrings "fedex" and "priority overnight"
+ * instead counted a renamed shipping line as a plant, and dropped a $300 plant
+ * whose offered name happened to contain "Fedex".
+ *
+ * Nothing is excluded on a guess: an unrecognized line counts as a plant, so
+ * the worst case over-states revenue by the shipping charge rather than losing
+ * a plant, and `unidentifiedUpgrade` reports that it happened.
+ */
+export function plantRevenueFromPaidOrderLines(
+  lines: PaidOrderLine[],
+  fedex: FedexLineIdentity = {},
+): PaidOrderPlantRevenue {
+  let plantRevenue = 0;
+  let fedexLineCount = 0;
+
+  for (const line of lines) {
+    if (isFedexLine(line, fedex)) {
+      fedexLineCount += 1;
+      continue;
+    }
+    const price = Number.parseFloat(String(line.price ?? "0"));
+    const quantity = line.quantity ?? 1;
+    plantRevenue += Number.isFinite(price) ? price * quantity : 0;
+  }
+
+  return {
+    plantRevenue: normalizePrice(plantRevenue),
+    fedexLineCount,
+    unidentifiedUpgrade: Boolean(fedex.upgradeSelected) && fedexLineCount === 0,
+  };
 }
 
 export type ConfirmationEmailInput = {
@@ -686,7 +851,31 @@ export function buildExpirationReminderEmail(input: {
   requestNumber: string;
   expiresAt: string;
   offerLink: string;
+  /** Set when the customer has already accepted and still owes payment. */
+  invoiceUrl?: string;
 }): { subject: string; bodyText: string } {
+  // This is the last thing the customer hears before the hold lapses, so it has
+  // to ask for the one thing that is actually outstanding.
+  if (input.invoiceUrl) {
+    return {
+      subject: `Reminder: complete payment before your UPT plant hold ends (${input.requestNumber})`,
+      bodyText: [
+        `Hi ${input.customerName || "there"},`,
+        "",
+        `The plants you accepted on ${input.requestNumber} are held for you until ${input.expiresAt}. Complete your payment before then to keep them.`,
+        "",
+        "Complete your payment:",
+        input.invoiceUrl,
+        "",
+        "Your offer:",
+        input.offerLink,
+        "",
+        "Thank you,",
+        "Unsolicited Plant Talks",
+      ].join("\n"),
+    };
+  }
+
   return {
     subject: `Reminder: your UPT plant offer expires soon (${input.requestNumber})`,
     bodyText: [

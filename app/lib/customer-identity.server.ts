@@ -1,6 +1,21 @@
 import prisma from "../db.server";
 import type { CustomerIdentity } from "./customer-session.server";
 import { offlineAdminClient, type AdminGraphqlClient } from "./offline-admin.server";
+import { isDevAdminBypass } from "./shop";
+
+/**
+ * An identity plus why it might be incomplete.
+ *
+ * "Shopify has no email for this customer" and "we could not ask Shopify" look
+ * identical to a caller reading `email`, but they are opposite messages: one is
+ * something the customer can fix on their account, the other is an outage on
+ * our side. Telling a customer to add an email they already have, because the
+ * app lost its Shopify session, sends them to fix the wrong thing.
+ */
+export type ResolvedCustomerIdentity = CustomerIdentity & {
+  /** The Admin API could not be reached or refused the lookup. */
+  shopUnreachable: boolean;
+};
 
 const CUSTOMER_QUERY = `#graphql
   query PortalCustomerIdentity($id: ID!) {
@@ -73,9 +88,10 @@ async function fetchIdentityFromShopify(
 export async function resolveCustomerIdentity(
   shop: string,
   identity: CustomerIdentity,
-): Promise<CustomerIdentity> {
-  if (identity.email.trim() && identity.name.trim()) return identity;
-  if (!identity.shopifyCustomerId) return identity;
+): Promise<ResolvedCustomerIdentity> {
+  const resolved = { ...identity, shopUnreachable: false };
+  if (identity.email.trim() && identity.name.trim()) return resolved;
+  if (!identity.shopifyCustomerId) return resolved;
 
   const known = await prisma.customerProfile.findFirst({
     where: { shop, shopifyCustomerId: identity.shopifyCustomerId },
@@ -85,28 +101,32 @@ export async function resolveCustomerIdentity(
       email: known.email,
       name: known.name || identity.name,
       shopifyCustomerId: identity.shopifyCustomerId,
+      shopUnreachable: false,
     };
   }
 
   const admin = await offlineAdminClient(shop);
-  if (!admin) return identity;
+  // The local dev bypass has no Admin client on purpose; that is not an outage.
+  if (!admin) return { ...resolved, shopUnreachable: !isDevAdminBypass() };
 
   try {
     const fetched = await fetchIdentityFromShopify(
       admin,
       identity.shopifyCustomerId,
     );
-    if (!fetched?.email) return identity;
+    // A customer Shopify does know, but with no email on the account.
+    if (!fetched?.email) return resolved;
     return {
       email: fetched.email,
       name: fetched.name || identity.name,
       shopifyCustomerId: identity.shopifyCustomerId,
+      shopUnreachable: false,
     };
   } catch (error) {
     console.error(
       `Could not read Shopify customer ${identity.shopifyCustomerId} for ${shop}.`,
       error,
     );
-    return identity;
+    return { ...resolved, shopUnreachable: true };
   }
 }

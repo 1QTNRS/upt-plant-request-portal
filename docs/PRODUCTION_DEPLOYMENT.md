@@ -191,10 +191,16 @@ already-expired offer is a no-op. Verified by running it twice in a row.
 3. Set `EMAIL_FROM` to an address on that verified domain.
 
 **Why the domain step matters.** Resend rejects sends from an unverified domain
-with a 403. Until it is verified, every message is stored in the `EmailMessage`
-outbox with status `preview` and no customer is notified — including offer-ready
-and checkout emails. The app logs a warning for every undelivered message in
-production, and records a 403 with a pointer back to the Domains page.
+with a 403, which the app records on the message as `failed` with a pointer back
+to the Domains page. That is a different state from a missing `RESEND_API_KEY`,
+which leaves the message as `preview` because nothing was ever attempted.
+Neither state notifies the customer — including offer-ready and checkout emails —
+and the app logs a warning for every undelivered message in production.
+
+Both are recoverable. The hourly offer-maintenance job retries `queued`, `failed`
+and `preview` messages oldest-first, so everything queued before the key and the
+domain were in place is delivered on the next run; the admin request page also
+shows the outbox per request with a retry button.
 
 ---
 
@@ -256,13 +262,14 @@ at `https://upt-plant-request-portal.onrender.com/customer` with subpath
 **Where:** the install/approval screen in the Shopify admin.
 
 Install the app on the UPT store and approve the access request. Confirm the
-screen lists product and publication permissions — without them the app cannot
-create EXACT PLANTS listings or publish to Online Store and POS.
+screen lists product, publication and inventory permissions — without them the
+app cannot create EXACT PLANTS listings, stock the one plant each listing sells,
+or publish to Online Store and POS.
 
 ```
 write_draft_orders, read_draft_orders, read_orders, read_customers,
 write_files, read_files, read_products, write_products,
-read_publications, write_publications
+read_publications, write_publications, write_inventory, write_app_proxy
 ```
 
 **If the app was installed before these scopes were added, you must approve
@@ -275,10 +282,11 @@ authorization screen.
 1. **Shopify admin → Products.** Confirm a product exists with the handle
    `upgrade-to-fedex-priority-overnight-for-just-15-extra`. If the real handle
    differs, change it on the portal's **Settings** page. When the handle
-   resolves, the FedEx upgrade is added to draft orders as that real variant at
-   its Shopify price; when it does not, the app falls back to a custom line item
-   priced from Settings — the customer is charged correctly, but the order does
-   not reference the product and your product reporting will not see it.
+   resolves, the app reads the variant's Shopify price when the offer is sent
+   and quotes, emails, freezes and bills that one amount; when it does not, the
+   app falls back to a custom line item at the last known price — the customer
+   is charged what they were quoted either way, but the order does not reference
+   the product and your product reporting will not see it.
 2. **Portal admin → Settings.** Set the admin notification email.
 
 ---

@@ -54,7 +54,7 @@ Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ
 | Draft orders | Code complete and schema-validated; the customer path now gets an offline Admin client. **Not yet run against a live store** |
 | Shopify Files photo upload | Code complete; waits for `fileStatus: READY`. **Not yet run against a live store** |
 | EXACT PLANTS product create + collection + Online Store/POS publish | Code complete and schema-validated. **Not yet run against a live store** |
-| Email delivery | Outbox + Resend client with retries and error reporting; without `RESEND_API_KEY` messages stay `preview` and production logs a warning per message |
+| Email delivery | Outbox + Resend client with retries, error reporting and an hourly redelivery sweep; without `RESEND_API_KEY` messages stay `preview`, and with a key but an unverified sending domain Resend returns 403 and the row becomes `failed`. Production logs a warning per undelivered message, and the admin request page shows the outbox |
 | Expiration reminders | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Verified end to end |
 | Privacy/compliance webhooks | All three mandatory topics subscribed and implemented |
 | Deployment | **Render** is the chosen target: `render.yaml` declares the PostgreSQL database, the Docker web service and the offer-maintenance cron job. Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
@@ -126,7 +126,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
 - Draft orders are idempotent twice over: a recorded `DraftOrderReference` short-circuits, and `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost. Without it a retry bills the customer twice
 - Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
-- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb), `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
+- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
 - Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
 
 ### Verifying Shopify calls without a store
@@ -136,6 +136,53 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 variable payloads the server sends. Run it after touching any Shopify call and
 before bumping the API version — document validation alone does not catch a
 removed input field, which is how `originalUnitPrice` shipped.
+
+It is necessary and **not sufficient**. Everything in the next section validated
+cleanly and was still wrong.
+
+### Shopify facts the schema and the docs do not tell you
+
+Each of these was found by asking a real store and would have shipped otherwise.
+Re-check them when bumping the API version.
+
+| What the documentation implies | What a store actually returns |
+| --- | --- |
+| `Publication.name` is deprecated, "use `Catalog.title`" | `catalog` is **null** unless the query passes `catalogType`. With `catalogType: APP` the title reads `Channel Catalog 329323446315 for Online Store` — and is translated into the merchant's admin language. Title matching cannot work; match `AppCatalog.apps.nodes.handle` |
+| The POS channel handle is `point_of_sale` | It is **`pos`**. Both are accepted in `POS_APP_HANDLES` |
+| `Shop.domains` is deprecated, "use `domainsPaginated`" | `domainsPaginated` does not exist on `Shop` in 2025-10; `validate-graphql` rejects it |
+| A granted scope list echoes what was requested | Shopify folds `read_x` into the `write_x` that implies it. A store that approved everything reports `write_products` and no `read_products` — see `coveredScopes` in `env.server.ts`. `currentAppInstallation.accessScopes` returns the *expanded* list, so the two sources disagree by design |
+| `inventorySetQuantities` takes quantities | On 2025-10 it also **requires** `ignoreCompareQuantity`, which is deprecated ahead of the 2026-01 redesign — and deprecated input fields are hidden from a default introspection, so the validator could not see it until it was told to ask |
+
+### Verifying against the dev store without a browser
+
+The app is installed on `upt-plant-request-dev.myshopify.com`, and the whole
+workflow can be driven over HTTP:
+
+- **Customer** — sign a query string the way `appProxySignatureIsValid` verifies
+  it and send it with the storefront `Origin`. Signatures are only valid for
+  five minutes.
+- **Admin** — mint a Shopify session token (HS256 over the app's client secret,
+  with `iss`/`dest`/`aud` for the shop) and send it as `id_token`. Because a
+  valid offline session exists, `authenticate.admin` loads it rather than
+  attempting a token exchange, and the route gets a **real** Admin API client.
+  Two gotchas: send a browser `User-Agent`, or `isbot` returns 410 Gone; and the
+  offline session expires hourly, after which `authenticate.admin` refuses to
+  reuse it. Any customer request through the proxy renews it, because
+  `unauthenticated.admin` refreshes with the stored refresh token.
+- **Database and store internals** — a Render one-off job
+  (`POST /v1/services/{id}/jobs`) runs Node inside the deployed image with
+  `DATABASE_URL` and the offline token in scope. Render execs the start command
+  without a shell, so keep pipes and redirects out of it.
+
+**Never point a Prisma command at the live database as a shadow database.**
+`prisma migrate diff --shadow-database-url "$DATABASE_URL"` reads like an
+inspection command and is not: Prisma empties whatever it is given as a shadow
+database. Run against the live dev database it destroyed every row, including
+the Shopify offline session, which no amount of app-side credentials can
+recreate. It was recovered with Render point-in-time recovery (available on all
+paid plans; 3 days on Hobby, 7 on Pro) by restoring to a new instance, copying
+the `Session` row back, and deleting the instance. `migrate dev`, `migrate reset`
+and `db push` are the same class of hazard.
 
 ---
 
@@ -159,8 +206,12 @@ Declared in `shopify.app.toml` **and** in `REQUIRED_SHOPIFY_SCOPES`
 app falls back to the code list when `SCOPES` is unset, so the two cannot drift.
 
 ```
-write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications
+write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read_files,read_products,write_products,read_publications,write_publications,write_inventory,write_app_proxy
 ```
+
+`write_inventory` is what lets an EXACT PLANTS listing stock the one plant it
+sells. It also covers reading `Location.id`, which is the only Location field
+the app touches — anything more would additionally need `read_locations`.
 
 Webhooks: `app/uninstalled`, `app/scopes_update`, `orders/paid`, plus the three
 compliance topics. `api_version` in `shopify.app.toml` must equal `apiVersion` in
@@ -175,6 +226,16 @@ Merchants must re-approve after the product/publication scopes were added.
 ### Draft orders
 
 Implemented. Accepted plant lines include title, qty 1, price, weight. FedEx line is added only when the customer kept the upgrade. If GraphQL is unavailable, a local checkout-pending URL is stored. Do not create draft orders for rejected-only or all-unavailable responses.
+
+`ShopSettings.fedexUpgradePrice` is the single FedEx amount: it is what the offer
+quotes, what the response snapshot freezes and what the confirmation email
+states. `resolveFedexVariant` writes it from the live variant price, and sending
+an offer refreshes it first (`refreshFedexUpgradePrice`, best effort — Shopify
+being unreachable must not block the offer). The draft-order FedEx line carries
+that frozen amount as `originalUnitPriceWithCurrency` alongside `variantId`, so
+Shopify bills what the customer answered rather than whatever the variant costs
+by the time they open the invoice. It previously sent `variantId` alone, which
+quoted $15 and billed the store's price.
 
 ### Shopify Files
 
@@ -201,11 +262,48 @@ Implemented as an **admin-approved** path only. Customer reject does not create 
 
 ### Online Store / POS publishing
 
-Implemented in GraphQL (`publishablePublish` to catalogs titled `Online Store` and `Point of Sale` / `POS`). Do not publish to other channels. Live publish is untested without a real store.
+Implemented in GraphQL (`publishablePublish`). Do not publish to other channels. Live publish is untested without a real store.
+
+The publications are found by the **app handle** behind each one —
+`online_store` and `point_of_sale` — never by the catalog title.
+`publications` must be queried with `catalogType: APP`: without it Shopify
+returns `catalog: null` for every publication, so nothing matched and no listing
+could ever be published. With it, the catalog title reads "Channel Catalog
+&lt;id&gt; for Online Store" and is translated into the merchant's admin
+language, so it is not something to match on.
+
+### One plant, one unit of stock
+
+An EXACT PLANTS listing is one specific physical plant. The variant is created
+tracked (`inventoryItem.tracked`), `inventoryPolicy: DENY`, and stocked with a
+quantity of 1 at the shop's primary location, all **before** `publishablePublish`
+— an untracked plant can be bought by several customers at once, and a tracked
+plant published before it is stocked shows as sold out.
+
+`inventoryQuantities` on `ProductVariantsBulkInput` is only honoured by
+`productVariantsBulkCreate`, so the quantity needs its own call:
+`inventorySetQuantities` when Shopify already stocks the item at that location,
+`inventoryActivate` when it does not. On `2025-10`, `inventorySetQuantities`
+still requires the deprecated `ignoreCompareQuantity` (or a `compareQuantity` on
+every entry); its replacement, `InventoryQuantityInput.changeFromQuantity`, only
+exists from `2026-01`. Revisit `buildExactPlantInventoryInput` when the API
+version is bumped.
 
 ### Emails
 
-Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Transient Resend failures are retried; a permanent failure is summarized into `EmailMessage.error`. Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+
+`preview` and `failed` are different states with different causes: `preview` means no `RESEND_API_KEY`, so nothing was attempted; `failed` means Resend refused the send — a 403 for an unverified `EMAIL_FROM` domain is the likely first one. Do not describe an unverified domain as leaving messages in `preview`.
+
+Nothing is lost once a send fails:
+
+- `queueEmail` retries an existing row whose status is anything but `sent`, so the `(shop, idempotencyKey)` dedup no longer makes one lost message permanent.
+- `runOfferMaintenance` sweeps `queued` / `failed` / `preview` rows oldest-first, bounded per run and by `EmailMessage.attempts` (`MAX_DELIVERY_ATTEMPTS`), which is roughly a day of hourly retries.
+- Every send carries `Idempotency-Key: EmailMessage.id`, which Resend honours for 24 hours, so a retry after a lost reply cannot put a second copy in the customer's inbox. Resend's own message id is stored in `providerMessageId`.
+- The Resend `fetch` has a 10 second `AbortSignal.timeout`. Without it a hung `api.resend.com` held the customer's own form POST open for the whole retry loop, for a plant request that was already committed.
+- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "create payment link and email it" action. `bodyText` is deliberately not sent to the browser: it contains payment links.
+
+The expiration reminder goes only to customers who either never answered or accepted something — never to one who rejected every plant — and an accepted-but-unpaid reminder leads with the recorded `DraftOrderReference.invoiceUrl` rather than inviting them to review an offer they already answered.
 
 Customer-facing links in emails are storefront proxy URLs
 (`https://{shop}/apps/plant-requests/...`) built by `customerLinksForShop`. A link
@@ -322,8 +420,22 @@ available plant unanswered, naming each one, rather than defaulting to `accept`.
 Do not reintroduce a default; a pre-checked Accept turns an unread offer into a
 purchase for anyone who just presses Submit.
 
-The photo lightbox is the one remaining piece of client state. It is decorative
-and nothing about checkout depends on it.
+The component holds **no client state at all**. Every photo the offer froze is
+rendered as a plain `<img>`; a lightbox behind a click handler showed the
+storefront customer only the first photo of the plant they were buying.
+
+The page also has to stop offering what it cannot deliver:
+
+- Past `offer.expiresAtIso` it renders an expired state — no countdown, no
+  "reserved for you", no radios, no Submit. The hold, not the stored status,
+  decides this: the expiry sweep may not have run, and the moment the hold ends
+  the plant is an EXACT PLANTS candidate for public sale.
+- A **closed** request never shows a checkout link, and a paid one confirms the
+  payment instead (`requestPaid` / `paidAt` from `loadCustomerOfferPage`).
+- An answer that left nothing payable always has a **Close Request** action,
+  whether the customer rejected everything or UPT had nothing available.
+- The customer is never shown the confirmation email. The admin outbox on the
+  request page is where queued mail is read.
 
 ### Two environment modules, deliberately
 
@@ -371,16 +483,16 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/production-readiness-blockers-7617`:
+Last verified on `cursor/dev-store-verification-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 230 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 307 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
 | `npm run prisma:check-schema` | pass |
-| `npm run validate-graphql` | pass (17 documents + 9 variable payloads against live Admin `2025-10`) |
+| `npm run validate-graphql` | pass (23 documents + 10 variable payloads against live Admin `2025-10`) |
 | `npm run build` | pass |
 | `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
 | GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |
@@ -391,8 +503,17 @@ wrong-secret requests see nothing), the scheduler expiring an offer and sending
 exactly one reminder, and the production env guard refusing to boot on six
 misconfigurations.
 
-Live Shopify Admin mutations were still **not** executed — no merchant session
-exists. See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) sections 9–12.
+The dev store `upt-plant-request-dev.myshopify.com` now has the app installed
+with a live offline session, so the Admin API is reachable and the whole
+workflow can be driven against it — see "Verifying against the dev store"
+above. What that has confirmed so far: the granted scope list, the publication
+handles, the shop's currency and weight unit, and that the app proxy, customer
+identity resolution and offline token refresh all work end to end.
+
+**Both Render services deploy from `cursor/production-readiness-blockers-7617`**
+with `autoDeploy: yes`. Work on any other branch reaches the dev service only by
+deploying a specific commit id through the API, and the next push to the tracked
+branch replaces it. Merge before relying on anything being live.
 
 ---
 
@@ -446,7 +567,7 @@ Genuinely optional, deliberately not done:
 ## Business rules future agents must preserve
 
 1. **Do not rebuild** the portal. Extend the Prisma-backed React Router app.
-2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display: Pending → **Needs Payment** (label only).
+2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display: Pending → **Needs Payment** (label only), or **No Payment Needed** when the offer and the answer left nothing payable (`offerHasPayableItems`). Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
 3. Customer form: plant name required; notes optional; **no quantity UI**; quantity defaults to 1. **Budget stays out** of the form, customer-facing details, and active workflow. Do not drop `RequestItem.budget` unless a migration is actually required.
 4. Name/email come from the customer account when possible. Customers see only their own requests.
 5. Offer snapshots freeze name, price, photos, notes, availability after send. Do not edit customer-facing offer fields after send.

@@ -84,6 +84,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 
 type PlantMetric = {
   plantName: string;
+  offeredName: string;
   requestCount: number;
   purchaseCount: number;
   revenue: number;
@@ -104,7 +105,7 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
       return;
     }
     setSortKey(key);
-    setSortDirection(key === "plantName" ? "asc" : "desc");
+    setSortDirection(key === "plantName" || key === "offeredName" ? "asc" : "desc");
   };
 
   const headerLabel = (key: keyof PlantMetric, label: string) => (
@@ -132,6 +133,7 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           <s-table-header listSlot="primary">
             {headerLabel("plantName", "Plant Name")}
           </s-table-header>
+          <s-table-header>{headerLabel("offeredName", "Offered As")}</s-table-header>
           <s-table-header>{headerLabel("requestCount", "Request Count")}</s-table-header>
           <s-table-header>{headerLabel("purchaseCount", "Purchase Count")}</s-table-header>
           <s-table-header>{headerLabel("revenue", "Revenue")}</s-table-header>
@@ -141,6 +143,7 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           {sorted.map((plant) => (
             <s-table-row key={plant.plantName}>
               <s-table-cell>{plant.plantName}</s-table-cell>
+              <s-table-cell>{plant.offeredName || "—"}</s-table-cell>
               <s-table-cell>{plant.requestCount}</s-table-cell>
               <s-table-cell>{plant.purchaseCount}</s-table-cell>
               <s-table-cell>{formatCurrency(plant.revenue)}</s-table-cell>

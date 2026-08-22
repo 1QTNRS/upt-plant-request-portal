@@ -39,6 +39,46 @@ export const APP_PROXY_TARGET_PATH = "/customer";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * Query parameters whose values may be written to the request log.
+ *
+ * Everything else is redacted, because the default `morgan("tiny")` URL is a
+ * credential leak here. A proxied storefront URL carries `signature` and
+ * `logged_in_customer_id`; replaying a captured one returned that customer's
+ * request list an hour later. The embedded admin sends `id_token`, a signed
+ * merchant session token. The customer's own typed values travel in the query
+ * string too — the add/remove-plant round trips put plant names and notes
+ * there — and none of that belongs in a log either.
+ *
+ * An allow list rather than a deny list: a parameter added later is redacted by
+ * default instead of leaking until someone notices.
+ */
+const LOGGABLE_PARAMS = new Set([
+  "shop",
+  "path_prefix",
+  "embedded",
+  "index",
+  "submitted",
+  "addPlant",
+  "removePlant",
+  "itemCount",
+  "_routes",
+  "_data",
+]);
+
+/** The request URL with every sensitive value replaced, keys kept. */
+export function redactUrl(url) {
+  const [pathname, query] = url.split("?");
+  if (!query) return pathname;
+
+  const redacted = [...new URLSearchParams(query)]
+    .map(([key, value]) =>
+      LOGGABLE_PARAMS.has(key) ? `${key}=${value}` : `${key}=[redacted]`,
+    )
+    .join("&");
+  return `${pathname}?${redacted}`;
+}
+
 function isAppProxyTarget(url) {
   const pathname = url.split("?")[0];
   return (
@@ -92,7 +132,13 @@ async function start() {
   );
   app.use(build.publicPath, express.static(build.assetsBuildDirectory));
   app.use(express.static("public", { maxAge: "1h" }));
-  app.use(morgan("tiny"));
+
+  morgan.token("redacted-url", (req) => redactUrl(req.originalUrl || req.url));
+  app.use(
+    morgan(
+      ":method :redacted-url :status :res[content-length] - :response-time ms",
+    ),
+  );
 
   app.use((req, _res, next) => {
     withholdAppProxyOrigin(req);

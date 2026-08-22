@@ -10,6 +10,14 @@
 export const DEV_DATABASE_URL = "file:dev.sqlite";
 
 /**
+ * Sender used when EMAIL_FROM is unset. Lives here rather than in
+ * emails.server.ts so environment.server.ts can name it in the Settings panel
+ * without importing the outbox, which imports environment.server.ts back.
+ */
+export const DEFAULT_EMAIL_FROM =
+  "UPT Plant Requests <noreply@unsolicitedplanttalks.com>";
+
+/**
  * Kept in code, not only in shopify.app.toml, so the runtime OAuth request and
  * the deployed app configuration cannot drift. Must equal the `scopes` value in
  * shopify.app.toml — `app/lib/env.server.test.ts` asserts that.
@@ -25,6 +33,10 @@ export const REQUIRED_SHOPIFY_SCOPES = [
   "write_products",
   "read_publications",
   "write_publications",
+  // An EXACT PLANTS listing is one physical plant, so its variant has to track
+  // stock. Reading `Location.id` to know where to stock it is covered by the
+  // inventory scopes; every other Location field would need read_locations.
+  "write_inventory",
   // Required to configure the app proxy that serves the storefront customer
   // portal. See https://shopify.dev/docs/apps/build/online-store/app-proxies
   "write_app_proxy",
@@ -78,10 +90,34 @@ export function resolveScopes(): string[] {
   return configured?.length ? configured : [...REQUIRED_SHOPIFY_SCOPES];
 }
 
+/**
+ * Everything a granted scope list actually covers.
+ *
+ * Shopify treats `write_x` as including `read_x` and does **not** echo the read
+ * scope back in the granted list. A correctly installed store reports
+ * `write_products` alone, so comparing the raw strings claims `read_products`
+ * was refused. That put a permanent "this store has not approved …" warning on
+ * every admin page of a store that had approved everything, training the
+ * merchant to ignore the one message that matters when a scope really is
+ * missing.
+ */
+function coveredScopes(granted: string[]): Set<string> {
+  const covered = new Set<string>();
+  for (const raw of granted) {
+    const scope = raw.trim();
+    if (!scope) continue;
+    covered.add(scope);
+    if (scope.startsWith("write_")) {
+      covered.add(`read_${scope.slice("write_".length)}`);
+    }
+  }
+  return covered;
+}
+
 /** Scopes the deployment is missing relative to what the app actually calls. */
 export function missingScopes(granted: string[]): string[] {
-  const set = new Set(granted.map((scope) => scope.trim()));
-  return REQUIRED_SHOPIFY_SCOPES.filter((scope) => !set.has(scope));
+  const covered = coveredScopes(granted);
+  return REQUIRED_SHOPIFY_SCOPES.filter((scope) => !covered.has(scope));
 }
 
 /**
@@ -108,6 +144,16 @@ export function grantedScopeWarning(
     "Reinstall or re-approve the app from the Shopify admin, or features that " +
     "need those permissions will fail."
   );
+}
+
+/**
+ * Accepts what Resend accepts in `from`: a bare address, or a display name
+ * followed by the address in angle brackets.
+ */
+export function isValidEmailFrom(value: string): boolean {
+  const bracketed = /<([^<>]+)>\s*$/.exec(value.trim());
+  const address = (bracketed ? bracketed[1] : value).trim();
+  return /^[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+$/.test(address);
 }
 
 export type EnvProblem = { variable: string; message: string };
@@ -152,6 +198,19 @@ export function productionEnvProblems(env: NodeJS.ProcessEnv): EnvProblem[] {
       variable: "DATABASE_URL",
       message:
         "must not be a SQLite file in production; container filesystems are ephemeral and SQLite cannot be shared between instances",
+    });
+  }
+
+  // Not listed as required above: an unset EMAIL_FROM falls back to
+  // DEFAULT_EMAIL_FROM (surfaced in Settings by missingProductionSecrets), and
+  // refusing to boot over it would take a running deploy down. A value Resend
+  // rejects on every send is worth catching before the first offer email.
+  const emailFrom = env.EMAIL_FROM?.trim();
+  if (emailFrom && !isValidEmailFrom(emailFrom)) {
+    problems.push({
+      variable: "EMAIL_FROM",
+      message:
+        'must be an email address, optionally with a display name: "UPT Plant Requests <noreply@example.com>"',
     });
   }
 

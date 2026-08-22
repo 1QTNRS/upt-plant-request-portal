@@ -1,4 +1,3 @@
-import { buildConfirmationEmail } from "./portal";
 import {
   buildCustomerOffer,
   closeRequest,
@@ -7,6 +6,8 @@ import {
   getRequest,
   getShopSettings,
   OfferAlreadyAnsweredError,
+  OfferExpiredError,
+  RequestClosedError,
   saveCustomerResponse,
 } from "./portal.server";
 import { notifyCheckoutLink, notifyConfirmation } from "./emails.server";
@@ -22,7 +23,8 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
       invoiceUrl: null as string | null,
       fedexRemovalWarning: settings.fedexRemovalWarning,
       requestClosed: false,
-      confirmationEmail: null as ReturnType<typeof buildConfirmationEmail> | null,
+      requestPaid: false,
+      paidAt: null as string | null,
     };
   }
 
@@ -30,28 +32,6 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
   const response = await getCustomerResponse(shop, requestId);
   const request = await getRequest(shop, requestId);
   const draft = await getDraftOrder(shop, requestId);
-  const confirmationEmail =
-    response && offer
-      ? buildConfirmationEmail({
-          customerName: offer.customerName,
-          customerEmail: offer.customerEmail,
-          requestNumber: offer.requestNumber,
-          acceptedItems: response.items
-            .filter((item) => item.choice === "accept")
-            .map((item) => ({
-              plantName: item.plantName,
-              price: item.price,
-              quantity: item.quantity,
-              customerNotes: item.customerNotes,
-            })),
-          fedexSelected: response.fedexUpgradeSelected,
-          fedexPrice: response.fedexUpgradePrice,
-          fedexDisclaimer: response.fedexUpgradeSelected
-            ? undefined
-            : settings.fedexRemovalWarning,
-          invoiceUrl: draft?.invoiceUrl ?? undefined,
-        })
-      : null;
 
   return {
     offer,
@@ -59,8 +39,70 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
     invoiceUrl: draft?.invoiceUrl ?? null,
     fedexRemovalWarning: settings.fedexRemovalWarning,
     requestClosed: request?.status === "Closed",
-    confirmationEmail,
+    requestPaid: Boolean(request?.paidAt),
+    paidAt: request?.paidAt ?? null,
   };
+}
+
+/**
+ * Creates the draft order and emails the payment link for a request the
+ * customer has already accepted.
+ *
+ * The customer's own submission is otherwise the only caller of
+ * `createDraftOrderForRequest`, and re-submitting an answered offer returns
+ * `alreadySubmitted` without retrying, so a Shopify outage at that one moment
+ * left the request permanently unpayable. `checkout_link:{requestId}` is a key
+ * the confirmation never used, so the mail actually goes out.
+ *
+ * Idempotent through `createDraftOrderForRequest`, which reuses a recorded or
+ * tagged draft order rather than creating a second one.
+ */
+export async function createPaymentLinkForRequest(input: {
+  shop: string;
+  requestId: string;
+  admin?: AdminContext["admin"];
+}): Promise<{ ok: true; invoiceUrl: string } | { ok: false; error: string }> {
+  const response = await getCustomerResponse(input.shop, input.requestId);
+  if (!response) {
+    return { ok: false, error: "The customer has not answered this offer yet." };
+  }
+
+  const accepted = response.items.filter((item) => item.choice === "accept");
+  if (accepted.length === 0) {
+    return {
+      ok: false,
+      error:
+        "This customer accepted no plants, so there is nothing to charge for. Draft orders are only created for accepted plants.",
+    };
+  }
+
+  const request = await getRequest(input.shop, input.requestId);
+  if (!request) return { ok: false, error: "This request could not be loaded." };
+
+  try {
+    const draft = await createDraftOrderForRequest(input.admin, input.shop, {
+      requestId: input.requestId,
+      requestNumber: request.requestNumber,
+      customerEmail: request.email,
+      acceptedItems: accepted.map((item) => ({
+        plantName: item.plantName,
+        quantity: item.quantity,
+        price: item.price,
+        weightLbs:
+          request.items.find((entry) => entry.id === item.sourceItemId)?.weightLbs ?? 0,
+      })),
+      fedexSelected: response.fedexUpgradeSelected,
+    });
+    await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
+    return { ok: true, invoiceUrl: draft.invoiceUrl };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Could not create the payment link: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  }
 }
 
 export async function handleCustomerOfferAction(input: {
@@ -146,6 +188,22 @@ export async function handleCustomerOfferAction(input: {
     if (error instanceof OfferAlreadyAnsweredError) {
       return { ok: true as const, alreadySubmitted: true as const };
     }
+    // The hold lapsed between loading the page and submitting it, which the
+    // expiry sweep inside the read makes the customer's own submit trigger.
+    if (error instanceof OfferExpiredError) {
+      return {
+        ok: false as const,
+        error:
+          "This offer expired before your answer reached us. Please contact us and we will see whether the plant is still available.",
+      };
+    }
+    if (error instanceof RequestClosedError) {
+      return {
+        ok: false as const,
+        error:
+          "This request is already closed, so we did not record an answer. Please contact us if that is not what you expected.",
+      };
+    }
     throw error;
   }
 
@@ -172,6 +230,7 @@ export async function handleCustomerOfferAction(input: {
           0,
       })),
       fedexSelected: fedexUpgradeSelected,
+      fedexPrice: saved.fedexUpgradePrice,
     });
   } catch (error) {
     console.error(

@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
-import { cronSecretMatches, readCronSecret } from "./scheduler.server";
+import prisma from "../db.server";
+import {
+  sendOffer,
+  submitCustomerRequest,
+  updateRequestItem,
+} from "./portal.server";
+import {
+  cronSecretMatches,
+  readCronSecret,
+  runOfferMaintenance,
+} from "./scheduler.server";
+import { ensureShopSettings } from "./seed-demo.server";
+import { DEMO_SHOP } from "./shop";
 
 describe("cron secret comparison", () => {
   it("accepts the configured secret", () => {
@@ -65,5 +77,62 @@ describe("cron secret extraction", () => {
       { method: "POST" },
     );
     assert.equal(readCronSecret(request), null);
+  });
+});
+
+describe("maintenance reporting", () => {
+  const shop = `${DEMO_SHOP}-scheduler-test`;
+
+  async function purge() {
+    await prisma.emailMessage.deleteMany({ where: { shop } });
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+    await prisma.shopSettings.deleteMany({ where: { shop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop } });
+  }
+
+  before(async () => {
+    await purge();
+    await ensureShopSettings(shop);
+  });
+  after(purge);
+
+  it("counts reminders queued and reminders delivered apart", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera Albo" }],
+    });
+    await updateRequestItem(shop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      price: 250,
+      weightLbs: 2,
+    });
+    await sendOffer(shop, created.id, 3);
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 6);
+    await prisma.offer.update({
+      where: { requestId: created.id },
+      data: { expiresAt },
+    });
+
+    const result = await runOfferMaintenance("https://portal.example.com");
+    const entry = result.shops.find((row) => row.shop === shop);
+
+    assert.ok(entry, "the shop must appear in the run");
+    assert.equal(entry.remindersQueued, 1);
+    // Nothing was delivered: RESEND_API_KEY is unset, so the row is `preview`.
+    // Counting rows alone reported this run as having reminded someone.
+    assert.equal(entry.remindersSent, 0);
+    assert.equal(
+      (
+        await prisma.emailMessage.findFirstOrThrow({
+          where: { shop, templateKey: "expiration_reminder" },
+        })
+      ).status,
+      "preview",
+    );
   });
 });

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildExactPlantInventoryInput,
   buildExactPlantProductCreateInput,
+  buildExactPlantVariantInput,
+  declinedItemTag,
   exactPlantMediaError,
   hostedPhotoUrls,
 } from "./exact-plants";
@@ -11,6 +14,7 @@ import {
   buildDraftOrderLineItems,
   draftOrderIdempotencyTag,
   DRAFT_ORDER_TAG,
+  tagSearchQuery,
 } from "./portal";
 
 const ACCEPTED = [
@@ -42,6 +46,8 @@ describe("draft order input", () => {
         originalUnitPriceWithCurrency: { amount: "285.00", currencyCode: "USD" },
         quantity: 1,
         weight: { value: 4.5, unit: "POUNDS" },
+        // Without this Shopify collects no delivery address for a live plant.
+        requiresShipping: true,
       },
     ]);
   });
@@ -111,7 +117,31 @@ describe("draft order input", () => {
     assert.deepEqual(input.lineItems.at(-1), {
       variantId: "gid://shopify/ProductVariant/42",
       quantity: 1,
+      originalUnitPriceWithCurrency: { amount: "15.00", currencyCode: "USD" },
     });
+  });
+
+  it("bills the FedEx upgrade at the price the customer was quoted", () => {
+    // The variant price can move between the offer being sent and the invoice
+    // being opened; the customer must be charged the amount they answered.
+    const quoted = buildDraftOrderLineItems({
+      acceptedItems: ACCEPTED,
+      fedexSelected: true,
+      fedexLabel: "FedEx Priority Overnight Upgrade",
+      fedexPrice: 24.5,
+    });
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: quoted,
+      fedexVariantGid: "gid://shopify/ProductVariant/42",
+    });
+    assert.deepEqual(
+      input.lineItems.at(-1)?.originalUnitPriceWithCurrency,
+      { amount: "24.50", currencyCode: "USD" },
+    );
   });
 
   it("falls back to a custom FedEx line when no variant was resolved", () => {
@@ -127,8 +157,69 @@ describe("draft order input", () => {
       originalUnitPriceWithCurrency: { amount: "15.00", currencyCode: "CAD" },
       quantity: 1,
       weight: { value: 0, unit: "POUNDS" },
+      // The upgrade is the shipping, so it is not itself shipped.
+      requiresShipping: false,
     });
   });
+});
+
+describe("Shopify tag lookups", () => {
+  it("quotes the tag so the colon in it is not read as a field separator", () => {
+    // An unquoted `tag:upt-declined-item:abc` parses as the tag
+    // `upt-declined-item` plus a loose term, so it matches another plant's
+    // product and a retry then overwrites that product's title and price.
+    assert.equal(
+      tagSearchQuery(declinedItemTag("item_1")),
+      "tag:'upt-declined-item:item_1'",
+    );
+    assert.equal(
+      tagSearchQuery(draftOrderIdempotencyTag("req_1")),
+      "tag:'upt-request:req_1'",
+    );
+  });
+});
+
+describe("EXACT PLANTS variant stocking", () => {
+  it("tracks the variant and refuses oversell", () => {
+    assert.deepEqual(
+      buildExactPlantVariantInput({
+        variantId: "gid://shopify/ProductVariant/1",
+        price: 285,
+        weightLbs: 4.5,
+      }),
+      {
+        id: "gid://shopify/ProductVariant/1",
+        price: "285.00",
+        inventoryPolicy: "DENY",
+        inventoryItem: {
+          tracked: true,
+          measurement: { weight: { value: 4.5, unit: "POUNDS" } },
+        },
+      },
+    );
+  });
+
+  it("sets the stock of one physical plant to one", () => {
+    assert.deepEqual(
+      buildExactPlantInventoryInput({
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/1",
+      }),
+      {
+        name: "available",
+        reason: "correction",
+        ignoreCompareQuantity: true,
+        quantities: [
+          {
+            inventoryItemId: "gid://shopify/InventoryItem/1",
+            locationId: "gid://shopify/Location/1",
+            quantity: 1,
+          },
+        ],
+      },
+    );
+  });
+
 });
 
 describe("EXACT PLANTS product media", () => {

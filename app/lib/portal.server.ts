@@ -26,6 +26,7 @@ import {
   normalizeRequestStatus,
   normalizeUnavailableReason,
   normalizeWeight,
+  offerHasPayableItems,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
@@ -50,6 +51,30 @@ export class OfferAlreadyAnsweredError extends Error {
   }
 }
 
+/**
+ * The hold ran out before the customer's answer was saved.
+ *
+ * Reading the request runs the expiry sweep first, so a customer submitting as
+ * their hold lapses expires their own offer and then meets this. That is the
+ * expected shape of it, not a narrow window: the reminder email exists to make
+ * people answer at the last minute. It has to reach the customer as a message
+ * rather than an unhandled error, or their choices are lost behind a crash page.
+ */
+/** The request was already finished — paid, or closed by the customer. */
+export class RequestClosedError extends Error {
+  constructor() {
+    super("This request is closed.");
+    this.name = "RequestClosedError";
+  }
+}
+
+export class OfferExpiredError extends Error {
+  constructor() {
+    super("This offer has expired.");
+    this.name = "OfferExpiredError";
+  }
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -66,7 +91,7 @@ type RequestWithRelations = DbPlantRequest & {
         items: OfferItem[];
       })
     | null;
-  response?: DbCustomerResponse | null;
+  response?: (DbCustomerResponse & { items: Array<{ choice: string }> }) | null;
   draftOrder?: {
     invoiceUrl: string | null;
     shopifyDraftOrderGid: string | null;
@@ -74,10 +99,32 @@ type RequestWithRelations = DbPlantRequest & {
   } | null;
 };
 
+/**
+ * Plants are shown in the order the customer typed them.
+ *
+ * Neither table carries a position column, and without an explicit order
+ * PostgreSQL returns rows however it likes — so the same request could list its
+ * plants in a different order on each page load, on the admin's screen and on
+ * the customer's offer. Items are created in one call in submission order, so
+ * creation order is that order; the id breaks ties within the same millisecond.
+ */
+export const REQUEST_ITEM_ORDER = [
+  { createdAt: "asc" as const },
+  { id: "asc" as const },
+];
+
+/** Offer items have no timestamp; they are written in request-item order. */
+export const OFFER_ITEM_ORDER = { id: "asc" as const };
+
 const requestInclude = {
-  items: { include: { photos: { orderBy: { sortOrder: "asc" as const } } } },
-  offer: { include: { items: true } },
-  response: true,
+  items: {
+    include: { photos: { orderBy: { sortOrder: "asc" as const } } },
+    orderBy: REQUEST_ITEM_ORDER,
+  },
+  offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+  // Only the choices: enough to tell a request that can still take money from
+  // one whose answer left nothing to buy, without loading every snapshot.
+  response: { include: { items: { select: { choice: true } } } },
   draftOrder: true,
 } as const;
 
@@ -133,6 +180,8 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
     customerFacingNotes: item.customerFacingNotes ?? "",
     photoPreviewUrl: photoUrls[0] ?? "",
     photoUrls,
+    // Only the real rows, never the demo placeholder, which has nothing to edit.
+    photos: item.photos.map((photo) => ({ id: photo.id, url: photo.url })),
   };
 }
 
@@ -161,9 +210,31 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
     paidAt: request.paidAt ? formatDateTime(request.paidAt) : undefined,
     items: request.items.map(toPlantItem),
     sentOffer: request.offer ? toSentOffer(request.offer, request.id) : undefined,
+    hasPayableItems: request.offer
+      ? offerHasPayableItems({
+          offerItems: request.offer.items,
+          responseChoices: request.response
+            ? request.response.items.map((item) => item.choice)
+            : null,
+        })
+      : undefined,
   };
 }
 
+/**
+ * Flips Pending requests whose hold has run out to Expired.
+ *
+ * Called from every request loader, every list, the analytics page and the
+ * hourly cron, so several sweeps overlap constantly — a single admin page load
+ * fires more than one. Each request is therefore claimed with a conditional
+ * update and only the sweep that actually changed the row writes the history
+ * entry; otherwise two sweeps both saw the same overdue offer and both appended
+ * "Offer expired before payment".
+ *
+ * The claims run as one batch rather than a transaction per request. This is on
+ * the critical path of a user's page load, and it is slowest exactly when the
+ * backlog is largest, which is the first page load after a quiet period.
+ */
 export async function expireOverdueOffers(shop: string, now = new Date()): Promise<number> {
   const pending = await prisma.plantRequest.findMany({
     where: {
@@ -172,27 +243,31 @@ export async function expireOverdueOffers(shop: string, now = new Date()): Promi
       paidAt: null,
       offer: { expiresAt: { lte: now } },
     },
-    include: { offer: true },
+    select: { id: true },
   });
+  if (pending.length === 0) return 0;
 
+  const claimed: string[] = [];
   for (const request of pending) {
-    await prisma.$transaction([
-      prisma.plantRequest.update({
-        where: { id: request.id },
-        data: { status: "Expired", expiredAt: now },
-      }),
-      prisma.statusEvent.create({
-        data: {
-          requestId: request.id,
-          fromStatus: "Pending",
-          toStatus: "Expired",
-          reason: "Offer expired before payment",
-        },
-      }),
-    ]);
+    const { count } = await prisma.plantRequest.updateMany({
+      where: { id: request.id, shop, status: "Pending", paidAt: null },
+      data: { status: "Expired", expiredAt: now },
+    });
+    if (count === 1) claimed.push(request.id);
   }
 
-  return pending.length;
+  if (claimed.length > 0) {
+    await prisma.statusEvent.createMany({
+      data: claimed.map((requestId) => ({
+        requestId,
+        fromStatus: "Pending",
+        toStatus: "Expired",
+        reason: "Offer expired before payment",
+      })),
+    });
+  }
+
+  return claimed.length;
 }
 
 async function loadRequest(
@@ -234,6 +309,7 @@ export async function updateShopSettings(
     fedexRemovalWarning?: string;
     adminNotificationEmail?: string;
     fedexVariantGid?: string | null;
+    fedexUpgradePrice?: number;
   },
 ) {
   await getShopSettings(shop);
@@ -251,6 +327,9 @@ export async function updateShopSettings(
         : {}),
       ...(data.fedexVariantGid !== undefined
         ? { fedexVariantGid: data.fedexVariantGid }
+        : {}),
+      ...(data.fedexUpgradePrice !== undefined
+        ? { fedexUpgradePrice: normalizePrice(data.fedexUpgradePrice) }
         : {}),
     },
   });
@@ -469,9 +548,14 @@ export async function updateRequestItem(
               input.availability === "not_available" ? "Unavailable" : "Requested",
           }
         : {}),
-      ...(input.unavailableReason
-        ? { unavailableReason: normalizeUnavailableReason(input.unavailableReason) }
-        : {}),
+      // A reason left over from a spell as Not Available would prefill itself
+      // the next time the item is flipped back, so it goes when the plant does
+      // become available.
+      ...(input.availability === "available"
+        ? { unavailableReason: null }
+        : input.unavailableReason
+          ? { unavailableReason: normalizeUnavailableReason(input.unavailableReason) }
+          : {}),
       ...(input.price !== undefined ? { price: normalizePrice(input.price) } : {}),
       ...(input.weightLbs !== undefined
         ? { weightLbs: normalizeWeight(input.weightLbs) }
@@ -508,17 +592,95 @@ export async function addItemPhotos(
     throw new Error("Photos can only be added before an offer is sent.");
   }
 
-  const currentCount =
-    request.items.find((item) => item.id === itemId)?.photos.length ?? 0;
+  const existing = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const known = new Set(existing.map((photo) => photo.url));
+
+  // The same URL twice is always a mistake — a double-submitted form or a
+  // re-pasted link — and it freezes into the offer snapshot on send.
+  const fresh = photos.filter((photo) => {
+    if (known.has(photo.url)) return false;
+    known.add(photo.url);
+    return true;
+  });
+  if (fresh.length === 0) return getRequest(shop, requestId);
 
   await prisma.photoReference.createMany({
-    data: photos.map((photo, index) => ({
+    data: fresh.map((photo, index) => ({
       itemId,
       url: photo.url,
       shopifyFileId: photo.shopifyFileId,
-      sortOrder: currentCount + index,
+      sortOrder: existing.length + index,
     })),
   });
+
+  return getRequest(shop, requestId);
+}
+
+/** Photos in display order, renumbered from zero so gaps cannot accumulate. */
+async function resequencePhotos(itemId: string, orderedIds: string[]): Promise<void> {
+  await prisma.$transaction(
+    orderedIds.map((id, index) =>
+      prisma.photoReference.update({ where: { id }, data: { sortOrder: index } }),
+    ),
+  );
+}
+
+function assertPhotosEditable(request: RequestWithRelations): void {
+  if (normalizeRequestStatus(request.status) !== "New") {
+    throw new Error("Photos can only be changed before an offer is sent.");
+  }
+}
+
+export async function removeItemPhoto(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  photoId: string,
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  if (!photos.some((photo) => photo.id === photoId)) return getRequest(shop, requestId);
+
+  await prisma.photoReference.delete({ where: { id: photoId } });
+  await resequencePhotos(
+    itemId,
+    photos.filter((photo) => photo.id !== photoId).map((photo) => photo.id),
+  );
+
+  return getRequest(shop, requestId);
+}
+
+/**
+ * Moves one photo one place earlier or later.
+ *
+ * The first photo is the one the customer sees first, so ordering is a real
+ * editorial decision rather than a nicety — and it is frozen into the offer
+ * snapshot the moment the offer is sent.
+ */
+export async function moveItemPhoto(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  photoId: string,
+  direction: "up" | "down",
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const from = photos.findIndex((photo) => photo.id === photoId);
+  if (from === -1) return getRequest(shop, requestId);
+
+  const to = direction === "up" ? from - 1 : from + 1;
+  if (to < 0 || to >= photos.length) return getRequest(shop, requestId);
+
+  const ordered = photos.map((photo) => photo.id);
+  [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+  await resequencePhotos(itemId, ordered);
 
   return getRequest(shop, requestId);
 }
@@ -699,7 +861,7 @@ export async function getCustomerResponse(
 
   const withItems = await prisma.customerResponse.findUnique({
     where: { requestId },
-    include: { items: true },
+    include: { items: { orderBy: OFFER_ITEM_ORDER } },
   });
   if (!withItems) return null;
   return toResponseDto(withItems, request.closedAt);
@@ -716,8 +878,16 @@ export async function saveCustomerResponse(
 ): Promise<CustomerOfferResponse> {
   const request = await loadRequest(shop, input.requestId);
   if (!request) throw new Error("Request not found.");
+  // A Closed request is finished: paid, or closed by the customer. Accepting an
+  // answer against one bills for plants nobody is holding and emails a payment
+  // link the customer's own page does not show, and it is reachable by posting
+  // a stale tab. It also let an Expired request slip past the check below once
+  // it had been closed.
+  if (normalizeRequestStatus(request.status) === "Closed") {
+    throw new RequestClosedError();
+  }
   if (normalizeRequestStatus(request.status) === "Expired") {
-    throw new Error("This offer has expired.");
+    throw new OfferExpiredError();
   }
 
   const snapshot = {
@@ -826,10 +996,15 @@ export async function markRequestPaid(
 
   const now = new Date();
   await prisma.$transaction(async (tx) => {
-    await tx.plantRequest.update({
-      where: { id: requestId },
+    // Two copies of the same delivery can both read paidAt as null before
+    // either writes — Shopify delivers at least once and more than one instance
+    // may be running. Claiming the row decides which one owns the close, so the
+    // history gets a single "Payment completed" entry rather than one per copy.
+    const claim = await tx.plantRequest.updateMany({
+      where: { id: requestId, shop, paidAt: null },
       data: { status: "Closed", closedAt: request.closedAt ?? now, paidAt: now },
     });
+    const alreadyPaid = claim.count === 0;
     await tx.shopifyOrderReference.upsert({
       where: { requestId },
       create: {
@@ -864,14 +1039,16 @@ export async function markRequestPaid(
         data: { itemStatus: "Sold", purchasedAt: now },
       });
     }
-    await tx.statusEvent.create({
-      data: {
-        requestId,
-        fromStatus: request.status,
-        toStatus: "Closed",
-        reason: "Payment completed",
-      },
-    });
+    if (!alreadyPaid) {
+      await tx.statusEvent.create({
+        data: {
+          requestId,
+          fromStatus: request.status,
+          toStatus: "Closed",
+          reason: "Payment completed",
+        },
+      });
+    }
   });
 
   return getRequest(shop, requestId);
