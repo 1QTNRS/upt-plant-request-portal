@@ -27,9 +27,11 @@ import {
   FULFILLMENT_CHOICE_LABELS,
   FULFILLMENT_TYPE_LABELS,
   formatLinkedInventory,
+  inventoryHoldState,
   MIN_STOCK_SEARCH_TERM,
   unlinkableVariantReason,
   type FulfillmentType,
+  type InventoryHoldState,
   type StoredFulfillmentType,
 } from "../lib/growers-choice";
 import {
@@ -193,6 +195,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     response,
     emails,
     paymentLink: draftOrder?.invoiceUrl ?? null,
+    inventoryHold: draftOrder?.reserveInventoryUntil
+      ? {
+          state: inventoryHoldState({
+            reserveInventoryUntil: draftOrder.reserveInventoryUntil,
+            paidAt: plantRequest?.paidAt,
+          }),
+          until: formatDateTime(draftOrder.reserveInventoryUntil),
+        }
+      : null,
     declinedExactPlants,
     plantPatterns,
   };
@@ -1329,14 +1340,53 @@ function CloseRequestSection() {
   );
 }
 
+type InventoryHold = { state: InventoryHoldState; until: string };
+
+/**
+ * Whether Shopify is still holding the linked stock behind an accepted plant.
+ *
+ * Shopify does the holding and the releasing on its own clock, so the merchant
+ * has no way to tell from the portal whether a plant they can see on the
+ * request is spoken for or back on open sale.
+ */
+function InventoryHoldNotice({ hold }: { hold: InventoryHold }) {
+  if (hold.state === "purchased") {
+    return (
+      <s-text color="subdued">
+        The customer paid, so Shopify has taken the linked website stock off the
+        listing as an ordinary sale.
+      </s-text>
+    );
+  }
+  if (hold.state === "held") {
+    return (
+      <s-text color="subdued">
+        Shopify is holding the linked website stock until {hold.until}, when the
+        payment deadline runs out and the plant goes back on sale.
+      </s-text>
+    );
+  }
+  return (
+    <s-banner tone="warning">
+      <s-text>
+        The hold on the linked website stock ended at {hold.until} without
+        payment, so the plant is back on open sale and another customer could buy
+        it. Check the listing before chasing this payment.
+      </s-text>
+    </s-banner>
+  );
+}
+
 function CustomerResponseSection({
   response,
   status,
   paymentLink,
+  inventoryHold,
 }: {
   response: Awaited<ReturnType<typeof getCustomerResponse>>;
   status: RequestStatus;
   paymentLink: string | null;
+  inventoryHold: InventoryHold | null;
 }) {
   if (!response) {
     return (
@@ -1384,9 +1434,17 @@ function CustomerResponseSection({
               accepted.map((item) => (
                 <s-text key={item.offerItemId}>
                   {item.plantName} — {formatCurrency(item.price)}
+                  {item.fulfillmentType === "growers_choice"
+                    ? ` (${FULFILLMENT_TYPE_LABELS.growers_choice}: ${
+                        item.linkedProductTitle ?? "linked website stock"
+                      })`
+                    : ""}
                 </s-text>
               ))
             )}
+            {accepted.length > 0 && inventoryHold ? (
+              <InventoryHoldNotice hold={inventoryHold} />
+            ) : null}
             {accepted.length > 0 ? (
               <PaymentLinkSection paymentLink={paymentLink} />
             ) : null}
@@ -1470,6 +1528,7 @@ export default function RequestDetail() {
     response,
     emails,
     paymentLink,
+    inventoryHold,
     declinedExactPlants,
     plantPatterns,
   } = useLoaderData<typeof loader>();
@@ -1574,6 +1633,7 @@ export default function RequestDetail() {
         response={response}
         status={plantRequest.status}
         paymentLink={paymentLink}
+        inventoryHold={inventoryHold}
       />
 
       <EmailSection emails={emails} />

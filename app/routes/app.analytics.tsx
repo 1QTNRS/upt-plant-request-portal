@@ -286,6 +286,85 @@ function PlantIdentitySuggestions({
 }
 
 /**
+ * The funnel split by how the plant was to be supplied.
+ *
+ * The question this answers is whether sourcing and photographing one plant for
+ * one customer earns its keep against selling one off the shelf, so the two
+ * routes are shown side by side on the same measures rather than as separate
+ * totals. Not Available is a column because a plant UPT could not find at all
+ * is a different failure from one the customer turned down.
+ */
+function FulfillmentSource({
+  fulfillment,
+}: {
+  fulfillment: Awaited<ReturnType<typeof loader>>["data"]["fulfillment"];
+}) {
+  const routes = [
+    { label: "Exact Plant", metrics: fulfillment.exactPlant },
+    { label: "Grower's Choice", metrics: fulfillment.growersChoice },
+    { label: "Not Available", metrics: fulfillment.notAvailable },
+  ];
+
+  return (
+    <s-section heading="Fulfilment Source">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          Read from the offer snapshots, so a plant counts on the route it was
+          actually offered on. The FedEx upgrade is a shipping service and is
+          never counted here.
+        </s-text>
+        <s-stack direction="inline" gap="base">
+          <MetricCard
+            label="Requests Filled From Existing Stock"
+            value={String(fulfillment.requestsFulfilledFromExistingStock)}
+          />
+          <MetricCard
+            label="Existing Stock Acceptance Rate"
+            value={`${fulfillment.existingStockAcceptanceRate}%`}
+          />
+          <MetricCard
+            label="Existing Stock Purchase Rate"
+            value={`${fulfillment.existingStockPurchaseRate}%`}
+          />
+          <MetricCard
+            label="Exact Plant Conversion"
+            value={`${fulfillment.exactPlantConversionRate}%`}
+          />
+          <MetricCard
+            label="Grower's Choice Conversion"
+            value={`${fulfillment.existingStockConversionRate}%`}
+          />
+        </s-stack>
+        <s-table>
+          <s-table-header-row>
+            <s-table-header listSlot="primary">Fulfilment Source</s-table-header>
+            <s-table-header>Items On This Route</s-table-header>
+            <s-table-header>Offered To Buy</s-table-header>
+            <s-table-header>Accepted</s-table-header>
+            <s-table-header>Rejected</s-table-header>
+            <s-table-header>Purchased</s-table-header>
+            <s-table-header>Revenue</s-table-header>
+          </s-table-header-row>
+          <s-table-body>
+            {routes.map((route) => (
+              <s-table-row key={route.label}>
+                <s-table-cell>{route.label}</s-table-cell>
+                <s-table-cell>{route.metrics.lines}</s-table-cell>
+                <s-table-cell>{route.metrics.offered}</s-table-cell>
+                <s-table-cell>{route.metrics.accepted}</s-table-cell>
+                <s-table-cell>{route.metrics.rejected}</s-table-cell>
+                <s-table-cell>{route.metrics.purchased}</s-table-cell>
+                <s-table-cell>{formatCurrency(route.metrics.revenue)}</s-table-cell>
+              </s-table-row>
+            ))}
+          </s-table-body>
+        </s-table>
+      </s-stack>
+    </s-section>
+  );
+}
+
+/**
  * Internal insight, admin-only. Nothing here blocks a customer, changes what is
  * offered or reaches a customer-facing page; it exists so the owner knows before
  * sourcing a plant for the fourth time.
@@ -473,6 +552,8 @@ export default function Analytics() {
           </s-stack>
         </s-stack>
       </s-section>
+
+      <FulfillmentSource fulfillment={data.fulfillment} />
 
       <s-section heading="Customer Behavior">
         <s-stack direction="block" gap="base">
