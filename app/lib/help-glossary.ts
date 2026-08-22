@@ -168,7 +168,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "`expireOverdueOffers(shop)` is the only thing that sets it. It flips a request to Expired when the stored status is Pending, `paidAt` is null and the offer's `expiresAt` has passed. It runs from request loaders, from analytics and from the hourly `POST /cron/offer-maintenance` job, so the status is right on the next read even if nobody had a page open.",
       "What makes an offer expire is the hold running out unpaid — not what the customer answered. Accepting every plant and not paying expires exactly like never opening the offer. Only payment prevents it. A New request cannot expire, and a paid request is never touched.",
-      "Expiry releases two things. Any Shopify stock held for a Grower's Choice line goes by itself: the draft order asked for the hold only until the offer's own deadline, so Shopify releases it at that moment with no code in this app and even while the portal is down. And each Available exact plant on the offer becomes eligible for an EXACT PLANTS listing — `accepted_unpaid_expired` when the customer had accepted it, `never_responded_expired` when they never answered.",
+      "Expiry releases two things. Shopify stock held for a Grower's Choice line is asked only until the offer's own deadline, so the reserved unit returns at that moment even if the portal is down. The hourly sweep also deletes the unpaid draft order (`voidExpiredDraftOrders`) so the issued invoice 404s instead of staying payable after the hold ends. And each Available exact plant on the offer becomes eligible for an EXACT PLANTS listing — `accepted_unpaid_expired` when the customer had accepted it, `never_responded_expired` when they never answered.",
       "Eligible is not published. An expired plant reaches the EXACT PLANTS review queue and waits for an admin to approve it, exactly like a declined one.",
     ],
     citations: [
@@ -189,12 +189,12 @@ export const GLOSSARY: GlossaryEntry[] = [
           "An **expired unpaid offer** releases its Available plants too, by the same admin-approved path.",
       },
       {
-        path: HANDOFF,
-        locator: "Grower's Choice from existing website stock",
-        quote: "**Release needs no code.**",
+        path: "app/lib/draft-order-void.server.ts",
+        locator: "voidExpiredDraftOrders",
+        quote: "Voids every expired unpaid invoice that still has a live Shopify draft order.",
       },
     ],
-    seeAlso: ["pending", "offer-hold", "exact-plants-listing", "growers-choice"],
+    seeAlso: ["pending", "offer-hold", "exact-plants-listing", "growers-choice", "draft-order"],
   },
   {
     id: "offer-ready-for-review",
@@ -727,7 +727,8 @@ export const GLOSSARY: GlossaryEntry[] = [
       "Created only for accepted plants, plus the FedEx line when the customer kept the upgrade. Never for a response that rejected everything, and never for an offer where nothing was available.",
       "A Grower's Choice line sells the real Shopify variant, which is also what the stock reservation is asked for. An exact plant has no Shopify product yet, so its line is a custom one with a title, price and weight, and it is marked as requiring shipping — a draft order with nothing shippable collects no address and quotes no shipping.",
       "Creation is idempotent three times over: a recorded `DraftOrderReference` with a checkout link short-circuits, the `upt-request:{requestId}` tag finds a draft order Shopify already created when a previous reply was lost, and a creation claim makes the window between those two exclusive. Without the first two a retry bills the customer twice; without the third, two concurrent callers reserve the same plant twice.",
-      "Payment closes the request through the `orders/paid` webhook, which also marks the accepted items Sold. That webhook is the only thing that records payment.",
+      "Payment closes the request through the `orders/paid` webhook, which also marks the accepted items Sold. That webhook is the only thing that records payment. If the same webhook arrives after the invoice was already voided, the payment is still recorded and the request is Closed — money is never dropped — and the admin gets one `Payment After Expiration/Void` event and email.",
+      "Shopify has no void state for a draft order. `draftOrderDelete` is the only way to make an issued invoice unpayable; the portal keeps the GID, invoice URL and line items on `DraftOrderReference` with `voidedAt`.",
     ],
     citations: [
       {
@@ -741,8 +742,13 @@ export const GLOSSARY: GlossaryEntry[] = [
         locator: "Shopify integrations implemented (in code)",
         quote: "Draft orders are idempotent three times over",
       },
+      {
+        path: "app/lib/draft-order-void.server.ts",
+        locator: "COMPLETED_BEFORE_VOID",
+        quote: "Shopify completed the draft before we could delete it.",
+      },
     ],
-    seeAlso: ["needs-payment", "fedex-upgrade", "growers-choice", "closed"],
+    seeAlso: ["needs-payment", "fedex-upgrade", "growers-choice", "closed", "expired"],
   },
   {
     id: "no-payment-rate",

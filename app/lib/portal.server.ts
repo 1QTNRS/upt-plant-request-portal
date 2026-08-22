@@ -38,6 +38,7 @@ import {
   offerHasPayableItems,
   offerIsAllExactPlants,
   offerReadinessMessage,
+  PAYMENT_AFTER_VOID_REASON,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
@@ -126,6 +127,8 @@ type RequestWithRelations = DbPlantRequest & {
     invoiceUrl: string | null;
     shopifyDraftOrderGid: string | null;
     createdAt: Date;
+    voidedAt?: Date | null;
+    voidError?: string | null;
   } | null;
 };
 
@@ -1425,12 +1428,16 @@ export async function markRequestPaid(
       });
     }
     if (!alreadyPaid) {
+      const afterVoid =
+        Boolean(request.draftOrder?.voidedAt) || request.status === "Expired";
       await tx.statusEvent.create({
         data: {
           requestId,
           fromStatus: request.status,
           toStatus: "Closed",
-          reason: "Payment completed",
+          reason: afterVoid
+            ? PAYMENT_AFTER_VOID_REASON
+            : "Payment completed",
         },
       });
     }

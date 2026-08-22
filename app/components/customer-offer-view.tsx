@@ -172,40 +172,43 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {hasAccepted && invoiceUrl && !requestClosed ? (
+        {hasAccepted && invoiceUrl && !requestClosed && !holdEnded ? (
           <s-section>
             <s-stack direction="block" gap="base">
-              {holdEnded ? (
-                /*
-                 * The hold has lapsed, and an expired unpaid request releases
-                 * its plants for review as EXACT PLANTS listings. The invoice
-                 * Shopify issued is still payable, so the link stays — but
-                 * presenting it as a live hold would be a promise this page
-                 * cannot keep, and paying against it is no longer guaranteed
-                 * to get the plant.
-                 */
-                <s-banner tone="warning">
-                  <s-text>
-                    Your hold ended{offer.expiresAt ? ` on ${offer.expiresAt}` : ""}.
-                    Please contact us before paying — we can no longer guarantee
-                    these plants are still reserved for you.
-                  </s-text>
-                </s-banner>
-              ) : (
-                <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
-              )}
+              <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
               <s-text color="subdued">{offer.customerEmail}</s-text>
               <s-link href={invoiceUrl}>Continue to Checkout</s-link>
             </s-stack>
           </s-section>
         ) : null}
 
-        {hasAccepted && !invoiceUrl && !requestClosed ? (
+        {hasAccepted && holdEnded && !requestPaid && !requestClosed ? (
+          <s-section>
+            <s-banner tone="critical">
+              <s-stack direction="block" gap="small">
+                <s-text>
+                  <strong>Offer Expired</strong>
+                </s-text>
+                <s-text>
+                  The items are no longer being held
+                  {offer.expiresAt ? ` — the hold ended on ${offer.expiresAt}` : ""}.
+                  The previous checkout/payment link is no longer valid.
+                </s-text>
+                <s-text>
+                  You may submit a new request if you are still interested.
+                </s-text>
+              </s-stack>
+            </s-banner>
+          </s-section>
+        ) : null}
+
+        {hasAccepted && !invoiceUrl && !requestClosed && !requestPaid && !holdEnded ? (
           /*
            * There is no payment link, and nothing on this page will produce one:
            * re-submitting an answered offer is refused. Telling the customer a
            * link had been emailed and would appear here shortly was false on
-           * both counts.
+           * both counts. After the hold ends the expired banner above is the
+           * only message — this one would claim the plants are still held.
            */
           <s-section>
             <s-stack direction="block" gap="base">

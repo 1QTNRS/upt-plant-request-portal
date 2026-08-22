@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildAdminPaymentAfterVoidEmail,
   buildAdminResponseEmail,
   buildDraftOrderInput,
   buildDraftOrderLineItems,
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
   buildResponseSummaryEmail,
+  INVOICE_VOIDED_REASON,
+  PAYMENT_AFTER_VOID_REASON,
+  payableInvoiceUrl,
   computeBehaviorFlags,
   formatCustomerStatusLabel,
   formatRequestNumber,
@@ -632,6 +636,58 @@ describe("naming what is on offer", () => {
     assert.match(getOfferUrgencyMessage(false), /These plants are reserved/);
     assert.doesNotMatch(getOfferUrgencyMessage(false), /exact/i);
     assert.match(getOfferHoldMessage("Aug 26", false), /These plants are being held for you/);
+  });
+});
+
+describe("the checkout URL a customer may still be shown", () => {
+  const url = "https://shop.myshopify.com/invoices/abc";
+
+  it("keeps a live unpaid invoice", () => {
+    assert.equal(
+      payableInvoiceUrl({
+        invoiceUrl: url,
+        expiresAtIso: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      }),
+      url,
+    );
+  });
+
+  it("drops the URL once the hold ends, even before the row is marked voided", () => {
+    assert.equal(
+      payableInvoiceUrl({
+        invoiceUrl: url,
+        expiresAtIso: new Date(Date.now() - 60 * 1000).toISOString(),
+      }),
+      null,
+    );
+  });
+
+  it("drops the URL when the draft order has been voided", () => {
+    assert.equal(
+      payableInvoiceUrl({ invoiceUrl: url, voidedAt: new Date() }),
+      null,
+    );
+  });
+
+  it("drops the URL on a paid or closed request", () => {
+    assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestPaid: true }), null);
+    assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestClosed: true }), null);
+  });
+});
+
+describe("the payment-after-void admin email", () => {
+  it("names the request and says the money was recorded", () => {
+    const email = buildAdminPaymentAfterVoidEmail({
+      requestNumber: "REQ9",
+      orderNumber: "#1002",
+    });
+    assert.match(email.subject, /URGENT/);
+    assert.match(email.subject, /REQ9/);
+    assert.match(email.bodyText, /#1002/);
+    assert.match(email.bodyText, /recorded/);
+    assert.match(email.bodyText, /relisted or sold/);
+    assert.equal(PAYMENT_AFTER_VOID_REASON, "Payment After Expiration/Void");
+    assert.equal(INVOICE_VOIDED_REASON, "Invoice voided after expiration");
   });
 });
 

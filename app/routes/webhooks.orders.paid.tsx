@@ -7,6 +7,7 @@ import {
   plantRevenueFromPaidOrderLines,
   type PaidOrderLine,
 } from "../lib/portal";
+import { notifyAdminPaymentAfterVoid } from "../lib/emails.server";
 import {
   findRequestByNumber,
   getCustomerResponse,
@@ -146,13 +147,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const recorded = await plantRevenueFromRecordedLines(shop, plantRequest.id);
+  const draft = await getDraftOrder(shop, plantRequest.id);
+  const paymentAfterVoid =
+    Boolean(draft?.voidedAt) || plantRequest.status === "Expired";
   await markRequestPaid(shop, plantRequest.id, {
     shopifyOrderGid,
     orderNumber: String(order.name || order.order_number || ""),
     plantRevenue:
       recorded ?? (await plantRevenueFromPayload(shop, plantRequest.id, order)),
   });
-  console.log(`${topic} for ${shop}: closed ${requestNumber} from order ${orderLabel(order)}.`);
+  if (paymentAfterVoid) {
+    await notifyAdminPaymentAfterVoid(shop, {
+      requestId: plantRequest.id,
+      orderNumber: String(order.name || order.order_number || ""),
+    });
+    console.warn(
+      `${topic} for ${shop}: ${requestNumber} paid after expiration/void from order ${orderLabel(order)}.`,
+    );
+  } else {
+    console.log(`${topic} for ${shop}: closed ${requestNumber} from order ${orderLabel(order)}.`);
+  }
 
   return new Response();
 };

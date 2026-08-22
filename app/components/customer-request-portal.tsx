@@ -295,12 +295,12 @@ export function OfferExpiryBanner({
             <strong>This offer has expired</strong>
           </s-text>
           <s-text>
-            The hold ended on {expiresAt}. These plants are no longer reserved
+            The hold ended on {expiresAt}. These plants are no longer being held
             for you and this offer can no longer be answered.
           </s-text>
           <s-text>
-            Contact us if you are still interested and we will check whether the
-            plant is available.
+            The previous checkout/payment link is no longer valid. You may
+            submit a new request if you are still interested.
           </s-text>
         </s-stack>
       </s-banner>

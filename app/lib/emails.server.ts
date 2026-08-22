@@ -5,6 +5,7 @@ import { customerLinksForShop } from "./customer-links.server";
 import { DEFAULT_EMAIL_FROM, isProduction } from "./env.server";
 import {
   buildAdminNewRequestEmail,
+  buildAdminPaymentAfterVoidEmail,
   buildAdminResponseEmail,
   buildCheckoutEmail,
   buildExpirationReminderEmail,
@@ -14,6 +15,7 @@ import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatDateTime,
   offerIsAllExactPlants,
+  payableInvoiceUrl,
   type ResponseSummaryItem,
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
@@ -511,6 +513,40 @@ export async function notifyAdminResponse(
   });
 }
 
+/**
+ * One important mail when money arrives after the invoice was already voided.
+ *
+ * Distinct from `admin_response` and from Shopify's own paid-order mail: this
+ * is the exceptional case that needs a human to check whether the plant was
+ * already relisted. The idempotency key keeps a webhook retry from sending it
+ * twice.
+ */
+export async function notifyAdminPaymentAfterVoid(
+  shop: string,
+  input: { requestId: string; orderNumber?: string },
+) {
+  const request = await getRequest(shop, input.requestId);
+  if (!request) return;
+
+  const settings = await getShopSettings(shop);
+  const adminEmail =
+    settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
+  if (!adminEmail) return;
+
+  const email = buildAdminPaymentAfterVoidEmail({
+    requestNumber: request.requestNumber,
+    orderNumber: input.orderNumber,
+  });
+
+  return queueEmail({
+    shop,
+    requestId: input.requestId,
+    toEmail: adminEmail,
+    ...email,
+    templateKey: "admin_payment_after_void",
+  });
+}
+
 export async function notifyExpirationReminders(shop: string, appUrl: string) {
   const links = customerLinksForShop(shop, appUrl);
   const soon = new Date();
@@ -558,7 +594,13 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
       // A customer who has already accepted needs to pay, not to review the
       // offer again; sending them here without the link they need wastes the
       // one reminder they get.
-      invoiceUrl: accepted ? request.draftOrder?.invoiceUrl ?? undefined : undefined,
+      invoiceUrl: accepted
+        ? payableInvoiceUrl({
+            invoiceUrl: request.draftOrder?.invoiceUrl,
+            voidedAt: request.draftOrder?.voidedAt,
+            expiresAtIso: request.offer.expiresAt.toISOString(),
+          }) ?? undefined
+        : undefined,
     });
     await queueEmail({
       shop,

@@ -45,6 +45,7 @@ import {
   getDisplayRequestNumber,
   incompleteOfferItems,
   offerReadinessMessage,
+  payableInvoiceUrl,
   requestStatusTone,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
@@ -57,6 +58,7 @@ import {
 } from "../lib/portal";
 import {
   addItemPhotos,
+  expireOverdueOffers,
   getCustomerResponse,
   getDraftOrder,
   getRequest,
@@ -76,6 +78,7 @@ import {
   uploadPlantPhoto,
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
+import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -148,9 +151,11 @@ const editableTextareaStyle = {
 };
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { shop } = await requireAdmin(request);
+  const { shop, admin } = await requireAdmin(request);
   await ensureShopSeeded(shop);
   const requestId = params.id ?? "";
+  await expireOverdueOffers(shop);
+  await voidExpiredDraftOrder(shop, requestId, admin);
   const plantRequest = await getRequest(shop, requestId);
   if (plantRequest) {
     await markRequestViewed(shop, requestId);
@@ -194,7 +199,17 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     plantRequest,
     response,
     emails,
-    paymentLink: draftOrder?.invoiceUrl ?? null,
+    paymentLink: payableInvoiceUrl({
+      invoiceUrl: draftOrder?.invoiceUrl,
+      voidedAt: draftOrder?.voidedAt,
+      requestClosed: plantRequest?.status === "Closed",
+      requestPaid: Boolean(plantRequest?.paidAt),
+      expiresAtIso: plantRequest?.sentOffer?.expiresAtIso,
+    }),
+    paymentAfterVoid: Boolean(
+      plantRequest?.paidAt && (draftOrder?.voidedAt || plantRequest.expiredAt),
+    ),
+    invoiceVoided: Boolean(draftOrder?.voidedAt && !plantRequest?.paidAt),
     inventoryHold: draftOrder?.reserveInventoryUntil
       ? {
           state: inventoryHoldState({
@@ -1528,6 +1543,8 @@ export default function RequestDetail() {
     response,
     emails,
     paymentLink,
+    paymentAfterVoid,
+    invoiceVoided,
     inventoryHold,
     declinedExactPlants,
     plantPatterns,
@@ -1569,6 +1586,31 @@ export default function RequestDetail() {
         <s-section>
           <s-banner tone="critical">
             <s-text>{actionError}</s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
+      {paymentAfterVoid ? (
+        <s-section>
+          <s-banner tone="critical">
+            <s-text>
+              Payment After Expiration/Void — Shopify recorded a payment on an
+              invoice this portal had already made non-payable. The money is
+              booked and the request is Closed, but a human must check whether
+              the same plant was already relisted or sold.
+            </s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
+      {invoiceVoided ? (
+        <s-section>
+          <s-banner tone="warning">
+            <s-text>
+              The Shopify invoice for this expired offer was deleted so it can
+              no longer be paid. The draft order reference, line items and
+              offer snapshot are kept here.
+            </s-text>
           </s-banner>
         </s-section>
       ) : null}

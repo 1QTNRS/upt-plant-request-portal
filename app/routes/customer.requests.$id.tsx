@@ -66,7 +66,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
 
   const { context, plantRequest } = authorized;
-  const page = await loadCustomerOfferPage(context.shop, requestId);
+  const admin = await offlineAdminClient(context.shop);
+  const page = await loadCustomerOfferPage(context.shop, requestId, admin);
   const links = customerPortalRelativeLinks(context.viaAppProxy);
   return {
     forbidden: false as const,

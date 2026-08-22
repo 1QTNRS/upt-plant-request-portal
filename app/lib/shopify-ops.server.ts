@@ -44,7 +44,7 @@ import {
   updateShopSettings,
 } from "./portal.server";
 
-type GraphqlClient = NonNullable<AdminContext["admin"]>;
+export type GraphqlClient = NonNullable<AdminContext["admin"]>;
 
 async function adminGraphql<T>(
   admin: GraphqlClient,
@@ -500,6 +500,104 @@ async function findDraftOrderByRequestTag(
     { query: tagSearchQuery(draftOrderIdempotencyTag(requestId)) },
   );
   return data.draftOrders.nodes[0] ?? null;
+}
+
+export type LiveDraftOrderStatus = {
+  id: string;
+  status: string;
+  invoiceUrl: string | null;
+  orderGid: string | null;
+};
+
+/**
+ * Re-read immediately before deleting. Shopify will happily delete a
+ * COMPLETED draft order, which would drop the admin record of a payment that
+ * just landed — so COMPLETED is a stop, not a delete.
+ */
+export async function readDraftOrderStatus(
+  admin: GraphqlClient,
+  draftOrderGid: string,
+): Promise<LiveDraftOrderStatus | null> {
+  const data = await adminGraphql<{
+    draftOrder: {
+      id: string;
+      status: string;
+      invoiceUrl: string | null;
+      order: { id: string } | null;
+    } | null;
+  }>(
+    admin,
+    `#graphql
+      query PlantRequestDraftOrderStatus($id: ID!) {
+        draftOrder(id: $id) {
+          id
+          status
+          invoiceUrl
+          order { id }
+        }
+      }
+    `,
+    { id: draftOrderGid },
+  );
+  const draft = data.draftOrder;
+  if (!draft) return null;
+  return {
+    id: draft.id,
+    status: draft.status,
+    invoiceUrl: draft.invoiceUrl,
+    orderGid: draft.order?.id ?? null,
+  };
+}
+
+export function isDraftOrderGoneError(message: string): boolean {
+  return /\b(not found|does not exist|already deleted|resource does not exist)\b/i.test(
+    message,
+  );
+}
+
+/**
+ * Makes an issued invoice unpayable. Shopify has no void state; deleting the
+ * draft order is the only supported way, and a live store returns 404
+ * "This invoice is not available" for the stored checkout URL afterwards.
+ *
+ * Deleting also releases that draft's `reserved` inventory immediately — the
+ * same store showed reserved drop from 1 to 0 on the next read.
+ */
+export async function deleteDraftOrder(
+  admin: GraphqlClient,
+  draftOrderGid: string,
+): Promise<{ deleted: boolean; alreadyGone: boolean }> {
+  const result = await adminGraphql<{
+    draftOrderDelete: {
+      deletedId: string | null;
+      userErrors: Array<{ field: string[] | null; message: string }>;
+    };
+  }>(
+    admin,
+    `#graphql
+      mutation DeletePlantRequestDraftOrder($input: DraftOrderDeleteInput!) {
+        draftOrderDelete(input: $input) {
+          deletedId
+          userErrors { field message }
+        }
+      }
+    `,
+    { input: { id: draftOrderGid } },
+  );
+
+  const errors = result.draftOrderDelete.userErrors;
+  if (errors.length > 0) {
+    const message = errors.map((error) => error.message).join("; ");
+    if (isDraftOrderGoneError(message)) {
+      return { deleted: false, alreadyGone: true };
+    }
+    throw new Error(message);
+  }
+
+  return {
+    deleted: Boolean(result.draftOrderDelete.deletedId),
+    alreadyGone: false,
+  };
 }
 
 /**

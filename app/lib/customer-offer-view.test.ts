@@ -493,16 +493,36 @@ describe("a hold that lapsed before payment", () => {
   });
 
   it("stops claiming the plants are still held", () => {
-    // An expired unpaid request releases its plants for EXACT PLANTS review,
-    // so promising they are reserved is a promise this page cannot keep.
-    assert.match(lapsed, /Your hold ended/);
-    assert.match(lapsed, /contact us before paying/);
+    // An expired unpaid request releases its plants and voids the invoice, so
+    // promising they are reserved — or offering the old checkout link — is a
+    // promise this page cannot keep.
+    assert.match(lapsed, /Offer Expired/);
+    assert.match(lapsed, /no longer being held/);
+    assert.match(lapsed, /no longer valid/);
+    assert.match(lapsed, /submit a new request/);
     assert.ok(!lapsed.includes("still held for you"));
     assert.ok(!lapsed.includes("emailed this link to you just in case"));
   });
 
-  it("leaves the invoice reachable, because Shopify will still take it", () => {
-    assert.match(lapsed, /Continue to Checkout/);
+  it("does not offer the stale invoice once the hold has ended", () => {
+    assert.ok(!lapsed.includes("Continue to Checkout"));
+    assert.ok(!lapsed.includes("https://upt.myshopify.com/invoice/abc"));
+  });
+
+  it("does not claim the plants are still held when the checkout URL is already gone", () => {
+    // Production drops the invoice URL via payableInvoiceUrl once the hold
+    // ends. The "could not create your payment link" banner must not appear
+    // in that state — it would contradict Offer Expired.
+    const gone = render({
+      offer: offer({ expiresAt: yesterday() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+      invoiceUrl: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+    });
+    assert.match(gone, /Offer Expired/);
+    assert.ok(!gone.includes("still held for you"));
+    assert.ok(!gone.includes("could not create your payment link"));
   });
 
   it("says nothing about a lapsed hold while the offer is live", () => {

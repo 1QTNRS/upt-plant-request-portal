@@ -340,6 +340,10 @@ model DraftOrderReference {
   // own at that moment; this is the record of what was asked for, so the
   // merchant can be told when the stock comes back.
   reserveInventoryUntil DateTime?
+  voidedAt              DateTime?
+  voidStartedAt         DateTime?
+  voidError             String?
+  voidAttempts          Int          @default(0)
 }
 
 model ShopifyOrderReference {
