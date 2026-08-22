@@ -801,10 +801,15 @@ async function unpublishExactPlantFromOtherChannels(
   allowedPublicationIds: string[],
 ): Promise<void> {
   const allowed = new Set(allowedPublicationIds);
+  // `resourcePublicationsV2` is the current field and it does not list every
+  // channel: on the development store it reported only Online Store and Point
+  // of Sale for a product that the deprecated `resourcePublications` — and the
+  // store's own event log — showed was also on Microsoft Copilot. The
+  // deprecated field is the one telling the truth, so it is the one to ask.
   const result = await adminGraphql<{
     product: {
-      resourcePublicationsV2: {
-        nodes: Array<{ publication: { id: string } | null }>;
+      resourcePublications: {
+        nodes: Array<{ publication: { id: string; catalog: { title: string | null } | null } | null }>;
       };
     } | null;
   }>(
@@ -812,8 +817,8 @@ async function unpublishExactPlantFromOtherChannels(
     `#graphql
       query ExactPlantPublications($id: ID!) {
         product(id: $id) {
-          resourcePublicationsV2(first: 50) {
-            nodes { publication { id } }
+          resourcePublications(first: 50) {
+            nodes { publication { id catalog { title } } }
           }
         }
       }
@@ -821,9 +826,9 @@ async function unpublishExactPlantFromOtherChannels(
     { id: productId },
   );
 
-  const unwanted = (result.product?.resourcePublicationsV2.nodes ?? [])
-    .flatMap((node) => (node.publication?.id ? [node.publication.id] : []))
-    .filter((id) => !allowed.has(id));
+  const unwanted = (result.product?.resourcePublications.nodes ?? [])
+    .flatMap((node) => (node.publication ? [node.publication] : []))
+    .filter((publication) => !allowed.has(publication.id));
   if (unwanted.length === 0) return;
 
   const removed = await adminGraphql<{
@@ -837,7 +842,10 @@ async function unpublishExactPlantFromOtherChannels(
         }
       }
     `,
-    { id: productId, input: unwanted.map((publicationId) => ({ publicationId })) },
+    {
+      id: productId,
+      input: unwanted.map((publication) => ({ publicationId: publication.id })),
+    },
   );
 
   if (removed.publishableUnpublish.userErrors.length > 0) {
@@ -848,6 +856,19 @@ async function unpublishExactPlantFromOtherChannels(
       ),
     );
   }
+
+  // Some channels accept the mutation, report no error, and stay published —
+  // Microsoft Copilot did on the development store. The app cannot revoke those
+  // per product, so the merchant has to turn off "automatically publish new
+  // products" on the channel itself. Say which one, or nobody will ever know a
+  // single physical plant is listed somewhere it can be sold again.
+  console.warn(
+    `Removed EXACT PLANTS product ${productId} from ${unwanted.length} unintended ` +
+      `sales channel(s): ${unwanted
+        .map((publication) => publication.catalog?.title ?? publication.id)
+        .join(", ")}. If a listing keeps reappearing on one of these, turn off ` +
+      `its "automatically publish new products" setting in the Shopify admin.`,
+  );
 }
 
 async function setExactPlantVariantPriceAndWeight(

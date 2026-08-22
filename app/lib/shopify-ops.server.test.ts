@@ -89,11 +89,16 @@ const LISTING_RESPONSES: Responses = {
   // product comes back on a third channel the app never asked for.
   ExactPlantPublications: {
     product: {
-      resourcePublicationsV2: {
+      resourcePublications: {
         nodes: [
-          { publication: { id: ONLINE_STORE_PUBLICATION } },
-          { publication: { id: POS_PUBLICATION } },
-          { publication: { id: "gid://shopify/Publication/3" } },
+          { publication: { id: ONLINE_STORE_PUBLICATION, catalog: { title: "Online Store" } } },
+          { publication: { id: POS_PUBLICATION, catalog: { title: "Point of Sale" } } },
+          {
+            publication: {
+              id: "gid://shopify/Publication/3",
+              catalog: { title: "Microsoft Copilot" },
+            },
+          },
         ],
       },
     },
@@ -258,10 +263,10 @@ describe("EXACT PLANTS listing on Shopify", () => {
     const calls = await listOnePlant({
       ExactPlantPublications: {
         product: {
-          resourcePublicationsV2: {
+          resourcePublications: {
             nodes: [
-              { publication: { id: ONLINE_STORE_PUBLICATION } },
-              { publication: { id: POS_PUBLICATION } },
+              { publication: { id: ONLINE_STORE_PUBLICATION, catalog: { title: "Online Store" } } },
+              { publication: { id: POS_PUBLICATION, catalog: { title: "Point of Sale" } } },
             ],
           },
         },
