@@ -86,9 +86,18 @@ SQLite migrations (`prisma/migrations/`):
 1. `20240530213853_create_session_table` — Shopify `Session`
 2. `20260820061236_plant_request_portal` — portal tables
 3. `20260820073000_exact_plant_listings` — `ExactPlantListing`
+4. `20260820160000_email_idempotency_key` — `EmailMessage.idempotencyKey`
+5. `20260821100000_email_delivery_attempts` — `EmailMessage` delivery attempt columns
+6. `20260821110000_portal_lookup_indexes` — admin/customer lookup indexes
+7. `20260822060000_canonical_plant_identity` — `CanonicalPlant`, `PlantNameAlias`,
+   `PlantIdentitySuggestion`, and `RequestItem.canonicalPlantId`. Purely additive:
+   the column is nullable and added with `ALTER TABLE ADD COLUMN` rather than the
+   table rebuild Prisma would otherwise emit for a new SQLite foreign key, so it
+   cannot fail on a database that already holds request items
 
-PostgreSQL migrations (`prisma/postgres/migrations/`) are a single squashed
-`20260820120000_init`, since production starts from an empty database.
+PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
+`20260820120000_init`, since production starts from an empty database; later
+migrations are added under both directories.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
@@ -103,6 +112,9 @@ Shop-scoped models (multi-tenant by `shop` string):
 - `DraftOrderReference` / `ShopifyOrderReference`
 - `StatusEvent` / `EmailMessage`
 - `ExactPlantListing` — unique `requestItemId`; stores approved title/price/weight/photos, Shopify product GID/handle, `listed` \| `failed`, `lastError`
+- `CanonicalPlant` — unique `(shop, canonicalKey)`; the identity analytics group on. `displayName` is the first spelling the shop saw
+- `PlantNameAlias` — unique `(shop, aliasKey)`; one customer spelling → one `CanonicalPlant`. `source` is `deterministic` or `admin_confirmed`
+- `PlantIdentitySuggestion` — unique `(shop, aliasKey, suggestedCanonicalPlantId)`; a medium-confidence match awaiting Same Plant / Keep Separate. `status` is `open` \| `confirmed` \| `rejected`
 
 Item statuses: `Requested` | `Sourced` | `Offered` | `Sold` | `Unavailable` | `Listed`.
 
@@ -487,6 +499,116 @@ In production this is driven by the `upt-offer-maintenance` Render cron job, whi
 
 Read from Prisma. Revenue uses `ShopifyOrderReference.plantRevenue` or draft line items filtered by `kind === "plant"` (FedEx excluded). Behavior flags and item conversion are computed from real request/response/payment data.
 
+Every plant metric groups on `RequestItem.canonicalPlantId`, not on the typed
+text — see "Canonical plant identity" below. Each plant row carries the customer
+wordings that fed it so the owner can audit a grouping.
+
+### Canonical plant identity
+
+Two names are kept for every line, permanently. `RequestItem.plantName` is the
+customer's own wording and is never rewritten. `RequestItem.canonicalPlantId`
+points at the identity the line is *counted* under.
+
+`app/lib/plant-identity.ts` is pure and has no database or network access.
+`canonicalPlantKey` folds case, whitespace, diacritics and punctuation, expands a
+`H.` style genus abbreviation against the candidates already on file, and drops a
+bare `sp.`. `comparePlantNames` returns a confidence tier:
+
+| Tier | Reached by | Effect |
+| --- | --- | --- |
+| `high` | identical canonical keys, or a Levenshtein distance of 1 on the epithet | linked automatically |
+| `medium` | distance 2 on the epithet, or an unambiguous abbreviation expansion that is not exact | **not** linked; a `PlantIdentitySuggestion` is opened |
+| `low` | anything else | kept separate, silently |
+
+Distance 1 covers the overwhelming majority of real typing errors (a dropped,
+doubled, transposed or mistyped letter) and on botanical epithets almost never
+collides with a different real epithet. Distance 2 is plausible but not safe
+enough to merge unattended, so it becomes an admin question instead. Two further
+guards, both exported constants with tests: `MIN_TYPO_WORD_LENGTH` is 6, so no
+edit is forgiven in a short word — genus names are four or five letters, where one
+edit is far more likely to be a different genus than a slip — and
+`MAX_TYPO_DISTANCE_RATIO` is 0.25, so a run of edits may never consume more than a
+quarter of the word. When a high-confidence match is ambiguous across several
+candidates it is downgraded to medium rather than guessed at.
+
+**Deliberately never merged automatically**, because a wrong merge silently
+corrupts the owner's analytics and is worse than two rows: quoted names,
+cultivars, accession numbers, clone numbers, collection numbers, seedling
+numbers, collector codes and locality words. `parsePlantName` treats these as
+qualifiers that are part of the identity, so `Hoya carnosa` and
+`Hoya carnosa 'Krimson Queen'` stay separate no matter how similar the rest is.
+
+Suggestions are resolved from the Plant Name Review card on the analytics page.
+**Same Plant** merges the two identities, moves the aliases and request items onto
+the survivor, and writes an `admin_confirmed` alias, so the answer is reused
+without asking again and survives the suggestion row. **Keep Separate** marks the
+suggestion `rejected` forever, and the same pair is never proposed again.
+
+Backfill: `backfillCanonicalPlants` resolves every `RequestItem` whose
+`canonicalPlantId` is null, oldest request first so the earliest spelling becomes
+the `displayName`. It is idempotent — a second run finds nothing to do — and runs
+on demand from the analytics and behaviour paths, so no deploy-time step is
+needed. New submissions get their identity in `submitCustomerRequest`.
+
+### AI is an optional assist, off by default
+
+`app/lib/plant-identity-ai.server.ts` defines `PlantIdentityProvider` with one
+method, `suggestCanonicalPlant(name, candidates)`. The default export is
+`disabledPlantIdentityProvider`, which always returns `null`; that is what CI and
+production run today. **No provider is configured, and nothing requires one** —
+the request, offer, draft-order and payment flows never consult it, and with it
+absent the only thing lost is suggestion quality on names the deterministic rules
+cannot reach.
+
+A provider may only ever *suggest*. It is capped at `medium` confidence, so it can
+never auto-link an identity, and it can never reserve inventory or create an offer.
+A returned `canonicalPlantId` that is not one of the candidates that were passed in
+is discarded, so an invented id cannot reach the database. A provider error is
+logged and treated as "no suggestion".
+
+To enable one later, set **all four** of these on the Render web service (Render
+dashboard → `upt-plant-request-portal` → Environment). Any one of them missing and
+`readPlantIdentityAiConfig` returns null, so the disabled provider is used and
+nothing is sent anywhere:
+
+| Variable | Meaning |
+| --- | --- |
+| `PLANT_IDENTITY_AI_PROVIDER` | Vendor label, e.g. `openai`, `anthropic`, `together`, `ollama`. Recorded on the suggestion and shown in the admin status line |
+| `PLANT_IDENTITY_AI_BASE_URL` | Base URL of an OpenAI-compatible chat-completions endpoint, e.g. `https://api.openai.com/v1` |
+| `PLANT_IDENTITY_AI_MODEL` | Model id, e.g. `gpt-4o-mini`, `claude-sonnet-4-5`, `llama3.1:8b` |
+| `PLANT_IDENTITY_AI_API_KEY` | Bearer token for that endpoint |
+
+`PLANT_IDENTITY_AI_TIMEOUT_MS` is optional and defaults to 5000. The call happens
+on an admin page load, so it is aborted rather than allowed to hold the page.
+
+They are deliberately **not** in `render.yaml`: a `sync: false` entry would make
+first deploy prompt for a credential that does not exist and that nothing needs.
+
+The vendor is not hard-coded — naming a URL and a model rather than a company is
+what keeps it open, and a provider with a different wire shape can be dropped in
+by implementing `PlantIdentityProvider`. The analytics page prints whether AI is
+on and, when off, exactly which variables would turn it on.
+
+### Internal behaviour flags
+
+`app/lib/plant-behavior.ts` adds the **Repeated Request / Decline Pattern** flag,
+computed per canonical plant: times requested, offered, declined, purchased, the
+span in days and the most recent request date. It fires at **3+ requests of one
+canonical plant within 90 days, 0 purchases of it, and 2+ declines** — three
+requests is the first count that is a pattern rather than a coincidence, 90 days
+matches the existing analytics window, and requiring two declines plus zero
+purchases means the customer has actually turned the plant down rather than
+simply not answered yet.
+
+Grouping by canonical identity is the point: four differently spelled requests
+for the same plant read as a pattern, where raw text would read as four
+unrelated plants.
+
+This is **internal insight only**. It appears in Customer Behavior Analytics and
+on the admin request detail page, never in a customer-facing route, and it never
+blocks or gates anything a customer can do. `app/lib/plant-behavior.test.ts`
+asserts that no customer route or component references the flag or its module.
+
 ### Search
 
 Admin dashboard `matchesAdminSearch` matches customer, email, stored and displayed request numbers, plant name, offered name.
@@ -495,16 +617,16 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/dev-store-verification-9639`:
+Last verified on `cursor/plant-identity-and-behavior-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 307 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 481 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
 | `npm run prisma:check-schema` | pass |
-| `npm run validate-graphql` | pass (23 documents + 10 variable payloads against live Admin `2025-10`) |
+| `npm run validate-graphql` | pass (27 documents + 12 variable payloads against live Admin `2025-10`) |
 | `npm run build` | pass |
 | `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
 | GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |
@@ -595,6 +717,10 @@ Genuinely optional, deliberately not done:
 13. Do not create EXACT PLANTS listings for accepted items, UPT Not Available items, never-offered items, or FedEx.
 14. Publish listings only to **Online Store** and **POS**, and add them to the existing **EXACT PLANTS** collection.
 15. Request numbers are `REQ1`, `REQ2`, `REQ2178` — sequential, unpadded, shop-wide.
+16. A plant has **two** names and keeps both. Never overwrite `RequestItem.plantName` with a normalised form, and never show a customer the canonical identity. Analytics group on the canonical identity; the customer's wording is what the customer sees.
+17. Only high confidence links two spellings automatically. Medium opens an admin suggestion and merges nothing. Quoted names, cultivars, accession/clone/collection/seedling numbers, collector codes and localities are never merged automatically — a wrong merge corrupts analytics invisibly, and two rows for one plant is the cheaper mistake.
+18. AI is optional and off. It may only suggest, capped at medium confidence, and must never auto-link an identity, reserve inventory or create an offer. No core flow may come to depend on it.
+19. Behaviour flags are **internal**. They must never reach a customer-facing route and must never block a customer.
 
 ---
 
@@ -618,6 +744,10 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/offer-response.server.ts` | Customer accept/reject + draft-order trigger |
 | `app/lib/emails.server.ts` | Outbox + Resend |
 | `app/lib/analytics.server.ts` | Dashboard analytics |
+| `app/lib/plant-identity.ts` | Pure normaliser + confidence tiers. No database, no network |
+| `app/lib/plant-identity.server.ts` | Identity resolution, aliases, suggestion confirm/reject, idempotent backfill |
+| `app/lib/plant-identity-ai.server.ts` | Optional AI provider interface; disabled by default |
+| `app/lib/plant-behavior.ts` / `plant-behavior.server.ts` | Per-canonical-plant behaviour patterns (admin-only) |
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
 | `app/lib/customer-session.server.ts` | Customer cookie / proxy identity, including the storefront origin check |
