@@ -153,11 +153,40 @@ async function inputSamples() {
 
   const lineItems = buildDraftOrderLineItems({
     acceptedItems: [
-      { plantName: "Monstera Thai Constellation", quantity: 1, price: 285, weightLbs: 4.5 },
+      {
+        itemId: "cm0itemid",
+        plantName: "Monstera Thai Constellation",
+        quantity: 1,
+        price: 285,
+        weightLbs: 4.5,
+      },
     ],
     fedexSelected: true,
     fedexLabel: "FedEx Priority Overnight Upgrade",
     fedexPrice: 15,
+    fedexVariantGid: "gid://shopify/ProductVariant/1",
+  });
+
+  // A Grower's Choice plant, which sells a variant the store already lists and
+  // asks Shopify to hold its stock until the customer's payment deadline. The
+  // only reason this is checked against the live schema is that a hold nobody
+  // takes and a line nobody can pay for are both invisible until a real store
+  // refuses them.
+  const reservedLineItems = buildDraftOrderLineItems({
+    acceptedItems: [
+      {
+        itemId: "cm0itemid",
+        plantName: "Monstera Thai Constellation",
+        quantity: 1,
+        price: 285,
+        weightLbs: 4.5,
+        variantId: "gid://shopify/ProductVariant/2",
+      },
+    ],
+    fedexSelected: true,
+    fedexLabel: "FedEx Priority Overnight Upgrade",
+    fedexPrice: 15,
+    fedexVariantGid: "gid://shopify/ProductVariant/1",
   });
 
   const exactPlant = buildExactPlantProductCreateInput({
@@ -177,18 +206,18 @@ async function inputSamples() {
         customerEmail: "customer@example.com",
         currencyCode: "USD",
         lineItems,
-        fedexVariantGid: "gid://shopify/ProductVariant/1",
       }),
     },
     {
-      label: "draftOrderCreate($input) without a FedEx variant",
+      label: "draftOrderCreate($input) holding existing website stock",
       type: "DraftOrderInput!",
       value: buildDraftOrderInput({
         requestId: "cm0requestid",
         requestNumber: "REQ2178",
         customerEmail: "customer@example.com",
         currencyCode: "USD",
-        lineItems,
+        lineItems: reservedLineItems,
+        reserveInventoryUntil: "2026-08-25T12:00:00.000Z",
       }),
     },
     {

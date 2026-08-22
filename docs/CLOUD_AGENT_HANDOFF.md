@@ -24,8 +24,9 @@ Implemented end-to-end in app code:
 - Request numbers: sequential `REQ1`, `REQ2`, … `REQ2178` (no year prefix, no zero-padding)
 - Private customer request list (identity-scoped)
 - Admin dashboard with search (customer name, email, request number, plant/offered name)
-- Admin request detail: Available / Not Available, offered name, price, weight, customer-facing notes, multi-photo upload
-- Offer send with 3/5/7 day hold; offer snapshot freezes name, price, weight, photos, notes, availability
+- Admin request detail: three fulfilment routes per item — Offer Exact Plant / Link Existing Website Stock / Not Available — offered name, price, weight, customer-facing notes, multi-photo upload
+- Grower's Choice: admin searches the shop's live Shopify products and variants, links a purchasable one, and the draft order sells that real variant with a Shopify inventory reservation ending at the customer's payment deadline
+- Offer send with 3/5/7 day hold; offer snapshot freezes name, price, weight, photos, notes, availability, fulfilment route and the linked product/variant titles
 - Customer offer: Accept / Reject for Available items only; Not Available cannot be accepted or rejected
 - FedEx Priority Overnight upgrade checked by default; settings-driven removal warning; excluded from plant analytics
 - Draft-order creation for **accepted plants only** (GraphQL when an Admin API client exists; demo fallback invoice URL otherwise)
@@ -94,6 +95,11 @@ SQLite migrations (`prisma/migrations/`):
    the column is nullable and added with `ALTER TABLE ADD COLUMN` rather than the
    table rebuild Prisma would otherwise emit for a new SQLite foreign key, so it
    cannot fail on a database that already holds request items
+8. `20260822120000_growers_choice_fulfillment` — `fulfillmentType` and the linked
+   variant snapshot on `RequestItem`, `OfferItem` and `ResponseItem`, plus
+   `DraftOrderReference.reserveInventoryUntil`. Purely additive: `fulfillmentType`
+   carries a non-null default of `exact_plant`, so every existing row reads as the
+   route it was created under, and every other column is nullable
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -105,11 +111,12 @@ Shop-scoped models (multi-tenant by `shop` string):
 - `RequestNumberSequence` — still keyed by `(shop, year)`; live numbering uses `year = 0` (`GLOBAL_REQUEST_SEQUENCE_YEAR`) for a shop-wide counter
 - `CustomerProfile` — unique `(shop, email)`
 - `PlantRequest` — statuses stored as `New` / `Pending` / `Closed` / `Expired`
-- `RequestItem` — plant line; `budget` column **kept but unused** in the active workflow (do not destructive-migrate solely to drop it)
+- `RequestItem` — plant line; `budget` column **kept but unused** in the active workflow (do not destructive-migrate solely to drop it). `fulfillmentType` is `exact_plant` \| `growers_choice`; **`not_available` is never stored** — it is derived from `availability`, because storing it twice is how the two come to disagree. `linked*` columns are the store listing a Grower's Choice line draws on, and `fulfillmentIssue` is why its stock could not be held
 - `PhotoReference` — ordered photos on a request item
 - `Offer` + `OfferItem` — immutable offer snapshot
 - `CustomerResponse` + `ResponseItem` — customer choices (`accept` / `reject` / `unavailable`)
-- `DraftOrderReference` / `ShopifyOrderReference`
+- `DraftOrderReference` / `ShopifyOrderReference`. `DraftOrderReference` doubles as the mutual exclusion around draft-order creation: a row with `invoiceUrl = null` is a **claim**, not a draft order, and the unique index on `requestId` is what stops two callers reserving the same plant
+- `ResponseItem` — also freezes the fulfilment route and the linked product/variant titles the customer answered on, so a later Shopify rename cannot rewrite history
 - `StatusEvent` / `EmailMessage`
 - `ExactPlantListing` — unique `requestItemId`; stores approved title/price/weight/photos, Shopify product GID/handle, `listed` \| `failed`, `lastError`
 - `CanonicalPlant` — unique `(shop, canonicalKey)`; the identity analytics group on. `displayName` is the first spelling the shop saw
@@ -136,7 +143,8 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Shopify Files staged upload + `fileCreate`, polling `fileStatus` until `READY` (`uploadPlantPhoto`)
 - `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes, ignores redeliveries for an already-paid request
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
-- Draft orders are idempotent twice over: a recorded `DraftOrderReference` short-circuits, and `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost. Without it a retry bills the customer twice
+- Existing-stock search over `products(query:)` **and** `productVariants(query:)` in one document, merged on variant id (`searchExistingStock`). `products` reaches the product's own text and its variants' SKUs; `productVariants` reaches a variant title, which on a plant store is where the size lives
+- Draft orders are idempotent three times over: a recorded `DraftOrderReference` with a checkout link short-circuits, `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost, and `claimDraftOrderCreation` makes the window between those two exclusive. Without the first two a retry bills the customer twice; without the third two concurrent callers reserve the same plant twice
 - Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
 - EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
 - Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
@@ -225,6 +233,11 @@ write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read
 sells. It also covers reading `Location.id`, which is the only Location field
 the app touches — anything more would additionally need `read_locations`.
 
+Grower's Choice added **no scope**. Searching products and variants and reading
+one back by id is `read_products`, which `write_products` already covers; the
+hold is taken by `draftOrderCreate` under `write_draft_orders` and
+`write_inventory`. Nothing here needs the merchant to re-approve.
+
 `write_app_proxy` is what makes the `[app_proxy]` block take effect. Without it
 the storefront address customers use — `https://<shop>/apps/plant-requests` —
 404s, even though every other part of the app is configured correctly.
@@ -252,6 +265,69 @@ that frozen amount as `originalUnitPriceWithCurrency` alongside `variantId`, so
 Shopify bills what the customer answered rather than whatever the variant costs
 by the time they open the invoice. It previously sent `variantId` alone, which
 quoted $15 and billed the store's price.
+
+### Grower's Choice from existing website stock
+
+The second fulfilment route. A plant is supplied from a variant the store already
+lists rather than one sourced and photographed for one customer. All of the
+vocabulary — which route an item is on, whether a variant may be linked, the
+search query, the weight, the hold state — lives in `app/lib/growers-choice.ts`,
+which is deliberately **free of imports**: `portal.ts` reads it to decide whether
+an offer can be sent, so anything imported there would pull `portal.ts` back in a
+circle.
+
+Only a **purchasable** variant may be linked: `ACTIVE` product, a price above
+zero, `availableForSale`, and either untracked stock or at least one unit.
+`unlinkableVariantReason` returns the reason instead, and search results include
+the unlinkable ones with it — a silently shortened list reads as "we do not sell
+that plant", which sends the admin to source one they already have.
+
+Untracked stock is allowed and is **not** the same as stock of zero: Shopify has
+no counter for it, so there is nothing to be short of and nothing to reserve.
+
+Linking reserves nothing. It records which listing the plant would come from,
+and the price and weight to prefill; the item's own weight is only a fallback for
+a variant whose weight the merchant never filled in.
+
+**Reservation happens once, when the draft order is created for an accepted
+plant**, and Shopify is what does the holding:
+
+1. `acceptedOfferLines` reads the accepted lines out of the frozen offer and
+   response snapshots, so the order bills the variant and price the customer
+   answered even if the listing has since been relinked or repriced.
+2. `claimDraftOrderCreation` takes exclusive right to create this request's
+   draft order. Reading "nothing recorded" and creating one are separated by
+   several Shopify round trips, and two callers through that window would both
+   ask Shopify to hold the same plant.
+3. `assertLinkedStockStillAvailable` re-reads the live variants and refuses with
+   `InsufficientStockError`, naming the plant. Quantities are summed **per
+   variant** first: two accepted lines pointing at one listing need two units
+   between them, and checking each against the same single unit would pass both.
+4. `reserveInventoryUntilFor` sets `DraftOrderInput.reserveInventoryUntil` to the
+   offer's own expiry — the end of the hold the customer was already promised.
+   Nothing is asked for unless a **plant** line sells store stock: asking on an
+   all-exact-plant order would newly hold the FedEx upgrade variant, which is a
+   shipping service and has never been held for anyone.
+5. The granted deadline is read **back** from Shopify, not assumed from what was
+   sent. A hold asked for and not granted leaves the plant on open sale, so it is
+   recorded as a `fulfillmentIssue` rather than as a request page claiming the
+   plant is held.
+
+The pre-check is a courtesy, not the guarantee: anyone can buy the last plant
+between that answer and the reservation. What actually prevents an oversell is
+Shopify refusing — reported as a stock problem naming the plant rather than a
+generic failure, because `draftOrderCreate` returns it as an ordinary user error.
+On any failure nothing is created, so nothing is payable and nothing is charged,
+and the claim is given back so the merchant can retry as soon as they restock.
+
+**Release needs no code.** Shopify lets the hold go by itself at
+`reserveInventoryUntil` and turns it into a real deduction when the order is paid,
+so an unpaid expiry releases the stock even while the portal is down.
+`inventoryHoldState` only reads which of those has happened, for the request page.
+
+A rejected Grower's Choice item does **not** enter the EXACT PLANTS queue: the
+product already exists in the store, and listing it again would create a second
+product for a plant that already has one. A rejected exact plant still does.
 
 ### Shopify Files
 
@@ -500,8 +576,17 @@ In production this is driven by the `upt-offer-maintenance` Render cron job, whi
 Read from Prisma. Revenue uses `ShopifyOrderReference.plantRevenue` or draft line items filtered by `kind === "plant"` (FedEx excluded). Behavior flags and item conversion are computed from real request/response/payment data.
 
 Every plant metric groups on `RequestItem.canonicalPlantId`, not on the typed
-text — see "Canonical plant identity" below. Each plant row carries the customer
-wordings that fed it so the owner can audit a grouping.
+text and **never on the Shopify product title** — see "Canonical plant identity"
+below. Each plant row carries the customer wordings that fed it so the owner can
+audit a grouping. A product-title formatting difference is not a second plant.
+
+The **Fulfilment Source** section splits the funnel by how each plant was to be
+supplied, read from the offer snapshots so a plant counts on the route it was
+actually offered on rather than whatever the request item says now. It reports
+lines, offered, accepted, rejected, purchased and revenue per route, plus
+requests filled from existing stock (counted **per request**, not per plant),
+existing-stock acceptance and purchase rates, and Exact Plant against Grower's
+Choice on offered-to-paid. FedEx is a shipping service and appears on no route.
 
 ### Canonical plant identity
 
@@ -617,16 +702,16 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/plant-identity-and-behavior-9639`:
+Last verified on `cursor/growers-choice-and-reservation-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 481 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 572 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
 | `npm run prisma:check-schema` | pass |
-| `npm run validate-graphql` | pass (27 documents + 12 variable payloads against live Admin `2025-10`) |
+| `npm run validate-graphql` | pass (29 documents + 12 variable payloads against live Admin `2025-10`, including a `DraftOrderInput` that sells a real `variantId` and carries `reserveInventoryUntil`) |
 | `npm run build` | pass |
 | `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
 | GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |
@@ -657,6 +742,8 @@ branch replaces it. Merge before relying on anything being live.
 - Demo listing products are not real Shopify products; GID looks like `gid://shopify/Product/upt-{itemId}`.
 - `shopify.app.toml` carries the production Render URLs, committed because Shopify's TOML cannot read environment variables. `app/lib/shopify-config.test.ts` guards them. **Do not run `shopify app dev` against the production app** — use `shopify app config use dev` (`shopify.app.dev.toml`, separate development app), or the React Router dev server, which needs no Shopify app at all.
 - Custom draft-order plant lines do not set `requiresShipping`. Shopify does not document its default and it cannot be tested without a live store, so setting it would be guessing at checkout behaviour. Confirm shipping rates appear at checkout during the live draft-order test and set it then if they do not.
+- Whether Shopify actually **grants** the `reserveInventoryUntil` hold, and whether it releases at exactly that moment, cannot be verified without a store. The code reads the granted deadline back rather than assuming it and records a `fulfillmentIssue` when nothing came back, so an ungranted hold is visible instead of silent. The experiment that settles it: link a variant with one unit, accept it, then in the Shopify admin confirm the variant reads one committed/unavailable unit and zero available; leave the offer unpaid past its deadline and confirm the unit returns to available; then repeat and pay, and confirm the paid order deducts it once and no second unit is held.
+- Whether Shopify reports an exhausted hold as a `draftOrderCreate` user error at all, and in what words, is unverified. `isInventoryUserError` matches on `inventor|stock|out of stock|unavailable quantity`; a store that phrases it otherwise would surface the refusal as a generic Shopify failure rather than a named stock problem. The order is still not created either way, so this is a message-quality risk and not an oversell risk. Capture the exact `userErrors.message` during the live test and tighten the match to it.
 - The CLA workflow was deleted on the production-readiness branch, but it is a `pull_request_target` workflow, which GitHub always runs from the **base** branch. It therefore keeps failing on PR #24 until that deletion is merged to `main`, and disappears for PRs opened afterwards.
 - Unused localStorage prototype modules remain in `app/lib/` and can confuse agents; they are not the live data layer.
 - `RequestNumberSequence.year` is a leftover of the old yearly scheme; do not reintroduce `UPT-REQ-YYYY-000001`.
@@ -702,14 +789,15 @@ Genuinely optional, deliberately not done:
 
 1. **Do not rebuild** the portal. Extend the Prisma-backed React Router app.
 2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display is derived by `formatCustomerStatusLabel` from the stored status plus `hasPayableItems` (`offerHasPayableItems`) and `hasResponded`: Pending and unanswered → **Offer Ready for Review**; Pending and answered with something payable → **Needs Payment**; nothing payable → **No Payment Needed**. Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
-2a. An Available item cannot be offered without at least one exact plant photo, a price and a weight. `incompleteOfferItems` names each item and its missing fields; `sendOffer` is the authority and throws `OfferIncompleteError`. Customer-facing notes stay optional and Not Available items need none of it.
+2a. What an item must carry to be offered depends on its fulfilment route. `incompleteOfferItems` names each item and its missing fields; `sendOffer` is the authority and throws `OfferIncompleteError`. An **exact plant** needs at least one exact plant photo, a price and a weight. A **Grower's Choice** item needs a linked purchasable variant with enough stock, a price and a weight — the linked variant's own weight where it has one — and **no exact photo**, there being no one plant to photograph. **Not Available** needs none of it. Customer-facing notes stay optional throughout.
 3. Customer form: plant name required; notes optional; **no quantity UI**; quantity defaults to 1. **Budget stays out** of the form, customer-facing details, and active workflow. Do not drop `RequestItem.budget` unless a migration is actually required.
 4. Name/email come from the customer account when possible. Customers see only their own requests.
-5. Offer snapshots freeze name, price, photos, notes, availability after send. Do not edit customer-facing offer fields after send.
+5. Offer snapshots freeze name, price, photos, notes, availability, fulfilment route and the linked product/variant titles after send. Do not edit customer-facing offer fields after send, and never re-read them from Shopify: a merchant renaming or repricing the product must not rewrite what the customer answered or what they are billed.
 6. FedEx upgrade is a separate product, checked by default, warning from Settings, **excluded from plant analytics**. Never create an EXACT PLANTS listing for FedEx.
-7. Draft orders only for **accepted** exact plants (plus FedEx if selected).
+7. Draft orders only for **accepted** plants (plus FedEx if selected). A Grower's Choice line sells the real Shopify `variantId`, never a custom line item; an exact plant has no product in Shopify yet and stays custom.
+7a. Linking a listing reserves nothing. Stock is held only when the customer accepts and the draft order is created, only through `DraftOrderInput.reserveInventoryUntil`, and only until the offer's own payment deadline. Never oversell and never silently drop an item: if the stock has gone, create nothing and tell the admin which plant. Every inventory operation stays idempotent — a recorded reference, the Shopify tag lookup and the creation claim are all load-bearing.
 8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired.
-9. **Declined item** means: UPT marked Available, UPT created an exact-plant offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available.
+9. **Declined item** means: UPT marked Available, UPT created an **exact-plant** offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available, and it is **not** a rejected Grower's Choice item — that plant already has its own Shopify product, and an EXACT PLANTS listing is one physical plant with one unit of tracked stock.
 9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never for a paid or Closed request.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
 11. Listing prefill/publish: title, price, weight, selected exact-plant photos only. Exclude customer-facing notes/disclaimers, customer identity, request information, and customer response information.
@@ -740,7 +828,8 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/portal.ts` | Domain types, numbering, status labels, analytics helpers, email copy |
 | `app/lib/portal.server.ts` | Persistence |
 | `app/lib/exact-plants.ts` / `exact-plants.server.ts` | Declined-item eligibility + listing |
-| `app/lib/shopify-ops.server.ts` | Draft orders, Files, product/collection/publish |
+| `app/lib/growers-choice.ts` | Fulfilment routes, linkable-variant rules, stock search query, hold state. Pure and **import-free** on purpose |
+| `app/lib/shopify-ops.server.ts` | Draft orders + inventory reservation, stock search, Files, product/collection/publish |
 | `app/lib/offer-response.server.ts` | Customer accept/reject + draft-order trigger |
 | `app/lib/emails.server.ts` | Outbox + Resend |
 | `app/lib/analytics.server.ts` | Dashboard analytics |
