@@ -10,7 +10,11 @@ import {
   RequestClosedError,
   saveCustomerResponse,
 } from "./portal.server";
-import { notifyCheckoutLink, notifyConfirmation } from "./emails.server";
+import {
+  notifyAdminResponse,
+  notifyCheckoutLink,
+  notifyResponseSummary,
+} from "./emails.server";
 import { createDraftOrderForRequest } from "./shopify-ops.server";
 import type { AdminContext } from "./admin-auth.server";
 
@@ -105,6 +109,45 @@ export async function createPaymentLinkForRequest(input: {
   }
 }
 
+/**
+ * Ends a request whose customer answered by accepting nothing.
+ *
+ * Refused while anything is accepted: that request either still owes money or
+ * is waiting for `orders/paid` to close it, and closing it here would strand a
+ * live hold and withdraw the customer's own checkout link.
+ *
+ * Closing does not touch the offer or response snapshots, so the declined
+ * history the customer and the analytics read stays intact, and the declined
+ * plants stay eligible for an EXACT PLANTS listing — closing tidies the request
+ * away, it does not decide the plants are spoken for.
+ */
+export async function closeDeclinedRequest(input: {
+  shop: string;
+  requestId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const response = await getCustomerResponse(input.shop, input.requestId);
+  if (!response) {
+    return {
+      ok: false,
+      error: "The customer has not answered this offer yet, so there is nothing to close.",
+    };
+  }
+  if (response.hasAcceptedPurchasableItems) {
+    return {
+      ok: false,
+      error:
+        "This customer accepted plants, so the request stays open until they pay or the hold expires.",
+    };
+  }
+
+  await closeRequest(
+    input.shop,
+    input.requestId,
+    "Admin closed request — customer declined every item",
+  );
+  return { ok: true };
+}
+
 export async function handleCustomerOfferAction(input: {
   shop: string;
   requestId: string;
@@ -129,8 +172,6 @@ export async function handleCustomerOfferAction(input: {
   }
 
   const request = await getRequest(input.shop, input.requestId);
-  const fedexUpgradeSelected =
-    String(input.form.get("fedexUpgradeSelected")) === "true";
 
   // Every available plant needs a deliberate answer. Defaulting a missing field
   // to `accept` would turn a form the customer never completed into a purchase,
@@ -175,6 +216,13 @@ export async function handleCustomerOfferAction(input: {
     };
   });
 
+  // The upgrade only ever ships accepted plants. With nothing accepted there is
+  // no shipment to upgrade, so it is recorded as unselected rather than made
+  // the customer's problem to untick.
+  const acceptedAnything = items.some((item) => item.choice === "accept");
+  const fedexUpgradeSelected =
+    acceptedAnything && String(input.form.get("fedexUpgradeSelected")) === "true";
+
   let saved;
   try {
     saved = await saveCustomerResponse(input.shop, {
@@ -208,7 +256,28 @@ export async function handleCustomerOfferAction(input: {
   }
 
   const accepted = saved.items.filter((item) => item.choice === "accept");
+  const rejected = saved.items.filter((item) => item.choice === "reject");
+  const summaryItem = (item: (typeof saved.items)[number]) => ({
+    plantName: item.plantName,
+    price: item.price,
+    customerNotes: item.customerNotes,
+  });
+
   if (accepted.length === 0) {
+    // No draft order, no payment link, no FedEx charge — but the customer and
+    // UPT both still get their one email about the answer.
+    await notifyResponseSummary(input.shop, {
+      requestId: input.requestId,
+      acceptedItems: [],
+      rejectedItems: rejected.map(summaryItem),
+      fedexSelected: false,
+      fedexPrice: saved.fedexUpgradePrice,
+    });
+    await notifyAdminResponse(input.shop, {
+      requestId: input.requestId,
+      acceptedCount: 0,
+      rejectedCount: rejected.length,
+    });
     return { ok: true as const, draftOrderFailed: false };
   }
 
@@ -239,22 +308,19 @@ export async function handleCustomerOfferAction(input: {
     );
   }
 
-  await notifyConfirmation(input.shop, {
+  await notifyResponseSummary(input.shop, {
     requestId: input.requestId,
-    acceptedItems: accepted.map((item) => ({
-      plantName: item.plantName,
-      price: item.price,
-      quantity: item.quantity,
-      customerNotes: item.customerNotes,
-    })),
+    acceptedItems: accepted.map(summaryItem),
+    rejectedItems: rejected.map(summaryItem),
     fedexSelected: fedexUpgradeSelected,
-    fedexPrice: offer.fedexUpgradePrice,
+    fedexPrice: saved.fedexUpgradePrice,
     invoiceUrl: draft?.invoiceUrl,
   });
-
-  if (draft) {
-    await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
-  }
+  await notifyAdminResponse(input.shop, {
+    requestId: input.requestId,
+    acceptedCount: accepted.length,
+    rejectedCount: rejected.length,
+  });
 
   return { ok: true as const, draftOrderFailed: draft === null };
 }

@@ -89,6 +89,8 @@ export type PlantRequest = {
   sentOffer?: SentOffer;
   /** Undefined until an offer has been sent. See `offerHasPayableItems`. */
   hasPayableItems?: boolean;
+  /** Whether the customer has answered the offer. */
+  hasResponded: boolean;
 };
 
 export type CustomerMyRequestRow = {
@@ -99,6 +101,7 @@ export type CustomerMyRequestRow = {
   status: RequestStatus;
   /** Undefined until an offer has been sent. */
   hasPayableItems?: boolean;
+  hasResponded: boolean;
 };
 
 export type CustomerResponseItem = {
@@ -164,20 +167,25 @@ export const NEEDS_PAYMENT_LABEL = "Needs Payment";
 
 export const NOTHING_TO_PAY_LABEL = "No Payment Needed";
 
+export const OFFER_READY_LABEL = "Offer Ready for Review";
+
 /**
- * Pending is stored from the moment the offer is sent and nothing revises it
- * when the answer leaves nothing to buy, so the label — not the status — is
- * what has to tell a customer who rejected every plant, or who was offered
- * nothing available, that no money is owed.
+ * Pending is stored from the moment the offer is sent and nothing revises it,
+ * so the label — not the status — is what has to tell a customer where they
+ * stand: an offer waiting to be read, money owed on what they accepted, or
+ * nothing to pay because they declined it all or nothing was available.
+ *
+ * With neither flag supplied the label never claims money is owed. A request
+ * only reaches Pending by having an offer, so a caller that knows nothing about
+ * the answer cannot know a payment is outstanding either.
  */
 export function formatCustomerStatusLabel(
   status: RequestStatus,
-  options: { hasPayableItems?: boolean } = {},
+  options: { hasPayableItems?: boolean; hasResponded?: boolean } = {},
 ): string {
   if (status === "Pending") {
-    return options.hasPayableItems === false
-      ? NOTHING_TO_PAY_LABEL
-      : NEEDS_PAYMENT_LABEL;
+    if (options.hasPayableItems === false) return NOTHING_TO_PAY_LABEL;
+    return options.hasResponded ? NEEDS_PAYMENT_LABEL : OFFER_READY_LABEL;
   }
   return status;
 }
@@ -200,6 +208,84 @@ export function offerHasPayableItems(input: {
   if (!purchasable) return false;
   if (!input.responseChoices) return true;
   return input.responseChoices.includes("accept");
+}
+
+/**
+ * What an Available plant must carry before it can be offered.
+ *
+ * Customer-facing notes are deliberately absent: they are editorial and often
+ * there is nothing to disclose. Everything here is something the customer is
+ * asked to buy on — the exact plant they are looking at, the amount they will
+ * be billed, and the weight the draft order ships on.
+ */
+export const OFFER_ITEM_REQUIREMENTS = [
+  "an exact plant photo",
+  "a price",
+  "a weight",
+] as const;
+
+export type OfferItemRequirement = (typeof OFFER_ITEM_REQUIREMENTS)[number];
+
+export type IncompleteOfferItem = {
+  itemName: string;
+  missing: OfferItemRequirement[];
+};
+
+type OfferReadinessItem = {
+  plantName: string;
+  offeredName?: string | null;
+  availability: string;
+  price: number;
+  weightLbs: number;
+  photos: unknown[];
+};
+
+/**
+ * The Available items that cannot be offered yet, and what each one is missing.
+ *
+ * Not Available items are excluded: there is no exact plant, so there is
+ * nothing to photograph, price or weigh.
+ */
+export function incompleteOfferItems(
+  items: OfferReadinessItem[],
+): IncompleteOfferItem[] {
+  const problems: IncompleteOfferItem[] = [];
+
+  for (const item of items) {
+    if (item.availability !== "available") continue;
+
+    const missing: OfferItemRequirement[] = [];
+    if (item.photos.length === 0) missing.push("an exact plant photo");
+    if (!(normalizePrice(item.price) > 0)) missing.push("a price");
+    if (!(normalizeWeight(item.weightLbs) > 0)) missing.push("a weight");
+    if (missing.length === 0) continue;
+
+    problems.push({
+      itemName: item.offeredName?.trim() || item.plantName,
+      missing,
+    });
+  }
+
+  return problems;
+}
+
+function joinWithAnd(values: string[]): string {
+  if (values.length <= 1) return values.join("");
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+}
+
+/**
+ * Names every item that is not ready and the fields it lacks.
+ *
+ * "Fill in the form" is useless on a request with six plants: the merchant has
+ * to be told which plant and which field, or they go looking.
+ */
+export function offerReadinessMessage(problems: IncompleteOfferItem[]): string {
+  if (problems.length === 0) return "";
+  const sentences = problems.map(
+    (problem) => `${problem.itemName} is missing ${joinWithAnd(problem.missing)}.`,
+  );
+  return `This offer cannot be sent yet. ${sentences.join(" ")}`;
 }
 
 export function normalizeUnavailableReason(
@@ -733,64 +819,97 @@ export function plantRevenueFromPaidOrderLines(
   };
 }
 
-export type ConfirmationEmailInput = {
+export type ResponseSummaryItem = {
+  plantName: string;
+  price: number;
+  customerNotes: string;
+};
+
+export type ResponseSummaryEmailInput = {
   customerName: string;
-  customerEmail: string;
   requestNumber: string;
-  acceptedItems: Array<{
-    plantName: string;
-    price: number;
-    quantity: number;
-    customerNotes: string;
-  }>;
+  acceptedItems: ResponseSummaryItem[];
+  rejectedItems: ResponseSummaryItem[];
   fedexSelected: boolean;
   fedexPrice: number;
   fedexDisclaimer?: string;
   invoiceUrl?: string;
+  /** When the accepted plants stop being held. Omitted when nothing is held. */
+  expiresAt?: string;
 };
 
-export function buildConfirmationEmail(input: ConfirmationEmailInput): {
-  subject: string;
-  bodyText: string;
-} {
-  const lines = [
-    `Hi ${input.customerName || "there"},`,
-    "",
-    `Your UPT plant offer selections for ${input.requestNumber} are confirmed.`,
-    "",
-    "Accepted items:",
-  ];
+function responseSummaryLines(items: ResponseSummaryItem[]): string[] {
+  return items.map((item) => {
+    const notes = item.customerNotes.trim()
+      ? ` Notes: ${item.customerNotes.trim()}`
+      : "";
+    return `- ${item.plantName} — ${formatCurrency(item.price)}${notes}`;
+  });
+}
 
-  if (input.acceptedItems.length === 0) {
-    lines.push("- None");
+/**
+ * The one email a customer gets for the choices they submitted.
+ *
+ * It replaced a confirmation and a separate payment-link message, which meant
+ * two emails for one action and a checkout link the confirmation had already
+ * carried. Everything the customer needs to know about their answer is here,
+ * including the plants they turned down, so the mail is also the record.
+ */
+export function buildResponseSummaryEmail(
+  input: ResponseSummaryEmailInput,
+): { subject: string; bodyText: string } {
+  const accepted = input.acceptedItems.length > 0;
+  const lines = [`Hi ${input.customerName || "there"},`, ""];
+
+  if (accepted) {
+    lines.push(`Your UPT plant offer selections for ${input.requestNumber} are confirmed.`);
+    lines.push("");
+    lines.push("Accepted:");
+    lines.push(...responseSummaryLines(input.acceptedItems));
   } else {
-    for (const item of input.acceptedItems) {
-      const notes = item.customerNotes.trim()
-        ? ` Notes: ${item.customerNotes.trim()}`
-        : "";
+    lines.push(`Thank you for answering your UPT plant offer ${input.requestNumber}.`);
+    lines.push("");
+    // The customer declined everything, so the first thing to settle is that
+    // nobody is waiting on money from them.
+    lines.push(
+      "You did not accept any plants from this offer, so no payment is needed and there is nothing left to pay.",
+    );
+  }
+
+  if (input.rejectedItems.length > 0) {
+    lines.push("");
+    lines.push(accepted ? "Declined:" : "Plants you declined:");
+    lines.push(...responseSummaryLines(input.rejectedItems));
+  }
+
+  // The upgrade only ever ships plants. With nothing accepted there is no
+  // shipment, no charge and nothing to disclaim.
+  if (accepted) {
+    lines.push("");
+    if (input.fedexSelected) {
       lines.push(
-        `- ${item.plantName} — ${formatCurrency(item.price)}${notes}`,
+        `FedEx Priority Overnight Upgrade: kept (${formatCurrency(input.fedexPrice)})`,
+      );
+    } else {
+      lines.push("FedEx Priority Overnight Upgrade: removed");
+      if (input.fedexDisclaimer) {
+        lines.push("");
+        lines.push(input.fedexDisclaimer);
+      }
+    }
+
+    if (input.invoiceUrl) {
+      lines.push("");
+      lines.push("Complete your payment:");
+      lines.push(input.invoiceUrl);
+    }
+
+    if (input.expiresAt) {
+      lines.push("");
+      lines.push(
+        `These plants are held for you until ${input.expiresAt}. After that, this offer may be released.`,
       );
     }
-  }
-
-  lines.push("");
-  if (input.fedexSelected) {
-    lines.push(
-      `FedEx Priority Overnight Upgrade: selected (${formatCurrency(input.fedexPrice)})`,
-    );
-  } else {
-    lines.push("FedEx Priority Overnight Upgrade: removed");
-    if (input.fedexDisclaimer) {
-      lines.push("");
-      lines.push(input.fedexDisclaimer);
-    }
-  }
-
-  if (input.invoiceUrl) {
-    lines.push("");
-    lines.push("Checkout / payment link:");
-    lines.push(input.invoiceUrl);
   }
 
   lines.push("");
@@ -798,8 +917,40 @@ export function buildConfirmationEmail(input: ConfirmationEmailInput): {
   lines.push("Unsolicited Plant Talks");
 
   return {
-    subject: `Your UPT plant offer confirmation (${input.requestNumber})`,
+    subject: accepted
+      ? `Your UPT plant offer confirmation (${input.requestNumber})`
+      : `We received your response — no payment needed (${input.requestNumber})`,
     bodyText: lines.join("\n"),
+  };
+}
+
+/**
+ * The one message UPT gets when a customer answers an offer.
+ *
+ * Deliberately per response rather than per item: a six-plant offer used to be
+ * worth six notifications, which is how a mailbox stops being read.
+ */
+export function buildAdminResponseEmail(input: {
+  requestNumber: string;
+  customerName: string;
+  customerEmail: string;
+  acceptedCount: number;
+  rejectedCount: number;
+}): { subject: string; bodyText: string } {
+  const accepted = input.acceptedCount > 0;
+  const summary = accepted
+    ? `${input.acceptedCount} of ${input.acceptedCount + input.rejectedCount} item(s) accepted`
+    : "every item declined";
+
+  return {
+    subject: `${input.requestNumber}: customer responded (${summary})`,
+    bodyText: [
+      `${input.customerName} <${input.customerEmail}> answered the offer on ${input.requestNumber}.`,
+      "",
+      accepted
+        ? `Accepted: ${input.acceptedCount} item(s). Declined: ${input.rejectedCount} item(s).`
+        : `The customer declined all ${input.rejectedCount} item(s). Nothing is owed and no draft order was created.`,
+    ].join("\n"),
   };
 }
 
@@ -843,6 +994,13 @@ export function buildAdminNewRequestEmail(input: {
   };
 }
 
+/**
+ * Announces that UPT has answered the request, and nothing more.
+ *
+ * The customer has not seen the offer yet, so this must not talk about payment:
+ * they may decline every plant, and telling them money is due before they have
+ * read what is on offer is both wrong and a reason not to open it.
+ */
 export function buildOfferReadyEmail(input: {
   customerName: string;
   requestNumber: string;
@@ -850,11 +1008,11 @@ export function buildOfferReadyEmail(input: {
   offerLink: string;
 }): { subject: string; bodyText: string } {
   return {
-    subject: `Your UPT plant offer is ready (${input.requestNumber})`,
+    subject: `UPT has responded to your plant request (${input.requestNumber})`,
     bodyText: [
       `Hi ${input.customerName || "there"},`,
       "",
-      `Your personal plant offer for ${input.requestNumber} is ready.`,
+      `UPT has responded to your plant request ${input.requestNumber}. Your personal offer is ready to review, and you decide which plants you want.`,
       getOfferHoldMessage(input.expiresAt),
       "",
       "Review your offer:",

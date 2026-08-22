@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
 import prisma from "../db.server";
+import { exactPlantReleaseReason } from "./exact-plants";
 import {
+  closeDeclinedRequest,
   createPaymentLinkForRequest,
   handleCustomerOfferAction,
   loadCustomerOfferPage,
@@ -15,11 +17,13 @@ import {
   getDraftOrder,
   getRequest,
   listCustomerRequests,
+  listRequests,
   markRequestPaid,
   parseDraftOrderLineItems,
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
+  updateShopSettings,
 } from "./portal.server";
 import { DEMO_SHOP } from "./shop";
 
@@ -63,6 +67,8 @@ async function offeredRequest() {
       availability: "available",
       price,
       weightLbs: 2,
+      customerFacingNotes: `Notes for ${item.plantName}.`,
+      photoUrls: [`https://cdn.example.com/${item.id}.jpg`],
     });
   }
   await updateRequestItem(shop, {
@@ -235,6 +241,7 @@ describe("a failed draft order is not presented as a confirmed order", () => {
       availability: "available",
       price: 250,
       weightLbs: 2,
+      photoUrls: ["https://cdn.example.com/monstera.jpg"],
     });
     await sendOffer(merchantShop, created.id, 3);
 
@@ -416,18 +423,39 @@ describe("what the customer is told is owed", () => {
     return created.id;
   }
 
-  it("asks for payment while the customer can still accept something", async () => {
+  const labelOf = (request: Awaited<ReturnType<typeof getRequest>>) =>
+    formatCustomerStatusLabel(request!.status, {
+      hasPayableItems: request!.hasPayableItems,
+      hasResponded: request!.hasResponded,
+    });
+
+  it("presents an unanswered offer as something to read, not a bill", async () => {
     const { requestId } = await offeredRequest();
     const request = await getRequest(shop, requestId);
 
     assert.equal(request?.status, "Pending");
     assert.equal(request?.hasPayableItems, true);
-    assert.equal(
-      formatCustomerStatusLabel(request!.status, {
-        hasPayableItems: request!.hasPayableItems,
+    assert.equal(request?.hasResponded, false);
+    assert.equal(labelOf(request), "Offer Ready for Review");
+  });
+
+  it("asks for payment once the customer has accepted something", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
       }),
-      "Needs Payment",
-    );
+    });
+
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Pending");
+    assert.equal(request?.hasResponded, true);
+    assert.equal(labelOf(request), "Needs Payment");
   });
 
   it("stops asking for payment once every plant was rejected", async () => {
@@ -446,12 +474,7 @@ describe("what the customer is told is owed", () => {
     const request = await getRequest(shop, requestId);
     assert.equal(request?.status, "Pending", "the declined plant stays reviewable");
     assert.equal(request?.hasPayableItems, false);
-    assert.equal(
-      formatCustomerStatusLabel(request!.status, {
-        hasPayableItems: request!.hasPayableItems,
-      }),
-      "No Payment Needed",
-    );
+    assert.equal(labelOf(request), "No Payment Needed");
   });
 
   it("never asks for payment on an offer with nothing available", async () => {
@@ -460,16 +483,56 @@ describe("what the customer is told is owed", () => {
 
     assert.equal(request?.status, "Pending");
     assert.equal(request?.hasPayableItems, false);
+    assert.equal(labelOf(request), "No Payment Needed");
   });
 
   it("carries the same answer into the customer's own request list", async () => {
-    const requestId = await nothingAvailable();
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
     const rows = await listCustomerRequests(shop, {
       email: "alex.rivera@example.com",
     });
     const row = rows.find((entry) => entry.id === requestId);
 
     assert.equal(row?.hasPayableItems, false);
+    assert.equal(row?.hasResponded, true);
+    assert.equal(
+      formatCustomerStatusLabel(row!.status, {
+        hasPayableItems: row!.hasPayableItems,
+        hasResponded: row!.hasResponded,
+      }),
+      "No Payment Needed",
+      "the list and the detail page must say the same thing",
+    );
+  });
+
+  it("keeps the stored status among the four that exist", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const stored = await prisma.plantRequest.findFirstOrThrow({
+      where: { id: requestId, shop },
+    });
+    assert.ok(["New", "Pending", "Closed", "Expired"].includes(stored.status));
   });
 
   it("says nothing about payment before an offer has been sent", async () => {
@@ -482,6 +545,7 @@ describe("what the customer is told is owed", () => {
 
     assert.equal(request?.status, "New");
     assert.equal(request?.hasPayableItems, undefined);
+    assert.equal(request?.hasResponded, false);
   });
 });
 
@@ -537,6 +601,330 @@ describe("the customer offer page", () => {
     assert.equal(afterPayment.requestPaid, true);
     assert.equal(afterPayment.requestClosed, true);
     assert.ok(afterPayment.paidAt, "the page states when the payment arrived");
+  });
+});
+
+describe("a customer who accepts nothing", () => {
+  before(purge);
+  after(purge);
+
+  /** Every available plant rejected, with the FedEx box left ticked. */
+  async function rejectedEverything() {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    return { requestId, first, second };
+  }
+
+  it("has the upgrade recorded as unselected without being asked to untick it", async () => {
+    const { requestId } = await rejectedEverything();
+
+    const response = await getCustomerResponse(shop, requestId);
+    assert.equal(
+      response?.fedexUpgradeSelected,
+      false,
+      "there is no shipment to upgrade",
+    );
+  });
+
+  it("gets no draft order, no FedEx line and no checkout link", async () => {
+    const { requestId } = await rejectedEverything();
+
+    assert.equal(await getDraftOrder(shop, requestId), null);
+    const page = await loadCustomerOfferPage(shop, requestId);
+    assert.equal(page.invoiceUrl, null);
+  });
+
+  it("can still read the whole offer back from the frozen snapshot", async () => {
+    const { requestId, first } = await rejectedEverything();
+
+    // A later admin edit must not be able to rewrite what they were shown.
+    await prisma.requestItem.update({
+      where: { id: first.id },
+      data: {
+        offeredName: "Renamed After The Fact",
+        price: 9999,
+        customerFacingNotes: "Rewritten notes.",
+      },
+    });
+    await prisma.photoReference.deleteMany({ where: { itemId: first.id } });
+
+    const response = await getCustomerResponse(shop, requestId);
+    const declined = response?.items.find((item) => item.sourceItemId === first.id);
+
+    assert.equal(declined?.choice, "reject");
+    assert.equal(declined?.plantName, "Monstera Albo");
+    assert.equal(declined?.price, 250);
+    assert.equal(declined?.customerNotes, "Notes for Monstera Albo.");
+    assert.deepEqual(declined?.photoUrls, [
+      `https://cdn.example.com/${first.id}.jpg`,
+    ]);
+  });
+
+  it("keeps the two-step FedEx confirmation for a customer who accepted something", async () => {
+    const { requestId, first, second } = await offeredRequest();
+
+    const held = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexRemovalAcknowledged: "true",
+      }),
+    });
+
+    assert.equal(held.ok, true);
+    const response = await getCustomerResponse(shop, requestId);
+    assert.equal(response?.fedexUpgradeSelected, false);
+    const draft = await getDraftOrder(shop, requestId);
+    const kinds = parseDraftOrderLineItems(draft?.lineItemsJson ?? "[]").map(
+      (line) => line.kind,
+    );
+    assert.deepEqual(kinds, ["plant"], "the removed upgrade is not billed");
+  });
+});
+
+describe("closing a request the customer declined outright", () => {
+  before(purge);
+  after(purge);
+
+  async function declinedRequest() {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    return { requestId, first };
+  }
+
+  it("closes it, timestamps it, and creates nothing to pay", async () => {
+    const { requestId } = await declinedRequest();
+
+    assert.deepEqual(await closeDeclinedRequest({ shop, requestId }), { ok: true });
+
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Closed");
+    assert.ok(request?.closedAt);
+    assert.equal(await getDraftOrder(shop, requestId), null);
+
+    const page = await loadCustomerOfferPage(shop, requestId);
+    assert.equal(page.requestClosed, true);
+    assert.equal(page.requestPaid, false);
+    assert.equal(page.invoiceUrl, null);
+    // The customer can still open it and read what they declined.
+    assert.equal(page.response?.items.length, 3);
+  });
+
+  it("shows Closed to the admin dashboard and the customer's list at once", async () => {
+    const { requestId } = await declinedRequest();
+    await closeDeclinedRequest({ shop, requestId });
+
+    const dashboard = await listRequests(shop);
+    assert.equal(
+      dashboard.find((entry) => entry.id === requestId)?.status,
+      "Closed",
+    );
+
+    const rows = await listCustomerRequests(shop, {
+      email: "alex.rivera@example.com",
+    });
+    const row = rows.find((entry) => entry.id === requestId);
+    assert.equal(row?.status, "Closed");
+    assert.equal(
+      formatCustomerStatusLabel(row!.status, {
+        hasPayableItems: row!.hasPayableItems,
+        hasResponded: row!.hasResponded,
+      }),
+      "Closed",
+    );
+  });
+
+  it("keeps the declined history and its analytics after closing", async () => {
+    const { requestId, first } = await declinedRequest();
+    await closeDeclinedRequest({ shop, requestId });
+
+    const response = await getCustomerResponse(shop, requestId);
+    const declined = response?.items.find((item) => item.sourceItemId === first.id);
+    assert.equal(declined?.choice, "reject");
+    assert.equal(declined?.price, 250);
+    assert.equal(declined?.customerNotes, "Notes for Monstera Albo.");
+  });
+
+  it("keeps its declined plants in the EXACT PLANTS review queue", async () => {
+    const { requestId, first } = await declinedRequest();
+
+    const reason = async () =>
+      exactPlantReleaseReason({
+        hasOfferItem: true,
+        offerAvailability: "available",
+        responseChoice: "reject",
+        requestStatus: (await getRequest(shop, requestId))!.status,
+      });
+
+    assert.equal(await reason(), "customer_declined");
+
+    // Closing is how an admin tidies away a request the customer wanted nothing
+    // from. It must not also throw away the plants that are now for sale.
+    await closeDeclinedRequest({ shop, requestId });
+
+    assert.equal(await reason(), "customer_declined");
+    void first;
+  });
+
+  it("refuses to close a request the customer accepted something on", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const result = await closeDeclinedRequest({ shop, requestId });
+    assert.equal(result.ok, false);
+    assert.match("error" in result ? result.error : "", /accepted plants/);
+    assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+  });
+
+  it("refuses to close a request the customer has not answered", async () => {
+    const { requestId } = await offeredRequest();
+
+    const result = await closeDeclinedRequest({ shop, requestId });
+    assert.equal(result.ok, false);
+    assert.match("error" in result ? result.error : "", /has not answered/);
+    assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+  });
+});
+
+describe("what a submitted response puts in the outbox", () => {
+  before(async () => {
+    await purge();
+    await updateShopSettings(shop, { adminNotificationEmail: "upt@example.com" });
+  });
+  after(purge);
+
+  const emailsFor = (requestId: string) =>
+    prisma.emailMessage.findMany({
+      where: { shop, requestId },
+      orderBy: { createdAt: "asc" },
+    });
+
+  it("sends one customer email and one admin email when plants are accepted", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const emails = await emailsFor(requestId);
+    assert.deepEqual(
+      emails.map((email) => email.templateKey).sort(),
+      ["admin_response", "confirmation"],
+      "no separate checkout-link email, and never one per item",
+    );
+
+    const summary = emails.find((email) => email.templateKey === "confirmation")!;
+    const draft = await getDraftOrder(shop, requestId);
+    assert.match(summary.bodyText, /Accepted:\n- Monstera Albo — \$250\.00/);
+    assert.match(summary.bodyText, /Declined:\n- Hoya Callistophylla — \$70\.00/);
+    assert.match(summary.bodyText, /FedEx Priority Overnight Upgrade: kept/);
+    assert.ok(summary.bodyText.includes(draft!.invoiceUrl!));
+    assert.equal(summary.toEmail, "alex.rivera@example.com");
+
+    const admin = emails.find((email) => email.templateKey === "admin_response")!;
+    assert.equal(admin.toEmail, "upt@example.com");
+    assert.match(admin.subject, /customer responded/);
+    assert.match(admin.subject, /1 of 2 item\(s\) accepted/);
+  });
+
+  it("still sends exactly one of each when everything is declined", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const emails = await emailsFor(requestId);
+    assert.deepEqual(
+      emails.map((email) => email.templateKey).sort(),
+      ["admin_response", "confirmation"],
+    );
+
+    const summary = emails.find((email) => email.templateKey === "confirmation")!;
+    assert.match(summary.subject, /no payment needed/i);
+    assert.doesNotMatch(summary.bodyText, /FedEx/);
+    assert.doesNotMatch(summary.bodyText, /invoice|checkout/i);
+
+    const admin = emails.find((email) => email.templateKey === "admin_response")!;
+    assert.match(admin.subject, /every item declined/);
+  });
+
+  it("cannot be duplicated by a retry or a double submit", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    const submit = () =>
+      handleCustomerOfferAction({
+        shop,
+        requestId,
+        form: form({
+          intent: "submit-response",
+          [`choice-${first.id}`]: "accept",
+          [`choice-${second.id}`]: "reject",
+          fedexUpgradeSelected: "true",
+        }),
+      });
+
+    await submit();
+    const again = await submit();
+
+    assert.equal("alreadySubmitted" in again ? again.alreadySubmitted : null, true);
+    const emails = await emailsFor(requestId);
+    assert.equal(emails.length, 2);
+    assert.deepEqual(
+      emails.map((email) => email.idempotencyKey).sort(),
+      [`admin_response:${requestId}`, `confirmation:${requestId}`],
+    );
+  });
+
+  it("tells UPT nothing about an offer nobody has answered", async () => {
+    const { requestId } = await offeredRequest();
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: { shop, requestId, templateKey: "admin_response" },
+      }),
+      0,
+    );
   });
 });
 

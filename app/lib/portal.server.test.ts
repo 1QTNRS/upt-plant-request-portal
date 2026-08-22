@@ -100,6 +100,7 @@ describe("plant request persistence", () => {
       weightLbs: 6.5,
       customerFacingNotes: "Newest leaf is healthy.",
       availability: "available",
+      photoUrls: ["https://cdn.example.com/monstera-peru.jpg"],
     });
     await updateRequestItem(shop, {
       requestId: created.id,
@@ -197,6 +198,7 @@ describe("FedEx upgrade price", () => {
       price: 92,
       weightLbs: 2,
       availability: "available",
+      photoUrls: ["https://cdn.example.com/monstera-peru.jpg"],
     });
     await sendOffer(fedexShop, request.id, 3);
 
@@ -372,6 +374,104 @@ describe("plants keep the order the customer typed them", () => {
       const loaded = await getRequest(orderShop, created.id);
       assert.deepEqual(loaded?.items.map((item) => item.plantName), typed);
     }
+  });
+});
+
+describe("an offer is refused until every Available plant is complete", () => {
+  const readyShop = `${DEMO_SHOP}-offer-readiness-test`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: readyShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: readyShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: readyShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: readyShop } });
+  };
+
+  before(purge);
+  after(purge);
+
+  async function request(plantNames: string[]) {
+    return submitCustomerRequest(readyShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: plantNames.map((plantName) => ({ plantName })),
+    });
+  }
+
+  it("names each incomplete item and the fields it lacks", async () => {
+    const created = await request(["Monstera Albo", "Hoya Callistophylla"]);
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      offeredName: "Monstera Albo Exact",
+      availability: "available",
+      price: 250,
+      weightLbs: 0,
+    });
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[1].id,
+      availability: "available",
+      price: 70,
+      weightLbs: 2,
+      photoUrls: ["https://cdn.example.com/hoya.jpg"],
+    });
+
+    await assert.rejects(
+      () => sendOffer(readyShop, created.id, 3),
+      (error: Error) => {
+        assert.match(
+          error.message,
+          /Monstera Albo Exact is missing an exact plant photo and a weight\./,
+        );
+        assert.doesNotMatch(error.message, /Hoya/);
+        return true;
+      },
+    );
+
+    // Nothing was committed: the request is still editable.
+    const unchanged = await getRequest(readyShop, created.id);
+    assert.equal(unchanged?.status, "New");
+    assert.equal(unchanged?.sentOffer, undefined);
+  });
+
+  it("requires nothing of a Not Available plant", async () => {
+    const created = await request(["Monstera Albo", "String of Pearls"]);
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      price: 250,
+      weightLbs: 2,
+      photoUrls: ["https://cdn.example.com/monstera.jpg"],
+    });
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[1].id,
+      availability: "not_available",
+      unavailableReason: "not in our current inventory",
+    });
+
+    const offered = await sendOffer(readyShop, created.id, 3);
+    assert.equal(offered?.status, "Pending");
+  });
+
+  it("sends an item that has no customer-facing notes", async () => {
+    // Notes are optional. A plant with nothing to disclose is still offerable.
+    const created = await request(["Anthurium Warocqueanum"]);
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      price: 400,
+      weightLbs: 3,
+      customerFacingNotes: "",
+      photoUrls: ["https://cdn.example.com/anthurium.jpg"],
+    });
+
+    const offered = await sendOffer(readyShop, created.id, 3);
+    assert.equal(offered?.status, "Pending");
+    assert.equal(offered?.items[0].customerFacingNotes, "");
   });
 });
 

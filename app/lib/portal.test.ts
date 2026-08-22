@@ -2,18 +2,22 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  buildConfirmationEmail,
+  buildAdminResponseEmail,
   buildDraftOrderLineItems,
   buildExpirationReminderEmail,
+  buildOfferReadyEmail,
+  buildResponseSummaryEmail,
   computeBehaviorFlags,
   formatCustomerStatusLabel,
   formatRequestNumber,
   getDisplayRequestNumber,
+  incompleteOfferItems,
   isOfferExpired,
   matchesAdminSearch,
   normalizeRequestStatus,
   normalizeUnavailableReason,
   offerHasPayableItems,
+  offerReadinessMessage,
   parseRequestNumber,
   plantRevenueFromLines,
   plantRevenueFromPaidOrderLines,
@@ -40,9 +44,8 @@ describe("request numbers", () => {
 });
 
 describe("status mapping", () => {
-  it("keeps Pending stored while displaying Needs Payment", () => {
+  it("keeps the four stored statuses", () => {
     assert.equal(normalizeRequestStatus("Pending"), "Pending");
-    assert.equal(formatCustomerStatusLabel("Pending"), "Needs Payment");
     assert.equal(formatCustomerStatusLabel("New"), "New");
     assert.equal(normalizeRequestStatus("Purchased"), "Closed");
     assert.equal(normalizeRequestStatus("Offer Sent"), "Pending");
@@ -51,22 +54,57 @@ describe("status mapping", () => {
   /*
    * The stored status stays Pending — closing these requests would drop their
    * declined plants out of the EXACT PLANTS review queue — so the label is what
-   * has to stop asking for money that will never be collected.
+   * has to say where the customer stands.
    */
-  it("does not label a request with nothing payable Needs Payment", () => {
+  it("derives every customer-facing label from Pending", () => {
     assert.equal(
-      formatCustomerStatusLabel("Pending", { hasPayableItems: false }),
+      formatCustomerStatusLabel("Pending", {
+        hasPayableItems: true,
+        hasResponded: false,
+      }),
+      "Offer Ready for Review",
+      "an offer they have not read is not a bill",
+    );
+    assert.equal(
+      formatCustomerStatusLabel("Pending", {
+        hasPayableItems: true,
+        hasResponded: true,
+      }),
+      "Needs Payment",
+    );
+    assert.equal(
+      formatCustomerStatusLabel("Pending", {
+        hasPayableItems: false,
+        hasResponded: true,
+      }),
       "No Payment Needed",
     );
     assert.equal(
-      formatCustomerStatusLabel("Pending", { hasPayableItems: true }),
-      "Needs Payment",
+      formatCustomerStatusLabel("Pending", {
+        hasPayableItems: false,
+        hasResponded: false,
+      }),
+      "No Payment Needed",
+      "UPT had nothing available, so there was never anything to buy",
     );
-    // No offer sent yet: the label follows the status as before.
-    assert.equal(formatCustomerStatusLabel("Pending", {}), "Needs Payment");
+    // Knowing nothing about the answer is not evidence that money is owed.
+    assert.equal(formatCustomerStatusLabel("Pending", {}), "Offer Ready for Review");
+  });
+
+  it("leaves the terminal statuses as they are stored", () => {
     assert.equal(
-      formatCustomerStatusLabel("Closed", { hasPayableItems: false }),
+      formatCustomerStatusLabel("Closed", {
+        hasPayableItems: false,
+        hasResponded: true,
+      }),
       "Closed",
+    );
+    assert.equal(
+      formatCustomerStatusLabel("Expired", {
+        hasPayableItems: true,
+        hasResponded: false,
+      }),
+      "Expired",
     );
   });
 
@@ -267,33 +305,203 @@ describe("plant revenue from a paid order's lines", () => {
   });
 });
 
-describe("confirmation email", () => {
-  it("includes accepted items only, FedEx disclaimer when removed, and checkout link", () => {
-    const email = buildConfirmationEmail({
+describe("the one email a customer gets for their answer", () => {
+  const accepted = {
+    plantName: "Monstera Deliciosa",
+    price: 85,
+    customerNotes: "Minor leaf damage.",
+  };
+  const declined = {
+    plantName: "Fiddle Leaf Fig",
+    price: 60,
+    customerNotes: "Two lower leaves are yellowing.",
+  };
+
+  it("carries the accepted plants, the declined ones, FedEx and one payment link", () => {
+    const email = buildResponseSummaryEmail({
       customerName: "Alex Rivera",
-      customerEmail: "alex.rivera@example.com",
       requestNumber: "REQ1",
-      acceptedItems: [
-        {
-          plantName: "Monstera Deliciosa",
-          price: 85,
-          quantity: 1,
-          customerNotes: "Minor leaf damage.",
-        },
-      ],
+      acceptedItems: [accepted],
+      rejectedItems: [declined],
       fedexSelected: false,
       fedexPrice: 15,
       fedexDisclaimer: "Standard shipping is not covered.",
       invoiceUrl: "https://checkout.example/pay",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
     });
 
-    assert.match(email.bodyText, /Monstera Deliciosa/);
-    assert.match(email.bodyText, /Minor leaf damage/);
+    assert.match(email.bodyText, /Monstera Deliciosa — \$85\.00 Notes: Minor leaf damage\./);
+    assert.match(email.bodyText, /Fiddle Leaf Fig — \$60\.00/);
+    assert.match(email.bodyText, /Two lower leaves are yellowing/);
     assert.match(email.bodyText, /FedEx Priority Overnight Upgrade: removed/);
     assert.match(email.bodyText, /Standard shipping is not covered/);
-    assert.match(email.bodyText, /https:\/\/checkout.example\/pay/);
-    assert.doesNotMatch(email.bodyText, /Rejected/);
-    assert.doesNotMatch(email.bodyText, /Fiddle Leaf/);
+    assert.match(email.bodyText, /held for you until Aug 26, 2026/);
+    assert.equal(
+      email.bodyText.match(/https:\/\/checkout\.example\/pay/g)?.length,
+      1,
+      "one checkout link, not one per email",
+    );
+  });
+
+  it("says the upgrade was kept when the customer kept it", () => {
+    const email = buildResponseSummaryEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      acceptedItems: [accepted],
+      rejectedItems: [],
+      fedexSelected: true,
+      fedexPrice: 15,
+      invoiceUrl: "https://checkout.example/pay",
+    });
+
+    assert.match(email.bodyText, /FedEx Priority Overnight Upgrade: kept \(\$15\.00\)/);
+  });
+
+  it("asks for nothing when the customer accepted nothing", () => {
+    const email = buildResponseSummaryEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      acceptedItems: [],
+      rejectedItems: [accepted, declined],
+      fedexSelected: true,
+      fedexPrice: 15,
+      invoiceUrl: "https://checkout.example/pay",
+    });
+
+    assert.match(email.subject, /no payment needed/i);
+    assert.match(email.bodyText, /no payment is needed/i);
+    assert.match(email.bodyText, /Monstera Deliciosa — \$85\.00/);
+    assert.match(email.bodyText, /Fiddle Leaf Fig — \$60\.00/);
+    assert.doesNotMatch(email.bodyText, /checkout\.example/);
+    assert.doesNotMatch(
+      email.bodyText,
+      /FedEx/,
+      "nothing ships, so there is no upgrade to charge for or disclaim",
+    );
+  });
+});
+
+describe("the offer-ready email", () => {
+  const email = buildOfferReadyEmail({
+    customerName: "Alex Rivera",
+    requestNumber: "REQ1",
+    expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+    offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+  });
+
+  it("says UPT has responded and links straight to the offer", () => {
+    assert.match(email.subject, /UPT has responded/);
+    assert.match(email.bodyText, /UPT has responded to your plant request REQ1/);
+    assert.match(email.bodyText, /apps\/plant-requests\/requests\/req-1/);
+  });
+
+  it("does not ask for payment before the offer has been read", () => {
+    // They may decline every plant on it.
+    assert.doesNotMatch(email.subject, /pay/i);
+    assert.doesNotMatch(email.bodyText, /payment|invoice|checkout/i);
+  });
+});
+
+describe("the admin response email", () => {
+  it("is one message naming the request and whether anything was accepted", () => {
+    const email = buildAdminResponseEmail({
+      requestNumber: "REQ1",
+      customerName: "Alex Rivera",
+      customerEmail: "alex.rivera@example.com",
+      acceptedCount: 2,
+      rejectedCount: 1,
+    });
+
+    assert.match(email.subject, /^REQ1: customer responded/);
+    assert.match(email.subject, /2 of 3 item\(s\) accepted/);
+    assert.match(email.bodyText, /alex\.rivera@example\.com/);
+  });
+
+  it("says plainly when everything was declined", () => {
+    const email = buildAdminResponseEmail({
+      requestNumber: "REQ2",
+      customerName: "Alex Rivera",
+      customerEmail: "alex.rivera@example.com",
+      acceptedCount: 0,
+      rejectedCount: 3,
+    });
+
+    assert.match(email.subject, /every item declined/);
+    assert.match(email.bodyText, /declined all 3 item\(s\)/);
+    assert.match(email.bodyText, /no draft order was created/);
+  });
+});
+
+describe("an offer cannot be sent on an incomplete item", () => {
+  const ready = {
+    plantName: "Monstera Albo",
+    offeredName: "Monstera Albo Exact",
+    availability: "available",
+    price: 250,
+    weightLbs: 2,
+    photos: [{ id: "photo-1" }],
+  };
+
+  it("passes an Available item that has a photo, a price and a weight", () => {
+    assert.deepEqual(incompleteOfferItems([ready]), []);
+  });
+
+  it("still offers an item with no customer-facing notes", () => {
+    // Notes are editorial. Plenty of plants have nothing to disclose.
+    assert.deepEqual(
+      incompleteOfferItems([{ ...ready, offeredName: null }]),
+      [],
+    );
+  });
+
+  it("requires nothing of a Not Available item", () => {
+    assert.deepEqual(
+      incompleteOfferItems([
+        {
+          plantName: "String of Pearls",
+          availability: "not_available",
+          price: 0,
+          weightLbs: 0,
+          photos: [],
+        },
+      ]),
+      [],
+    );
+  });
+
+  it("names each item and the fields it lacks", () => {
+    const problems = incompleteOfferItems([
+      ready,
+      { ...ready, plantName: "Hoya", offeredName: "", photos: [] },
+      {
+        plantName: "Anthurium",
+        offeredName: "Anthurium Warocqueanum",
+        availability: "available",
+        price: 0,
+        weightLbs: 0,
+        photos: [{ id: "photo-2" }],
+      },
+    ]);
+
+    assert.deepEqual(problems, [
+      { itemName: "Hoya", missing: ["an exact plant photo"] },
+      {
+        itemName: "Anthurium Warocqueanum",
+        missing: ["a price", "a weight"],
+      },
+    ]);
+
+    const message = offerReadinessMessage(problems);
+    assert.match(message, /Hoya is missing an exact plant photo\./);
+    assert.match(
+      message,
+      /Anthurium Warocqueanum is missing a price and a weight\./,
+    );
+    assert.doesNotMatch(message, /Monstera/);
+  });
+
+  it("has nothing to say about a complete offer", () => {
+    assert.equal(offerReadinessMessage([]), "");
   });
 });
 

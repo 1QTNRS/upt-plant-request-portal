@@ -99,3 +99,22 @@ export function readOfferChoices(
   }
   return choices;
 }
+
+/**
+ * Whether unticking the FedEx upgrade has to be confirmed against the Settings
+ * warning before the answer is recorded.
+ *
+ * The warning is about how accepted plants ship. A customer who accepted
+ * nothing is shipping nothing, so making them acknowledge a disclaimer — or
+ * untick a box they were never going to be charged for — is a round trip about
+ * a charge that will not happen. The response records the upgrade as unselected
+ * in that case either way.
+ */
+export function fedexRemovalNeedsConfirmation(input: {
+  choices: Record<string, "accept" | "reject">;
+  fedexSelected: boolean;
+  acknowledged: boolean;
+}): boolean {
+  if (input.fedexSelected || input.acknowledged) return false;
+  return Object.values(input.choices).includes("accept");
+}

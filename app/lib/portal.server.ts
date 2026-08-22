@@ -22,16 +22,19 @@ import {
   parseRequestNumber,
   getOfferHoldMessage,
   getOfferUrgencyMessage,
+  incompleteOfferItems,
   normalizePrice,
   normalizeQuantity,
   normalizeRequestStatus,
   normalizeUnavailableReason,
   normalizeWeight,
   offerHasPayableItems,
+  offerReadinessMessage,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
   type DraftOrderLineItem,
+  type IncompleteOfferItem,
   type ItemAvailabilityStatus,
   type OfferExpirationDays,
   type OfferPlantItem,
@@ -73,6 +76,22 @@ export class OfferExpiredError extends Error {
   constructor() {
     super("This offer has expired.");
     this.name = "OfferExpiredError";
+  }
+}
+
+/**
+ * An Available plant was about to be offered without a photo, a price or a
+ * weight. The admin page disables Send Offer in that state, but this is the
+ * authority: the offer snapshot is frozen on send, so an item sent incomplete
+ * can never be corrected afterwards.
+ */
+export class OfferIncompleteError extends Error {
+  readonly problems: IncompleteOfferItem[];
+
+  constructor(problems: IncompleteOfferItem[]) {
+    super(offerReadinessMessage(problems));
+    this.name = "OfferIncompleteError";
+    this.problems = problems;
   }
 }
 
@@ -219,6 +238,7 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
             : null,
         })
       : undefined,
+    hasResponded: Boolean(request.response),
   };
 }
 
@@ -707,6 +727,9 @@ export async function sendOffer(
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
   if (normalizeRequestStatus(request.status) !== "New") return null;
+
+  const problems = incompleteOfferItems(request.items);
+  if (problems.length > 0) throw new OfferIncompleteError(problems);
 
   const sentAt = new Date();
   const expiresAt = new Date(sentAt);

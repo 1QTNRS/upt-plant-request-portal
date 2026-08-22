@@ -241,6 +241,7 @@ export function CustomerRequestPortal({
                     <s-badge tone={requestStatusTone(request.status as RequestStatus)}>
                       {formatCustomerStatusLabel(request.status, {
                         hasPayableItems: request.hasPayableItems,
+                        hasResponded: request.hasResponded,
                       })}
                     </s-badge>
                   </s-table-cell>

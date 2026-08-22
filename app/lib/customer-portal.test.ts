@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 
 import { APP_PROXY_BASE_PATH, CUSTOMER_PORTAL_PATH } from "./app-proxy";
 import {
+  fedexRemovalNeedsConfirmation,
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
@@ -231,6 +232,63 @@ describe("offer response choices", () => {
 
   it("returns nothing for a form with no choices", () => {
     assert.deepEqual(readOfferChoices(form({ intent: "close-request" })), {});
+  });
+});
+
+describe("confirming the FedEx removal", () => {
+  it("asks for confirmation when an accepted plant loses the upgrade", () => {
+    assert.equal(
+      fedexRemovalNeedsConfirmation({
+        choices: { item_1: "accept", item_2: "reject" },
+        fedexSelected: false,
+        acknowledged: false,
+      }),
+      true,
+    );
+  });
+
+  it("does not ask again once the customer acknowledged the warning", () => {
+    assert.equal(
+      fedexRemovalNeedsConfirmation({
+        choices: { item_1: "accept" },
+        fedexSelected: false,
+        acknowledged: true,
+      }),
+      false,
+    );
+  });
+
+  it("says nothing while the customer is keeping the upgrade", () => {
+    assert.equal(
+      fedexRemovalNeedsConfirmation({
+        choices: { item_1: "accept" },
+        fedexSelected: true,
+        acknowledged: false,
+      }),
+      false,
+    );
+  });
+
+  it("never asks a customer who accepted nothing to untick it", () => {
+    // Nothing ships, so there is no upgrade to remove and no disclaimer that
+    // applies. Making them confirm one is a round trip about a charge that
+    // will not happen.
+    assert.equal(
+      fedexRemovalNeedsConfirmation({
+        choices: { item_1: "reject", item_2: "reject" },
+        fedexSelected: false,
+        acknowledged: false,
+      }),
+      false,
+    );
+    assert.equal(
+      fedexRemovalNeedsConfirmation({
+        choices: { item_1: "reject" },
+        fedexSelected: true,
+        acknowledged: false,
+      }),
+      false,
+    );
   });
 });
 

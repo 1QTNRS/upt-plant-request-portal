@@ -48,6 +48,7 @@ async function offeredRequest(options?: {
     price: 250,
     weightLbs: 4,
     customerFacingNotes: "Two established leaves.",
+    photoUrls: ["https://cdn.example.com/spiritus-sancti.jpg"],
   });
   await sendOffer(shop, created.id, 3);
   return created;

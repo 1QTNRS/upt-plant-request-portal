@@ -61,6 +61,7 @@ function toRequestRow(
     plantsRequested: request.items.map((item) => item.plantName).join(", "),
     status: request.status,
     hasPayableItems: request.hasPayableItems,
+    hasResponded: request.hasResponded,
   };
 }
 

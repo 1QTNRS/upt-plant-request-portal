@@ -72,6 +72,7 @@ async function offeredRequest(options?: { expiresInHours?: number }) {
     availability: "available",
     price: 250,
     weightLbs: 2,
+    photoUrls: ["https://cdn.example.com/monstera.jpg"],
   });
   await sendOffer(shop, created.id, 3);
 

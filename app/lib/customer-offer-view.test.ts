@@ -272,7 +272,7 @@ describe("a request with nothing to pay for still has a way out", () => {
       formAction: "/apps/plant-requests/requests/req-1",
     });
 
-    assert.match(html, /No checkout link will be created/);
+    assert.match(html, /No checkout link was created/);
     assert.match(html, /value="close-request"/);
   });
 
@@ -286,6 +286,85 @@ describe("a request with nothing to pay for still has a way out", () => {
     });
 
     assert.ok(!html.includes('value="close-request"'));
+  });
+});
+
+describe("a customer who declined everything can still see what they declined", () => {
+  const declined = (requestClosed: boolean) =>
+    render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([
+        { plantName: "Monstera Albo", choice: "reject" },
+        { plantName: "Hoya Callistophylla", choice: "reject" },
+      ]),
+      fedexRemovalWarning: "",
+      requestClosed,
+      statusLabel: requestClosed ? "Closed" : "No Payment Needed",
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+  it("shows the plant, the price it was offered at, the notes and every photo", () => {
+    const html = declined(false);
+
+    assert.match(html, /Plants you declined/);
+    assert.match(html, /Monstera Albo/);
+    assert.match(html, /Hoya Callistophylla/);
+    assert.match(html, /\$250\.00/);
+    assert.match(html, /One older leaf has a small scar/);
+    assert.match(html, /Declined/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url), `${url} is missing from the declined item`);
+    }
+  });
+
+  it("keeps that history after the request is closed", () => {
+    const html = declined(true);
+
+    assert.match(html, /Plants you declined/);
+    assert.match(html, /Monstera Albo/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url));
+    }
+    assert.ok(!html.includes('value="close-request"'), "there is nothing left to do");
+  });
+
+  it("offers no payment and never claims the FedEx upgrade was applied", () => {
+    for (const html of [declined(false), declined(true)]) {
+      assert.ok(!html.includes("Continue to Checkout"));
+      assert.ok(!html.includes("Complete your payment"));
+      assert.ok(!html.includes("Final approval summary"));
+      assert.ok(
+        !/FedEx Priority Overnight Upgrade —/.test(html),
+        "nothing shipped, so the upgrade was neither kept nor charged",
+      );
+      assert.match(html, /FedEx Priority Overnight upgrade was not applied/);
+    }
+  });
+});
+
+describe("the customer-facing status label", () => {
+  it("is on the request detail page, not only the list", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      statusLabel: "Offer Ready for Review",
+      statusTone: "caution",
+    });
+
+    assert.match(html, /<s-badge tone="caution">Offer Ready for Review<\/s-badge>/);
+  });
+
+  it("renders nothing when there is no label to show", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+    });
+
+    assert.ok(!html.includes("Offer Ready for Review"));
   });
 });
 

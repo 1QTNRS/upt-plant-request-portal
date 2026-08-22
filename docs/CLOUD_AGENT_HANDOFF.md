@@ -295,7 +295,9 @@ version is bumped.
 
 ### Emails
 
-Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, checkout, expiration reminder, plus `compliance_data_request`.
+Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, admin response, checkout, expiration reminder, plus `compliance_data_request`.
+
+Volume is deliberately small. UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response` — one concise mail per submitted answer, never one per item, never for admin-side status changes, analytics, expiry maintenance or payment (Shopify's own paid-order notification covers that). The customer gets `request_received`, `offer_ready` (which says UPT has responded and links to the offer, and must not claim payment is due before they have read it), and a single `confirmation` covering their whole answer — accepted and rejected items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain "no payment needed" when nothing was. `checkout_link` survives only as the admin's manual recovery action on the request page.
 
 `preview` and `failed` are different states with different causes: `preview` means no `RESEND_API_KEY`, so nothing was attempted; `failed` means Resend refused the send — a 403 for an unverified `EMAIL_FROM` domain is the likely first one. Do not describe an unverified domain as leaving messages in `preview`.
 
@@ -437,7 +439,13 @@ The page also has to stop offering what it cannot deliver:
 - A **closed** request never shows a checkout link, and a paid one confirms the
   payment instead (`requestPaid` / `paidAt` from `loadCustomerOfferPage`).
 - An answer that left nothing payable always has a **Close Request** action,
-  whether the customer rejected everything or UPT had nothing available.
+  whether the customer rejected everything or UPT had nothing available. The
+  admin request page offers the same action through `closeDeclinedRequest`,
+  which refuses while anything is accepted and creates no draft order.
+- A customer who accepted nothing still opens the request and reads the frozen
+  offer back: plant name, the price and customer-facing notes they were shown,
+  the exact offer photos, and their Declined decision — with no checkout link,
+  no payment control and FedEx not shown as selected.
 - The customer is never shown the confirmation email. The admin outbox on the
   request page is where queued mail is read.
 
@@ -571,7 +579,8 @@ Genuinely optional, deliberately not done:
 ## Business rules future agents must preserve
 
 1. **Do not rebuild** the portal. Extend the Prisma-backed React Router app.
-2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display: Pending → **Needs Payment** (label only), or **No Payment Needed** when the offer and the answer left nothing payable (`offerHasPayableItems`). Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
+2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display is derived by `formatCustomerStatusLabel` from the stored status plus `hasPayableItems` (`offerHasPayableItems`) and `hasResponded`: Pending and unanswered → **Offer Ready for Review**; Pending and answered with something payable → **Needs Payment**; nothing payable → **No Payment Needed**. Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
+2a. An Available item cannot be offered without at least one exact plant photo, a price and a weight. `incompleteOfferItems` names each item and its missing fields; `sendOffer` is the authority and throws `OfferIncompleteError`. Customer-facing notes stay optional and Not Available items need none of it.
 3. Customer form: plant name required; notes optional; **no quantity UI**; quantity defaults to 1. **Budget stays out** of the form, customer-facing details, and active workflow. Do not drop `RequestItem.budget` unless a migration is actually required.
 4. Name/email come from the customer account when possible. Customers see only their own requests.
 5. Offer snapshots freeze name, price, photos, notes, availability after send. Do not edit customer-facing offer fields after send.
