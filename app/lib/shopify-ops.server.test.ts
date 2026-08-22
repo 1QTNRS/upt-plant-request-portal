@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import {
   createExactPlantShopifyProduct,
   resolveOnlineStoreAndPosPublications,
+  searchExistingStock,
 } from "./shopify-ops.server";
+import { unlinkableVariantReason } from "./growers-choice";
 
 type Call = { operation: string; query: string; variables: Record<string, unknown> };
 
@@ -370,6 +372,190 @@ describe("retrying an EXACT PLANTS listing after the admin edited the photos", (
       operations.filter((operation) => operation === "CreateExactPlantProduct").length,
       0,
       "a retry updates the one product for this plant instead of creating another",
+    );
+  });
+});
+
+/** One `ProductVariant` as the stock search reads it back. */
+function variantNode(overrides: {
+  id: string;
+  title?: string;
+  sku?: string | null;
+  price?: string;
+  availableForSale?: boolean;
+  inventoryQuantity?: number | null;
+  tracked?: boolean;
+  weight?: { value: number; unit: string } | null;
+  variantImage?: string | null;
+  productImage?: string | null;
+  productStatus?: string;
+  productTitle?: string;
+}) {
+  return {
+    id: overrides.id,
+    title: overrides.title ?? "6 inch",
+    sku: overrides.sku ?? "MTC-6",
+    price: overrides.price ?? "285.00",
+    availableForSale: overrides.availableForSale ?? true,
+    inventoryQuantity: overrides.inventoryQuantity ?? 3,
+    inventoryItem: {
+      tracked: overrides.tracked ?? true,
+      measurement: {
+        weight: overrides.weight === undefined
+          ? { value: 4.5, unit: "POUNDS" }
+          : overrides.weight,
+      },
+    },
+    media: {
+      nodes: overrides.variantImage
+        ? [{ preview: { image: { url: overrides.variantImage } } }]
+        : [],
+    },
+    product: {
+      id: "gid://shopify/Product/9001",
+      title: overrides.productTitle ?? "Monstera Thai Constellation",
+      handle: "monstera-thai-constellation",
+      status: overrides.productStatus ?? "ACTIVE",
+      featuredMedia: overrides.productImage
+        ? { preview: { image: { url: overrides.productImage } } }
+        : null,
+    },
+  };
+}
+
+function stockSearch(
+  productVariantNodes: ReturnType<typeof variantNode>[],
+  looseVariantNodes: ReturnType<typeof variantNode>[] = [],
+): Responses {
+  return {
+    PortalStockSearch: {
+      products: { nodes: [{ variants: { nodes: productVariantNodes } }] },
+      productVariants: { nodes: looseVariantNodes },
+    },
+  };
+}
+
+describe("searching the shop's existing stock", () => {
+  const merchantShop = "stock-search.myshopify.com";
+
+  async function search(responses: Responses, term = "monstera thai") {
+    const calls: Call[] = [];
+    const found = await searchExistingStock(
+      fakeAdmin(responses, calls),
+      merchantShop,
+      term,
+    );
+    return { found, calls };
+  }
+
+  it("asks both roots in one round trip, wildcarding each word", async () => {
+    // `products` reaches the product's own text and its variants' SKUs;
+    // `productVariants` reaches a variant title like "6 inch", which is where
+    // the size lives on a plant listing.
+    const { calls } = await search(stockSearch([variantNode({ id: "gid://shopify/ProductVariant/1" })]));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].variables.query, "monstera* thai*");
+  });
+
+  it("merges the two roots on variant id rather than listing a variant twice", async () => {
+    const { found } = await search(
+      stockSearch(
+        [variantNode({ id: "gid://shopify/ProductVariant/1" })],
+        [
+          variantNode({ id: "gid://shopify/ProductVariant/1" }),
+          variantNode({ id: "gid://shopify/ProductVariant/2", title: "8 inch" }),
+        ],
+      ),
+    );
+    assert.deepEqual(
+      found.map((candidate) => candidate.variantGid),
+      ["gid://shopify/ProductVariant/1", "gid://shopify/ProductVariant/2"],
+    );
+  });
+
+  it("asks Shopify nothing for a term too short to mean anything", async () => {
+    const { found, calls } = await search(stockSearch([]), "m");
+    assert.deepEqual(found, []);
+    assert.equal(calls.length, 0);
+  });
+
+  it("prefers the variant's own photo, which is the size being offered", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({
+          id: "gid://shopify/ProductVariant/1",
+          variantImage: "https://cdn.shopify.com/variant.jpg",
+          productImage: "https://cdn.shopify.com/product.jpg",
+        }),
+        variantNode({
+          id: "gid://shopify/ProductVariant/2",
+          productImage: "https://cdn.shopify.com/product.jpg",
+        }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => candidate.imageUrl),
+      ["https://cdn.shopify.com/variant.jpg", "https://cdn.shopify.com/product.jpg"],
+    );
+  });
+
+  it("converts the weight to pounds, whatever unit the merchant chose", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({
+          id: "gid://shopify/ProductVariant/1",
+          weight: { value: 2, unit: "KILOGRAMS" },
+        }),
+        variantNode({ id: "gid://shopify/ProductVariant/2", weight: null }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => candidate.weightLbs),
+      [4.4, null],
+    );
+  });
+
+  it("distinguishes stock Shopify does not count from stock it counts as none", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({
+          id: "gid://shopify/ProductVariant/1",
+          tracked: false,
+          inventoryQuantity: null,
+        }),
+        variantNode({ id: "gid://shopify/ProductVariant/2", inventoryQuantity: 0 }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => candidate.inventoryQuantity),
+      [null, 0],
+    );
+    assert.deepEqual(
+      found.map((candidate) => unlinkableVariantReason(candidate)),
+      [null, "This variant is out of stock."],
+    );
+  });
+
+  it("returns what cannot be linked with the reason, rather than a short list", async () => {
+    // A silently shortened list looks like "we do not sell that plant", which
+    // sends the admin to source one they already have on a draft product.
+    const { found } = await search(
+      stockSearch([
+        variantNode({ id: "gid://shopify/ProductVariant/1", productStatus: "DRAFT" }),
+        variantNode({ id: "gid://shopify/ProductVariant/2", price: "0.00" }),
+        variantNode({
+          id: "gid://shopify/ProductVariant/3",
+          availableForSale: false,
+        }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => unlinkableVariantReason(candidate)),
+      [
+        "This product is not active in Shopify, so a customer could not buy it.",
+        "This variant has no price in Shopify.",
+        "Shopify reports this variant as not available for sale.",
+      ],
     );
   });
 });
