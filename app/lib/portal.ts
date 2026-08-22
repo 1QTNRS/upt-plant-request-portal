@@ -1129,6 +1129,10 @@ export function buildResponseSummaryEmail(
       lines.push("");
       lines.push("Complete your payment:");
       lines.push(input.invoiceUrl);
+      lines.push("");
+      lines.push(
+        `Need help with this invoice or need something changed? Email ${CUSTOMER_SUPPORT_EMAIL}. Otherwise, you can follow your request status in the portal.`,
+      );
     }
 
     if (input.expiresAt) {
@@ -1289,6 +1293,26 @@ export function payableInvoiceUrl(input: {
     return null;
   }
   return input.invoiceUrl ?? null;
+}
+
+/**
+ * The admin recovery button is only for a live accepted request whose Shopify
+ * draft never landed. An expired, voided, paid or closed request already has
+ * no payable invoice on purpose — offering to mint one there looks like the
+ * normal way invoices are sent.
+ */
+export function shouldOfferAdminPaymentLinkRecovery(input: {
+  hasAcceptedItems: boolean;
+  paymentLink?: string | null;
+  requestStatus: RequestStatus;
+  invoiceVoided?: boolean;
+  requestPaid?: boolean;
+}): boolean {
+  if (!input.hasAcceptedItems) return false;
+  if (input.paymentLink) return false;
+  if (input.requestPaid) return false;
+  if (input.invoiceVoided) return false;
+  return input.requestStatus === "Pending";
 }
 
 export function buildAdminPaymentAfterVoidEmail(input: {

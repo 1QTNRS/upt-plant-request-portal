@@ -17,6 +17,7 @@ import {
   adminDraftOrderLinkState,
   payableInvoiceUrl,
   shopifyAdminDraftOrderUrl,
+  shouldOfferAdminPaymentLinkRecovery,
   shouldRenderCustomerSupportNote,
   showCustomerSupportNote,
   computeBehaviorFlags,
@@ -515,6 +516,10 @@ describe("the one email a customer gets for their answer", () => {
       1,
       "one checkout link, not one per email",
     );
+    assert.match(email.bodyText, /Need help with this invoice or need something changed/);
+    assert.match(email.bodyText, /support@unsolicitedplanttalks\.com/);
+    assert.match(email.bodyText, /follow your request status in the portal/);
+    assert.doesNotMatch(email.bodyText, /Contact us for updates/);
   });
 
   it("says the upgrade was kept when the customer kept it", () => {
@@ -766,6 +771,56 @@ describe("the checkout URL a customer may still be shown", () => {
   it("drops the URL on a paid or closed request", () => {
     assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestPaid: true }), null);
     assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestClosed: true }), null);
+  });
+});
+
+describe("the admin payment-link recovery button", () => {
+  it("is only for a live accepted request whose invoice never landed", () => {
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Pending",
+      }),
+      true,
+    );
+  });
+
+  it("stays hidden when the invoice already exists or the hold is over", () => {
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: "https://shop.example/pay",
+        requestStatus: "Pending",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Expired",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Pending",
+        invoiceVoided: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Closed",
+        requestPaid: true,
+      }),
+      false,
+    );
   });
 });
 

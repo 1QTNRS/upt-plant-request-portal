@@ -50,6 +50,7 @@ import {
   offerReadinessMessage,
   payableInvoiceUrl,
   requestStatusTone,
+  shouldOfferAdminPaymentLinkRecovery,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
   type OfferExpirationDays,
@@ -1366,7 +1367,17 @@ function DeclinedExactPlantsSection({
  * re-submitting an answered offer is refused, so a Shopify failure at that
  * moment left an accepted request with no way to pay. This is the way back.
  */
-function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
+function PaymentLinkSection({
+  paymentLink,
+  requestStatus,
+  invoiceVoided,
+  requestPaid,
+}: {
+  paymentLink: string | null;
+  requestStatus: RequestStatus;
+  invoiceVoided: boolean;
+  requestPaid: boolean;
+}) {
   if (paymentLink) {
     return (
       <s-stack direction="block" gap="small">
@@ -1376,12 +1387,26 @@ function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
     );
   }
 
+  if (
+    !shouldOfferAdminPaymentLinkRecovery({
+      hasAcceptedItems: true,
+      paymentLink,
+      requestStatus,
+      invoiceVoided,
+      requestPaid,
+    })
+  ) {
+    return null;
+  }
+
   return (
     <s-stack direction="block" gap="base">
       <s-banner tone="critical">
         <s-text>
-          This customer accepted plants but no Shopify draft order exists, so
-          they have no way to pay. Create the payment link and email it to them.
+          This customer accepted plants but Shopify never created their invoice,
+          so the confirmation email went out without a checkout link. Create the
+          payment link only to recover that failure — it is not how invoices are
+          normally sent.
         </s-text>
       </s-banner>
       <Form method="post">
@@ -1461,11 +1486,15 @@ function CustomerResponseSection({
   status,
   paymentLink,
   inventoryHold,
+  invoiceVoided,
+  requestPaid,
 }: {
   response: Awaited<ReturnType<typeof getCustomerResponse>>;
   status: RequestStatus;
   paymentLink: string | null;
   inventoryHold: InventoryHold | null;
+  invoiceVoided: boolean;
+  requestPaid: boolean;
 }) {
   if (!response) {
     return (
@@ -1525,7 +1554,12 @@ function CustomerResponseSection({
               <InventoryHoldNotice hold={inventoryHold} />
             ) : null}
             {accepted.length > 0 ? (
-              <PaymentLinkSection paymentLink={paymentLink} />
+              <PaymentLinkSection
+                paymentLink={paymentLink}
+                requestStatus={status}
+                invoiceVoided={invoiceVoided}
+                requestPaid={requestPaid}
+              />
             ) : null}
           </s-stack>
         </s-box>
@@ -1854,6 +1888,8 @@ export default function RequestDetail() {
         status={plantRequest.status}
         paymentLink={paymentLink}
         inventoryHold={inventoryHold}
+        invoiceVoided={invoiceVoided}
+        requestPaid={Boolean(plantRequest.paidAt)}
       />
 
       <ShopifyDraftOrderSection shop={shop} draft={draftOrderAdmin} />
