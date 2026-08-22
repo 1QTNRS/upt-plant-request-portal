@@ -32,13 +32,17 @@ async function seedRequest(options: {
   status: string;
   paidAt?: Date | null;
   prices: number[];
-  choices?: Array<"accept" | "reject">;
+  choices?: Array<"accept" | "reject" | "unavailable">;
   /** What the customer typed, when it differs from `Plant 0`, `Plant 1`, … */
   requestedNames?: string[];
   /** What UPT called the plant in the offer, as renaming an exact plant does. */
   offeredNames?: string[];
   /** Defaults to a fixed date; the behaviour window needs a recent one. */
   submittedAt?: Date;
+  /** How each plant was to be supplied, defaulting to the exact-plant route. */
+  fulfillmentTypes?: Array<"exact_plant" | "growers_choice">;
+  /** Per plant; a false marks the plant UPT could not supply at all. */
+  availability?: boolean[];
 }) {
   const customer = await prisma.customerProfile.upsert({
     where: { shop_email: { shop, email: "test.customer@example.com" } },
@@ -65,7 +69,9 @@ async function seedRequest(options: {
             `Plant ${index}`,
           quantity: 1,
           price,
-          availability: "available",
+          availability:
+            options.availability?.[index] === false ? "not_available" : "available",
+          fulfillmentType: options.fulfillmentTypes?.[index] ?? "exact_plant",
           itemStatus: "Offered",
         })),
       },
@@ -88,7 +94,9 @@ async function seedRequest(options: {
           price: options.prices[index],
           weightLbs: 1,
           customerFacingNotes: "",
-          availability: "available",
+          availability:
+            options.availability?.[index] === false ? "not_available" : "available",
+          fulfillmentType: options.fulfillmentTypes?.[index] ?? "exact_plant",
         })),
       },
     },
@@ -420,5 +428,138 @@ describe("plant tables group by canonical identity", () => {
     const analytics = await getAnalytics(shop, range);
     assert.equal(analytics.customerSummary.repeatedRequestDeclineCustomers, 0);
     assert.equal(analytics.customers[0].plantPatterns.length, 0);
+  });
+});
+
+describe("analytics by fulfilment source", () => {
+  before(reset);
+  after(reset);
+
+  it("keeps the two routes and Not Available apart", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ400",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [285, 250, 0],
+      choices: ["accept", "accept", "unavailable"],
+      fulfillmentTypes: ["growers_choice", "exact_plant", "growers_choice"],
+      availability: [true, true, false],
+    });
+
+    const { fulfillment } = await getAnalytics(shop, range);
+    assert.deepEqual(fulfillment.growersChoice, {
+      lines: 1,
+      offered: 1,
+      accepted: 1,
+      rejected: 0,
+      purchased: 1,
+      revenue: 285,
+    });
+    assert.deepEqual(fulfillment.exactPlant, {
+      lines: 1,
+      offered: 1,
+      accepted: 1,
+      rejected: 0,
+      purchased: 1,
+      revenue: 250,
+    });
+    // A plant UPT could not supply at all sits on its own route however it was
+    // going to have been supplied, because nothing was ever offered.
+    assert.deepEqual(fulfillment.notAvailable, {
+      lines: 1,
+      offered: 0,
+      accepted: 0,
+      rejected: 0,
+      purchased: 0,
+      revenue: 0,
+    });
+    assert.equal(fulfillment.requestsFulfilledFromExistingStock, 1);
+  });
+
+  it("compares the two routes on offered-to-paid", async () => {
+    await reset();
+    // One of two off-the-shelf plants is paid for; neither exact plant is.
+    await seedRequest({
+      requestNumber: "REQ401",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [285, 250],
+      choices: ["accept", "accept"],
+      fulfillmentTypes: ["growers_choice", "exact_plant"],
+    });
+    await seedRequest({
+      requestNumber: "REQ402",
+      status: "Expired",
+      prices: [100, 200],
+      choices: ["reject", "accept"],
+      fulfillmentTypes: ["growers_choice", "exact_plant"],
+    });
+
+    const { fulfillment } = await getAnalytics(shop, range);
+    assert.equal(fulfillment.existingStockAcceptanceRate, 50);
+    assert.equal(fulfillment.existingStockPurchaseRate, 100);
+    assert.equal(fulfillment.existingStockConversionRate, 50);
+    assert.equal(fulfillment.exactPlantConversionRate, 50);
+    assert.equal(
+      fulfillment.requestsFulfilledFromExistingStock,
+      1,
+      "counted per request, not per plant",
+    );
+  });
+
+  it("still groups plant demand by identity, not by fulfilment route", async () => {
+    await reset();
+    // The same plant, once sourced as an exact plant and once sold off the
+    // shelf under the product's own formatting. That is one plant to demand.
+    await seedRequest({
+      requestNumber: "REQ403",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [285],
+      choices: ["accept"],
+      requestedNames: ["Monstera Thai Constellation"],
+      offeredNames: ["Monstera Thai Constellation"],
+      fulfillmentTypes: ["growers_choice"],
+    });
+    await seedRequest({
+      requestNumber: "REQ404",
+      status: "Expired",
+      prices: [300],
+      choices: ["reject"],
+      requestedNames: ["monstera  thai constellation"],
+      offeredNames: ["Monstera Thai Constellation Exact"],
+      fulfillmentTypes: ["exact_plant"],
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.plants.mostRequested.length, 1);
+    assert.equal(analytics.plants.mostRequested[0].requestCount, 2);
+    assert.equal(analytics.fulfillment.growersChoice.lines, 1);
+    assert.equal(analytics.fulfillment.exactPlant.lines, 1);
+  });
+
+  it("never counts the FedEx upgrade as a plant on either route", async () => {
+    await reset();
+    const request = await seedRequest({
+      requestNumber: "REQ405",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [285],
+      choices: ["accept"],
+      fulfillmentTypes: ["growers_choice"],
+    });
+    await prisma.customerResponse.update({
+      where: { requestId: request.id },
+      data: { fedexUpgradeSelected: true, fedexUpgradePrice: 15 },
+    });
+
+    const { fulfillment } = await getAnalytics(shop, range);
+    const lines =
+      fulfillment.exactPlant.lines +
+      fulfillment.growersChoice.lines +
+      fulfillment.notAvailable.lines;
+    assert.equal(lines, 1, "the shipping upgrade is not a plant");
+    assert.equal(fulfillment.growersChoice.revenue, 285);
   });
 });

@@ -114,6 +114,37 @@ describe("exact plant release eligibility", () => {
     );
   });
 
+  it("never releases a declined Grower's Choice plant, which is already listed", () => {
+    // It came out of stock the store already lists and went back on the shelf
+    // when the hold ended. Listing it again would create a second product for a
+    // plant that already has one.
+    for (const responseChoice of ["reject", "accept", undefined]) {
+      for (const requestStatus of ["Pending", "Expired", "Closed"]) {
+        assert.equal(
+          exactPlantReleaseReason(
+            offered({
+              offerFulfillmentType: "growers_choice",
+              responseChoice,
+              requestStatus,
+            }),
+          ),
+          null,
+        );
+      }
+    }
+  });
+
+  it("still releases a declined exact plant, however the route is spelled", () => {
+    for (const offerFulfillmentType of ["exact_plant", null, undefined]) {
+      assert.equal(
+        exactPlantReleaseReason(
+          offered({ offerFulfillmentType, responseChoice: "reject" }),
+        ),
+        "customer_declined",
+      );
+    }
+  });
+
   it("agrees with isExactPlantEligible", () => {
     assert.equal(isExactPlantEligible(offered({ responseChoice: "reject" })), true);
     assert.equal(isExactPlantEligible(offered({ responseChoice: "accept" })), false);
@@ -163,6 +194,15 @@ describe("exact plant ineligibility messages", () => {
         offered({ responseChoice: "reject", paidAt: new Date() }),
       ) ?? "",
       /paid and closed/,
+    );
+  });
+
+  it("explains that a Grower's Choice plant already has its own listing", () => {
+    assert.match(
+      exactPlantIneligibilityReason(
+        offered({ offerFulfillmentType: "growers_choice", responseChoice: "reject" }),
+      ) ?? "",
+      /already has its own Shopify product/,
     );
   });
 

@@ -526,6 +526,48 @@ describe("the one email a customer gets for their answer", () => {
       "nothing ships, so there is no upgrade to charge for or disclaim",
     );
   });
+
+  it("names a Grower's Choice plant and says once what that means", () => {
+    const email = buildResponseSummaryEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      acceptedItems: [
+        { ...accepted, fulfillmentType: "growers_choice" as const },
+        accepted,
+      ],
+      rejectedItems: [declined],
+      fedexSelected: false,
+      fedexPrice: 15,
+      invoiceUrl: "https://checkout.example/pay",
+    });
+
+    assert.match(
+      email.bodyText,
+      /Monstera Deliciosa \(Grower's Choice\) — \$85\.00/,
+    );
+    assert.equal(
+      email.bodyText.match(/Grower's Choice means we choose/g)?.length,
+      1,
+      "explained once under the list, not on every line",
+    );
+  });
+
+  it("says nothing about Grower's Choice when no plant was on that route", () => {
+    // An exact plant is what the offer has always meant, so labelling it would
+    // read as a new distinction on every line of every email.
+    const email = buildResponseSummaryEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      acceptedItems: [accepted],
+      rejectedItems: [declined],
+      fedexSelected: false,
+      fedexPrice: 15,
+      invoiceUrl: "https://checkout.example/pay",
+    });
+
+    assert.doesNotMatch(email.bodyText, /Grower's Choice/);
+    assert.doesNotMatch(email.bodyText, /Exact Plant/);
+  });
 });
 
 describe("the offer-ready email", () => {

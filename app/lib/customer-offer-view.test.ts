@@ -186,6 +186,101 @@ describe("the customer sees every photo of each plant", () => {
   });
 });
 
+describe("a Grower's Choice plant on the customer's offer", () => {
+  const LISTING_IMAGE = "https://cdn.shopify.com/listing-thai.jpg";
+
+  const growersChoice = plant({
+    plantName: "Monstera Thai Constellation",
+    price: 285,
+    fulfillmentType: "growers_choice",
+    listingImageUrl: LISTING_IMAGE,
+    listingProductTitle: "Monstera Thai Constellation",
+    listingVariantTitle: "6 inch",
+    listingVariantGid: "gid://shopify/ProductVariant/1",
+    notesFromUpt: "Chosen by us from this listing.",
+    photoUrls: [],
+    photoUrl: "",
+  });
+
+  const html = render({
+    offer: offer({ expiresAt: inThreeDays(), items: [growersChoice] }),
+    response: null,
+    fedexRemovalWarning: "",
+    requestClosed: false,
+    formAction: "/apps/plant-requests/requests/req-1",
+  });
+
+  it("shows the plant they asked for, the price and their notes", () => {
+    assert.match(html, /Monstera Thai Constellation/);
+    assert.match(html, /\$285\.00/);
+    assert.match(html, /Chosen by us from this listing/);
+  });
+
+  it("labels the route rather than leaving the customer to infer it", () => {
+    assert.match(html, /Grower&#x27;s Choice/);
+  });
+
+  it("says the photo is the listing's and not the plant they will receive", () => {
+    // An exact-plant offer on the same page shows the very plant being bought,
+    // so an unlabelled listing photo reads as the same promise.
+    assert.ok(html.includes(LISTING_IMAGE));
+    assert.match(html, /not of the plant you will receive/);
+    assert.match(html, /similar but not identical to the one pictured/);
+  });
+
+  it("neither shows nor implies an exact plant photo", () => {
+    assert.equal([...html.matchAll(/<img/g)].length, 1);
+    for (const url of PHOTOS) {
+      assert.ok(!html.includes(url), "an exact plant's photos are of one plant");
+    }
+  });
+
+  it("can still be accepted or rejected", () => {
+    assert.match(html, /value="accept"/);
+    assert.match(html, /value="reject"/);
+    assert.match(html, /value="submit-response"/);
+    assert.ok(!html.includes("onclick"));
+  });
+});
+
+describe("an answered Grower's Choice plant", () => {
+  it("stays labelled in the record of what the customer answered", () => {
+    const answered = answer([
+      { plantName: "Monstera Thai Constellation", choice: "accept" },
+    ]);
+    const html = render({
+      offer: offer({
+        expiresAt: inThreeDays(),
+        items: [
+          plant({
+            plantName: "Monstera Thai Constellation",
+            fulfillmentType: "growers_choice",
+            listingImageUrl: "https://cdn.shopify.com/listing-thai.jpg",
+            photoUrls: [],
+            photoUrl: "",
+          }),
+        ],
+      }),
+      response: {
+        ...answered,
+        items: answered.items.map((item) => ({
+          ...item,
+          fulfillmentType: "growers_choice" as const,
+          linkedProductTitle: "Monstera Thai Constellation",
+          linkedVariantTitle: "6 inch",
+          linkedImageUrl: "https://cdn.shopify.com/listing-thai.jpg",
+          photoUrls: [],
+        })),
+      },
+      fedexRemovalWarning: "",
+      requestClosed: false,
+    });
+
+    assert.match(html, /Grower&#x27;s Choice/);
+    assert.match(html, /Monstera Thai Constellation/);
+  });
+});
+
 describe("a paid request acknowledges the payment", () => {
   const paid = render({
     offer: offer({ expiresAt: yesterday() }),
