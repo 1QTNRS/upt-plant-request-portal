@@ -50,6 +50,8 @@ export const EXACT_PLANT_RELEASE_LABELS: Record<ExactPlantReleaseReason, string>
 export type ExactPlantEligibilityInput = {
   hasOfferItem: boolean;
   offerAvailability?: string | null;
+  /** The route the offer was sent on, from the offer snapshot. */
+  offerFulfillmentType?: string | null;
   /** Undefined or null when the customer never answered the offer. */
   responseChoice?: string | null;
   requestStatus?: string | null;
@@ -70,6 +72,12 @@ export function exactPlantReleaseReason(
 ): ExactPlantReleaseReason | null {
   if (!input.hasOfferItem) return null;
   if (input.offerAvailability !== "available") return null;
+  // A Grower's Choice plant was never sourced for this one customer: it came
+  // out of stock the store already lists, and it went back on the shelf the
+  // moment the hold ended. Listing it again would create a second product for
+  // a plant that already has one, and every EXACT PLANTS listing is one
+  // physical plant with one unit of stock.
+  if (input.offerFulfillmentType === "growers_choice") return null;
   // A sold plant stays sold.
   if (input.paidAt) return null;
 
@@ -104,6 +112,9 @@ export function exactPlantIneligibilityReason(
   }
   if (input.offerAvailability !== "available") {
     return "UPT Not Available items cannot become EXACT PLANTS listings.";
+  }
+  if (input.offerFulfillmentType === "growers_choice") {
+    return "This plant was offered from existing website stock, which already has its own Shopify product. EXACT PLANTS listings are for plants sourced for one customer.";
   }
   if (input.paidAt) {
     return "This request has been paid and closed, so the plant is sold.";

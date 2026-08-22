@@ -149,6 +149,7 @@ export async function listExactPlantCandidates(
     const reason = exactPlantReleaseReason({
       hasOfferItem: true,
       offerAvailability: offerItem.availability,
+      offerFulfillmentType: offerItem.fulfillmentType,
       responseChoice: responseItem?.choice,
       requestStatus: item.request.status,
       paidAt: item.request.paidAt,
@@ -207,6 +208,7 @@ export async function getExactPlantReview(
   const eligibility = {
     hasOfferItem: Boolean(offerItem),
     offerAvailability: offerItem?.availability,
+    offerFulfillmentType: offerItem?.fulfillmentType,
     responseChoice: responseItem?.choice,
     requestStatus: item.request.status,
     paidAt: item.request.paidAt,

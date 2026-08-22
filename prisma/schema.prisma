@@ -193,6 +193,31 @@ model RequestItem {
   quantity              Int              @default(1)
   availability          String           @default("available")
   unavailableReason     String?
+  // How UPT means to supply this plant: `exact_plant` or `growers_choice`. Not
+  // Available stays in `availability`, which every existing rule already reads,
+  // rather than being stored a second time here.
+  fulfillmentType       String           @default("exact_plant")
+  // The store listing a Grower's Choice item draws on, as it looked when the
+  // admin linked it. Linking reserves nothing; the reservation is taken on the
+  // draft order when the customer accepts. The quantity and tracked flag are
+  // kept so offer readiness can be decided without asking Shopify again, and
+  // re-checked against the live variant before anything is reserved.
+  linkedProductGid        String?
+  linkedProductTitle      String?
+  linkedProductHandle     String?
+  linkedVariantGid        String?
+  linkedVariantTitle      String?
+  linkedVariantSku        String?
+  linkedVariantPrice      Float?
+  linkedVariantWeightLbs  Float?
+  linkedInventoryQuantity Int?
+  linkedInventoryTracked  Boolean?
+  linkedImageUrl          String?
+  linkedAt                DateTime?
+  // Why this plant could not be reserved — the linked stock ran out between the
+  // offer and the customer accepting. The customer's answer is already
+  // committed by then, so this is how the merchant finds out at all.
+  fulfillmentIssue        String?
   price                 Float            @default(0)
   weightLbs             Float            @default(0)
   customerFacingNotes   String           @default("")
@@ -249,6 +274,19 @@ model OfferItem {
   availability         String
   unavailableReason    String?
   photoUrlsJson        String      @default("[]")
+  // The store listing as it read when the offer was sent. Frozen like every
+  // other column here: the merchant may rename or re-photograph the product
+  // afterwards, and neither the customer's record nor the variant this request
+  // is billed and reserved against may move with it.
+  fulfillmentType        String   @default("exact_plant")
+  linkedProductGid       String?
+  linkedProductTitle     String?
+  linkedProductHandle    String?
+  linkedVariantGid       String?
+  linkedVariantTitle     String?
+  linkedVariantSku       String?
+  linkedVariantWeightLbs Float?
+  linkedImageUrl         String?
 
   @@index([offerId])
 }
@@ -282,6 +320,13 @@ model ResponseItem {
   customerFacingNotes  String            @default("")
   photoUrlsJson        String            @default("[]")
   unavailableReason    String?
+  // Copied from the offer item, not read from the request, so the answer keeps
+  // saying what the customer was actually shown.
+  fulfillmentType      String            @default("exact_plant")
+  linkedProductTitle   String?
+  linkedVariantGid     String?
+  linkedVariantTitle   String?
+  linkedImageUrl       String?
 
   @@index([responseId])
   @@index([choice])
@@ -296,6 +341,11 @@ model DraftOrderReference {
   createdAt             DateTime     @default(now())
   paidAt                DateTime?
   lineItemsJson         String       @default("[]")
+  // The `reserveInventoryUntil` this draft order was created with, when it
+  // holds existing store stock. Shopify owns the hold and releases it on its
+  // own at that moment; this is the record of what was asked for, so the
+  // merchant can be told when the stock comes back.
+  reserveInventoryUntil DateTime?
 }
 
 model ShopifyOrderReference {

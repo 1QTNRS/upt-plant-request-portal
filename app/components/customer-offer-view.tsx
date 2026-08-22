@@ -1,4 +1,9 @@
 import {
+  FULFILLMENT_TYPE_LABELS,
+  GROWERS_CHOICE_CUSTOMER_SUMMARY,
+  GROWERS_CHOICE_IMAGE_DISCLOSURE,
+} from "../lib/growers-choice";
+import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatCurrency,
   isOfferExpired,
@@ -289,6 +294,16 @@ export function CustomerOfferView({
                   <s-stack direction="block" gap="small">
                     <s-heading>{item.plantName}</s-heading>
                     <s-text>{formatCurrency(item.price)}</s-text>
+                    {item.fulfillmentType === "growers_choice" ? (
+                      <s-stack direction="block" gap="small">
+                        <s-badge tone="info">
+                          {FULFILLMENT_TYPE_LABELS.growers_choice}
+                        </s-badge>
+                        <s-text color="subdued">
+                          {GROWERS_CHOICE_CUSTOMER_SUMMARY}
+                        </s-text>
+                      </s-stack>
+                    ) : null}
                     <s-text color="subdued">Customer Notes / Disclaimers</s-text>
                     <s-text>{item.customerNotes}</s-text>
                   </s-stack>
@@ -523,10 +538,29 @@ function StatusBadge({
 
 /** One plant the customer rejected, as the offer and the answer froze it. */
 function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][number] }) {
+  const growersChoice = item.fulfillmentType === "growers_choice";
+
   return (
     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
       <s-stack direction="block" gap="base">
-        {item.photoUrls.length > 0 ? (
+        {growersChoice && item.linkedImageUrl ? (
+          <div style={photoRowStyle}>
+            <img
+              src={item.linkedImageUrl}
+              alt={`${item.plantName}, from our store listing`}
+              width={200}
+              height={200}
+              style={{
+                display: "block",
+                objectFit: "cover",
+                borderRadius: "8px",
+                flexShrink: 0,
+              }}
+            />
+          </div>
+        ) : null}
+
+        {!growersChoice && item.photoUrls.length > 0 ? (
           <div style={photoRowStyle}>
             {item.photoUrls.map((url, index) => (
               <img
@@ -553,6 +587,9 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
         <s-stack direction="block" gap="base">
           <s-heading>{item.plantName}</s-heading>
           <s-text>{formatCurrency(item.price)}</s-text>
+          {growersChoice ? (
+            <s-badge tone="info">{FULFILLMENT_TYPE_LABELS.growers_choice}</s-badge>
+          ) : null}
           <s-badge tone="critical">Declined</s-badge>
         </s-stack>
 
@@ -579,11 +616,35 @@ function OfferItemCard({
   answerable: boolean;
 }) {
   const available = item.availability === "available";
+  const growersChoice = available && item.fulfillmentType === "growers_choice";
 
   return (
     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
       <s-stack direction="block" gap="base">
-        {available && item.photoUrls.length > 0 ? (
+        {growersChoice && item.listingImageUrl ? (
+          /*
+           * The listing's photo, said to be the listing's photo. An exact-plant
+           * offer on this same page shows the very plant being bought, so an
+           * unlabelled picture here would read as the same promise — and the
+           * plant that arrives would not be the one in it.
+           */
+          <div style={photoRowStyle}>
+            <img
+              src={item.listingImageUrl}
+              alt={`${item.plantName}, from our store listing`}
+              width={200}
+              height={200}
+              style={{
+                display: "block",
+                objectFit: "cover",
+                borderRadius: "8px",
+                flexShrink: 0,
+              }}
+            />
+          </div>
+        ) : null}
+
+        {available && !growersChoice && item.photoUrls.length > 0 ? (
           /*
            * Every photo the offer froze, as plain images. The storefront never
            * hydrates, so a gallery behind a click handler shows the customer
@@ -622,6 +683,16 @@ function OfferItemCard({
             <s-badge tone="critical">Not Available</s-badge>
           )}
         </s-stack>
+
+        {growersChoice ? (
+          <s-stack direction="block" gap="small">
+            <s-badge tone="info">
+              {FULFILLMENT_TYPE_LABELS.growers_choice}
+            </s-badge>
+            <s-text>{GROWERS_CHOICE_CUSTOMER_SUMMARY}</s-text>
+            <s-text color="subdued">{GROWERS_CHOICE_IMAGE_DISCLOSURE}</s-text>
+          </s-stack>
+        ) : null}
 
         {!available ? (
           <s-stack direction="block" gap="small">

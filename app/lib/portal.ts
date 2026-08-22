@@ -1,3 +1,11 @@
+import {
+  linkedStockShortfall,
+  resolveFulfillmentType,
+  resolveLinkedWeightLbs,
+  FULFILLMENT_TYPE_LABELS,
+  type FulfillmentType,
+} from "./growers-choice";
+
 export type RequestStatus = "New" | "Pending" | "Closed" | "Expired";
 
 export type OfferExpirationDays = 3 | 5 | 7;
@@ -53,6 +61,25 @@ export type SentOffer = {
   expirationDays: OfferExpirationDays;
 };
 
+/**
+ * The store listing a Grower's Choice line draws on. Undefined on an exact
+ * plant, which has no product in Shopify until it is listed as a declined item.
+ */
+export type LinkedStockSnapshot = {
+  productGid: string;
+  productTitle: string;
+  productHandle?: string;
+  variantGid: string;
+  variantTitle: string;
+  sku?: string;
+  variantPrice?: number;
+  variantWeightLbs?: number;
+  inventoryQuantity?: number;
+  inventoryTracked: boolean;
+  imageUrl?: string;
+  linkedAt?: string;
+};
+
 export type PlantItem = {
   id: string;
   plantName: string;
@@ -61,6 +88,11 @@ export type PlantItem = {
   itemStatus: PlantItemStatus;
   availability: ItemAvailabilityStatus;
   unavailableReason: UnavailableReason;
+  /** Which of the three routes this plant is on. See `growers-choice.ts`. */
+  fulfillmentType: FulfillmentType;
+  linkedStock?: LinkedStockSnapshot;
+  /** Set when the linked stock ran out after the customer accepted. */
+  fulfillmentIssue?: string;
   price: number;
   weightLbs: number;
   budget?: string;
@@ -115,6 +147,17 @@ export type CustomerResponseItem = {
   customerNotes: string;
   photoUrls: string[];
   unavailableReason?: string;
+  /**
+   * Copied from the offer, never re-read from the request item. The answer is a
+   * record of what the customer was shown, so a later relink or rename in
+   * Shopify must not rewrite it.
+   */
+  fulfillmentType: FulfillmentType;
+  linkedProductTitle?: string;
+  linkedVariantTitle?: string;
+  /** The variant this line is billed against and reserved from. */
+  linkedVariantGid?: string;
+  linkedImageUrl?: string;
 };
 
 export type CustomerOfferResponse = {
@@ -211,15 +254,22 @@ export function offerHasPayableItems(input: {
 }
 
 /**
- * What an Available plant must carry before it can be offered.
+ * What a plant must carry before it can be offered.
  *
  * Customer-facing notes are deliberately absent: they are editorial and often
  * there is nothing to disclose. Everything here is something the customer is
- * asked to buy on — the exact plant they are looking at, the amount they will
- * be billed, and the weight the draft order ships on.
+ * asked to buy on — the plant they are looking at, the amount they will be
+ * billed, and the weight the draft order ships on.
+ *
+ * Which of these apply depends on the fulfilment route. An exact plant needs a
+ * photograph of the individual being sold; a Grower's Choice plant is sold from
+ * a listing that already has its own photo, and needs a variant that can still
+ * be bought instead.
  */
 export const OFFER_ITEM_REQUIREMENTS = [
   "an exact plant photo",
+  "a linked store listing",
+  "enough stock on the linked listing",
   "a price",
   "a weight",
 ] as const;
@@ -235,16 +285,19 @@ type OfferReadinessItem = {
   plantName: string;
   offeredName?: string | null;
   availability: string;
+  fulfillmentType?: string | null;
   price: number;
   weightLbs: number;
+  quantity?: number;
   photos: unknown[];
+  linkedStock?: LinkedStockSnapshot;
 };
 
 /**
- * The Available items that cannot be offered yet, and what each one is missing.
+ * The items that cannot be offered yet, and what each one is missing.
  *
- * Not Available items are excluded: there is no exact plant, so there is
- * nothing to photograph, price or weigh.
+ * Not Available items are excluded: UPT is supplying nothing, so there is
+ * nothing to photograph, link, price or weigh.
  */
 export function incompleteOfferItems(
   items: OfferReadinessItem[],
@@ -252,12 +305,39 @@ export function incompleteOfferItems(
   const problems: IncompleteOfferItem[] = [];
 
   for (const item of items) {
-    if (item.availability !== "available") continue;
+    const fulfillment = resolveFulfillmentType(item);
+    if (fulfillment === "not_available") continue;
 
     const missing: OfferItemRequirement[] = [];
-    if (item.photos.length === 0) missing.push("an exact plant photo");
+
+    if (fulfillment === "growers_choice") {
+      if (!item.linkedStock?.variantGid.trim()) {
+        // Naming the stock as well would be two complaints about one gap.
+        missing.push("a linked store listing");
+      } else if (
+        linkedStockShortfall({
+          inventoryTracked: item.linkedStock.inventoryTracked,
+          inventoryQuantity: item.linkedStock.inventoryQuantity,
+          quantity: item.quantity ?? 1,
+        }) > 0
+      ) {
+        missing.push("enough stock on the linked listing");
+      }
+    } else if (item.photos.length === 0) {
+      missing.push("an exact plant photo");
+    }
+
     if (!(normalizePrice(item.price) > 0)) missing.push("a price");
-    if (!(normalizeWeight(item.weightLbs) > 0)) missing.push("a weight");
+
+    const weightLbs =
+      fulfillment === "growers_choice"
+        ? resolveLinkedWeightLbs({
+            linkedVariantWeightLbs: item.linkedStock?.variantWeightLbs,
+            weightLbs: item.weightLbs,
+          })
+        : item.weightLbs;
+    if (!(normalizeWeight(weightLbs) > 0)) missing.push("a weight");
+
     if (missing.length === 0) continue;
 
     problems.push({
@@ -602,18 +682,32 @@ export type DraftOrderLineItem = {
   price: number;
   weightLbs: number;
   kind: "plant" | "fedex";
+  /**
+   * The real Shopify variant this line sells. Present on a Grower's Choice
+   * plant, which comes out of stock the store already lists, and on the FedEx
+   * upgrade. An exact plant has no product in Shopify yet, so its line is a
+   * custom one and carries no variant.
+   */
+  variantId?: string;
+};
+
+export type AcceptedDraftOrderItem = {
+  /** The request item, so a stock failure can be reported against one plant. */
+  itemId: string;
+  plantName: string;
+  quantity: number;
+  price: number;
+  weightLbs: number;
+  /** Set for a Grower's Choice plant, from the frozen offer snapshot. */
+  variantId?: string;
 };
 
 export function buildDraftOrderLineItems(input: {
-  acceptedItems: Array<{
-    plantName: string;
-    quantity: number;
-    price: number;
-    weightLbs: number;
-  }>;
+  acceptedItems: AcceptedDraftOrderItem[];
   fedexSelected: boolean;
   fedexLabel: string;
   fedexPrice: number;
+  fedexVariantGid?: string;
 }): DraftOrderLineItem[] {
   const lines: DraftOrderLineItem[] = input.acceptedItems.map((item) => ({
     title: item.plantName,
@@ -621,6 +715,7 @@ export function buildDraftOrderLineItems(input: {
     price: normalizePrice(item.price),
     weightLbs: normalizeWeight(item.weightLbs),
     kind: "plant",
+    ...(item.variantId ? { variantId: item.variantId } : {}),
   }));
 
   if (input.fedexSelected && lines.length > 0) {
@@ -630,10 +725,52 @@ export function buildDraftOrderLineItems(input: {
       price: normalizePrice(input.fedexPrice),
       weightLbs: 0,
       kind: "fedex",
+      ...(input.fedexVariantGid ? { variantId: input.fedexVariantGid } : {}),
     });
   }
 
   return lines;
+}
+
+/** Every line that sells a real Shopify variant, so it can be verified first. */
+export function variantBackedLines(
+  lines: DraftOrderLineItem[],
+): Array<DraftOrderLineItem & { variantId: string }> {
+  return lines.flatMap((line) =>
+    line.variantId ? [{ ...line, variantId: line.variantId }] : [],
+  );
+}
+
+/**
+ * When Shopify should let reserved stock go again, or undefined for a draft
+ * order that reserves nothing.
+ *
+ * The deadline is the customer's own payment deadline — the end of the hold the
+ * offer already promised them — so the stock is held for exactly as long as
+ * they were told and comes back the moment that lapses. Shopify releases it
+ * itself, which is what makes the release survive a portal that is down.
+ *
+ * Nothing is reserved unless a plant line actually sells store stock: asking to
+ * reserve on an all-exact-plant order would newly hold the FedEx upgrade
+ * variant, which is a shipping service and has never been held for anyone. A
+ * deadline that has already passed is dropped rather than sent, because
+ * Shopify will not reserve into the past and the admin's recovery path can run
+ * after the hold has ended.
+ */
+export function reserveInventoryUntilFor(input: {
+  lineItems: DraftOrderLineItem[];
+  holdEndsAt?: Date | string | null;
+  now?: Date;
+}): string | undefined {
+  const holdsStock = input.lineItems.some(
+    (line) => line.kind === "plant" && line.variantId,
+  );
+  if (!holdsStock || !input.holdEndsAt) return undefined;
+
+  const deadline = new Date(input.holdEndsAt);
+  if (!Number.isFinite(deadline.getTime())) return undefined;
+  if (deadline.getTime() <= (input.now ?? new Date()).getTime()) return undefined;
+  return deadline.toISOString();
 }
 
 /** Tag the `orders/paid` webhook matches a paid order back to its request by. */
@@ -675,7 +812,8 @@ export function buildDraftOrderInput(input: {
   customerEmail: string;
   currencyCode: string;
   lineItems: DraftOrderLineItem[];
-  fedexVariantGid?: string;
+  /** ISO 8601 instant from `reserveInventoryUntilFor`. */
+  reserveInventoryUntil?: string;
 }) {
   return {
     email: input.customerEmail,
@@ -685,35 +823,54 @@ export function buildDraftOrderInput(input: {
       input.requestNumber,
       draftOrderIdempotencyTag(input.requestId),
     ],
+    // Shopify's own hold on the stock behind this order. It is the whole
+    // reservation mechanism: nothing else in the app decrements or restores a
+    // quantity, so there is no second copy of the truth to drift, and a retry
+    // that recreates the same draft order asks for the same hold.
+    ...(input.reserveInventoryUntil
+      ? { reserveInventoryUntil: input.reserveInventoryUntil }
+      : {}),
     lineItems: input.lineItems.map((line) => {
       // The real variant carries the weight, but not the price: the customer
       // was quoted, emailed and shown an amount when they answered the offer,
       // and Shopify must bill that rather than whatever the variant costs by
       // the time they open the invoice.
-      if (line.kind === "fedex" && input.fedexVariantGid) {
-        return {
-          variantId: input.fedexVariantGid,
-          quantity: 1,
-          originalUnitPriceWithCurrency: {
-            amount: line.price.toFixed(2),
-            currencyCode: input.currencyCode,
-          },
-        };
-      }
-      return {
-        title: line.title,
+      const price = {
         originalUnitPriceWithCurrency: {
           amount: line.price.toFixed(2),
           currencyCode: input.currencyCode,
         },
+      };
+
+      if (line.variantId) {
+        return {
+          variantId: line.variantId,
+          quantity: line.quantity,
+          ...price,
+          // The FedEx line is the shipping upgrade itself, so it stays
+          // unshippable and weightless. A plant sold off the shelf ships like
+          // any other plant, on the weight the offer froze — which is the
+          // variant's own weight whenever Shopify holds one.
+          ...(line.kind === "plant"
+            ? {
+                requiresShipping: true,
+                ...(line.weightLbs > 0
+                  ? { weight: { value: line.weightLbs, unit: "POUNDS" as const } }
+                  : {}),
+              }
+            : {}),
+        };
+      }
+
+      return {
+        title: line.title,
+        ...price,
         quantity: line.quantity,
         weight: { value: line.weightLbs, unit: "POUNDS" as const },
         // Shopify defaults a custom line item to requiresShipping: false, and a
         // draft order with nothing shippable collects no delivery address and
         // quotes no shipping. UPT ships live plants: without this the merchant
         // gets a paid order with a weight, a customer, and nowhere to send it.
-        // The FedEx line above is the shipping upgrade itself, so it stays
-        // unshippable and is priced from its own variant.
         requiresShipping: line.kind === "plant",
       };
     }),
@@ -823,6 +980,8 @@ export type ResponseSummaryItem = {
   plantName: string;
   price: number;
   customerNotes: string;
+  /** Defaults to the exact plant, which is what every earlier offer was. */
+  fulfillmentType?: FulfillmentType;
 };
 
 export type ResponseSummaryEmailInput = {
@@ -843,8 +1002,29 @@ function responseSummaryLines(items: ResponseSummaryItem[]): string[] {
     const notes = item.customerNotes.trim()
       ? ` Notes: ${item.customerNotes.trim()}`
       : "";
-    return `- ${item.plantName} — ${formatCurrency(item.price)}${notes}`;
+    // Named only for Grower's Choice. An exact plant is what the offer has
+    // always meant, so labelling it would read as a new distinction on every
+    // line of every email.
+    const route =
+      item.fulfillmentType === "growers_choice"
+        ? ` (${FULFILLMENT_TYPE_LABELS.growers_choice})`
+        : "";
+    return `- ${item.plantName}${route} — ${formatCurrency(item.price)}${notes}`;
   });
+}
+
+/**
+ * Spelled out once, under the item list, rather than on every line: the label
+ * beside the plant says which route it is on, and this says what the route
+ * means for the plant that turns up.
+ */
+function growersChoiceEmailNote(items: ResponseSummaryItem[]): string[] {
+  const named = items.some((item) => item.fulfillmentType === "growers_choice");
+  if (!named) return [];
+  return [
+    "",
+    "Grower's Choice means we choose a healthy plant of that kind from our existing website stock for you, rather than the specific plant in the listing photo.",
+  ];
 }
 
 /**
@@ -881,6 +1061,10 @@ export function buildResponseSummaryEmail(
     lines.push(accepted ? "Declined:" : "Plants you declined:");
     lines.push(...responseSummaryLines(input.rejectedItems));
   }
+
+  lines.push(
+    ...growersChoiceEmailNote([...input.acceptedItems, ...input.rejectedItems]),
+  );
 
   // The upgrade only ever ships plants. With nothing accepted there is no
   // shipment, no charge and nothing to disclaim.
@@ -1100,6 +1284,14 @@ export type OfferPlantItem = {
   quantity: number;
   availability: ItemAvailabilityStatus;
   unavailableReason?: UnavailableReason;
+  /** Frozen when the offer was sent, like every other field here. */
+  fulfillmentType: FulfillmentType;
+  /** The store listing photo, shown in place of an exact plant's own photos. */
+  listingImageUrl?: string;
+  listingProductTitle?: string;
+  listingVariantTitle?: string;
+  /** The variant a Grower's Choice line is billed against and reserved from. */
+  listingVariantGid?: string;
 };
 
 export type SampleCustomerOffer = {

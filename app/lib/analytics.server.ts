@@ -1,5 +1,9 @@
 import prisma from "../db.server";
 import { exactPlantReleaseReason } from "./exact-plants";
+import {
+  resolveFulfillmentType,
+  type FulfillmentType,
+} from "./growers-choice";
 import { customerPlantPatterns } from "./plant-behavior.server";
 import {
   backfillCanonicalPlants,
@@ -217,6 +221,34 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   };
 
   /**
+   * The funnel again, split by how UPT meant to supply each plant.
+   *
+   * Read from the offer snapshot rather than from the request item, because the
+   * route is a decision made per offer and the item may have been relinked or
+   * marked unavailable since. `lines` counts every plant offered on the route
+   * and `offered` only the ones the customer could actually buy, which is what
+   * makes the Not Available column readable at all.
+   */
+  const fulfillment: Record<
+    FulfillmentType,
+    {
+      lines: number;
+      offered: number;
+      accepted: number;
+      rejected: number;
+      purchased: number;
+      revenue: number;
+    }
+  > = {
+    exact_plant: { lines: 0, offered: 0, accepted: 0, rejected: 0, purchased: 0, revenue: 0 },
+    growers_choice: { lines: 0, offered: 0, accepted: 0, rejected: 0, purchased: 0, revenue: 0 },
+    not_available: { lines: 0, offered: 0, accepted: 0, rejected: 0, purchased: 0, revenue: 0 },
+  };
+
+  /** Requests whose paid order included at least one plant off the shelf. */
+  const requestsFulfilledFromExistingStock = new Set<string>();
+
+  /**
    * One row per canonical plant identity, never per typed spelling. `plantName`
    * is the identity's name and `variants` is every wording customers actually
    * used for it, so the owner can see what a row is made of and tell a genuine
@@ -328,12 +360,31 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     // is still counted. Availability and payment are checked by
     // `exactPlantReleaseReason`, which is the same rule the listing queue uses.
     for (const offerItem of request.offer?.items ?? []) {
-      const choice = request.response?.items.find(
+      const responseItem = request.response?.items.find(
         (entry) => entry.requestItemId === offerItem.requestItemId,
-      )?.choice;
+      );
+      const choice = responseItem?.choice;
+
+      const route = resolveFulfillmentType(offerItem);
+      const bucket = fulfillment[route];
+      bucket.lines += 1;
+      if (offerItem.availability === "available") bucket.offered += 1;
+      if (choice === "accept") {
+        bucket.accepted += 1;
+        if (request.paidAt) {
+          bucket.purchased += 1;
+          bucket.revenue += offerItem.price * offerItem.quantity;
+          if (route === "growers_choice") {
+            requestsFulfilledFromExistingStock.add(request.id);
+          }
+        }
+      }
+      if (choice === "reject") bucket.rejected += 1;
+
       const reason = exactPlantReleaseReason({
         hasOfferItem: true,
         offerAvailability: offerItem.availability,
+        offerFulfillmentType: offerItem.fulfillmentType,
         responseChoice: choice,
         requestStatus: request.status,
         paidAt: request.paidAt,
@@ -545,6 +596,31 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
         releasedItems.customerDeclined +
         releasedItems.acceptedUnpaidExpired +
         releasedItems.neverRespondedExpired,
+    },
+    fulfillment: {
+      exactPlant: fulfillment.exact_plant,
+      growersChoice: fulfillment.growers_choice,
+      notAvailable: fulfillment.not_available,
+      /** Paid requests that included at least one plant off the shelf. */
+      requestsFulfilledFromExistingStock: requestsFulfilledFromExistingStock.size,
+      existingStockAcceptanceRate: percent(
+        fulfillment.growers_choice.accepted,
+        fulfillment.growers_choice.offered,
+      ),
+      existingStockPurchaseRate: percent(
+        fulfillment.growers_choice.purchased,
+        fulfillment.growers_choice.accepted,
+      ),
+      // Offered to paid on each route, side by side. This is the number that
+      // says whether sourcing one plant for one customer is worth the work.
+      exactPlantConversionRate: percent(
+        fulfillment.exact_plant.purchased,
+        fulfillment.exact_plant.offered,
+      ),
+      existingStockConversionRate: percent(
+        fulfillment.growers_choice.purchased,
+        fulfillment.growers_choice.offered,
+      ),
     },
     itemFunnel: {
       ...itemFunnel,

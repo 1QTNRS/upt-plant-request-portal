@@ -1,5 +1,7 @@
 import {
+  acceptedOfferLines,
   buildCustomerOffer,
+  clearFulfillmentIssues,
   closeRequest,
   getCustomerResponse,
   getDraftOrder,
@@ -7,6 +9,7 @@ import {
   getShopSettings,
   OfferAlreadyAnsweredError,
   OfferExpiredError,
+  recordFulfillmentIssues,
   RequestClosedError,
   saveCustomerResponse,
 } from "./portal.server";
@@ -15,7 +18,11 @@ import {
   notifyCheckoutLink,
   notifyResponseSummary,
 } from "./emails.server";
-import { createDraftOrderForRequest } from "./shopify-ops.server";
+import {
+  createDraftOrderForRequest,
+  InsufficientStockError,
+} from "./shopify-ops.server";
+import { RESERVATION_NOT_CONFIRMED } from "./growers-choice";
 import type { AdminContext } from "./admin-auth.server";
 
 export async function loadCustomerOfferPage(shop: string, requestId: string | null) {
@@ -46,6 +53,55 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
     requestPaid: Boolean(request?.paidAt),
     paidAt: request?.paidAt ?? null,
   };
+}
+
+/**
+ * Creates the draft order for an answered offer from the frozen snapshots.
+ *
+ * The one place a draft order is created from, so the customer's own submission
+ * and the admin's recovery button bill identically, ask Shopify for the same
+ * hold, and leave the same record of whether the hold was granted.
+ */
+async function createDraftOrderFromSnapshot(input: {
+  shop: string;
+  requestId: string;
+  requestNumber: string;
+  customerEmail: string;
+  fedexSelected: boolean;
+  fedexPrice: number;
+  admin?: AdminContext["admin"];
+}) {
+  const { items, holdEndsAt } = await acceptedOfferLines(input.shop, input.requestId);
+  const draft = await createDraftOrderForRequest(input.admin, input.shop, {
+    requestId: input.requestId,
+    requestNumber: input.requestNumber,
+    customerEmail: input.customerEmail,
+    acceptedItems: items,
+    fedexSelected: input.fedexSelected,
+    fedexPrice: input.fedexPrice,
+    holdEndsAt,
+  });
+
+  if (draft.inventoryReserved) {
+    // Whatever a previous attempt could not hold, this one did.
+    await clearFulfillmentIssues(input.shop, input.requestId);
+  } else {
+    // Shopify took the order but not the hold. The customer can still pay, so
+    // the order stands — but the plant is on open sale and only the merchant
+    // can act on that.
+    await recordFulfillmentIssues(
+      input.shop,
+      input.requestId,
+      items
+        .filter((item) => item.variantId)
+        .map((item) => ({
+          itemId: item.itemId,
+          reason: `${item.plantName}: ${RESERVATION_NOT_CONFIRMED}`,
+        })),
+    );
+  }
+
+  return draft;
 }
 
 /**
@@ -84,22 +140,32 @@ export async function createPaymentLinkForRequest(input: {
   if (!request) return { ok: false, error: "This request could not be loaded." };
 
   try {
-    const draft = await createDraftOrderForRequest(input.admin, input.shop, {
+    const draft = await createDraftOrderFromSnapshot({
+      shop: input.shop,
       requestId: input.requestId,
       requestNumber: request.requestNumber,
       customerEmail: request.email,
-      acceptedItems: accepted.map((item) => ({
-        plantName: item.plantName,
-        quantity: item.quantity,
-        price: item.price,
-        weightLbs:
-          request.items.find((entry) => entry.id === item.sourceItemId)?.weightLbs ?? 0,
-      })),
       fedexSelected: response.fedexUpgradeSelected,
+      fedexPrice: response.fedexUpgradePrice,
+      admin: input.admin,
     });
     await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
     return { ok: true, invoiceUrl: draft.invoiceUrl };
   } catch (error) {
+    // Stock that has gone is not a payment-link failure to retry: the message
+    // says what the merchant has to do about it, and wrapping it would bury
+    // that behind an instruction to try again.
+    if (error instanceof InsufficientStockError) {
+      await recordFulfillmentIssues(
+        input.shop,
+        input.requestId,
+        error.shortfalls.map((shortfall) => ({
+          itemId: shortfall.itemId,
+          reason: shortfall.reason,
+        })),
+      );
+      return { ok: false, error: error.message };
+    }
     return {
       ok: false,
       error: `Could not create the payment link: ${
@@ -171,8 +237,6 @@ export async function handleCustomerOfferAction(input: {
     return { ok: true as const, alreadySubmitted: true as const };
   }
 
-  const request = await getRequest(input.shop, input.requestId);
-
   // Every available plant needs a deliberate answer. Defaulting a missing field
   // to `accept` would turn a form the customer never completed into a purchase,
   // and the `required` attribute on the radios only binds a real browser.
@@ -213,6 +277,12 @@ export async function handleCustomerOfferAction(input: {
       customerNotes: item.notesFromUpt,
       photoUrls: item.photoUrls,
       unavailableReason: item.unavailableReason,
+      // Taken from the offer, which is the thing the customer answered.
+      fulfillmentType: item.fulfillmentType,
+      linkedProductTitle: item.listingProductTitle,
+      linkedVariantTitle: item.listingVariantTitle,
+      linkedVariantGid: item.listingVariantGid,
+      linkedImageUrl: item.listingImageUrl,
     };
   });
 
@@ -261,6 +331,7 @@ export async function handleCustomerOfferAction(input: {
     plantName: item.plantName,
     price: item.price,
     customerNotes: item.customerNotes,
+    fulfillmentType: item.fulfillmentType,
   });
 
   if (accepted.length === 0) {
@@ -284,24 +355,34 @@ export async function handleCustomerOfferAction(input: {
   // The response is already committed, so a Shopify outage must not roll the
   // customer's accept/reject choices back or surface as a failed submission.
   // The request stays Pending, which keeps it in the expiry and reminder sweeps.
-  let draft: Awaited<ReturnType<typeof createDraftOrderForRequest>> | null = null;
+  let draft: Awaited<ReturnType<typeof createDraftOrderFromSnapshot>> | null = null;
+  let stockFailure: string | null = null;
   try {
-    draft = await createDraftOrderForRequest(input.admin, input.shop, {
+    draft = await createDraftOrderFromSnapshot({
+      shop: input.shop,
       requestId: input.requestId,
       requestNumber: offer.requestNumber,
       customerEmail: offer.customerEmail,
-      acceptedItems: accepted.map((item) => ({
-        plantName: item.plantName,
-        quantity: item.quantity,
-        price: item.price,
-        weightLbs:
-          request?.items.find((entry) => entry.id === item.sourceItemId)?.weightLbs ??
-          0,
-      })),
       fedexSelected: fedexUpgradeSelected,
       fedexPrice: saved.fedexUpgradePrice,
+      admin: input.admin,
     });
   } catch (error) {
+    if (error instanceof InsufficientStockError) {
+      // Never an oversell: no draft order exists, so nothing is payable and
+      // nothing was deducted. The customer keeps the answer they gave and hears
+      // about the plant from a person, which is the only sensible way to be
+      // told the plant sold while you were deciding.
+      stockFailure = error.message;
+      await recordFulfillmentIssues(
+        input.shop,
+        input.requestId,
+        error.shortfalls.map((shortfall) => ({
+          itemId: shortfall.itemId,
+          reason: shortfall.reason,
+        })),
+      );
+    }
     console.error(
       `Could not create a Shopify draft order for ${offer.requestNumber} on ${input.shop}.`,
       error,
@@ -322,5 +403,9 @@ export async function handleCustomerOfferAction(input: {
     rejectedCount: rejected.length,
   });
 
-  return { ok: true as const, draftOrderFailed: draft === null };
+  return {
+    ok: true as const,
+    draftOrderFailed: draft === null,
+    stockFailure,
+  };
 }

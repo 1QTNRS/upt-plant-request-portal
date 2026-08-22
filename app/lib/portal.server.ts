@@ -10,6 +10,13 @@ import type {
 import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
 import { isDemoDataEnabled } from "./environment.server";
+import {
+  normalizeStoredFulfillmentType,
+  resolveFulfillmentType,
+  resolveLinkedWeightLbs,
+  type StockVariantCandidate,
+  type StoredFulfillmentType,
+} from "./growers-choice";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
@@ -35,7 +42,9 @@ import {
   type CustomerResponseItemChoice,
   type DraftOrderLineItem,
   type IncompleteOfferItem,
+  type AcceptedDraftOrderItem,
   type ItemAvailabilityStatus,
+  type LinkedStockSnapshot,
   type OfferExpirationDays,
   type OfferPlantItem,
   type PlantItem,
@@ -175,6 +184,42 @@ function parsePhotoUrls(raw: string | null | undefined): string[] {
   }
 }
 
+/**
+ * The linked store listing as the row holds it, or undefined when nothing is
+ * linked. The variant id is what makes a link real: without it there is nothing
+ * to bill, reserve or show.
+ */
+function toLinkedStock(item: {
+  linkedProductGid: string | null;
+  linkedProductTitle: string | null;
+  linkedProductHandle: string | null;
+  linkedVariantGid: string | null;
+  linkedVariantTitle: string | null;
+  linkedVariantSku: string | null;
+  linkedVariantPrice: number | null;
+  linkedVariantWeightLbs: number | null;
+  linkedInventoryQuantity: number | null;
+  linkedInventoryTracked: boolean | null;
+  linkedImageUrl: string | null;
+  linkedAt: Date | null;
+}): LinkedStockSnapshot | undefined {
+  if (!item.linkedVariantGid || !item.linkedProductGid) return undefined;
+  return {
+    productGid: item.linkedProductGid,
+    productTitle: item.linkedProductTitle ?? "",
+    productHandle: item.linkedProductHandle ?? undefined,
+    variantGid: item.linkedVariantGid,
+    variantTitle: item.linkedVariantTitle ?? "",
+    sku: item.linkedVariantSku ?? undefined,
+    variantPrice: item.linkedVariantPrice ?? undefined,
+    variantWeightLbs: item.linkedVariantWeightLbs ?? undefined,
+    inventoryQuantity: item.linkedInventoryQuantity ?? undefined,
+    inventoryTracked: Boolean(item.linkedInventoryTracked),
+    imageUrl: item.linkedImageUrl ?? undefined,
+    linkedAt: item.linkedAt ? formatDateTime(item.linkedAt) : undefined,
+  };
+}
+
 function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantItem {
   const photoUrls = withPlaceholderFallback(
     item.photos.map((photo) => photo.url),
@@ -192,6 +237,9 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
     availability:
       item.availability === "not_available" ? "not_available" : "available",
     unavailableReason: normalizeUnavailableReason(item.unavailableReason),
+    fulfillmentType: resolveFulfillmentType(item),
+    linkedStock: toLinkedStock(item),
+    fulfillmentIssue: item.fulfillmentIssue ?? undefined,
     price: normalizePrice(item.price),
     weightLbs: normalizeWeight(item.weightLbs),
     budget: item.budget ?? undefined,
@@ -546,6 +594,28 @@ export async function submitCustomerRequest(
   return toPlantRequest(created);
 }
 
+/**
+ * Everything that makes an item a Grower's Choice line, cleared in one go.
+ *
+ * Used when the admin switches the item back to an exact plant or to Not
+ * Available. A link left behind would be invisible on the page and still be the
+ * variant the draft order billed and reserved.
+ */
+const CLEARED_LINKED_STOCK = {
+  linkedProductGid: null,
+  linkedProductTitle: null,
+  linkedProductHandle: null,
+  linkedVariantGid: null,
+  linkedVariantTitle: null,
+  linkedVariantSku: null,
+  linkedVariantPrice: null,
+  linkedVariantWeightLbs: null,
+  linkedInventoryQuantity: null,
+  linkedInventoryTracked: null,
+  linkedImageUrl: null,
+  linkedAt: null,
+} as const;
+
 export async function updateRequestItem(
   shop: string,
   input: {
@@ -553,6 +623,7 @@ export async function updateRequestItem(
     itemId: string;
     offeredName?: string;
     availability?: ItemAvailabilityStatus;
+    fulfillmentType?: StoredFulfillmentType;
     unavailableReason?: UnavailableReason;
     price?: number;
     weightLbs?: number;
@@ -569,6 +640,15 @@ export async function updateRequestItem(
   const item = request.items.find((entry) => entry.id === input.itemId);
   if (!item) return null;
 
+  // Which of the three routes the item ends up on, given whatever this call
+  // changed. Both fields have to be read together: picking Not Available leaves
+  // a stored `growers_choice` alone, and picking a route leaves availability
+  // alone unless it is also being set.
+  const nextFulfillment = resolveFulfillmentType({
+    availability: input.availability ?? item.availability,
+    fulfillmentType: input.fulfillmentType ?? item.fulfillmentType,
+  });
+
   await prisma.requestItem.update({
     where: { id: item.id },
     data: {
@@ -582,6 +662,12 @@ export async function updateRequestItem(
               input.availability === "not_available" ? "Unavailable" : "Requested",
           }
         : {}),
+      ...(input.fulfillmentType
+        ? { fulfillmentType: input.fulfillmentType }
+        : {}),
+      // Leaving the exact-plant route, or leaving Available at all, drops the
+      // listing this item was going to be supplied from.
+      ...(nextFulfillment === "growers_choice" ? {} : CLEARED_LINKED_STOCK),
       // A reason left over from a spell as Not Available would prefill itself
       // the next time the item is flipped back, so it goes when the plant does
       // become available.
@@ -612,6 +698,151 @@ export async function updateRequestItem(
   }
 
   return getRequest(shop, input.requestId);
+}
+
+/**
+ * Points a request item at a variant the store already sells.
+ *
+ * Linking reserves nothing and promises nothing: it records which listing the
+ * plant would come from, and the price and weight to prefill from. The hold on
+ * the stock is taken later, on the draft order, and only once the customer has
+ * accepted — reserving here would take a plant off sale for every offer UPT
+ * drafts, including the ones nobody answers.
+ *
+ * Refused after the offer is sent, along with every other customer-facing
+ * field: the snapshot is what the customer answered and what they are billed
+ * for.
+ */
+export async function linkExistingStock(
+  shop: string,
+  input: {
+    requestId: string;
+    itemId: string;
+    variant: StockVariantCandidate;
+  },
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, input.requestId);
+  if (!request) return null;
+  if (normalizeRequestStatus(request.status) !== "New") {
+    throw new Error(
+      "Existing website stock can only be linked before an offer is sent.",
+    );
+  }
+
+  const item = request.items.find((entry) => entry.id === input.itemId);
+  if (!item) return null;
+
+  const variant = input.variant;
+  await prisma.requestItem.update({
+    where: { id: item.id },
+    data: {
+      availability: "available",
+      fulfillmentType: "growers_choice",
+      itemStatus: item.itemStatus === "Unavailable" ? "Sourced" : item.itemStatus,
+      unavailableReason: null,
+      linkedProductGid: variant.productGid,
+      linkedProductTitle: variant.productTitle,
+      linkedProductHandle: variant.productHandle,
+      linkedVariantGid: variant.variantGid,
+      linkedVariantTitle: variant.variantTitle,
+      linkedVariantSku: variant.sku,
+      linkedVariantPrice: normalizePrice(variant.price),
+      linkedVariantWeightLbs:
+        variant.weightLbs === null ? null : normalizeWeight(variant.weightLbs),
+      linkedInventoryQuantity: variant.inventoryQuantity,
+      linkedInventoryTracked: variant.inventoryTracked,
+      linkedImageUrl: variant.imageUrl,
+      linkedAt: new Date(),
+      // The listing's own price is the obvious starting point, but only when
+      // nobody has priced this item yet: overwriting a price the admin typed
+      // would silently undo their decision every time they changed the link.
+      ...(normalizePrice(item.price) > 0
+        ? {}
+        : { price: normalizePrice(variant.price) }),
+    },
+  });
+
+  return getRequest(shop, input.requestId);
+}
+
+/**
+ * Drops the link and puts the item back on the exact-plant route, which is
+ * where an item with nothing linked belongs.
+ */
+export async function unlinkExistingStock(
+  shop: string,
+  requestId: string,
+  itemId: string,
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  if (normalizeRequestStatus(request.status) !== "New") {
+    throw new Error(
+      "Existing website stock can only be unlinked before an offer is sent.",
+    );
+  }
+  if (!request.items.some((entry) => entry.id === itemId)) return null;
+
+  await prisma.requestItem.update({
+    where: { id: itemId },
+    data: { fulfillmentType: "exact_plant", ...CLEARED_LINKED_STOCK },
+  });
+
+  return getRequest(shop, requestId);
+}
+
+/**
+ * Records why a plant could not be reserved, for the admin to read.
+ *
+ * The customer's answer is committed before the draft order is attempted, so
+ * when the linked stock has gone in the meantime there is nobody left in the
+ * request to tell — this and the status event are how the merchant finds out at
+ * all. Written per item so a six-plant request names the one that failed.
+ */
+export async function recordFulfillmentIssues(
+  shop: string,
+  requestId: string,
+  issues: Array<{ itemId: string; reason: string }>,
+): Promise<void> {
+  if (issues.length === 0) return;
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: { id: true, status: true, items: { select: { id: true } } },
+  });
+  if (!request) return;
+
+  const known = new Set(request.items.map((item) => item.id));
+  const recorded = issues.filter((issue) => known.has(issue.itemId));
+  if (recorded.length === 0) return;
+
+  for (const issue of recorded) {
+    await prisma.requestItem.update({
+      where: { id: issue.itemId },
+      data: { fulfillmentIssue: issue.reason },
+    });
+  }
+
+  await prisma.statusEvent.create({
+    data: {
+      requestId,
+      fromStatus: request.status,
+      toStatus: request.status,
+      reason: `Existing stock unavailable: ${recorded
+        .map((issue) => issue.reason)
+        .join(" ")}`,
+    },
+  });
+}
+
+/** Clears the issues on a request whose draft order has since succeeded. */
+export async function clearFulfillmentIssues(
+  shop: string,
+  requestId: string,
+): Promise<void> {
+  await prisma.requestItem.updateMany({
+    where: { requestId, request: { shop }, fulfillmentIssue: { not: null } },
+    data: { fulfillmentIssue: null },
+  });
 }
 
 export async function addItemPhotos(
@@ -728,7 +959,9 @@ export async function sendOffer(
   if (!request) return null;
   if (normalizeRequestStatus(request.status) !== "New") return null;
 
-  const problems = incompleteOfferItems(request.items);
+  const problems = incompleteOfferItems(
+    request.items.map((item) => ({ ...item, linkedStock: toLinkedStock(item) })),
+  );
   if (problems.length > 0) throw new OfferIncompleteError(problems);
 
   const sentAt = new Date();
@@ -744,19 +977,46 @@ export async function sendOffer(
         expirationDays,
         offerLink: customerLinksForShop(shop).requestDetail(requestId),
         items: {
-          create: request.items.map((item) => ({
-            requestItemId: item.id,
-            plantName: item.offeredName || item.plantName,
-            quantity: normalizeQuantity(item.quantity),
-            price: normalizePrice(item.price),
-            weightLbs: normalizeWeight(item.weightLbs),
-            customerFacingNotes: item.customerFacingNotes,
-            availability: item.availability,
-            unavailableReason: item.unavailableReason,
-            photoUrlsJson: JSON.stringify(
-              item.photos.map((photo) => photo.url).filter(Boolean),
-            ),
-          })),
+          create: request.items.map((item) => {
+            const fulfillment = resolveFulfillmentType(item);
+            const growersChoice = fulfillment === "growers_choice";
+            return {
+              requestItemId: item.id,
+              plantName: item.offeredName || item.plantName,
+              quantity: normalizeQuantity(item.quantity),
+              price: normalizePrice(item.price),
+              // The listing's own weight is what a Grower's Choice plant
+              // actually ships on, so that is the figure the offer freezes and
+              // the draft order bills shipping against.
+              weightLbs: normalizeWeight(
+                growersChoice ? resolveLinkedWeightLbs(item) : item.weightLbs,
+              ),
+              customerFacingNotes: item.customerFacingNotes,
+              availability: item.availability,
+              unavailableReason: item.unavailableReason,
+              // Exact-plant photos are photographs of one individual plant. A
+              // Grower's Choice customer is not being sold that individual, so
+              // the offer carries the listing image instead and none of these.
+              photoUrlsJson: JSON.stringify(
+                growersChoice
+                  ? []
+                  : item.photos.map((photo) => photo.url).filter(Boolean),
+              ),
+              fulfillmentType: normalizeStoredFulfillmentType(item.fulfillmentType),
+              ...(growersChoice
+                ? {
+                    linkedProductGid: item.linkedProductGid,
+                    linkedProductTitle: item.linkedProductTitle,
+                    linkedProductHandle: item.linkedProductHandle,
+                    linkedVariantGid: item.linkedVariantGid,
+                    linkedVariantTitle: item.linkedVariantTitle,
+                    linkedVariantSku: item.linkedVariantSku,
+                    linkedVariantWeightLbs: item.linkedVariantWeightLbs,
+                    linkedImageUrl: item.linkedImageUrl,
+                  }
+                : {}),
+            };
+          }),
         },
       },
     });
@@ -796,9 +1056,17 @@ function offerItemToPlant(
 ): OfferPlantItem {
   const photoUrls = parsePhotoUrls(item.photoUrlsJson);
   const available = item.availability === "available";
-  const displayPhotos = available
-    ? withPlaceholderFallback(photoUrls, item.requestItemId)
-    : [];
+  const fulfillmentType = resolveFulfillmentType(item);
+  const growersChoice = fulfillmentType === "growers_choice";
+  // A Grower's Choice line has exactly one image and it belongs to the listing,
+  // so it never gets the demo placeholder an exact plant falls back to: an
+  // unrelated stock photo standing in for a listing photo would be a picture of
+  // nothing at all.
+  const displayPhotos = !available
+    ? []
+    : growersChoice
+      ? []
+      : withPlaceholderFallback(photoUrls, item.requestItemId);
   return {
     id: `offer-${requestId}-${index + 1}`,
     sourceItemId: item.requestItemId,
@@ -812,6 +1080,15 @@ function offerItemToPlant(
     unavailableReason: available
       ? undefined
       : normalizeUnavailableReason(item.unavailableReason),
+    fulfillmentType,
+    ...(growersChoice && available
+      ? {
+          listingImageUrl: item.linkedImageUrl ?? undefined,
+          listingProductTitle: item.linkedProductTitle ?? undefined,
+          listingVariantTitle: item.linkedVariantTitle ?? undefined,
+          listingVariantGid: item.linkedVariantGid ?? undefined,
+        }
+      : {}),
   };
 }
 
@@ -853,6 +1130,11 @@ function toResponseDto(
     customerFacingNotes: string;
     photoUrlsJson: string;
     unavailableReason: string | null;
+    fulfillmentType?: string | null;
+    linkedProductTitle?: string | null;
+    linkedVariantGid?: string | null;
+    linkedVariantTitle?: string | null;
+    linkedImageUrl?: string | null;
   }> },
   closedAt?: Date | null,
 ): CustomerOfferResponse {
@@ -868,6 +1150,14 @@ function toResponseDto(
     customerNotes: item.customerFacingNotes,
     photoUrls: parsePhotoUrls(item.photoUrlsJson),
     unavailableReason: item.unavailableReason ?? undefined,
+    fulfillmentType: resolveFulfillmentType({
+      availability: item.choice === "unavailable" ? "not_available" : "available",
+      fulfillmentType: item.fulfillmentType,
+    }),
+    linkedProductTitle: item.linkedProductTitle ?? undefined,
+    linkedVariantTitle: item.linkedVariantTitle ?? undefined,
+    linkedVariantGid: item.linkedVariantGid ?? undefined,
+    linkedImageUrl: item.linkedImageUrl ?? undefined,
   }));
 
   return {
@@ -902,6 +1192,53 @@ export async function getCustomerResponse(
   });
   if (!withItems) return null;
   return toResponseDto(withItems, request.closedAt);
+}
+
+/**
+ * The plants a draft order should charge for, read from the frozen snapshots.
+ *
+ * Name, price, quantity and variant come from the customer's own answer and the
+ * weight from the offer it answered, so the order bills what the customer was
+ * shown even if the request item has since been edited or the linked listing
+ * repriced. Both callers that create a draft order go through here, which is
+ * also what keeps the customer's submission and the admin's recovery button
+ * building the same order.
+ */
+export async function acceptedOfferLines(
+  shop: string,
+  requestId: string,
+): Promise<{ items: AcceptedDraftOrderItem[]; holdEndsAt: Date | null }> {
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    include: {
+      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+    },
+  });
+  if (!request) return { items: [], holdEndsAt: null };
+
+  const offerItems = new Map(
+    (request.offer?.items ?? []).map((item) => [item.requestItemId, item]),
+  );
+
+  const items = (request.response?.items ?? [])
+    .filter((item) => item.choice === "accept")
+    .map((item) => {
+      const offerItem = offerItems.get(item.requestItemId);
+      return {
+        itemId: item.requestItemId,
+        plantName: item.plantName,
+        quantity: normalizeQuantity(item.quantity),
+        price: normalizePrice(item.price),
+        weightLbs: normalizeWeight(offerItem?.weightLbs ?? 0),
+        ...(item.linkedVariantGid ? { variantId: item.linkedVariantGid } : {}),
+      };
+    });
+
+  return {
+    items,
+    holdEndsAt: request.offer?.expiresAt ?? request.response?.offerExpiresAt ?? null,
+  };
 }
 
 export async function saveCustomerResponse(
@@ -963,6 +1300,15 @@ export async function saveCustomerResponse(
             customerFacingNotes: item.customerNotes,
             photoUrlsJson: JSON.stringify(item.photoUrls ?? []),
             unavailableReason: item.unavailableReason,
+            // Carried across from the offer the customer was looking at, not
+            // read from the request item. The variant recorded here is the one
+            // the draft order bills and reserves, so a relink after the answer
+            // must not move it.
+            fulfillmentType: normalizeStoredFulfillmentType(item.fulfillmentType),
+            linkedProductTitle: item.linkedProductTitle,
+            linkedVariantGid: item.linkedVariantGid,
+            linkedVariantTitle: item.linkedVariantTitle,
+            linkedImageUrl: item.linkedImageUrl,
           })),
         },
       },
@@ -1098,6 +1444,8 @@ export async function saveDraftOrderReference(
     shopifyDraftOrderGid?: string;
     invoiceUrl?: string;
     lineItems: DraftOrderLineItem[];
+    /** What Shopify confirmed it is holding stock until, when it is. */
+    reserveInventoryUntil?: Date;
   },
 ) {
   const request = await prisma.plantRequest.findFirst({
@@ -1112,11 +1460,13 @@ export async function saveDraftOrderReference(
       shopifyDraftOrderGid: data.shopifyDraftOrderGid,
       invoiceUrl: data.invoiceUrl,
       lineItemsJson: JSON.stringify(data.lineItems),
+      reserveInventoryUntil: data.reserveInventoryUntil,
     },
     update: {
       shopifyDraftOrderGid: data.shopifyDraftOrderGid,
       invoiceUrl: data.invoiceUrl,
       lineItemsJson: JSON.stringify(data.lineItems),
+      reserveInventoryUntil: data.reserveInventoryUntil,
     },
   });
 }

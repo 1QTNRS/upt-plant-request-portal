@@ -16,12 +16,22 @@ import {
 } from "./exact-plants";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
 import {
+  buildStockSearchQuery,
+  reservationFailureMessage,
+  reservationShortfalls,
+  weightInPounds,
+  type ReservationShortfall,
+  type StockVariantCandidate,
+} from "./growers-choice";
+import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
   plantRevenueFromLines,
+  reserveInventoryUntilFor,
   tagSearchQuery,
+  type AcceptedDraftOrderItem,
   type DraftOrderLineItem,
 } from "./portal";
 import {
@@ -144,6 +154,318 @@ export async function resolveShopCurrency(
 }
 
 /**
+ * Shopify's search syntax, one term per word, and the two root fields it has to
+ * be asked against.
+ *
+ * `products` covers the product's own text — title, type, vendor, tags, body
+ * and its variants' SKUs — and `productVariants` covers a variant title that
+ * the product-level search does not reach, which on a plant store is where the
+ * size lives ("6 inch", "XL"). Both are asked in one document, so the admin's
+ * keystroke costs one round trip, and the results are merged on variant id.
+ */
+const STOCK_SEARCH_QUERY = `#graphql
+  query PortalStockSearch($query: String!, $limit: Int!) {
+    products(first: $limit, query: $query) {
+      nodes {
+        variants(first: $limit) {
+          nodes {
+            id
+            title
+            sku
+            price
+            availableForSale
+            inventoryQuantity
+            inventoryItem {
+              tracked
+              measurement { weight { value unit } }
+            }
+            media(first: 1) {
+              nodes { preview { image { url } } }
+            }
+            product {
+              id
+              title
+              handle
+              status
+              featuredMedia { preview { image { url } } }
+            }
+          }
+        }
+      }
+    }
+    productVariants(first: $limit, query: $query) {
+      nodes {
+        id
+        title
+        sku
+        price
+        availableForSale
+        inventoryQuantity
+        inventoryItem {
+          tracked
+          measurement { weight { value unit } }
+        }
+        media(first: 1) {
+          nodes { preview { image { url } } }
+        }
+        product {
+          id
+          title
+          handle
+          status
+          featuredMedia { preview { image { url } } }
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * The same variant fields read straight back by id.
+ *
+ * Used both when the admin links a variant and immediately before a draft order
+ * asks Shopify to hold it. The linking path re-reads rather than trusting the
+ * search result the browser posted back: that page may have been open for an
+ * hour, and price and stock are exactly what decides whether the variant can be
+ * sold at all.
+ */
+const STOCK_VARIANTS_BY_ID_QUERY = `#graphql
+  query PortalStockVariantsById($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on ProductVariant {
+        id
+        title
+        sku
+        price
+        availableForSale
+        inventoryQuantity
+        inventoryItem {
+          tracked
+          measurement { weight { value unit } }
+        }
+        media(first: 1) {
+          nodes { preview { image { url } } }
+        }
+        product {
+          id
+          title
+          handle
+          status
+          featuredMedia { preview { image { url } } }
+        }
+      }
+    }
+  }
+`;
+
+type StockVariantNode = {
+  id: string;
+  title: string;
+  sku: string | null;
+  price: string;
+  availableForSale: boolean;
+  inventoryQuantity: number | null;
+  inventoryItem: {
+    tracked: boolean;
+    measurement: { weight: { value: number; unit: string } | null };
+  };
+  media: { nodes: Array<{ preview: { image: { url: string | null } | null } | null }> };
+  product: {
+    id: string;
+    title: string;
+    handle: string;
+    status: string;
+    featuredMedia: { preview: { image: { url: string | null } | null } | null } | null;
+  };
+};
+
+/**
+ * The variant's own photo where it has one, otherwise the product's.
+ *
+ * A plant listing sold in three sizes usually photographs each size, and that
+ * is the picture the customer should be shown for the size they are being
+ * offered. `preview.image` is read rather than the deprecated `image` fields,
+ * which Shopify still serves but is removing.
+ */
+function stockImageUrl(node: StockVariantNode): string | null {
+  return (
+    node.media.nodes[0]?.preview?.image?.url ??
+    node.product.featuredMedia?.preview?.image?.url ??
+    null
+  );
+}
+
+function toStockCandidate(node: StockVariantNode): StockVariantCandidate {
+  const weight = node.inventoryItem.measurement.weight;
+  return {
+    productGid: node.product.id,
+    productTitle: node.product.title,
+    productHandle: node.product.handle,
+    productStatus: node.product.status,
+    variantGid: node.id,
+    variantTitle: node.title,
+    sku: node.sku,
+    price: Number.parseFloat(node.price) || 0,
+    // Shopify returns null for a variant it does not count, which is not the
+    // same as a variant it counts and finds none of.
+    inventoryQuantity: node.inventoryItem.tracked
+      ? (node.inventoryQuantity ?? 0)
+      : null,
+    inventoryTracked: node.inventoryItem.tracked,
+    availableForSale: node.availableForSale,
+    weightLbs: weightInPounds(weight?.value, weight?.unit),
+    imageUrl: stockImageUrl(node),
+  };
+}
+
+/** How many variants one search asks Shopify for, per root field. */
+const STOCK_SEARCH_LIMIT = 25;
+
+/**
+ * A stand-in catalogue for the demo shop, which has no Admin API session.
+ *
+ * The local walkthrough would otherwise have no way to exercise linking at all.
+ * Unreachable on a merchant store: `requireAdminClient` raises there instead.
+ */
+const DEMO_STOCK: StockVariantCandidate[] = [
+  {
+    productGid: "gid://shopify/Product/demo-monstera-thai",
+    productTitle: "Monstera Thai Constellation (Demo Stock)",
+    productHandle: "demo-monstera-thai-constellation",
+    productStatus: "ACTIVE",
+    variantGid: "gid://shopify/ProductVariant/demo-monstera-thai-6in",
+    variantTitle: "6 inch",
+    sku: "DEMO-MTC-6",
+    price: 285,
+    inventoryQuantity: 4,
+    inventoryTracked: true,
+    availableForSale: true,
+    weightLbs: 4.5,
+    imageUrl: "https://picsum.photos/seed/demo-monstera-thai/800/800",
+  },
+  {
+    productGid: "gid://shopify/Product/demo-philodendron-pink",
+    productTitle: "Philodendron Pink Princess (Demo Stock)",
+    productHandle: "demo-philodendron-pink-princess",
+    productStatus: "ACTIVE",
+    variantGid: "gid://shopify/ProductVariant/demo-philodendron-pink-4in",
+    variantTitle: "4 inch",
+    sku: "DEMO-PPP-4",
+    price: 95,
+    inventoryQuantity: 1,
+    inventoryTracked: true,
+    availableForSale: true,
+    weightLbs: 2,
+    imageUrl: "https://picsum.photos/seed/demo-philodendron-pink/800/800",
+  },
+  {
+    productGid: "gid://shopify/Product/demo-anthurium-warocqueanum",
+    productTitle: "Anthurium Warocqueanum (Demo Stock)",
+    productHandle: "demo-anthurium-warocqueanum",
+    productStatus: "ACTIVE",
+    variantGid: "gid://shopify/ProductVariant/demo-anthurium-waroq-8in",
+    variantTitle: "8 inch",
+    sku: "DEMO-AWQ-8",
+    price: 640,
+    inventoryQuantity: 0,
+    inventoryTracked: true,
+    availableForSale: false,
+    weightLbs: 6.5,
+    imageUrl: "https://picsum.photos/seed/demo-anthurium-warocqueanum/800/800",
+  },
+];
+
+function demoStockMatches(term: string): StockVariantCandidate[] {
+  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  return DEMO_STOCK.filter((candidate) => {
+    const haystack = `${candidate.productTitle} ${candidate.variantTitle} ${
+      candidate.sku ?? ""
+    }`.toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
+/**
+ * The purchasable-and-not variants matching what the admin typed.
+ *
+ * Nothing is filtered out: a variant that cannot be linked is returned with the
+ * reason, because "out of stock" and "no such plant" send the admin to very
+ * different next steps and a silently short list looks like the latter.
+ */
+export async function searchExistingStock(
+  admin: GraphqlClient | undefined,
+  shop: string,
+  term: string,
+): Promise<StockVariantCandidate[]> {
+  const query = buildStockSearchQuery(term);
+  if (!query) return [];
+
+  requireAdminClient(admin, shop, "Searching Shopify products");
+  if (!admin) return demoStockMatches(term);
+
+  const data = await adminGraphql<{
+    products: { nodes: Array<{ variants: { nodes: StockVariantNode[] } }> };
+    productVariants: { nodes: StockVariantNode[] };
+  }>(admin, STOCK_SEARCH_QUERY, { query, limit: STOCK_SEARCH_LIMIT });
+
+  const seen = new Set<string>();
+  const candidates: StockVariantCandidate[] = [];
+  const nodes = [
+    ...data.products.nodes.flatMap((product) => product.variants.nodes),
+    ...data.productVariants.nodes,
+  ];
+  for (const node of nodes) {
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    candidates.push(toStockCandidate(node));
+  }
+  return candidates;
+}
+
+async function fetchStockVariants(
+  admin: GraphqlClient,
+  variantGids: string[],
+): Promise<StockVariantCandidate[]> {
+  if (variantGids.length === 0) return [];
+  const data = await adminGraphql<{ nodes: Array<StockVariantNode | null> }>(
+    admin,
+    STOCK_VARIANTS_BY_ID_QUERY,
+    { ids: variantGids },
+  );
+  return data.nodes.flatMap((node) => (node ? [toStockCandidate(node)] : []));
+}
+
+/**
+ * One variant as Shopify has it now, or null when it is gone.
+ *
+ * The admin's link is recorded from this rather than from the search result the
+ * form posted, so a stale page cannot link a plant that sold in the meantime.
+ */
+export async function getExistingStockVariant(
+  admin: GraphqlClient | undefined,
+  shop: string,
+  variantGid: string,
+): Promise<StockVariantCandidate | null> {
+  requireAdminClient(admin, shop, "Reading a Shopify product variant");
+  if (!admin) {
+    return DEMO_STOCK.find((candidate) => candidate.variantGid === variantGid) ?? null;
+  }
+  const [variant] = await fetchStockVariants(admin, [variantGid]);
+  return variant ?? null;
+}
+
+/** Raised instead of creating a draft order that would oversell. */
+export class InsufficientStockError extends Error {
+  readonly shortfalls: ReservationShortfall[];
+
+  constructor(shortfalls: ReservationShortfall[]) {
+    super(reservationFailureMessage(shortfalls));
+    this.name = "InsufficientStockError";
+    this.shortfalls = shortfalls;
+  }
+}
+
+/**
  * Recovers a draft order that Shopify already created for this request. Covers
  * the window where `draftOrderCreate` succeeded but the reply never reached us,
  * so a retry would otherwise bill the customer twice.
@@ -151,21 +473,42 @@ export async function resolveShopCurrency(
 async function findDraftOrderByRequestTag(
   admin: GraphqlClient,
   requestId: string,
-): Promise<{ id: string; invoiceUrl: string | null } | null> {
+): Promise<{
+  id: string;
+  invoiceUrl: string | null;
+  reserveInventoryUntil: string | null;
+} | null> {
   const data = await adminGraphql<{
-    draftOrders: { nodes: Array<{ id: string; invoiceUrl: string | null }> };
+    draftOrders: {
+      nodes: Array<{
+        id: string;
+        invoiceUrl: string | null;
+        reserveInventoryUntil: string | null;
+      }>;
+    };
   }>(
     admin,
     `#graphql
       query PlantRequestDraftOrderByTag($query: String!) {
         draftOrders(first: 1, query: $query) {
-          nodes { id invoiceUrl }
+          nodes { id invoiceUrl reserveInventoryUntil }
         }
       }
     `,
     { query: tagSearchQuery(draftOrderIdempotencyTag(requestId)) },
   );
   return data.draftOrders.nodes[0] ?? null;
+}
+
+/**
+ * Whether Shopify refused the draft order because the stock had gone.
+ *
+ * `draftOrderCreate` reports it as an ordinary user error, and it is the one
+ * user error that has to reach the merchant as a stock problem naming the
+ * plant rather than as a generic Shopify failure.
+ */
+function isInventoryUserError(message: string): boolean {
+  return /\b(inventor|stock|out of stock|unavailable quantity)/i.test(message);
 }
 
 export async function createDraftOrderForRequest(
@@ -175,25 +518,37 @@ export async function createDraftOrderForRequest(
     requestId: string;
     requestNumber: string;
     customerEmail: string;
-    acceptedItems: Array<{
-      plantName: string;
-      quantity: number;
-      price: number;
-      weightLbs: number;
-    }>;
+    acceptedItems: AcceptedDraftOrderItem[];
     fedexSelected: boolean;
     /** The upgrade price frozen into the customer's response. */
     fedexPrice?: number;
+    /**
+     * When the customer's payment deadline runs out. Shopify holds the stock
+     * behind a Grower's Choice line until exactly this moment and then releases
+     * it, so it must be the offer's own expiry and not a window of its own.
+     */
+    holdEndsAt?: Date | string | null;
   },
-): Promise<{ invoiceUrl: string; shopifyDraftOrderGid?: string; lineItems: DraftOrderLineItem[] }> {
+): Promise<{
+  invoiceUrl: string;
+  shopifyDraftOrderGid?: string;
+  lineItems: DraftOrderLineItem[];
+  reserveInventoryUntil?: Date;
+  /** False when stock was asked for and Shopify did not confirm holding it. */
+  inventoryReserved: boolean;
+}> {
   // A draft order already recorded for this request is authoritative. Never
-  // create a second one.
+  // create a second one — and never re-check or re-ask for stock, because the
+  // hold this request is entitled to has already been taken and asking again
+  // would read our own reservation as somebody else's sale.
   const recorded = await getDraftOrder(shop, input.requestId);
   if (recorded?.shopifyDraftOrderGid && recorded.invoiceUrl) {
     return {
       invoiceUrl: recorded.invoiceUrl,
       shopifyDraftOrderGid: recorded.shopifyDraftOrderGid,
       lineItems: parseDraftOrderLineItems(recorded.lineItemsJson),
+      reserveInventoryUntil: recorded.reserveInventoryUntil ?? undefined,
+      inventoryReserved: Boolean(recorded.reserveInventoryUntil),
     };
   }
 
@@ -207,16 +562,23 @@ export async function createDraftOrderForRequest(
     fedexSelected: input.fedexSelected,
     fedexLabel: settings.fedexUpgradeLabel,
     fedexPrice: input.fedexPrice ?? fedex.price,
+    fedexVariantGid: fedex.variantGid,
   });
 
   if (lineItems.length === 0) {
     throw new Error("Cannot create a draft order with no accepted plant items.");
   }
 
+  const reserveInventoryUntil = reserveInventoryUntilFor({
+    lineItems,
+    holdEndsAt: input.holdEndsAt,
+  });
+
   requireAdminClient(admin, shop, "Creating a Shopify draft order");
 
   let shopifyDraftOrderGid: string | undefined;
   let invoiceUrl: string | undefined;
+  let reservedUntil: string | undefined;
 
   if (admin) {
     // Shopify may already hold a draft order for this request if an earlier
@@ -226,19 +588,26 @@ export async function createDraftOrderForRequest(
     if (existing) {
       shopifyDraftOrderGid = existing.id;
       invoiceUrl = existing.invoiceUrl ?? undefined;
+      reservedUntil = existing.reserveInventoryUntil ?? undefined;
     } else {
+      await assertLinkedStockStillAvailable(admin, input.acceptedItems);
+
       const draftInput = buildDraftOrderInput({
         requestId: input.requestId,
         requestNumber: input.requestNumber,
         customerEmail: input.customerEmail,
         currencyCode: await resolveShopCurrency(admin, shop),
         lineItems,
-        fedexVariantGid: fedex.variantGid,
+        reserveInventoryUntil,
       });
 
       const created = await adminGraphql<{
         draftOrderCreate: {
-          draftOrder: { id: string; invoiceUrl: string | null } | null;
+          draftOrder: {
+            id: string;
+            invoiceUrl: string | null;
+            reserveInventoryUntil: string | null;
+          } | null;
           userErrors: Array<{ field: string[] | null; message: string }>;
         };
       }>(
@@ -246,7 +615,7 @@ export async function createDraftOrderForRequest(
         `#graphql
           mutation CreatePlantRequestDraftOrder($input: DraftOrderInput!) {
             draftOrderCreate(input: $input) {
-              draftOrder { id invoiceUrl }
+              draftOrder { id invoiceUrl reserveInventoryUntil }
               userErrors { field message }
             }
           }
@@ -256,11 +625,28 @@ export async function createDraftOrderForRequest(
 
       const errors = created.draftOrderCreate.userErrors;
       if (errors.length > 0) {
-        throw new Error(errors.map((error) => error.message).join("; "));
+        // Shopify is the authority on whether the stock could be held: the
+        // check above can only ever have been true a moment ago. When it
+        // refuses for that reason nothing is created, which is the outcome that
+        // matters — the plant is not sold twice.
+        const message = errors.map((error) => error.message).join("; ");
+        if (isInventoryUserError(message)) {
+          throw new InsufficientStockError(
+            reservedPlantLines(input.acceptedItems).map((line) => ({
+              itemId: line.itemId,
+              plantName: line.plantName,
+              variantGid: line.variantId,
+              reason: `${line.plantName}: Shopify would not hold the stock (${message}).`,
+            })),
+          );
+        }
+        throw new Error(message);
       }
 
       shopifyDraftOrderGid = created.draftOrderCreate.draftOrder?.id;
       invoiceUrl = created.draftOrderCreate.draftOrder?.invoiceUrl ?? undefined;
+      reservedUntil =
+        created.draftOrderCreate.draftOrder?.reserveInventoryUntil ?? undefined;
     }
   }
 
@@ -275,6 +661,13 @@ export async function createDraftOrderForRequest(
     invoiceUrl = `${customerLinksForShop(shop).requestDetail(input.requestId)}?checkout=pending`;
   }
 
+  // Read back from Shopify rather than assumed from what was sent. A hold that
+  // was asked for and not granted leaves the plant on open sale, and the
+  // merchant has to be told that instead of a request page claiming it is held.
+  const wantedHold = Boolean(reserveInventoryUntil);
+  const grantedHold = admin ? Boolean(reservedUntil) : wantedHold;
+  const holdEndsAt = reservedUntil ?? reserveInventoryUntil;
+
   // Recorded before the invoice is sent: the draft order already exists in
   // Shopify at this point, and losing the reference would let a retry create a
   // second one for the same request.
@@ -282,13 +675,70 @@ export async function createDraftOrderForRequest(
     shopifyDraftOrderGid,
     invoiceUrl,
     lineItems,
+    reserveInventoryUntil: grantedHold && holdEndsAt ? new Date(holdEndsAt) : undefined,
   });
 
   if (admin && shopifyDraftOrderGid) {
     await sendDraftOrderInvoice(admin, shopifyDraftOrderGid, input.requestNumber);
   }
 
-  return { invoiceUrl, shopifyDraftOrderGid, lineItems };
+  return {
+    invoiceUrl,
+    shopifyDraftOrderGid,
+    lineItems,
+    reserveInventoryUntil:
+      grantedHold && holdEndsAt ? new Date(holdEndsAt) : undefined,
+    inventoryReserved: !wantedHold || grantedHold,
+  };
+}
+
+/** The accepted plants that come out of existing store stock. */
+function reservedPlantLines(
+  acceptedItems: AcceptedDraftOrderItem[],
+): Array<AcceptedDraftOrderItem & { variantId: string }> {
+  return acceptedItems.flatMap((item) =>
+    item.variantId ? [{ ...item, variantId: item.variantId }] : [],
+  );
+}
+
+/**
+ * Refuses the draft order when the stock behind an accepted plant has gone.
+ *
+ * Only reached on the path that is about to create a new draft order, so it
+ * never sees a reservation this request already holds. A retry whose first
+ * attempt did reserve is short-circuited before this, either by the recorded
+ * reference or by the tag lookup; if both were to miss, this reads the stock
+ * our own hold is sitting on and refuses — which errs towards telling the
+ * merchant to look rather than towards holding the plant twice.
+ */
+async function assertLinkedStockStillAvailable(
+  admin: GraphqlClient,
+  acceptedItems: AcceptedDraftOrderItem[],
+): Promise<void> {
+  const lines = reservedPlantLines(acceptedItems);
+  if (lines.length === 0) return;
+
+  const live = await fetchStockVariants(admin, [
+    ...new Set(lines.map((line) => line.variantId)),
+  ]);
+
+  const shortfalls = reservationShortfalls(
+    lines.map((line) => ({
+      itemId: line.itemId,
+      plantName: line.plantName,
+      variantGid: line.variantId,
+      quantity: line.quantity,
+    })),
+    live.map((variant) => ({
+      variantGid: variant.variantGid,
+      productStatus: variant.productStatus,
+      availableForSale: variant.availableForSale,
+      inventoryTracked: variant.inventoryTracked,
+      inventoryQuantity: variant.inventoryQuantity,
+    })),
+  );
+
+  if (shortfalls.length > 0) throw new InsufficientStockError(shortfalls);
 }
 
 /**

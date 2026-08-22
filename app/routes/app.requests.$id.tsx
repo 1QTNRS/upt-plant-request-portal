@@ -21,7 +21,17 @@ import {
   notifyOfferReady,
   redeliverEmailMessage,
 } from "../lib/emails.server";
+import { shopifyAdminProductUrl } from "../lib/exact-plants";
 import { listExactPlantCandidates } from "../lib/exact-plants.server";
+import {
+  FULFILLMENT_CHOICE_LABELS,
+  FULFILLMENT_TYPE_LABELS,
+  formatLinkedInventory,
+  MIN_STOCK_SEARCH_TERM,
+  unlinkableVariantReason,
+  type FulfillmentType,
+  type StoredFulfillmentType,
+} from "../lib/growers-choice";
 import {
   closeDeclinedRequest,
   createPaymentLinkForRequest,
@@ -48,15 +58,19 @@ import {
   getCustomerResponse,
   getDraftOrder,
   getRequest,
+  linkExistingStock,
   markRequestViewed,
   moveItemPhoto,
   removeItemPhoto,
   sendOffer,
+  unlinkExistingStock,
   updateRequestItem,
 } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 import {
+  getExistingStockVariant,
   refreshFedexUpgradePrice,
+  searchExistingStock,
   uploadPlantPhoto,
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
@@ -174,6 +188,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   return {
     requestId,
+    shop,
     plantRequest,
     response,
     emails,
@@ -203,6 +218,53 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") || "");
 
   try {
+    if (intent === "search-stock") {
+      const term = String(form.get("stockQuery") || "").trim();
+      const results = await searchExistingStock(admin, shop, term);
+      return {
+        ok: true,
+        stockSearch: {
+          itemId: String(form.get("itemId") || ""),
+          term,
+          results: results.map((candidate) => ({
+            ...candidate,
+            unlinkableReason: unlinkableVariantReason(candidate),
+          })),
+        },
+      };
+    }
+
+    if (intent === "link-stock") {
+      const variantGid = String(form.get("variantGid") || "");
+      // Re-read rather than trust the posted price and stock: this page may
+      // have been open since before the plant sold.
+      const variant = await getExistingStockVariant(admin, shop, variantGid);
+      if (!variant) {
+        return {
+          ok: false,
+          error: "That Shopify variant no longer exists. Search again.",
+        };
+      }
+      const reason = unlinkableVariantReason(variant);
+      if (reason) return { ok: false, error: reason };
+
+      await linkExistingStock(shop, {
+        requestId,
+        itemId: String(form.get("itemId") || ""),
+        variant,
+      });
+      return { ok: true };
+    }
+
+    if (intent === "unlink-stock") {
+      await unlinkExistingStock(
+        shop,
+        requestId,
+        String(form.get("itemId") || ""),
+      );
+      return { ok: true };
+    }
+
     if (intent === "update-item") {
       await updateRequestItem(shop, {
         requestId,
@@ -212,6 +274,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           : undefined,
         availability: form.has("availability")
           ? (String(form.get("availability")) as ItemAvailabilityStatus)
+          : undefined,
+        fulfillmentType: form.has("fulfillmentType")
+          ? (String(form.get("fulfillmentType")) as StoredFulfillmentType)
           : undefined,
         unavailableReason: form.has("unavailableReason")
           ? (String(form.get("unavailableReason")) as UnavailableReason)
@@ -362,18 +427,226 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   return { ok: false, error: "Unknown action" };
 };
 
-function PlantItemCard({
+const FULFILLMENT_CHOICES: FulfillmentType[] = [
+  "exact_plant",
+  "growers_choice",
+  "not_available",
+];
+
+/**
+ * The store listing behind a Grower's Choice item: search, link, change, unlink.
+ *
+ * Every one of these is refused server-side once the offer is sent, and the
+ * panel disappears with it — the offer snapshot is what the customer answered
+ * and is billed against.
+ */
+function ExistingStockPanel({
   item,
+  shop,
   canEdit,
 }: {
   item: PlantItem;
+  shop: string;
+  canEdit: boolean;
+}) {
+  const searchFetcher = useFetcher<typeof action>();
+  const linkFetcher = useFetcher<typeof action>();
+  const [term, setTerm] = useState("");
+
+  const searchData = searchFetcher.data;
+  const search =
+    searchData && "stockSearch" in searchData && searchData.stockSearch
+      ? searchData.stockSearch
+      : null;
+  const results = search?.itemId === item.id ? search.results : [];
+  const linkError =
+    linkFetcher.data && !linkFetcher.data.ok ? linkFetcher.data.error : null;
+  const linked = item.linkedStock;
+  const productAdminUrl = linked
+    ? shopifyAdminProductUrl(shop, linked.productGid)
+    : undefined;
+
+  return (
+    <s-stack direction="block" gap="base">
+      {linked ? (
+        <s-box padding="base" borderWidth="base" borderRadius="base" background="base">
+          <s-stack direction="block" gap="small">
+            <s-text color="subdued">Linked website stock</s-text>
+            <s-stack direction="inline" gap="base">
+              {linked.imageUrl ? (
+                <img
+                  src={linked.imageUrl}
+                  alt={linked.productTitle}
+                  width={80}
+                  height={80}
+                  style={{ display: "block", objectFit: "cover", borderRadius: "8px" }}
+                />
+              ) : null}
+              <s-stack direction="block" gap="small">
+                <s-text>
+                  <strong>{linked.productTitle}</strong>
+                  {linked.variantTitle ? ` — ${linked.variantTitle}` : ""}
+                </s-text>
+                <s-text color="subdued">
+                  {[
+                    linked.sku ? `SKU ${linked.sku}` : null,
+                    linked.variantPrice !== undefined
+                      ? `${formatCurrency(linked.variantPrice)} in Shopify`
+                      : null,
+                    formatLinkedInventory(linked),
+                    linked.variantWeightLbs
+                      ? `${linked.variantWeightLbs} lb`
+                      : "no weight in Shopify",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </s-text>
+                {productAdminUrl ? (
+                  <s-link href={productAdminUrl} target="_blank">
+                    Open in Shopify admin
+                  </s-link>
+                ) : null}
+              </s-stack>
+            </s-stack>
+            {canEdit ? (
+              <linkFetcher.Form method="post">
+                <input type="hidden" name="intent" value="unlink-stock" />
+                <input type="hidden" name="itemId" value={item.id} />
+                <s-button variant="secondary" tone="critical" type="submit">
+                  Unlink
+                </s-button>
+              </linkFetcher.Form>
+            ) : null}
+          </s-stack>
+        </s-box>
+      ) : (
+        <s-text color="subdued">
+          No website stock is linked yet, so this offer cannot be sent.
+        </s-text>
+      )}
+
+      {canEdit ? (
+        <s-stack direction="block" gap="small">
+          <label htmlFor={`stock-search-${item.id}`}>
+            <s-text color="subdued">
+              {linked ? "Change the linked listing" : "Search existing website stock"}
+            </s-text>
+          </label>
+          <s-stack direction="inline" gap="small">
+            <input
+              id={`stock-search-${item.id}`}
+              value={term}
+              placeholder="Product title, variant, or SKU"
+              onChange={(event) => setTerm(event.currentTarget.value)}
+              style={textInputStyle}
+            />
+            <s-button
+              variant="secondary"
+              onClick={() => {
+                const data = new FormData();
+                data.set("intent", "search-stock");
+                data.set("itemId", item.id);
+                data.set("stockQuery", term);
+                searchFetcher.submit(data, { method: "post" });
+              }}
+              {...(term.trim().length < MIN_STOCK_SEARCH_TERM
+                ? { disabled: true }
+                : {})}
+            >
+              Search Shopify
+            </s-button>
+          </s-stack>
+
+          {linkError ? (
+            <s-banner tone="critical">
+              <s-text>{linkError}</s-text>
+            </s-banner>
+          ) : null}
+
+          {search && results.length === 0 ? (
+            <s-text color="subdued">
+              No Shopify products match “{search.term}”.
+            </s-text>
+          ) : null}
+
+          {results.map((candidate) => (
+            <s-box
+              key={candidate.variantGid}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="base"
+            >
+              <s-stack direction="inline" gap="base">
+                {candidate.imageUrl ? (
+                  <img
+                    src={candidate.imageUrl}
+                    alt={candidate.productTitle}
+                    width={64}
+                    height={64}
+                    style={{ display: "block", objectFit: "cover", borderRadius: "8px" }}
+                  />
+                ) : null}
+                <s-stack direction="block" gap="small">
+                  <s-text>
+                    <strong>{candidate.productTitle}</strong>
+                    {candidate.variantTitle ? ` — ${candidate.variantTitle}` : ""}
+                  </s-text>
+                  <s-text color="subdued">
+                    {[
+                      candidate.sku ? `SKU ${candidate.sku}` : null,
+                      formatCurrency(candidate.price),
+                      formatLinkedInventory(candidate),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </s-text>
+                  {/*
+                    Shown rather than hidden: "out of stock" and "no such plant"
+                    send whoever is sourcing this to completely different places.
+                  */}
+                  {candidate.unlinkableReason ? (
+                    <s-text color="subdued">{candidate.unlinkableReason}</s-text>
+                  ) : (
+                    <linkFetcher.Form method="post">
+                      <input type="hidden" name="intent" value="link-stock" />
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <input
+                        type="hidden"
+                        name="variantGid"
+                        value={candidate.variantGid}
+                      />
+                      <s-button variant="secondary" type="submit">
+                        Link this variant
+                      </s-button>
+                    </linkFetcher.Form>
+                  )}
+                </s-stack>
+              </s-stack>
+            </s-box>
+          ))}
+        </s-stack>
+      ) : null}
+    </s-stack>
+  );
+}
+
+function PlantItemCard({
+  item,
+  shop,
+  canEdit,
+}: {
+  item: PlantItem;
+  shop: string;
   canEdit: boolean;
 }) {
   const fetcher = useFetcher<typeof action>();
   const photoFetcher = useFetcher<typeof action>();
   const [offeredName, setOfferedName] = useState(item.offeredName);
   const [customerNotes, setCustomerNotes] = useState(item.customerFacingNotes);
-  const [availability, setAvailability] = useState(item.availability);
+  const [fulfillment, setFulfillment] = useState<FulfillmentType>(
+    item.fulfillmentType,
+  );
   const [unavailableReason, setUnavailableReason] = useState(
     item.unavailableReason,
   );
@@ -384,13 +657,14 @@ function PlantItemCard({
   useEffect(() => {
     setOfferedName(item.offeredName);
     setCustomerNotes(item.customerFacingNotes);
-    setAvailability(item.availability);
+    setFulfillment(item.fulfillmentType);
     setUnavailableReason(item.unavailableReason);
     setPrice(item.price);
     setWeightLbs(item.weightLbs);
   }, [item]);
 
-  const isAvailable = availability === "available";
+  const isAvailable = fulfillment !== "not_available";
+  const growersChoice = fulfillment === "growers_choice";
   const fieldsLocked = !canEdit;
 
   const saveField = (fields: Record<string, string>) => {
@@ -404,9 +678,15 @@ function PlantItemCard({
     fetcher.submit(data, { method: "post" });
   };
 
-  const handleAvailabilityChange = (next: ItemAvailabilityStatus) => {
-    setAvailability(next);
-    saveField({ availability: next });
+  const handleFulfillmentChange = (next: FulfillmentType) => {
+    setFulfillment(next);
+    // Not Available lives in availability, which every rule downstream already
+    // reads; the other two are the stored route with the item still available.
+    saveField(
+      next === "not_available"
+        ? { availability: "not_available" }
+        : { availability: "available", fulfillmentType: next },
+    );
   };
 
   return (
@@ -423,33 +703,39 @@ function PlantItemCard({
             {item.itemStatus}
           </s-badge>
           <s-badge tone={isAvailable ? "success" : "critical"}>
-            {isAvailable ? "Available" : "Not Available"}
+            {FULFILLMENT_TYPE_LABELS[fulfillment]}
           </s-badge>
         </s-stack>
+
+        {item.fulfillmentIssue ? (
+          <s-banner tone="critical">
+            <s-text>{item.fulfillmentIssue}</s-text>
+          </s-banner>
+        ) : null}
 
         {item.adminNotes ? (
           <s-text color="subdued">Customer request notes: {item.adminNotes}</s-text>
         ) : null}
 
         <s-stack direction="block" gap="small">
-          <s-text color="subdued">Availability</s-text>
+          <s-text color="subdued">How this plant will be supplied</s-text>
           <s-stack direction="inline" gap="small">
-            <s-button
-              variant={isAvailable ? "primary" : "secondary"}
-              onClick={() => handleAvailabilityChange("available")}
-              {...(fieldsLocked ? { disabled: true } : {})}
-            >
-              Available
-            </s-button>
-            <s-button
-              variant={!isAvailable ? "primary" : "secondary"}
-              onClick={() => handleAvailabilityChange("not_available")}
-              {...(fieldsLocked ? { disabled: true } : {})}
-            >
-              Not Available
-            </s-button>
+            {FULFILLMENT_CHOICES.map((choice) => (
+              <s-button
+                key={choice}
+                variant={fulfillment === choice ? "primary" : "secondary"}
+                onClick={() => handleFulfillmentChange(choice)}
+                {...(fieldsLocked ? { disabled: true } : {})}
+              >
+                {FULFILLMENT_CHOICE_LABELS[choice]}
+              </s-button>
+            ))}
           </s-stack>
         </s-stack>
+
+        {growersChoice ? (
+          <ExistingStockPanel item={item} shop={shop} canEdit={canEdit} />
+        ) : null}
 
         {!isAvailable && (
           <s-stack direction="block" gap="small">
@@ -515,7 +801,11 @@ function PlantItemCard({
               </s-stack>
               <s-stack direction="block" gap="small">
                 <label htmlFor={`weight-${item.id}`}>
-                  <s-text color="subdued">Weight in lbs (internal only)</s-text>
+                  <s-text color="subdued">
+                    {growersChoice
+                      ? "Weight in lbs (used only if Shopify has none)"
+                      : "Weight in lbs (internal only)"}
+                  </s-text>
                 </label>
                 <input
                   id={`weight-${item.id}`}
@@ -536,6 +826,12 @@ function PlantItemCard({
               </s-stack>
             </s-stack>
 
+            {/*
+              A Grower's Choice customer is not being sold the plant in the
+              photo, so the offer carries the store listing's image instead and
+              photographing an individual would be a promise nobody can keep.
+            */}
+            {growersChoice ? null : (
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Exact plant photos</s-text>
               <s-stack direction="inline" gap="base">
@@ -628,6 +924,7 @@ function PlantItemCard({
                 </s-stack>
               ) : null}
             </s-stack>
+            )}
           </>
         )}
 
@@ -863,8 +1160,9 @@ function SendOfferSection({
             <s-stack direction="block" gap="small">
               <s-text>{offerReadinessMessage(problems)}</s-text>
               <s-text color="subdued">
-                Customer-facing notes are optional. Not Available items need
-                none of these.
+                Customer-facing notes are optional. A Grower&rsquo;s Choice item
+                needs a linked listing with enough stock instead of an exact
+                photo. Not Available items need none of these.
               </s-text>
             </s-stack>
           </s-banner>
@@ -919,7 +1217,8 @@ function DeclinedExactPlantsSection({
         <s-text color="subdued">
           These plants were marked Available, offered as exact plants, and
           rejected by the customer. Review a listing before any Shopify product
-          is created. Not Available items are not included.
+          is created. Not Available items are not included, and neither are
+          Grower&rsquo;s Choice items — those already have a Shopify product.
         </s-text>
         {items.length === 0 ? (
           <s-text color="subdued">No declined exact plants on this request.</s-text>
@@ -1166,6 +1465,7 @@ function PlantPatternSection({
 
 export default function RequestDetail() {
   const {
+    shop,
     plantRequest,
     response,
     emails,
@@ -1251,7 +1551,12 @@ export default function RequestDetail() {
         )}
         <s-stack direction="block" gap="base">
           {plantRequest.items.map((item) => (
-            <PlantItemCard key={item.id} item={item} canEdit={canEditItems} />
+            <PlantItemCard
+              key={item.id}
+              item={item}
+              shop={shop}
+              canEdit={canEditItems}
+            />
           ))}
         </s-stack>
       </s-section>
