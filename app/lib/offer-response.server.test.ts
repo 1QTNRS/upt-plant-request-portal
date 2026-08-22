@@ -669,6 +669,27 @@ describe("a customer who accepts nothing", () => {
     ]);
   });
 
+  it("refuses a crafted POST that removes FedEx without acknowledgement", async () => {
+    const { requestId, first, second } = await offeredRequest();
+
+    const blocked = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+      }),
+    });
+
+    assert.equal(blocked.ok, false);
+    assert.equal(
+      "pendingFedexRemoval" in blocked && blocked.pendingFedexRemoval,
+      true,
+    );
+    assert.equal(await getCustomerResponse(shop, requestId), null);
+  });
+
   it("keeps the two-step FedEx confirmation for a customer who accepted something", async () => {
     const { requestId, first, second } = await offeredRequest();
 

@@ -884,9 +884,12 @@ now includes `write_inventory`), Shopify Files uploads at scale, and a real
 
 ## Unfinished work
 
-No decided application-code task remains. Owner decision 2 (void the expired
-unpaid invoice) is implemented and was re-verified on the dev store. Everything
-else left needs an account action, a hosting decision, or a live store —
+Dev-store admin offer corrections on this branch (price zero-replace, photo
+actions no longer resetting sibling item drafts, customer-local timestamps,
+FedEx removal warning) are in code and waiting on a fresh install of this
+commit. Owner decision 2 (void the expired unpaid invoice) is implemented and
+was re-verified on the dev store. Everything else left needs an account action,
+a hosting decision, or a live store —
 enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) and in the verification
 list above.

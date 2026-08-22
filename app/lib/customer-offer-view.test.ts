@@ -121,7 +121,7 @@ describe("an expired offer is not presented as a live one", () => {
     assert.ok(!expired.includes('type="radio"'), "nothing left to accept");
     assert.ok(!expired.includes('value="submit-response"'));
     assert.ok(!expired.includes('name="fedexUpgradeSelected"'));
-    assert.ok(!expired.includes("<form"));
+    assert.ok(!expired.includes('id="fedex-upgrade"'));
   });
 
   it("still shows what was offered, and the way back", () => {
@@ -559,5 +559,44 @@ describe("a request the customer already closed", () => {
   it("offers no way to answer or close it again", () => {
     assert.equal([...closed.matchAll(/type="radio"/g)].length, 0);
     assert.ok(!closed.includes("Close Request"));
+  });
+});
+
+describe("the FedEx removal warning", () => {
+  it("is checked by default and carries the Settings warning in a labelled dialog", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "Carrier delays are not covered.",
+      requestClosed: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+    assert.match(html, /id="fedex-upgrade"/);
+    assert.match(html, /name="fedexUpgradeSelected"/);
+    assert.match(html, /Carrier delays are not covered/);
+    assert.match(html, /id="fedex-removal-dialog"/);
+    assert.match(html, /role="dialog"/);
+    assert.match(html, /Keep FedEx Upgrade/);
+    assert.match(html, /I Understand, Remove Upgrade/);
+    assert.match(html, /name="fedexRemovalAcknowledged"/);
+  });
+
+  it("shows the same Settings text on the no-JS confirmation step", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "Carrier delays are not covered.",
+      requestClosed: false,
+      pendingFedexRemoval: true,
+      submittedChoices: { "item-1": "accept" },
+      fedexSelected: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+    assert.match(html, /Carrier delays are not covered/);
+    assert.match(html, /I Understand, Remove Upgrade/);
+    assert.match(html, /Keep FedEx Upgrade/);
+    assert.match(html, /value="keep-fedex"/);
   });
 });

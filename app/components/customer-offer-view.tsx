@@ -11,6 +11,7 @@ import {
   type OfferPlantItem,
   type SampleCustomerOffer,
 } from "../lib/portal";
+import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { OfferExpiryBanner } from "./customer-request-portal";
 
 type ItemChoice = "accept" | "reject" | "unavailable";
@@ -94,6 +95,8 @@ export function CustomerOfferView({
   requestClosed,
   requestPaid = false,
   paidAt,
+  paidAtIso,
+  customerTimeZone,
   formAction,
   submittedChoices,
   fedexSelected = true,
@@ -112,6 +115,8 @@ export function CustomerOfferView({
   /** Set once `orders/paid` has closed the request. */
   requestPaid?: boolean;
   paidAt?: string | null;
+  paidAtIso?: string | null;
+  customerTimeZone?: string | null;
   /**
    * Where the form posts. Must be the storefront proxy path — React Router
    * would otherwise render the app's own `/customer/...` path, which does not
@@ -171,8 +176,19 @@ export function CustomerOfferView({
             <s-stack direction="block" gap="base">
               <s-banner tone="success">
                 <s-text>
-                  We received your payment{paidAt ? ` on ${paidAt}` : ""}. This
-                  request is complete.
+                  We received your payment
+                  {paidAt ? (
+                    <>
+                      {" "}
+                      on{" "}
+                      {paidAtIso ? (
+                        <CustomerTime iso={paidAtIso}>{paidAt}</CustomerTime>
+                      ) : (
+                        paidAt
+                      )}
+                    </>
+                  ) : null}
+                  . This request is complete.
                 </s-text>
               </s-banner>
               <s-paragraph>
@@ -202,7 +218,16 @@ export function CustomerOfferView({
                 </s-text>
                 <s-text>
                   The items are no longer being held
-                  {offer.expiresAt ? ` — the hold ended on ${offer.expiresAt}` : ""}.
+                  {offer.expiresAt ? (
+                    <>
+                      {" "}
+                      — the hold ended on{" "}
+                      <CustomerTime iso={offer.expiresAtIso}>
+                        {offer.expiresAt}
+                      </CustomerTime>
+                    </>
+                  ) : null}
+                  .
                   The previous checkout/payment link is no longer valid.
                 </s-text>
                 <s-text>
@@ -345,6 +370,17 @@ export function CustomerOfferView({
             <s-link href={backHref}>Back to My Requests</s-link>
           </s-section>
         ) : null}
+        <form
+          method="post"
+          action={formAction}
+          data-tz-capture
+          data-known-tz={customerTimeZone ?? ""}
+          hidden
+        >
+          <input type="hidden" name="intent" value="save-timezone" />
+          <input type="hidden" name="customerTimeZone" defaultValue="" />
+        </form>
+        <CustomerEnhanceScripts />
       </s-page>
     );
   }
@@ -408,6 +444,7 @@ export function CustomerOfferView({
             </s-banner>
             <form method="post" action={formAction}>
               <input type="hidden" name="fedexRemovalAcknowledged" value="true" />
+              <input type="hidden" name="customerTimeZone" value="" />
               {purchasable
                 .filter((item) => submittedChoices?.[item.sourceItemId])
                 .map((item) => (
@@ -425,7 +462,7 @@ export function CustomerOfferView({
                   value="submit-response"
                   style={buttonStyle}
                 >
-                  Remove it and continue
+                  I Understand, Remove Upgrade
                 </button>
                 <button
                   type="submit"
@@ -433,7 +470,7 @@ export function CustomerOfferView({
                   value="keep-fedex"
                   style={{ ...buttonStyle, fontWeight: 600 }}
                 >
-                  Keep the upgrade
+                  Keep FedEx Upgrade
                 </button>
               </s-stack>
             </form>
@@ -441,6 +478,13 @@ export function CustomerOfferView({
         </s-section>
       ) : (
         <form method="post" action={formAction}>
+          <input type="hidden" name="customerTimeZone" defaultValue="" />
+          <input
+            type="hidden"
+            id="fedex-ack"
+            name="fedexRemovalAcknowledged"
+            defaultValue=""
+          />
           {error ? (
             <s-section>
               <s-banner tone="critical">
@@ -514,6 +558,46 @@ export function CustomerOfferView({
                       {formatCurrency(offer.fedexUpgradePrice)}
                     </s-text>
                   </label>
+                  <div
+                    id="fedex-removal-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="fedex-warning-title"
+                    hidden
+                    aria-hidden="true"
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      border: "1px solid #c9cccf",
+                      borderRadius: 8,
+                      background: "#fff",
+                    }}
+                  >
+                    <s-stack direction="block" gap="base">
+                      <s-heading id="fedex-warning-title">
+                        Remove the shipping upgrade?
+                      </s-heading>
+                      <s-text>
+                        {fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}
+                      </s-text>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <button
+                          id="fedex-keep"
+                          type="button"
+                          style={{ ...buttonStyle, fontWeight: 600 }}
+                        >
+                          Keep FedEx Upgrade
+                        </button>
+                        <button
+                          id="fedex-confirm-remove"
+                          type="button"
+                          style={buttonStyle}
+                        >
+                          I Understand, Remove Upgrade
+                        </button>
+                      </div>
+                    </s-stack>
+                  </div>
                 </s-box>
               </s-section>
 
@@ -531,6 +615,17 @@ export function CustomerOfferView({
           )}
         </form>
       )}
+      <form
+        method="post"
+        action={formAction}
+        data-tz-capture
+        data-known-tz={customerTimeZone ?? ""}
+        hidden
+      >
+        <input type="hidden" name="intent" value="save-timezone" />
+        <input type="hidden" name="customerTimeZone" defaultValue="" />
+      </form>
+      <CustomerEnhanceScripts includeFedexWarning={!expired && !pendingFedexRemoval} />
     </s-page>
   );
 }

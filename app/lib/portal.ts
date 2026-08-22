@@ -116,8 +116,11 @@ export type PlantRequest = {
   submittedDate: string;
   submittedAtIso: string;
   closedAt?: string;
+  closedAtIso?: string;
   expiredAt?: string;
+  expiredAtIso?: string;
   paidAt?: string;
+  paidAtIso?: string;
   items: PlantItem[];
   sentOffer?: SentOffer;
   /** Undefined until an offer has been sent. See `offerHasPayableItems`. */

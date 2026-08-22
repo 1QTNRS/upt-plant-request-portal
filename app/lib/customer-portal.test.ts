@@ -324,6 +324,16 @@ describe("the offer response works without JavaScript", () => {
     assert.match(source, /pendingFedexRemoval/);
     assert.match(source, /name="fedexRemovalAcknowledged"/);
     assert.match(source, /value="keep-fedex"/);
+    assert.match(source, /Keep FedEx Upgrade/);
+    assert.match(source, /I Understand, Remove Upgrade/);
+    assert.match(source, /id="fedex-removal-dialog"/);
+    assert.match(source, /role="dialog"/);
+  });
+
+  it("uses an isolated script for the immediate warning, not React state", () => {
+    assert.match(source, /CustomerEnhanceScripts/);
+    assert.ok(!source.includes("useState"));
+    assert.ok(!source.includes("onClick"));
   });
 
   it("uses plain forms with an explicit action", () => {
@@ -368,7 +378,7 @@ describe("the offer response works without JavaScript", () => {
     assert.match(server, /missingChoices/);
   });
 
-  it("holds no client state at all", () => {
+  it("holds no React client state", () => {
     assert.ok(!source.includes("useState"));
     assert.ok(!source.includes("useEffect"));
     assert.ok(

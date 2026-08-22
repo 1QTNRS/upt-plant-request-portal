@@ -60,6 +60,8 @@ model CustomerProfile {
   shopifyCustomerId String?
   name              String
   email             String
+  /// IANA zone captured from the browser, e.g. America/Los_Angeles. Null until known.
+  timeZone          String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   requests          PlantRequest[]

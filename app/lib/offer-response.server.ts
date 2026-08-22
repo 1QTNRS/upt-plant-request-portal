@@ -1,5 +1,7 @@
 import { voidExpiredDraftOrder } from "./draft-order-void.server";
 import { payableInvoiceUrl } from "./portal";
+import { fedexRemovalNeedsConfirmation, readOfferChoices } from "./customer-portal";
+import { formatCustomerDateTime } from "./customer-time";
 import {
   acceptedOfferLines,
   buildCustomerOffer,
@@ -7,6 +9,7 @@ import {
   closeRequest,
   expireOverdueOffers,
   getCustomerResponse,
+  getCustomerTimeZone,
   getDraftOrder,
   getRequest,
   getShopSettings,
@@ -43,6 +46,8 @@ export async function loadCustomerOfferPage(
       requestClosed: false,
       requestPaid: false,
       paidAt: null as string | null,
+      paidAtIso: null as string | null,
+      customerTimeZone: null as string | null,
     };
   }
 
@@ -55,6 +60,9 @@ export async function loadCustomerOfferPage(
   const response = await getCustomerResponse(shop, requestId);
   const request = await getRequest(shop, requestId);
   const draft = await getDraftOrder(shop, requestId);
+  const timeZone = request
+    ? await getCustomerTimeZone(shop, request.email)
+    : null;
 
   return {
     offer,
@@ -69,7 +77,11 @@ export async function loadCustomerOfferPage(
     fedexRemovalWarning: settings.fedexRemovalWarning,
     requestClosed: request?.status === "Closed",
     requestPaid: Boolean(request?.paidAt),
-    paidAt: request?.paidAt ?? null,
+    paidAt: request?.paidAtIso
+      ? formatCustomerDateTime(new Date(request.paidAtIso), timeZone)
+      : null,
+    paidAtIso: request?.paidAtIso ?? null,
+    customerTimeZone: timeZone,
   };
 }
 
@@ -274,6 +286,20 @@ export async function handleCustomerOfferAction(input: {
         missingChoices.length === 1
           ? `Choose Accept or Reject for ${missingChoices[0]}.`
           : `Choose Accept or Reject for each plant: ${missingChoices.join(", ")}.`,
+    };
+  }
+
+  if (
+    fedexRemovalNeedsConfirmation({
+      choices: readOfferChoices(input.form),
+      fedexSelected: String(input.form.get("fedexUpgradeSelected")) === "true",
+      acknowledged: String(input.form.get("fedexRemovalAcknowledged")) === "true",
+    })
+  ) {
+    return {
+      ok: false as const,
+      pendingFedexRemoval: true as const,
+      error: null,
     };
   }
 

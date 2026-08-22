@@ -13,12 +13,12 @@ import {
   buildRequestReceivedEmail,
   buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
-  formatDateTime,
   offerIsAllExactPlants,
   payableInvoiceUrl,
   type ResponseSummaryItem,
 } from "./portal";
-import { getRequest, getShopSettings } from "./portal.server";
+import { formatCustomerDateTime } from "./customer-time";
+import { getCustomerTimeZone, getRequest, getShopSettings } from "./portal.server";
 
 /**
  * Identifies a message that must only ever be sent once. Retries, double
@@ -391,10 +391,14 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
   if (!request?.sentOffer) return;
 
   const offerLink = customerLinksForShop(shop, appUrl).requestDetail(request.id);
+  const timeZone = await getCustomerTimeZone(shop, request.email);
   const email = buildOfferReadyEmail({
     customerName: request.customer,
     requestNumber: request.requestNumber,
-    expiresAt: request.sentOffer.expiresAt,
+    expiresAt: formatCustomerDateTime(
+      new Date(request.sentOffer.expiresAtIso),
+      timeZone,
+    ),
     offerLink,
     allExactPlants: offerIsAllExactPlants(request.items),
   });
@@ -465,7 +469,12 @@ export async function notifyResponseSummary(
     // Only accepted plants are still held, and only then is the hold something
     // the customer has to act before.
     expiresAt:
-      input.acceptedItems.length > 0 ? request.sentOffer?.expiresAt : undefined,
+      input.acceptedItems.length > 0 && request.sentOffer
+        ? formatCustomerDateTime(
+            new Date(request.sentOffer.expiresAtIso),
+            await getCustomerTimeZone(shop, request.email),
+          )
+        : undefined,
   });
 
   return queueEmail({
@@ -589,7 +598,10 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
     const email = buildExpirationReminderEmail({
       customerName: request.customerName,
       requestNumber: request.requestNumber,
-      expiresAt: formatDateTime(request.offer.expiresAt),
+      expiresAt: formatCustomerDateTime(
+        request.offer.expiresAt,
+        await getCustomerTimeZone(shop, request.customerEmail),
+      ),
       offerLink: links.requestDetail(request.id),
       // A customer who has already accepted needs to pay, not to review the
       // offer again; sending them here without the link they need wastes the

@@ -22,7 +22,7 @@ import {
 } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
-import { submitCustomerRequest } from "../lib/portal.server";
+import { saveCustomerTimeZone, submitCustomerRequest } from "../lib/portal.server";
 
 /**
  * The customer request form's POST target.
@@ -56,6 +56,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const home = portalHome(context);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+
+  if (intent === "save-timezone") {
+    if (context.identity) {
+      const identity = await resolveCustomerIdentity(context.shop, context.identity);
+      if (identity.email.trim()) {
+        await saveCustomerTimeZone(
+          context.shop,
+          identity.email,
+          form.get("customerTimeZone"),
+        );
+      }
+    }
+    return { errors: [], plantLines: null };
+  }
 
   if (intent === "add-plant") {
     return { errors: [], plantLines: withExtraRow(readPlantLines(form)) };
@@ -119,6 +133,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Keep what was typed so a validation error does not clear the form.
   if (errors.length > 0) return { errors, plantLines: submitted };
 
+  await saveCustomerTimeZone(
+    context.shop,
+    identity.email,
+    form.get("customerTimeZone"),
+  );
   const created = await submitCustomerRequest(context.shop, {
     name: identity.name,
     email: identity.email,
@@ -158,6 +177,7 @@ export default function CustomerRequestSubmit() {
         actionData?.plantLines ?? portal.plantLines ?? [EMPTY_PLANT_LINE]
       }
       canSubmit={portal.canSubmitRequests}
+      customerTimeZone={portal.customerTimeZone}
     />
   );
 }

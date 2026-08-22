@@ -650,7 +650,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "It appears as a real checkbox, checked by default, on any unanswered offer that has at least one Available plant. An offer where nothing is available shows no upgrade at all, there being nothing to ship.",
       "It is only ever charged alongside plants. `buildDraftOrderLineItems` adds the FedEx line only when there is at least one accepted plant line, so a customer who declines everything is never billed for shipping.",
-      "Unchecking it is a two-step server round-trip: the first submit returns the warning from Settings with 'Remove it and continue' and 'Keep the upgrade', and nothing is recorded until the customer chooses.",
+      "Unchecking it opens the Settings warning immediately when JavaScript is available. Without JavaScript it is a second server round-trip. The buttons are Keep FedEx Upgrade and I Understand, Remove Upgrade. A crafted POST without acknowledgement is refused.",
       "`ShopSettings.fedexUpgradePrice` is the single amount — what the offer quotes, what the response snapshot freezes and what the confirmation email states — and the draft-order line carries that frozen amount, so Shopify bills what the customer answered rather than whatever the variant costs by the time they open the invoice.",
       "It is a shipping service and not a plant: excluded from plant revenue and plant counts, on no fulfilment route in analytics, weightless on the draft order, and never given an EXACT PLANTS listing.",
     ],
