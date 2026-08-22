@@ -230,6 +230,15 @@ async function aiSuggestion(
   try {
     const result = await provider.suggestCanonicalPlant(plantName, payload);
     if (!result) return null;
+    // A provider naming an identity that was never offered to it is the failure
+    // mode that would otherwise queue a review against nothing.
+    if (
+      !payload.some(
+        (entry) => entry.canonicalPlantId === result.canonicalPlantId,
+      )
+    ) {
+      return null;
+    }
     return {
       canonicalPlantId: result.canonicalPlantId,
       confidence: result.confidence,
@@ -250,11 +259,9 @@ async function aiSuggestion(
 function describeReason(reason: string): string {
   switch (reason) {
     case "exact":
-      return "Same name after normalising capitalisation, spacing and punctuation.";
+      return "Same name once capitalisation, spacing, punctuation and rank words such as `sp.` are set aside.";
     case "genus_abbreviation":
       return "Same species, with the genus abbreviated.";
-    case "rank_only":
-      return "Same plant, with a rank word such as `sp.` on one side only.";
     case "typo":
       return "One or two characters apart — most likely a misspelling.";
     case "distinguishing_qualifier":
@@ -330,14 +337,11 @@ export async function listPlantIdentitySuggestions(
 ): Promise<PlantIdentitySuggestionRow[]> {
   const suggestions = await prisma.plantIdentitySuggestion.findMany({
     where: { shop, status: "open" },
-    include: {
-      suggestedCanonicalPlant: {
-        include: { aliases: { select: { originalName: true } } },
-      },
-    },
+    include: { suggestedCanonicalPlant: { select: { displayName: true } } },
     orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
   });
   if (suggestions.length === 0) return [];
+  const variants = await canonicalPlantVariants(shop);
 
   const aliases = await prisma.plantNameAlias.findMany({
     where: { shop, aliasKey: { in: suggestions.map((row) => row.aliasKey) } },
@@ -366,11 +370,7 @@ export async function listPlantIdentitySuggestions(
     originalName: row.originalName,
     suggestedDisplayName: row.suggestedCanonicalPlant.displayName,
     suggestedCanonicalPlantId: row.suggestedCanonicalPlantId,
-    suggestedVariants: [
-      ...new Set(
-        row.suggestedCanonicalPlant.aliases.map((alias) => alias.originalName),
-      ),
-    ].sort(),
+    suggestedVariants: variants.get(row.suggestedCanonicalPlantId) ?? [],
     reason: row.reason,
     source: row.source,
     confidence: row.confidence,
@@ -516,26 +516,44 @@ export async function assignCanonicalPlantsForRequest(
 }
 
 /**
- * The customer spellings counted under each identity, so the owner can see what
- * a row on the plant tables is actually made of.
+ * Every customer spelling counted under each identity, so the owner can see what
+ * a row on the plant tables is actually made of and disagree with it.
+ *
+ * Read from the request lines as well as the recorded mappings: two spellings
+ * that normalise identically — `Hoya carnosa` and `hoya  carnosa` — share one
+ * mapping, so the mappings alone would hide one of them.
  */
 export async function canonicalPlantVariants(
   shop: string,
 ): Promise<Map<string, string[]>> {
-  const aliases = await prisma.plantNameAlias.findMany({
-    where: { shop },
-    select: { canonicalPlantId: true, originalName: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const [aliases, typed] = await Promise.all([
+    prisma.plantNameAlias.findMany({
+      where: { shop },
+      select: { canonicalPlantId: true, originalName: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.requestItem.findMany({
+      where: { canonicalPlantId: { not: null }, request: { shop } },
+      select: { canonicalPlantId: true, plantName: true },
+      orderBy: ITEM_ORDER,
+    }),
+  ]);
 
-  const variants = new Map<string, string[]>();
-  for (const alias of aliases) {
-    const current = variants.get(alias.canonicalPlantId) ?? [];
-    const name = alias.originalName.trim();
-    if (name && !current.includes(name)) current.push(name);
-    variants.set(alias.canonicalPlantId, current);
-  }
-  return variants;
+  const variants = new Map<string, Set<string>>();
+  const add = (canonicalPlantId: string | null, raw: string) => {
+    if (!canonicalPlantId) return;
+    const name = raw.trim();
+    const current = variants.get(canonicalPlantId) ?? new Set<string>();
+    if (name) current.add(name);
+    variants.set(canonicalPlantId, current);
+  };
+
+  for (const alias of aliases) add(alias.canonicalPlantId, alias.originalName);
+  for (const item of typed) add(item.canonicalPlantId, item.plantName);
+
+  return new Map(
+    [...variants].map(([id, names]) => [id, [...names].sort()] as const),
+  );
 }
 
 export { canonicalPlantKey };

@@ -17,6 +17,9 @@ async function reset() {
   await prisma.customerProfile.deleteMany({ where: { shop } });
   await prisma.shopSettings.deleteMany({ where: { shop } });
   await prisma.requestNumberSequence.deleteMany({ where: { shop } });
+  await prisma.plantIdentitySuggestion.deleteMany({ where: { shop } });
+  await prisma.plantNameAlias.deleteMany({ where: { shop } });
+  await prisma.canonicalPlant.deleteMany({ where: { shop } });
 }
 
 /**
@@ -34,6 +37,8 @@ async function seedRequest(options: {
   requestedNames?: string[];
   /** What UPT called the plant in the offer, as renaming an exact plant does. */
   offeredNames?: string[];
+  /** Defaults to a fixed date; the behaviour window needs a recent one. */
+  submittedAt?: Date;
 }) {
   const customer = await prisma.customerProfile.upsert({
     where: { shop_email: { shop, email: "test.customer@example.com" } },
@@ -49,7 +54,7 @@ async function seedRequest(options: {
       customerName: "Test Customer",
       customerEmail: "test.customer@example.com",
       status: options.status,
-      submittedAt: new Date("2026-01-15T00:00:00.000Z"),
+      submittedAt: options.submittedAt ?? new Date("2026-01-15T00:00:00.000Z"),
       paidAt: options.paidAt ?? null,
       items: {
         create: options.prices.map((price, index) => ({
@@ -270,5 +275,150 @@ describe("most requested plants", () => {
 
     const analytics = await getAnalytics(shop, range);
     assert.equal(analytics.plants.mostRequested[0]?.offeredName, "");
+  });
+});
+
+describe("plant tables group by canonical identity", () => {
+  before(reset);
+  after(reset);
+
+  it("counts spellings of one plant as one plant", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ300",
+      status: "Pending",
+      prices: [100],
+      requestedNames: ["Hoya carnosa"],
+      submittedAt: new Date("2026-01-10T00:00:00.000Z"),
+    });
+    await seedRequest({
+      requestNumber: "REQ301",
+      status: "Pending",
+      prices: [100],
+      requestedNames: ["H. carnosa"],
+      submittedAt: new Date("2026-01-11T00:00:00.000Z"),
+    });
+    await seedRequest({
+      requestNumber: "REQ302",
+      status: "Closed",
+      paidAt: new Date("2026-01-20T00:00:00.000Z"),
+      prices: [100],
+      choices: ["accept"],
+      requestedNames: ["hoya  carnosa"],
+      submittedAt: new Date("2026-01-12T00:00:00.000Z"),
+    });
+    await seedRequest({
+      requestNumber: "REQ303",
+      status: "Pending",
+      prices: [100],
+      requestedNames: ["Hoya carnsa"],
+      submittedAt: new Date("2026-01-13T00:00:00.000Z"),
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(
+      analytics.plants.mostRequested.length,
+      1,
+      "four spellings of one plant belong on one row",
+    );
+
+    const plant = analytics.plants.mostRequested[0];
+    assert.equal(plant.plantName, "Hoya carnosa");
+    assert.equal(plant.requestCount, 4);
+    assert.equal(plant.offeredCount, 4);
+    assert.equal(plant.purchaseCount, 1);
+    assert.equal(plant.revenue, 100);
+    assert.equal(plant.conversionRate, 25);
+    // The owner can see exactly which wordings the row is made of.
+    assert.equal(plant.variants, "H. carnosa, Hoya carnosa, Hoya carnsa, hoya  carnosa");
+  });
+
+  it("keeps clones, cultivars and accessions on rows of their own", async () => {
+    await reset();
+    await seedRequest({
+      requestNumber: "REQ310",
+      status: "Pending",
+      prices: [100, 100, 100],
+      requestedNames: [
+        "Hoya carnosa",
+        "Hoya carnosa 'Krimson Queen'",
+        "Hoya carnosa clone 4",
+      ],
+    });
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.plants.mostRequested.length, 3);
+    assert.deepEqual(
+      analytics.plants.mostRequested.map((plant) => plant.requestCount),
+      [1, 1, 1],
+    );
+  });
+
+  it("gives an existing row an identity without touching the customer's text", async () => {
+    await reset();
+    const request = await seedRequest({
+      requestNumber: "REQ320",
+      status: "Pending",
+      prices: [100],
+      requestedNames: ["  HOYA   carnosa "],
+    });
+
+    await getAnalytics(shop, range);
+    const item = await prisma.requestItem.findFirstOrThrow({
+      where: { requestId: request.id },
+      include: { canonicalPlant: true },
+    });
+    assert.equal(item.plantName, "  HOYA   carnosa ");
+    assert.equal(item.canonicalPlant?.displayName, "HOYA carnosa");
+  });
+
+  it("flags a repeated request and decline of one plant", async () => {
+    await reset();
+    const recent = (daysAgo: number) =>
+      new Date(Date.now() - daysAgo * 86_400_000);
+
+    for (const [index, name] of ["Hoya carnosa", "H. carnosa", "hoya  carnosa"].entries()) {
+      await seedRequest({
+        requestNumber: `REQ33${index}`,
+        status: "Pending",
+        prices: [100],
+        choices: ["reject"],
+        requestedNames: [name],
+        submittedAt: recent(30 - index * 5),
+      });
+    }
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.customerSummary.repeatedRequestDeclineCustomers, 1);
+    const customer = analytics.customers[0];
+    assert.equal(customer.behaviorFlag, "Repeated Request / Decline Pattern");
+    assert.equal(customer.plantPatterns.length, 1);
+    assert.equal(customer.plantPatterns[0].plantName, "Hoya carnosa");
+    assert.equal(customer.plantPatterns[0].timesDeclined, 3);
+  });
+
+  it("does not flag three genuinely different plants", async () => {
+    await reset();
+    const recent = (daysAgo: number) =>
+      new Date(Date.now() - daysAgo * 86_400_000);
+
+    for (const [index, name] of [
+      "Hoya carnosa",
+      "Hoya lacunosa",
+      "Monstera deliciosa",
+    ].entries()) {
+      await seedRequest({
+        requestNumber: `REQ34${index}`,
+        status: "Pending",
+        prices: [100],
+        choices: ["reject"],
+        requestedNames: [name],
+        submittedAt: recent(30 - index * 5),
+      });
+    }
+
+    const analytics = await getAnalytics(shop, range);
+    assert.equal(analytics.customerSummary.repeatedRequestDeclineCustomers, 0);
+    assert.equal(analytics.customers[0].plantPatterns.length, 0);
   });
 });

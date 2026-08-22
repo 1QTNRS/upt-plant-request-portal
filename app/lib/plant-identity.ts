@@ -76,7 +76,6 @@ export type PlantMatchConfidence = "high" | "medium" | "low";
 export type PlantMatchReason =
   | "exact"
   | "genus_abbreviation"
-  | "rank_only"
   | "typo"
   | "distinguishing_qualifier"
   | "different_plant";
@@ -89,7 +88,14 @@ export type NormalizedPlantName = {
    * key are the same plant by definition.
    */
   key: string;
-  /** Display form: `Genus epithet`, with qualifiers kept as typed. */
+  /**
+   * The name with its whitespace tidied and nothing else changed.
+   *
+   * The identity is internal, but its label is what the owner reads on every
+   * plant table, so it stays the wording the shop actually used. Re-casing it to
+   * botanical convention turned `Monstera Albo` and `Thai Constellation` into
+   * something nobody had typed.
+   */
   displayName: string;
   /** Genus, lowercased. Ends in `.` when the customer abbreviated it. */
   genus: string;
@@ -216,25 +222,11 @@ export function parsePlantName(raw: string): NormalizedPlantName {
   return {
     originalName,
     key,
-    displayName: canonicalDisplayName(genus, epithet, qualifiers),
+    displayName: originalName.trim().replace(/\s+/g, " "),
     genus,
     epithet,
     qualifiers: sortedQualifiers,
   };
-}
-
-/**
- * `Hoya carnosa`: genus capitalised, epithet not, which is how a botanical name
- * is written regardless of how the customer typed it. Qualifiers keep their
- * order because `sp. AH-021` reads as nonsense sorted.
- */
-function canonicalDisplayName(
-  genus: string,
-  epithet: string,
-  qualifiers: string[],
-): string {
-  const head = genus ? genus[0].toUpperCase() + genus.slice(1) : "";
-  return [head, epithet, ...qualifiers].filter(Boolean).join(" ");
 }
 
 /**
@@ -354,14 +346,11 @@ export function comparePlantNames(
     return { confidence: "medium", reason: "typo", score: 0.7 };
   }
 
+  // Same epithet and the same qualifiers, so the keys can only differ by how the
+  // genus was written — a rank word or a punctuation difference would already
+  // have produced the same key and been reported as exact above.
   if (a.epithet === b.epithet) {
-    // Same epithet, so the only difference left is how the genus was written or
-    // a rank word one side dropped. Neither changes the plant.
-    return {
-      confidence: "high",
-      reason: genus === "abbreviated" ? "genus_abbreviation" : "rank_only",
-      score: genus === "abbreviated" ? 0.95 : 0.9,
-    };
+    return { confidence: "high", reason: "genus_abbreviation", score: 0.95 };
   }
 
   // One side named a species and the other did not. `Hoya` is a standing request
