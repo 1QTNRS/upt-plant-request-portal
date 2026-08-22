@@ -4,11 +4,14 @@ import {
   GROWERS_CHOICE_IMAGE_DISCLOSURE,
 } from "../lib/growers-choice";
 import {
+  CUSTOMER_SUPPORT_EMAIL,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatCurrency,
   isOfferExpired,
+  shouldRenderCustomerSupportNote,
   type CustomerOfferResponse,
   type OfferPlantItem,
+  type RequestStatus,
   type SampleCustomerOffer,
 } from "../lib/portal";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
@@ -56,6 +59,23 @@ const photoRowStyle: React.CSSProperties = {
   gap: "8px",
 };
 
+const supportNoteStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#6d7175",
+  fontSize: "0.9em",
+  lineHeight: 1.5,
+};
+
+export function CustomerSupportNote() {
+  return (
+    <p style={supportNoteStyle}>
+      Need help with this request or need something changed? Email{" "}
+      <a href={`mailto:${CUSTOMER_SUPPORT_EMAIL}`}>{CUSTOMER_SUPPORT_EMAIL}</a>.
+      Otherwise, you can follow your request status here.
+    </p>
+  );
+}
+
 function CloseRequestButton({ formAction }: { formAction?: string }) {
   return (
     <form method="post" action={formAction}>
@@ -94,6 +114,7 @@ export function CustomerOfferView({
   backHref,
   requestClosed,
   requestPaid = false,
+  requestStatus,
   paidAt,
   paidAtIso,
   customerTimeZone,
@@ -114,6 +135,8 @@ export function CustomerOfferView({
   requestClosed: boolean;
   /** Set once `orders/paid` has closed the request. */
   requestPaid?: boolean;
+  /** Stored status. The support note only renders for New / Pending. */
+  requestStatus?: RequestStatus | null;
   paidAt?: string | null;
   paidAtIso?: string | null;
   customerTimeZone?: string | null;
@@ -157,6 +180,11 @@ export function CustomerOfferView({
   // or closed by the customer once they had rejected everything.
   const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;
   const holdEnded = isOfferExpired(offer.expiresAtIso) && !requestClosed;
+  const showSupportNote = shouldRenderCustomerSupportNote({
+    status: requestStatus,
+    requestClosed,
+    offerExpired: isOfferExpired(offer.expiresAtIso),
+  });
 
   if (submitted) {
     return (
@@ -170,6 +198,11 @@ export function CustomerOfferView({
         })}
       >
         <StatusBadge label={statusLabel} tone={statusTone} />
+        {showSupportNote ? (
+          <s-section>
+            <CustomerSupportNote />
+          </s-section>
+        ) : null}
 
         {requestPaid ? (
           <s-section>
@@ -406,6 +439,11 @@ export function CustomerOfferView({
       }
     >
       <StatusBadge label={statusLabel} tone={statusTone} />
+      {showSupportNote ? (
+        <s-section>
+          <CustomerSupportNote />
+        </s-section>
+      ) : null}
 
       <OfferExpiryBanner
         expirationDays={offer.expirationDays}

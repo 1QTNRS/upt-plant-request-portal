@@ -48,6 +48,7 @@ export default function CustomerOfferPreview() {
       backHref="/app/customer-request-form"
       requestClosed={data.requestClosed}
       requestPaid={data.requestPaid}
+      requestStatus={data.requestStatus}
       paidAt={data.paidAt}
     />
   );

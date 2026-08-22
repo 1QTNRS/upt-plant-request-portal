@@ -1210,6 +1210,64 @@ export const PAYMENT_AFTER_VOID_REASON = "Payment After Expiration/Void";
 /** The sweep successfully made an expired unpaid invoice non-payable. */
 export const INVOICE_VOIDED_REASON = "Invoice voided after expiration";
 
+/** Admin ended a request that had not reached Closed on its own. */
+export const ADMIN_OVERRIDE_CLOSE_REASON = "Admin Override Close";
+
+/** The unpaid invoice was deleted because an admin override closed the request. */
+export const INVOICE_VOIDED_BY_ADMIN_REASON =
+  "Invoice voided after admin override close";
+
+export const CUSTOMER_SUPPORT_EMAIL = "support@unsolicitedplanttalks.com";
+
+/** New and Pending are still waiting; Closed and Expired are historical. */
+export function showCustomerSupportNote(status: RequestStatus): boolean {
+  return status === "New" || status === "Pending";
+}
+
+export function shopifyAdminDraftOrderUrl(
+  shop: string,
+  draftOrderGid: string | null | undefined,
+): string | undefined {
+  if (!draftOrderGid) return undefined;
+  const store = shop.replace(/\.myshopify\.com$/i, "");
+  const numericId = draftOrderGid.split("/").pop();
+  if (!numericId) return undefined;
+  return `https://admin.shopify.com/store/${store}/draft_orders/${numericId}`;
+}
+
+/**
+ * What the admin request page may show for this request's Draft Order.
+ *
+ * A voided/deleted invoice keeps its GID internally but must not be offered as
+ * a live Shopify Admin link — that URL 404s after `draftOrderDelete`.
+ */
+export type AdminDraftOrderLinkState =
+  | { kind: "live"; href: string }
+  | { kind: "voided" }
+  | { kind: "none" };
+
+export function adminDraftOrderLinkState(input: {
+  shop: string;
+  shopifyDraftOrderGid?: string | null;
+  voidedAt?: Date | string | null;
+}): AdminDraftOrderLinkState {
+  if (input.voidedAt) return { kind: "voided" };
+  const href = shopifyAdminDraftOrderUrl(input.shop, input.shopifyDraftOrderGid);
+  if (href) return { kind: "live", href };
+  return { kind: "none" };
+}
+
+/** Active waiting states only. Closed and Expired are historical. */
+export function shouldRenderCustomerSupportNote(input: {
+  status?: RequestStatus | null;
+  requestClosed?: boolean;
+  offerExpired?: boolean;
+}): boolean {
+  if (input.requestClosed || input.offerExpired) return false;
+  if (!input.status) return false;
+  return showCustomerSupportNote(input.status);
+}
+
 /**
  * The checkout URL a customer may still be shown.
  *

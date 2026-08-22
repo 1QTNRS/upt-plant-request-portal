@@ -35,11 +35,14 @@ import {
   type StoredFulfillmentType,
 } from "../lib/growers-choice";
 import {
+  adminOverrideCloseRequest,
   closeDeclinedRequest,
   createPaymentLinkForRequest,
 } from "../lib/offer-response.server";
 import { requestPlantPatterns } from "../lib/plant-behavior.server";
 import {
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  adminDraftOrderLinkState,
   formatCurrency,
   formatDateTime,
   getDisplayRequestNumber,
@@ -62,6 +65,7 @@ import {
   getCustomerResponse,
   getDraftOrder,
   getRequest,
+  requestHasEventReason,
   linkExistingStock,
   markRequestViewed,
   moveItemPhoto,
@@ -233,6 +237,21 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       : null,
     declinedExactPlants,
     plantPatterns,
+    adminOverrideClosed: plantRequest
+      ? await requestHasEventReason(
+          shop,
+          requestId,
+          ADMIN_OVERRIDE_CLOSE_REASON,
+        )
+      : false,
+    draftOrderAdmin: draftOrder
+      ? {
+          shopifyDraftOrderGid: draftOrder.shopifyDraftOrderGid,
+          voidedAt: draftOrder.voidedAt
+            ? formatDateTime(draftOrder.voidedAt)
+            : null,
+        }
+      : null,
   };
 };
 
@@ -467,6 +486,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (intent === "close-request") {
       const result = await closeDeclinedRequest({ shop, requestId });
       if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true };
+    }
+
+    if (intent === "admin-override-close") {
+      const result = await adminOverrideCloseRequest({
+        shop,
+        requestId,
+        admin,
+        confirmed: String(form.get("confirmed")) === "true",
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error,
+          pendingAdminOverrideClose: Boolean(result.pendingAdminOverrideClose),
+        };
+      }
       return { ok: true };
     }
   } catch (error) {
@@ -1361,10 +1397,9 @@ function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
 /**
  * Ends a request whose customer accepted nothing.
  *
- * Closing it also takes its declined plants out of the EXACT PLANTS review
- * queue — `exactPlantReleaseReason` never releases a plant on a Closed request
- * — so the merchant is told that before they press it rather than after they
- * go looking for the listing.
+ * Closing does not take declined Exact Plants out of the EXACT PLANTS review
+ * queue — `exactPlantReleaseReason` still returns `customer_declined` on a
+ * Closed unpaid request.
  */
 function CloseRequestSection() {
   return (
@@ -1518,6 +1553,97 @@ function CustomerResponseSection({
   );
 }
 
+function ShopifyDraftOrderSection({
+  shop,
+  draft,
+}: {
+  shop: string;
+  draft: {
+    shopifyDraftOrderGid: string | null;
+    voidedAt: string | null;
+  } | null;
+}) {
+  if (!draft) return null;
+  const state = adminDraftOrderLinkState({
+    shop,
+    shopifyDraftOrderGid: draft.shopifyDraftOrderGid,
+    voidedAt: draft.voidedAt,
+  });
+  if (state.kind === "none") return null;
+
+  return (
+    <s-section heading="Shopify Draft Order">
+      <s-stack direction="block" gap="base">
+        {state.kind === "live" ? (
+          <>
+            <s-link href={state.href} target="_blank">
+              Open Draft Order in Shopify
+            </s-link>
+            <s-banner tone="warning">
+              <s-text>
+                The portal snapshot is what the customer accepted. Editing the
+                Draft Order in Shopify does not rewrite that history. The
+                invoice may then differ from the offer and customer response
+                recorded here.
+              </s-text>
+            </s-banner>
+          </>
+        ) : (
+          <s-text>Draft Order voided on {draft.voidedAt}</s-text>
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
+function AdminOverrideCloseSection({
+  pendingConfirmation,
+}: {
+  pendingConfirmation: boolean;
+}) {
+  if (pendingConfirmation) {
+    return (
+      <s-section heading="Close Entire Request">
+        <s-stack direction="block" gap="base">
+          <s-banner tone="warning">
+            <s-text>
+              This ends the request now. It is an admin override, not a paid or
+              completed closure. History, offer snapshots, and customer
+              accepted/rejected answers stay. Declined Exact Plants remain
+              eligible for EXACT PLANTS review. An unpaid Draft Order will be
+              voided so it cannot still be paid.
+            </s-text>
+          </s-banner>
+          <Form method="post">
+            <input type="hidden" name="intent" value="admin-override-close" />
+            <input type="hidden" name="confirmed" value="true" />
+            <s-button variant="primary" tone="critical" type="submit">
+              Confirm Close Entire Request
+            </s-button>
+          </Form>
+        </s-stack>
+      </s-section>
+    );
+  }
+
+  return (
+    <s-section heading="Close Entire Request">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          End this request even if the customer has not paid or the hold has
+          not run out. History is kept. A live unpaid invoice will be voided.
+        </s-text>
+        <Form method="post">
+          <input type="hidden" name="intent" value="admin-override-close" />
+          <s-button variant="secondary" type="submit">
+            Close Entire Request
+          </s-button>
+        </Form>
+      </s-stack>
+    </s-section>
+  );
+}
+
 /**
  * Internal only. This never reaches the customer, never blocks their request and
  * never changes what they are offered — it is here so whoever is about to source
@@ -1577,12 +1703,22 @@ export default function RequestDetail() {
     inventoryHold,
     declinedExactPlants,
     plantPatterns,
+    adminOverrideClosed,
+    draftOrderAdmin,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
+  const pendingAdminOverrideClose = Boolean(
+    actionData &&
+      "pendingAdminOverrideClose" in actionData &&
+      actionData.pendingAdminOverrideClose,
+  );
   // The action already returned these; without this the page silently ignored a
   // failed photo upload and looked as though nothing had happened.
-  const actionError = actionData && !actionData.ok ? actionData.error : null;
+  const actionError =
+    actionData && !actionData.ok && !pendingAdminOverrideClose
+      ? actionData.error
+      : null;
 
   useEffect(() => {
     const onFocus = () => revalidator.revalidate();
@@ -1632,13 +1768,26 @@ export default function RequestDetail() {
         </s-section>
       ) : null}
 
+      {adminOverrideClosed ? (
+        <s-section>
+          <s-banner tone="info">
+            <s-text>
+              This request was closed by admin override. It is not a paid or
+              completed closure. History, offer snapshots, and customer
+              accepted/rejected answers are kept. Declined Exact Plants remain
+              eligible for EXACT PLANTS review.
+            </s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
       {invoiceVoided ? (
         <s-section>
           <s-banner tone="warning">
             <s-text>
-              The Shopify invoice for this expired offer was deleted so it can
-              no longer be paid. The draft order reference, line items and
-              offer snapshot are kept here.
+              The Shopify invoice for this request was deleted so it can no
+              longer be paid. The draft order reference, line items and offer
+              snapshot are kept here.
             </s-text>
           </s-banner>
         </s-section>
@@ -1706,6 +1855,14 @@ export default function RequestDetail() {
         paymentLink={paymentLink}
         inventoryHold={inventoryHold}
       />
+
+      <ShopifyDraftOrderSection shop={shop} draft={draftOrderAdmin} />
+
+      {plantRequest.status !== "Closed" ? (
+        <AdminOverrideCloseSection
+          pendingConfirmation={pendingAdminOverrideClose}
+        />
+      ) : null}
 
       <EmailSection emails={emails} />
 

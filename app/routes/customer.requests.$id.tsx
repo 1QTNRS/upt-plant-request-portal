@@ -1,7 +1,10 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { data, useActionData, useLoaderData } from "react-router";
 
-import { CustomerOfferView } from "../components/customer-offer-view";
+import {
+  CustomerOfferView,
+  CustomerSupportNote,
+} from "../components/customer-offer-view";
 import { CustomerEnhanceScripts } from "../components/customer-enhance";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
 import {
@@ -15,6 +18,7 @@ import {
   customerStatusTone,
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
+  shouldRenderCustomerSupportNote,
 } from "../lib/portal";
 import {
   handleCustomerOfferAction,
@@ -64,6 +68,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       fedexRemovalWarning: "",
       requestClosed: false,
       requestPaid: false,
+      requestStatus: null,
       paidAt: null,
       paidAtIso: null,
       customerTimeZone: null,
@@ -225,6 +230,12 @@ export default function CustomerRequestDetail() {
             <s-text color="subdued">
               We&apos;ll notify you when your personal offer is ready.
             </s-text>
+            {shouldRenderCustomerSupportNote({
+              status: data.request.status,
+              requestClosed: data.request.status === "Closed",
+            }) ? (
+              <CustomerSupportNote />
+            ) : null}
             <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
@@ -261,6 +272,7 @@ export default function CustomerRequestDetail() {
       backHref={data.backHref}
       requestClosed={data.requestClosed}
       requestPaid={data.requestPaid}
+      requestStatus={data.request?.status ?? data.requestStatus}
       paidAt={data.paidAt}
       paidAtIso={data.paidAtIso}
       customerTimeZone={data.customerTimeZone}

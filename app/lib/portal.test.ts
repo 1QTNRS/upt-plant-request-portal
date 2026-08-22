@@ -9,9 +9,16 @@ import {
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
   buildResponseSummaryEmail,
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  CUSTOMER_SUPPORT_EMAIL,
+  INVOICE_VOIDED_BY_ADMIN_REASON,
   INVOICE_VOIDED_REASON,
   PAYMENT_AFTER_VOID_REASON,
+  adminDraftOrderLinkState,
   payableInvoiceUrl,
+  shopifyAdminDraftOrderUrl,
+  shouldRenderCustomerSupportNote,
+  showCustomerSupportNote,
   computeBehaviorFlags,
   customerStatusTone,
   formatCustomerStatusLabel,
@@ -649,6 +656,80 @@ describe("naming what is on offer", () => {
     assert.match(getOfferUrgencyMessage(false), /These plants are reserved/);
     assert.doesNotMatch(getOfferUrgencyMessage(false), /exact/i);
     assert.match(getOfferHoldMessage("Aug 26", false), /These plants are being held for you/);
+  });
+});
+
+describe("admin Draft Order links", () => {
+  const shop = "upt-plant-request-dev.myshopify.com";
+  const gid = "gid://shopify/DraftOrder/9001";
+
+  it("builds the Shopify Admin URL from the stored GID", () => {
+    assert.equal(
+      shopifyAdminDraftOrderUrl(shop, gid),
+      "https://admin.shopify.com/store/upt-plant-request-dev/draft_orders/9001",
+    );
+  });
+
+  it("shows a live link only when a GID exists and the draft is not voided", () => {
+    assert.deepEqual(
+      adminDraftOrderLinkState({ shop, shopifyDraftOrderGid: gid }),
+      {
+        kind: "live",
+        href: "https://admin.shopify.com/store/upt-plant-request-dev/draft_orders/9001",
+      },
+    );
+  });
+
+  it("shows historical voided status instead of a live link", () => {
+    assert.deepEqual(
+      adminDraftOrderLinkState({
+        shop,
+        shopifyDraftOrderGid: gid,
+        voidedAt: new Date("2026-08-22T12:00:00Z"),
+      }),
+      { kind: "voided" },
+    );
+  });
+
+  it("shows nothing when no Draft Order exists", () => {
+    assert.deepEqual(adminDraftOrderLinkState({ shop }), { kind: "none" });
+    assert.equal(shopifyAdminDraftOrderUrl(shop, null), undefined);
+  });
+});
+
+describe("the customer support note", () => {
+  it("is for New and Pending only", () => {
+    assert.equal(showCustomerSupportNote("New"), true);
+    assert.equal(showCustomerSupportNote("Pending"), true);
+    assert.equal(showCustomerSupportNote("Closed"), false);
+    assert.equal(showCustomerSupportNote("Expired"), false);
+    assert.equal(CUSTOMER_SUPPORT_EMAIL, "support@unsolicitedplanttalks.com");
+    assert.equal(ADMIN_OVERRIDE_CLOSE_REASON, "Admin Override Close");
+    assert.equal(
+      INVOICE_VOIDED_BY_ADMIN_REASON,
+      "Invoice voided after admin override close",
+    );
+  });
+
+  it("stays hidden on a Closed or expired offer even if the stored status is still Pending", () => {
+    assert.equal(
+      shouldRenderCustomerSupportNote({
+        status: "Pending",
+        requestClosed: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRenderCustomerSupportNote({
+        status: "Pending",
+        offerExpired: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRenderCustomerSupportNote({ status: "Closed" }),
+      false,
+    );
   });
 });
 

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
 import {
+  CUSTOMER_SUPPORT_EMAIL,
   formatDateTime,
   getOfferHoldMessage,
   getOfferUrgencyMessage,
@@ -598,5 +599,76 @@ describe("the FedEx removal warning", () => {
     assert.match(html, /I Understand, Remove Upgrade/);
     assert.match(html, /Keep FedEx Upgrade/);
     assert.match(html, /value="keep-fedex"/);
+  });
+});
+
+describe("the customer support note", () => {
+  const wording = [
+    "Need help with this request or need something changed",
+    CUSTOMER_SUPPORT_EMAIL,
+    "follow your request status here",
+  ];
+
+  it("shows on an unanswered live offer and points the customer back to the portal", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      requestStatus: "Pending",
+      statusLabel: "Offer Ready for Review",
+    });
+
+    for (const phrase of wording) {
+      assert.ok(html.includes(phrase), `missing: ${phrase}`);
+    }
+    assert.match(html, new RegExp(`mailto:${CUSTOMER_SUPPORT_EMAIL}`));
+    assert.ok(!html.includes("Contact us for updates"));
+    assert.ok(!html.includes("questions about the status"));
+    assert.ok(!html.includes("Open Draft Order in Shopify"));
+    assert.ok(!html.includes("admin.shopify.com/store"));
+  });
+
+  it("shows while payment is still outstanding", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+      invoiceUrl: "https://upt.myshopify.com/invoice/abc",
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      requestStatus: "Pending",
+      statusLabel: "Needs Payment",
+    });
+
+    assert.ok(html.includes(CUSTOMER_SUPPORT_EMAIL));
+    assert.ok(html.includes("follow your request status here"));
+  });
+
+  it("is hidden on a historical Closed request", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "reject" }]),
+      fedexRemovalWarning: "",
+      requestClosed: true,
+      requestStatus: "Closed",
+      statusLabel: "Closed",
+    });
+
+    assert.ok(!html.includes(CUSTOMER_SUPPORT_EMAIL));
+    assert.ok(!html.includes("Need help with this request"));
+    assert.ok(!html.includes("Open Draft Order in Shopify"));
+  });
+
+  it("is hidden after the hold ends", () => {
+    const html = render({
+      offer: offer({ expiresAt: yesterday() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      requestStatus: "Expired",
+    });
+
+    assert.ok(!html.includes(CUSTOMER_SUPPORT_EMAIL));
+    assert.ok(!html.includes("Need help with this request"));
   });
 });

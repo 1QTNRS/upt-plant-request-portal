@@ -292,6 +292,31 @@ describe("confirming the FedEx removal", () => {
   });
 });
 
+describe("customers never see the admin Draft Order link", () => {
+  it("is absent from every customer-facing request surface", () => {
+    const files = [
+      path.join(REPO_ROOT, "app", "components", "customer-offer-view.tsx"),
+      path.join(REPO_ROOT, "app", "routes", "customer.requests.$id.tsx"),
+      path.join(REPO_ROOT, "app", "routes", "customer._index.tsx"),
+    ];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      assert.ok(
+        !source.includes("Open Draft Order in Shopify"),
+        `${file} must not expose the admin Draft Order control`,
+      );
+      assert.ok(
+        !source.includes("shopifyAdminDraftOrderUrl"),
+        `${file} must not build a Shopify Admin draft-order URL`,
+      );
+      assert.ok(
+        !source.includes("admin.shopify.com/store"),
+        `${file} must not hard-code a Shopify Admin draft-order URL`,
+      );
+    }
+  });
+});
+
 describe("the offer response works without JavaScript", () => {
   const source = readFileSync(
     path.join(REPO_ROOT, "app", "components", "customer-offer-view.tsx"),

@@ -7,8 +7,10 @@ import {
   VOID_CLAIM_MS,
   voidExpiredDraftOrder,
   voidExpiredDraftOrders,
+  voidUnpaidDraftOrder,
 } from "./draft-order-void.server";
 import {
+  INVOICE_VOIDED_BY_ADMIN_REASON,
   INVOICE_VOIDED_REASON,
   PAYMENT_AFTER_VOID_REASON,
 } from "./portal";
@@ -312,6 +314,62 @@ describe("voiding an expired unpaid invoice", { concurrency: false }, () => {
     });
     assert.ok(voided.voidedAt);
     assert.equal(voided.voidAttempts, 2);
+  });
+
+  it("voids an unpaid Pending invoice when asked directly", async () => {
+    const request = await seedExpiredWithDraft(merchantShop, "REQ305A", {
+      status: "Pending",
+    });
+    const calls: Call[] = [];
+    const outcome = await voidUnpaidDraftOrder(
+      merchantShop,
+      request.id,
+      fakeAdmin(
+        {
+          PlantRequestDraftOrderStatus: openStatus,
+          DeletePlantRequestDraftOrder: deleted,
+        },
+        calls,
+      ),
+      new Date(),
+      { reason: INVOICE_VOIDED_BY_ADMIN_REASON },
+    );
+
+    assert.equal(outcome, "voided");
+    assert.ok(
+      calls.some((call) => call.operation === "DeletePlantRequestDraftOrder"),
+    );
+    const draft = await prisma.draftOrderReference.findUniqueOrThrow({
+      where: { requestId: request.id },
+    });
+    assert.ok(draft.voidedAt);
+    assert.equal(draft.shopifyDraftOrderGid, DRAFT_GID);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId: request.id, reason: INVOICE_VOIDED_BY_ADMIN_REASON },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId: request.id, reason: INVOICE_VOIDED_REASON },
+      }),
+      0,
+    );
+  });
+
+  it("does not let the expiration entry point void a still-Pending invoice", async () => {
+    const request = await seedExpiredWithDraft(merchantShop, "REQ305B", {
+      status: "Pending",
+    });
+    assert.equal(
+      await voidExpiredDraftOrder(merchantShop, request.id, fakeAdmin({}, [])),
+      "skipped",
+    );
+    const draft = await prisma.draftOrderReference.findUniqueOrThrow({
+      where: { requestId: request.id },
+    });
+    assert.equal(draft.voidedAt, null);
   });
 
   it("skips a request that is not expired, already paid, or already voided", async () => {

@@ -1396,6 +1396,18 @@ export async function saveCustomerResponse(
   }
 }
 
+export async function requestHasEventReason(
+  shop: string,
+  requestId: string,
+  reason: string,
+): Promise<boolean> {
+  const event = await prisma.statusEvent.findFirst({
+    where: { requestId, reason, request: { shop } },
+    select: { id: true },
+  });
+  return Boolean(event);
+}
+
 export async function closeRequest(
   shop: string,
   requestId: string,

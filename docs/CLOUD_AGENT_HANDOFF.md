@@ -37,6 +37,9 @@ Implemented end-to-end in app code:
 - Analytics from the database (FedEx excluded from plant revenue/counts)
 - Settings: FedEx warning text and admin notification email
 - Email outbox rows for request received, admin new-request, offer ready, confirmation, checkout, expiration reminder
+- Admin override **Close Entire Request** (confirmation required; writes `Admin Override Close`; voids an unpaid Draft Order; declined Exact Plants stay EXACT PLANTS-eligible; Grower's Choice stays excluded)
+- Admin-only **Open Draft Order in Shopify** on request detail when a live GID exists; voided drafts show the void timestamp instead of a live link
+- Customer request-detail support note on New / Pending only (`support@unsolicitedplanttalks.com`), pointing customers back to the portal for ordinary tracking
 
 Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ8` (declined Thai Constellation + Not Available String of Pearls) for listing review.
 

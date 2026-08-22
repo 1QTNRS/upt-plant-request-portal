@@ -103,7 +103,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The stored status of a request whose offer has been sent and has neither been paid for nor run out.",
     detail: [
       "Sending the offer sets Pending, and nothing revises it while the offer is live. Answering the offer does not change the stored status: a customer who has accepted, one who has declined everything and one who has not opened the offer are all Pending.",
-      "Three things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. And a request where nothing is owed can be closed — by the customer's Close Request button on an offer where nothing was available or where they declined everything, or by the admin closing a request whose customer declined every item.",
+      "Four things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. A request where nothing is owed can be closed — by the customer's Close Request button on an offer where nothing was available or where they declined everything, or by the admin closing a request whose customer declined every item. And an admin can override-close any still-open request with `adminOverrideCloseRequest`.",
       "A customer is never shown the word Pending. `formatCustomerStatusLabel` derives one of three labels from it instead: Offer Ready for Review, Needs Payment or No Payment Needed.",
     ],
     citations: [
@@ -140,7 +140,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The stored status of a finished request: paid for, or closed because nothing was owed.",
     detail: [
       "`orders/paid` closes a paid request and marks its accepted items Sold. A redelivery of the webhook for an already-paid request is ignored rather than appending a second status event.",
-      "A request can also be closed with nothing paid. The customer gets a Close Request button when nothing on the offer was available, or when they declined every plant. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires.",
+      "A request can also be closed with nothing paid. The customer gets a Close Request button when nothing on the offer was available, or when they declined every plant. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires. `adminOverrideCloseRequest` is the separate admin-only path that can end any still-open request; it writes `Admin Override Close`, keeps history, and voids an unpaid Draft Order rather than leaving a payable invoice behind.",
       "Closing does not withdraw a declined exact plant from the EXACT PLANTS queue. `exactPlantReleaseReason` returns `customer_declined` even on a Closed request, deliberately: Closed means paid or means the customer wanted nothing, and the second kind holds precisely the plants that queue exists for.",
     ],
     citations: [

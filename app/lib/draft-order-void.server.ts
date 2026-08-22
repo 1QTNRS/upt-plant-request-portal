@@ -4,6 +4,15 @@ import {
   INVOICE_VOIDED_REASON,
   PAYMENT_AFTER_VOID_REASON,
 } from "./portal";
+
+export type VoidUnpaidDraftOrderOptions = {
+  /**
+   * StatusEvent reason written after a successful delete. Defaults to the
+   * expiration-sweep wording. Admin override close uses a different reason so
+   * the two closures stay distinguishable.
+   */
+  reason?: string;
+};
 import {
   deleteDraftOrder,
   readDraftOrderStatus,
@@ -63,7 +72,12 @@ async function claimVoid(
   return count === 1;
 }
 
-async function markVoided(requestId: string, now: Date, reason = INVOICE_VOIDED_REASON) {
+async function markVoided(
+  requestId: string,
+  now: Date,
+  reason: string,
+  status: string,
+) {
   await prisma.$transaction([
     prisma.draftOrderReference.update({
       where: { requestId },
@@ -72,8 +86,8 @@ async function markVoided(requestId: string, now: Date, reason = INVOICE_VOIDED_
     prisma.statusEvent.create({
       data: {
         requestId,
-        fromStatus: "Expired",
-        toStatus: "Expired",
+        fromStatus: status,
+        toStatus: status,
         reason,
       },
     }),
@@ -81,17 +95,22 @@ async function markVoided(requestId: string, now: Date, reason = INVOICE_VOIDED_
 }
 
 /**
- * Makes the Shopify invoice for one expired unpaid request unpayable.
+ * Makes one unpaid Draft Order unpayable.
  *
  * Shopify has no void state. `draftOrderDelete` is the mechanism a live store
  * confirmed: the checkout URL then 404s with "This invoice is not available"
  * and that draft's reserved inventory returns immediately.
+ *
+ * Does not require Expired — admin override close uses this on Pending/New so a
+ * payable invoice is not left behind. Paid requests and COMPLETED drafts are
+ * never deleted.
  */
-export async function voidExpiredDraftOrder(
+export async function voidUnpaidDraftOrder(
   shop: string,
   requestId: string,
   admin: GraphqlClient | undefined,
   now = new Date(),
+  options: VoidUnpaidDraftOrderOptions = {},
 ): Promise<VoidOutcome> {
   const request = await prisma.plantRequest.findFirst({
     where: { id: requestId, shop },
@@ -99,12 +118,13 @@ export async function voidExpiredDraftOrder(
   });
   if (!request?.draftOrder) return "skipped";
   if (request.paidAt) return "skipped";
-  if (request.status !== "Expired") return "skipped";
   if (request.draftOrder.voidedAt) return "already_voided";
   if (request.draftOrder.voidError === COMPLETED_BEFORE_VOID) return "completed";
   if (!request.draftOrder.invoiceUrl && !request.draftOrder.shopifyDraftOrderGid) {
     return "skipped";
   }
+
+  const reason = options.reason ?? INVOICE_VOIDED_REASON;
 
   if (!(await claimVoid(requestId, now))) {
     return isStaleClaim(request.draftOrder.voidStartedAt, now)
@@ -115,7 +135,7 @@ export async function voidExpiredDraftOrder(
   const gid = request.draftOrder.shopifyDraftOrderGid;
   if (!admin || !gid) {
     if (canStubShopifyWrites(shop)) {
-      await markVoided(requestId, now);
+      await markVoided(requestId, now, reason, request.status);
       return "voided";
     }
     await prisma.draftOrderReference.update({
@@ -128,7 +148,7 @@ export async function voidExpiredDraftOrder(
   try {
     const live = await readDraftOrderStatus(admin, gid);
     if (!live) {
-      await markVoided(requestId, now);
+      await markVoided(requestId, now, reason, request.status);
       return "voided";
     }
     if (live.status === "COMPLETED" || live.orderGid) {
@@ -140,7 +160,7 @@ export async function voidExpiredDraftOrder(
     }
 
     await deleteDraftOrder(admin, gid);
-    await markVoided(requestId, now);
+    await markVoided(requestId, now, reason, request.status);
     return "voided";
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -150,6 +170,26 @@ export async function voidExpiredDraftOrder(
     });
     return "failed";
   }
+}
+
+/**
+ * Expiration-sweep entry point. Only Expired unpaid drafts are in scope;
+ * Pending invoices stay live until paid, superseded, or admin override close.
+ */
+export async function voidExpiredDraftOrder(
+  shop: string,
+  requestId: string,
+  admin: GraphqlClient | undefined,
+  now = new Date(),
+): Promise<VoidOutcome> {
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: { status: true },
+  });
+  if (!request || request.status !== "Expired") return "skipped";
+  return voidUnpaidDraftOrder(shop, requestId, admin, now, {
+    reason: INVOICE_VOIDED_REASON,
+  });
 }
 
 /**
