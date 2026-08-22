@@ -9,6 +9,10 @@ import type {
 
 import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
+import {
+  formatCustomerDateTime,
+  normalizeIanaTimeZone,
+} from "./customer-time";
 import { isDemoDataEnabled } from "./environment.server";
 import {
   normalizeStoredFulfillmentType,
@@ -278,8 +282,11 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
     submittedDate: formatDate(request.submittedAt),
     submittedAtIso: request.submittedAt.toISOString(),
     closedAt: request.closedAt ? formatDateTime(request.closedAt) : undefined,
+    closedAtIso: request.closedAt?.toISOString(),
     expiredAt: request.expiredAt ? formatDateTime(request.expiredAt) : undefined,
+    expiredAtIso: request.expiredAt?.toISOString(),
     paidAt: request.paidAt ? formatDateTime(request.paidAt) : undefined,
+    paidAtIso: request.paidAt?.toISOString(),
     items: request.items.map(toPlantItem),
     sentOffer: request.offer ? toSentOffer(request.offer, request.id) : undefined,
     hasPayableItems: request.offer
@@ -475,6 +482,38 @@ export async function findOrCreateCustomer(
         : {}),
     },
   });
+}
+
+export async function getCustomerTimeZone(
+  shop: string,
+  email: string,
+): Promise<string | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const row = await prisma.customerProfile.findUnique({
+    where: { shop_email: { shop, email: normalized } },
+    select: { timeZone: true },
+  });
+  return normalizeIanaTimeZone(row?.timeZone);
+}
+
+/**
+ * Writes a captured IANA zone onto that shop+email profile only.
+ * A forged or empty value is ignored; another customer is never updated.
+ */
+export async function saveCustomerTimeZone(
+  shop: string,
+  email: string,
+  raw: unknown,
+): Promise<string | null> {
+  const timeZone = normalizeIanaTimeZone(raw);
+  const normalized = email.trim().toLowerCase();
+  if (!timeZone || !normalized) return null;
+  const updated = await prisma.customerProfile.updateMany({
+    where: { shop, email: normalized },
+    data: { timeZone },
+  });
+  return updated.count > 0 ? timeZone : null;
 }
 
 export async function listRequests(shop: string): Promise<PlantRequest[]> {
@@ -1128,7 +1167,8 @@ export async function buildCustomerOffer(
   const request = await loadRequest(shop, requestId);
   if (!request?.offer) return null;
 
-  const expiresAt = formatDateTime(request.offer.expiresAt);
+  const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
+  const expiresAt = formatCustomerDateTime(request.offer.expiresAt, timeZone);
   const allExactPlants = offerIsAllExactPlants(request.offer.items);
   return {
     title: "Your Personal Plant Offer from UPT",
@@ -1166,6 +1206,7 @@ function toResponseDto(
     linkedImageUrl?: string | null;
   }> },
   closedAt?: Date | null,
+  timeZone?: string | null,
 ): CustomerOfferResponse {
   const items = (response.items ?? []).map((item) => ({
     offerItemId: item.id,
@@ -1195,16 +1236,16 @@ function toResponseDto(
     customerName: response.customerName,
     customerEmail: response.customerEmail,
     shopifyCustomerId: response.shopifyCustomerId ?? undefined,
-    respondedAt: formatDateTime(response.respondedAt),
+    respondedAt: formatCustomerDateTime(response.respondedAt, timeZone),
     respondedAtIso: response.respondedAt.toISOString(),
     offerExpiresAt: response.offerExpiresAt
-      ? formatDateTime(response.offerExpiresAt)
+      ? formatCustomerDateTime(response.offerExpiresAt, timeZone)
       : undefined,
     fedexUpgradeSelected: response.fedexUpgradeSelected,
     fedexUpgradePrice: response.fedexUpgradePrice,
     hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
     items,
-    closedAt: closedAt ? formatDateTime(closedAt) : undefined,
+    closedAt: closedAt ? formatCustomerDateTime(closedAt, timeZone) : undefined,
   };
 }
 
@@ -1220,7 +1261,8 @@ export async function getCustomerResponse(
     include: { items: { orderBy: OFFER_ITEM_ORDER } },
   });
   if (!withItems) return null;
-  return toResponseDto(withItems, request.closedAt);
+  const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
+  return toResponseDto(withItems, request.closedAt, timeZone);
 }
 
 /**
@@ -1344,13 +1386,26 @@ export async function saveCustomerResponse(
       include: { items: true },
     });
 
-    return toResponseDto(saved, request.closedAt);
+    const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
+    return toResponseDto(saved, request.closedAt, timeZone);
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       throw new OfferAlreadyAnsweredError();
     }
     throw error;
   }
+}
+
+export async function requestHasEventReason(
+  shop: string,
+  requestId: string,
+  reason: string,
+): Promise<boolean> {
+  const event = await prisma.statusEvent.findFirst({
+    where: { requestId, reason, request: { shop } },
+    select: { id: true },
+  });
+  return Boolean(event);
 }
 
 export async function closeRequest(

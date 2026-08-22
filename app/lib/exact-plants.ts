@@ -5,6 +5,30 @@ export const EXACT_PLANT_PRODUCT_TYPE = "Exact Plant";
 export const EXACT_PLANT_VENDOR = "UPT";
 export const EXACT_PLANT_ITEM_TAG_PREFIX = "upt-declined-item:";
 
+/** Admin chose not to create an EXACT PLANTS listing for an eligible plant. */
+export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";
+
+/**
+ * Whether the queue may drop this item without touching Shopify.
+ *
+ * A product GID or a `listed` / in-flight `creating` row means a listing
+ * already exists or is being created. Dismiss is only for eligible plants
+ * that have not been listed yet.
+ */
+export function canDismissExactPlantFromQueue(input: {
+  dismissedAt?: Date | string | null;
+  listing?: {
+    status?: string | null;
+    shopifyProductGid?: string | null;
+  } | null;
+}): boolean {
+  if (input.dismissedAt) return false;
+  if (input.listing?.shopifyProductGid) return false;
+  if (input.listing?.status === "listed") return false;
+  if (input.listing?.status === "creating") return false;
+  return true;
+}
+
 export type ExactPlantListingStatus = "listed" | "failed";
 
 export type ExactPlantListingDraft = {

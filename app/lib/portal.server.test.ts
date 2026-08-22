@@ -8,6 +8,7 @@ import {
   buildCustomerOffer,
   closeRequest,
   getCustomerResponse,
+  getCustomerTimeZone,
   getRequest,
   getShopSettings,
   listCustomerRequests,
@@ -16,13 +17,18 @@ import {
   removeItemPhoto,
   reorderItemPhotos,
   saveCustomerResponse,
+  saveCustomerTimeZone,
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
   updateShopSettings,
 } from "./portal.server";
 import { ensureShopSeeded } from "./seed-demo.server";
-import { matchesAdminSearch } from "./portal";
+import {
+  filterAdminDashboardRequests,
+  matchesAdminSearch,
+  summarizeAdminDashboardStats,
+} from "./portal";
 
 const shop = `${DEMO_SHOP}-test`;
 
@@ -58,6 +64,27 @@ describe("plant request persistence", () => {
       ),
       true,
     );
+  });
+
+  it("filters the dashboard list by stored status without changing stat counts", async () => {
+    const requests = await listRequests(shop);
+    const stats = summarizeAdminDashboardStats(requests);
+    const pendingAlex = filterAdminDashboardRequests(
+      requests,
+      "Alex Rivera",
+      "Pending",
+    );
+    assert.ok(pendingAlex.length > 0);
+    assert.ok(pendingAlex.every((request) => request.status === "Pending"));
+    assert.ok(
+      pendingAlex.every((request) => request.customer === "Alex Rivera"),
+    );
+    assert.equal(
+      summarizeAdminDashboardStats(requests).pending,
+      stats.pending,
+    );
+    assert.ok(stats.pending >= pendingAlex.length);
+    assert.ok(stats.newRequests + stats.pending + stats.closed + stats.expired >= requests.length);
   });
 
   it("keeps customer requests private by account identity", async () => {
@@ -622,5 +649,154 @@ describe("exact plant photos before the offer is sent", () => {
       [c.id, a.id, b.id],
       "a partial list must not drop a photo",
     );
+  });
+
+  it("does not reset another item's availability, reason, price, weight or notes", async () => {
+    const created = await submitCustomerRequest(photoShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [
+        { plantName: "Not Available Plant" },
+        { plantName: "Photo Plant" },
+      ],
+    });
+    const [held, photographed] = created.items;
+
+    await updateRequestItem(photoShop, {
+      requestId: created.id,
+      itemId: held.id,
+      availability: "not_available",
+      unavailableReason: "currently not in UPT prop circulation",
+      price: 85,
+      weightLbs: 2.5,
+      customerFacingNotes: "Back in spring.",
+    });
+    await updateRequestItem(photoShop, {
+      requestId: created.id,
+      itemId: photographed.id,
+      availability: "available",
+      price: 40,
+      weightLbs: 1,
+      customerFacingNotes: "Exact plant.",
+    });
+
+    await addItemPhotos(photoShop, created.id, photographed.id, [
+      { url: "https://cdn.example.com/other.jpg" },
+    ]);
+    await reorderItemPhotos(photoShop, created.id, photographed.id, [
+      (await photosOf(created.id, photographed.id))[0].id,
+    ]);
+
+    const after = await getRequest(photoShop, created.id);
+    const stillHeld = after?.items.find((item) => item.id === held.id);
+    const stillPhoto = after?.items.find((item) => item.id === photographed.id);
+    assert.equal(stillHeld?.availability, "not_available");
+    assert.equal(stillHeld?.fulfillmentType, "not_available");
+    assert.equal(stillHeld?.unavailableReason, "currently not in UPT prop circulation");
+    assert.equal(stillHeld?.price, 85);
+    assert.equal(stillHeld?.weightLbs, 2.5);
+    assert.equal(stillHeld?.customerFacingNotes, "Back in spring.");
+    assert.equal(stillPhoto?.availability, "available");
+    assert.equal(stillPhoto?.price, 40);
+    assert.equal(stillPhoto?.photos.length, 1);
+
+    await removeItemPhoto(
+      photoShop,
+      created.id,
+      photographed.id,
+      stillPhoto!.photos[0].id,
+    );
+    const afterRemove = await getRequest(photoShop, created.id);
+    const heldAfterRemove = afterRemove?.items.find((item) => item.id === held.id);
+    assert.equal(heldAfterRemove?.availability, "not_available");
+    assert.equal(heldAfterRemove?.unavailableReason, "currently not in UPT prop circulation");
+    assert.equal(heldAfterRemove?.price, 85);
+  });
+});
+
+describe("customer timezone is stored per profile", () => {
+  const tzShop = `${DEMO_SHOP}-tz-test`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: tzShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: tzShop } });
+  };
+
+  before(purge);
+  after(purge);
+
+  it("saves a real IANA zone and never writes it onto another customer", async () => {
+    await submitCustomerRequest(tzShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera" }],
+    });
+    await submitCustomerRequest(tzShop, {
+      name: "Jordan Lee",
+      email: "jordan.lee@example.com",
+      items: [{ plantName: "Hoya" }],
+    });
+
+    assert.equal(
+      await saveCustomerTimeZone(tzShop, "alex.rivera@example.com", "America/Los_Angeles"),
+      "America/Los_Angeles",
+    );
+    assert.equal(
+      await saveCustomerTimeZone(tzShop, "jordan.lee@example.com", "America/New_York"),
+      "America/New_York",
+    );
+    assert.equal(
+      await saveCustomerTimeZone(tzShop, "alex.rivera@example.com", "Not/AZone"),
+      null,
+    );
+
+    assert.equal(
+      await getCustomerTimeZone(tzShop, "alex.rivera@example.com"),
+      "America/Los_Angeles",
+    );
+    assert.equal(
+      await getCustomerTimeZone(tzShop, "jordan.lee@example.com"),
+      "America/New_York",
+    );
+
+    const alex = await prisma.customerProfile.findUnique({
+      where: {
+        shop_email: { shop: tzShop, email: "alex.rivera@example.com" },
+      },
+    });
+    assert.equal(alex?.timeZone, "America/Los_Angeles");
+    assert.equal(alex?.createdAt.toISOString().endsWith("Z"), true);
+  });
+
+  it("formats the customer offer deadline in that customer's zone", async () => {
+    const created = await submitCustomerRequest(tzShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera" }],
+    });
+    await updateRequestItem(tzShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      price: 50,
+      weightLbs: 1,
+    });
+    await addItemPhotos(tzShop, created.id, created.items[0].id, [
+      { url: "https://cdn.example.com/tz.jpg" },
+    ]);
+    await saveCustomerTimeZone(
+      tzShop,
+      "alex.rivera@example.com",
+      "America/Los_Angeles",
+    );
+    const offered = await sendOffer(tzShop, created.id, 3);
+    const offer = await buildCustomerOffer(tzShop, created.id);
+    assert.ok(offer);
+    assert.match(offer!.expiresAt, /P[SD]T/);
+    assert.equal(
+      offer!.expiresAtIso,
+      offered?.sentOffer?.expiresAtIso ?? offer!.expiresAtIso,
+    );
+    assert.ok(offer!.expiresAtIso.endsWith("Z"));
   });
 });

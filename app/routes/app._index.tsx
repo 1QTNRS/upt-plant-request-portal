@@ -5,10 +5,14 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
+  ADMIN_DASHBOARD_STATUS_FILTERS,
+  filterAdminDashboardRequests,
   formatPlantsSummary,
   getDisplayRequestNumber,
-  matchesAdminSearch,
+  parseAdminDashboardStatusFilter,
   requestStatusTone,
+  summarizeAdminDashboardStats,
+  type AdminDashboardStatusFilter,
   type PlantRequest,
   type RequestStatus,
 } from "../lib/portal";
@@ -37,29 +41,22 @@ type DashboardData = {
     submittedDate: string;
   }>;
   query: string;
+  statusFilter: AdminDashboardStatusFilter;
 };
 
-function toDashboard(requests: PlantRequest[], query: string): DashboardData {
-  const filtered = requests.filter((request) =>
-    matchesAdminSearch(
-      {
-        customer: request.customer,
-        email: request.email,
-        requestNumber: getDisplayRequestNumber(request),
-        items: request.items,
-      },
-      query,
-    ),
-  );
+function toDashboard(
+  requests: PlantRequest[],
+  query: string,
+  statusFilter: AdminDashboardStatusFilter,
+): DashboardData {
+  const filtered = filterAdminDashboardRequests(requests, query, statusFilter);
 
   return {
     query,
-    stats: {
-      newRequests: requests.filter((request) => request.status === "New").length,
-      pending: requests.filter((request) => request.status === "Pending").length,
-      closed: requests.filter((request) => request.status === "Closed").length,
-      expired: requests.filter((request) => request.status === "Expired").length,
-    },
+    statusFilter,
+    // Counts stay on the full shop dataset so the Overview cards do not
+    // shrink when the list is filtered.
+    stats: summarizeAdminDashboardStats(requests),
     requests: filtered.map((request) => ({
       id: request.id,
       requestNumber: getDisplayRequestNumber(request),
@@ -75,9 +72,11 @@ function toDashboard(requests: PlantRequest[], query: string): DashboardData {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
-  const query = new URL(request.url).searchParams.get("q") ?? "";
+  const params = new URL(request.url).searchParams;
+  const query = params.get("q") ?? "";
+  const statusFilter = parseAdminDashboardStatusFilter(params.get("status"));
   const requests = await listRequests(shop);
-  return toDashboard(requests, query);
+  return toDashboard(requests, query, statusFilter);
 };
 
 export default function Dashboard() {
@@ -129,14 +128,43 @@ export default function Dashboard() {
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
             <input type="hidden" name="q" value={query} />
+            <label>
+              <s-text color="subdued">Status</s-text>
+              <select
+                name="status"
+                defaultValue={data.statusFilter}
+                aria-label="Filter by status"
+                style={{
+                  display: "block",
+                  marginTop: "6px",
+                  minHeight: "36px",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #c9cccf",
+                  background: "#fff",
+                  font: "inherit",
+                }}
+              >
+                {ADMIN_DASHBOARD_STATUS_FILTERS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
             <s-button variant="primary" type="submit">
               Search
             </s-button>
           </WrappingRow>
         </Form>
         <s-text color="subdued">
-          Showing {visibleCount} request{visibleCount === 1 ? "" : "s"}
-          {data.query ? ` matching “${data.query}”` : ""}.
+          {`Showing ${visibleCount} request${visibleCount === 1 ? "" : "s"}${
+            data.query ? ` matching “${data.query}”` : ""
+          }${
+            data.statusFilter !== "All"
+              ? ` with status ${data.statusFilter}`
+              : ""
+          }.`}
         </s-text>
       </s-section>
 

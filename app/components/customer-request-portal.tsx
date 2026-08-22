@@ -7,6 +7,7 @@ import {
   type CustomerMyRequestRow,
   type RequestStatus,
 } from "../lib/portal";
+import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 
 export type PlantLine = {
   plantName: string;
@@ -50,6 +51,7 @@ export function CustomerRequestPortal({
   browseAction,
   plantLines = [EMPTY_PLANT_LINE],
   canSubmit = true,
+  customerTimeZone = null,
 }: {
   loggedIn: boolean;
   name: string;
@@ -72,6 +74,7 @@ export function CustomerRequestPortal({
    */
   plantLines?: PlantLine[];
   canSubmit?: boolean;
+  customerTimeZone?: string | null;
 }) {
 
   if (!loggedIn) {
@@ -129,6 +132,7 @@ export function CustomerRequestPortal({
       </s-section>
 
       <form method="post" action={formAction}>
+        <input type="hidden" name="customerTimeZone" defaultValue="" />
         <s-section heading="Plants requested">
           <s-stack direction="block" gap="large">
             {plantLines.map((line, index) => (
@@ -260,6 +264,17 @@ export function CustomerRequestPortal({
           </s-table>
         )}
       </s-section>
+      <form
+        method="post"
+        action={formAction}
+        data-tz-capture
+        data-known-tz={customerTimeZone ?? ""}
+        hidden
+      >
+        <input type="hidden" name="intent" value="save-timezone" />
+        <input type="hidden" name="customerTimeZone" defaultValue="" />
+      </form>
+      <CustomerEnhanceScripts />
     </s-page>
   );
 }
@@ -304,8 +319,10 @@ export function OfferExpiryBanner({
             <strong>This offer has expired</strong>
           </s-text>
           <s-text>
-            The hold ended on {expiresAt}. These plants are no longer held
-            for you and this offer can no longer be answered.
+            The hold ended on{" "}
+            <CustomerTime iso={expiresAtIso}>{expiresAt}</CustomerTime>. These
+            plants are no longer held for you and this offer can no longer be
+            answered.
           </s-text>
           <s-text>
             The previous checkout/payment link is no longer valid. You may
@@ -325,7 +342,9 @@ export function OfferExpiryBanner({
         </s-text>
         <s-text>{urgencyMessage}</s-text>
         <s-text>{holdMessage}</s-text>
-        <s-text color="subdued">Expires: {expiresAt}</s-text>
+        <s-text color="subdued">
+          Expires: <CustomerTime iso={expiresAtIso}>{expiresAt}</CustomerTime>
+        </s-text>
         {remaining ? <s-text color="subdued">{remaining}</s-text> : null}
       </s-stack>
     </s-banner>

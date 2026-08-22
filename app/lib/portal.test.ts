@@ -9,9 +9,17 @@ import {
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
   buildResponseSummaryEmail,
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  CUSTOMER_SUPPORT_EMAIL,
+  INVOICE_VOIDED_BY_ADMIN_REASON,
   INVOICE_VOIDED_REASON,
   PAYMENT_AFTER_VOID_REASON,
+  adminDraftOrderLinkState,
   payableInvoiceUrl,
+  shopifyAdminDraftOrderUrl,
+  shouldOfferAdminPaymentLinkRecovery,
+  shouldRenderCustomerSupportNote,
+  showCustomerSupportNote,
   computeBehaviorFlags,
   customerStatusTone,
   formatCustomerStatusLabel,
@@ -21,7 +29,10 @@ import {
   getOfferUrgencyMessage,
   incompleteOfferItems,
   isOfferExpired,
+  filterAdminDashboardRequests,
   matchesAdminSearch,
+  parseAdminDashboardStatusFilter,
+  summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
   offerHasPayableItems,
@@ -188,6 +199,79 @@ describe("admin search", () => {
     assert.equal(matchesAdminSearch(request, "41"), true);
     assert.equal(matchesAdminSearch(request, "exact"), true);
     assert.equal(matchesAdminSearch(request, "calathea"), false);
+  });
+});
+
+describe("admin dashboard status filter", () => {
+  const requests = [
+    {
+      status: "New" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ1",
+      items: [{ plantName: "Monstera" }],
+    },
+    {
+      status: "Pending" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ2",
+      items: [{ plantName: "Philodendron" }],
+    },
+    {
+      status: "Pending" as const,
+      customer: "Sarah Mitchell",
+      email: "sarah@example.com",
+      requestNumber: "REQ3",
+      items: [{ plantName: "Calathea" }],
+    },
+    {
+      status: "Expired" as const,
+      customer: "Jordan Lee",
+      email: "jordan@example.com",
+      requestNumber: "REQ4",
+      items: [{ plantName: "Hoya" }],
+    },
+    {
+      status: "Closed" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ5",
+      items: [{ plantName: "Anthurium" }],
+    },
+  ];
+
+  it("defaults missing or unknown values to All", () => {
+    assert.equal(parseAdminDashboardStatusFilter(null), "All");
+    assert.equal(parseAdminDashboardStatusFilter(""), "All");
+    assert.equal(parseAdminDashboardStatusFilter("pending"), "All");
+    assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
+  });
+
+  it("filters the visible list by stored admin status", () => {
+    const pending = filterAdminDashboardRequests(requests, "", "Pending");
+    assert.deepEqual(
+      pending.map((request) => request.requestNumber),
+      ["REQ2", "REQ3"],
+    );
+  });
+
+  it("keeps search and status working together", () => {
+    const filtered = filterAdminDashboardRequests(requests, "Alex", "Pending");
+    assert.deepEqual(
+      filtered.map((request) => request.requestNumber),
+      ["REQ2"],
+    );
+  });
+
+  it("leaves dashboard stat counts on the full dataset", () => {
+    const filtered = filterAdminDashboardRequests(requests, "Alex", "Pending");
+    const stats = summarizeAdminDashboardStats(requests);
+    assert.equal(filtered.length, 1);
+    assert.equal(stats.newRequests, 1);
+    assert.equal(stats.pending, 2);
+    assert.equal(stats.expired, 1);
+    assert.equal(stats.closed, 1);
   });
 });
 
@@ -508,6 +592,10 @@ describe("the one email a customer gets for their answer", () => {
       1,
       "one checkout link, not one per email",
     );
+    assert.match(email.bodyText, /Need help with this invoice or need something changed/);
+    assert.match(email.bodyText, /support@unsolicitedplanttalks\.com/);
+    assert.match(email.bodyText, /follow your request status in the portal/);
+    assert.doesNotMatch(email.bodyText, /Contact us for updates/);
   });
 
   it("says the upgrade was kept when the customer kept it", () => {
@@ -652,6 +740,80 @@ describe("naming what is on offer", () => {
   });
 });
 
+describe("admin Draft Order links", () => {
+  const shop = "upt-plant-request-dev.myshopify.com";
+  const gid = "gid://shopify/DraftOrder/9001";
+
+  it("builds the Shopify Admin URL from the stored GID", () => {
+    assert.equal(
+      shopifyAdminDraftOrderUrl(shop, gid),
+      "https://admin.shopify.com/store/upt-plant-request-dev/draft_orders/9001",
+    );
+  });
+
+  it("shows a live link only when a GID exists and the draft is not voided", () => {
+    assert.deepEqual(
+      adminDraftOrderLinkState({ shop, shopifyDraftOrderGid: gid }),
+      {
+        kind: "live",
+        href: "https://admin.shopify.com/store/upt-plant-request-dev/draft_orders/9001",
+      },
+    );
+  });
+
+  it("shows historical voided status instead of a live link", () => {
+    assert.deepEqual(
+      adminDraftOrderLinkState({
+        shop,
+        shopifyDraftOrderGid: gid,
+        voidedAt: new Date("2026-08-22T12:00:00Z"),
+      }),
+      { kind: "voided" },
+    );
+  });
+
+  it("shows nothing when no Draft Order exists", () => {
+    assert.deepEqual(adminDraftOrderLinkState({ shop }), { kind: "none" });
+    assert.equal(shopifyAdminDraftOrderUrl(shop, null), undefined);
+  });
+});
+
+describe("the customer support note", () => {
+  it("is for New and Pending only", () => {
+    assert.equal(showCustomerSupportNote("New"), true);
+    assert.equal(showCustomerSupportNote("Pending"), true);
+    assert.equal(showCustomerSupportNote("Closed"), false);
+    assert.equal(showCustomerSupportNote("Expired"), false);
+    assert.equal(CUSTOMER_SUPPORT_EMAIL, "support@unsolicitedplanttalks.com");
+    assert.equal(ADMIN_OVERRIDE_CLOSE_REASON, "Admin Override Close");
+    assert.equal(
+      INVOICE_VOIDED_BY_ADMIN_REASON,
+      "Invoice voided after admin override close",
+    );
+  });
+
+  it("stays hidden on a Closed or expired offer even if the stored status is still Pending", () => {
+    assert.equal(
+      shouldRenderCustomerSupportNote({
+        status: "Pending",
+        requestClosed: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRenderCustomerSupportNote({
+        status: "Pending",
+        offerExpired: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRenderCustomerSupportNote({ status: "Closed" }),
+      false,
+    );
+  });
+});
+
 describe("the checkout URL a customer may still be shown", () => {
   const url = "https://shop.myshopify.com/invoices/abc";
 
@@ -685,6 +847,56 @@ describe("the checkout URL a customer may still be shown", () => {
   it("drops the URL on a paid or closed request", () => {
     assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestPaid: true }), null);
     assert.equal(payableInvoiceUrl({ invoiceUrl: url, requestClosed: true }), null);
+  });
+});
+
+describe("the admin payment-link recovery button", () => {
+  it("is only for a live accepted request whose invoice never landed", () => {
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Pending",
+      }),
+      true,
+    );
+  });
+
+  it("stays hidden when the invoice already exists or the hold is over", () => {
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: "https://shop.example/pay",
+        requestStatus: "Pending",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Expired",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Pending",
+        invoiceVoided: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferAdminPaymentLinkRecovery({
+        hasAcceptedItems: true,
+        paymentLink: null,
+        requestStatus: "Closed",
+        requestPaid: true,
+      }),
+      false,
+    );
   });
 });
 

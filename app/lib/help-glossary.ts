@@ -103,7 +103,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The stored status of a request whose offer has been sent and has neither been paid for nor run out.",
     detail: [
       "Sending the offer sets Pending, and nothing revises it while the offer is live. Answering the offer does not change the stored status: a customer who has accepted, one who has declined everything and one who has not opened the offer are all Pending.",
-      "Three things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. And a request where nothing is owed can be closed — by the customer's Close Request button on an offer where nothing was available or where they declined everything, or by the admin closing a request whose customer declined every item.",
+      "Four things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. A request where nothing is owed can be closed — by the customer's Close Request button on an offer where nothing was available or where they declined everything, or by the admin closing a request whose customer declined every item. And an admin can override-close any still-open request with `adminOverrideCloseRequest`.",
       "A customer is never shown the word Pending. `formatCustomerStatusLabel` derives one of three labels from it instead: Offer Ready for Review, Needs Payment or No Payment Needed.",
     ],
     citations: [
@@ -140,7 +140,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The stored status of a finished request: paid for, or closed because nothing was owed.",
     detail: [
       "`orders/paid` closes a paid request and marks its accepted items Sold. A redelivery of the webhook for an already-paid request is ignored rather than appending a second status event.",
-      "A request can also be closed with nothing paid. The customer gets a Close Request button when nothing on the offer was available, or when they declined every plant. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires.",
+      "A request can also be closed with nothing paid. The customer gets a Close Request button when nothing on the offer was available, or when they declined every plant. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires. `adminOverrideCloseRequest` is the separate admin-only path that can end any still-open request; it writes `Admin Override Close`, keeps history, and voids an unpaid Draft Order rather than leaving a payable invoice behind.",
       "Closing does not withdraw a declined exact plant from the EXACT PLANTS queue. `exactPlantReleaseReason` returns `customer_declined` even on a Closed request, deliberately: Closed means paid or means the customer wanted nothing, and the second kind holds precisely the plants that queue exists for.",
     ],
     citations: [
@@ -547,7 +547,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "Eligibility is `exactPlantReleaseReason`, the one rule the listing queue, the review form and analytics all use. It gives three reasons and keeps them apart: `customer_declined`, `accepted_unpaid_expired` and `never_responded_expired`.",
       "A plant is only ever released when it is promised to nobody. Never while a hold is live, never for a UPT Not Available item, never for a Grower's Choice line, and never for a paid request. Candidates are read from offer items rather than from customer responses, because an offer that simply expired has no response rows at all and would otherwise be missed.",
-      "Nothing is auto-published. The customer's rejection is saved without creating a product; an admin opens the review form and approves it, and Cancel creates nothing.",
+      "Nothing is auto-published. The customer's rejection is saved without creating a product; an admin opens the review form and approves it, and Cancel creates nothing. Dismiss from EXACT PLANTS is the other queue action: it requires confirmation, writes `Admin Dismissed from EXACT PLANTS` plus `exactPlantDismissedAt`, and removes the item from the active queue without creating a Shopify product or deleting the request, response, offer snapshot, photos or history. A plant that already has a product GID cannot be dismissed.",
       "The listing prefills and publishes title, price, weight and the selected exact-plant photos only — never customer-facing notes or disclaimers, customer identity, request information or customer response information.",
       "One Shopify product per item, added to the existing EXACT PLANTS collection and published to Online Store and Point of Sale only. The variant tracks inventory, denies oversell and is stocked with one unit before it is published, because an untracked plant can be sold to several customers and a tracked one published before it is stocked shows as sold out.",
       "The `upt-declined-item:{requestItemId}` tag is the idempotency key: a retry updates the product that already exists rather than creating a second one. The `declined` wording predates expired offers becoming eligible and is kept because renaming it would orphan the products created under it.",
@@ -558,6 +558,11 @@ export const GLOSSARY: GlossaryEntry[] = [
         locator: "exactPlantReleaseReason",
         quote:
           "An item is only ever released while it is not promised to anyone",
+      },
+      {
+        path: "app/lib/exact-plants.ts",
+        locator: "EXACT_PLANT_DISMISSED_REASON",
+        quote: 'export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";',
       },
       {
         path: HANDOFF,
@@ -650,7 +655,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "It appears as a real checkbox, checked by default, on any unanswered offer that has at least one Available plant. An offer where nothing is available shows no upgrade at all, there being nothing to ship.",
       "It is only ever charged alongside plants. `buildDraftOrderLineItems` adds the FedEx line only when there is at least one accepted plant line, so a customer who declines everything is never billed for shipping.",
-      "Unchecking it is a two-step server round-trip: the first submit returns the warning from Settings with 'Remove it and continue' and 'Keep the upgrade', and nothing is recorded until the customer chooses.",
+      "Unchecking it opens the Settings warning immediately when JavaScript is available. Without JavaScript it is a second server round-trip. The buttons are Keep FedEx Upgrade and I Understand, Remove Upgrade. A crafted POST without acknowledgement is refused.",
       "`ShopSettings.fedexUpgradePrice` is the single amount — what the offer quotes, what the response snapshot freezes and what the confirmation email states — and the draft-order line carries that frozen amount, so Shopify bills what the customer answered rather than whatever the variant costs by the time they open the invoice.",
       "It is a shipping service and not a plant: excluded from plant revenue and plant counts, on no fulfilment route in analytics, weightless on the draft order, and never given an EXACT PLANTS listing.",
     ],

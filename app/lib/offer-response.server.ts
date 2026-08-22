@@ -1,5 +1,15 @@
-import { voidExpiredDraftOrder } from "./draft-order-void.server";
-import { payableInvoiceUrl } from "./portal";
+import {
+  voidExpiredDraftOrder,
+  voidUnpaidDraftOrder,
+} from "./draft-order-void.server";
+import {
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  INVOICE_VOIDED_BY_ADMIN_REASON,
+  payableInvoiceUrl,
+  type RequestStatus,
+} from "./portal";
+import { fedexRemovalNeedsConfirmation, readOfferChoices } from "./customer-portal";
+import { formatCustomerDateTime } from "./customer-time";
 import {
   acceptedOfferLines,
   buildCustomerOffer,
@@ -7,6 +17,7 @@ import {
   closeRequest,
   expireOverdueOffers,
   getCustomerResponse,
+  getCustomerTimeZone,
   getDraftOrder,
   getRequest,
   getShopSettings,
@@ -42,7 +53,10 @@ export async function loadCustomerOfferPage(
       fedexRemovalWarning: settings.fedexRemovalWarning,
       requestClosed: false,
       requestPaid: false,
+      requestStatus: null as RequestStatus | null,
       paidAt: null as string | null,
+      paidAtIso: null as string | null,
+      customerTimeZone: null as string | null,
     };
   }
 
@@ -55,6 +69,9 @@ export async function loadCustomerOfferPage(
   const response = await getCustomerResponse(shop, requestId);
   const request = await getRequest(shop, requestId);
   const draft = await getDraftOrder(shop, requestId);
+  const timeZone = request
+    ? await getCustomerTimeZone(shop, request.email)
+    : null;
 
   return {
     offer,
@@ -69,7 +86,12 @@ export async function loadCustomerOfferPage(
     fedexRemovalWarning: settings.fedexRemovalWarning,
     requestClosed: request?.status === "Closed",
     requestPaid: Boolean(request?.paidAt),
-    paidAt: request?.paidAt ?? null,
+    requestStatus: request?.status ?? null,
+    paidAt: request?.paidAtIso
+      ? formatCustomerDateTime(new Date(request.paidAtIso), timeZone)
+      : null,
+    paidAtIso: request?.paidAtIso ?? null,
+    customerTimeZone: timeZone,
   };
 }
 
@@ -232,6 +254,61 @@ export async function closeDeclinedRequest(input: {
   return { ok: true };
 }
 
+/**
+ * Admin-only path that ends a request the normal workflow has not closed.
+ *
+ * Unlike `closeDeclinedRequest`, this may run while plants are still accepted
+ * or while nobody has answered. History, offer snapshots and accept/reject
+ * answers stay put. Declined Exact Plants stay eligible for EXACT PLANTS —
+ * closing does not decide they are spoken for. An unpaid live Draft Order is
+ * voided with the same delete/COMPLETED-skip rules as expiration so a payable
+ * invoice is not left behind.
+ *
+ * Confirmation is required. A second call on an already-Closed request does
+ * not write another close event; it only retries a void that has not landed.
+ */
+export async function adminOverrideCloseRequest(input: {
+  shop: string;
+  requestId: string;
+  admin?: AdminContext["admin"];
+  confirmed: boolean;
+}): Promise<
+  | { ok: true; alreadyClosed: boolean }
+  | { ok: false; error: string; pendingAdminOverrideClose?: boolean }
+> {
+  if (!input.confirmed) {
+    return {
+      ok: false,
+      error: "Confirm Close Entire Request to proceed.",
+      pendingAdminOverrideClose: true,
+    };
+  }
+
+  const request = await getRequest(input.shop, input.requestId);
+  if (!request) {
+    return { ok: false, error: "This request could not be loaded." };
+  }
+
+  const alreadyClosed = request.status === "Closed";
+  if (!alreadyClosed) {
+    await closeRequest(
+      input.shop,
+      input.requestId,
+      ADMIN_OVERRIDE_CLOSE_REASON,
+    );
+  }
+
+  await voidUnpaidDraftOrder(
+    input.shop,
+    input.requestId,
+    input.admin,
+    new Date(),
+    { reason: INVOICE_VOIDED_BY_ADMIN_REASON },
+  );
+
+  return { ok: true, alreadyClosed };
+}
+
 export async function handleCustomerOfferAction(input: {
   shop: string;
   requestId: string;
@@ -274,6 +351,20 @@ export async function handleCustomerOfferAction(input: {
         missingChoices.length === 1
           ? `Choose Accept or Reject for ${missingChoices[0]}.`
           : `Choose Accept or Reject for each plant: ${missingChoices.join(", ")}.`,
+    };
+  }
+
+  if (
+    fedexRemovalNeedsConfirmation({
+      choices: readOfferChoices(input.form),
+      fedexSelected: String(input.form.get("fedexUpgradeSelected")) === "true",
+      acknowledged: String(input.form.get("fedexRemovalAcknowledged")) === "true",
+    })
+  ) {
+    return {
+      ok: false as const,
+      pendingFedexRemoval: true as const,
+      error: null,
     };
   }
 

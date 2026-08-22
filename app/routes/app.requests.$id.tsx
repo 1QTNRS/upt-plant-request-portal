@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -35,11 +35,14 @@ import {
   type StoredFulfillmentType,
 } from "../lib/growers-choice";
 import {
+  adminOverrideCloseRequest,
   closeDeclinedRequest,
   createPaymentLinkForRequest,
 } from "../lib/offer-response.server";
 import { requestPlantPatterns } from "../lib/plant-behavior.server";
 import {
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  adminDraftOrderLinkState,
   formatCurrency,
   formatDateTime,
   getDisplayRequestNumber,
@@ -47,6 +50,7 @@ import {
   offerReadinessMessage,
   payableInvoiceUrl,
   requestStatusTone,
+  shouldOfferAdminPaymentLinkRecovery,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
   type OfferExpirationDays,
@@ -62,6 +66,7 @@ import {
   getCustomerResponse,
   getDraftOrder,
   getRequest,
+  requestHasEventReason,
   linkExistingStock,
   markRequestViewed,
   moveItemPhoto,
@@ -80,7 +85,13 @@ import {
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
 import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
+import {
+  mergeAdminItemDraft,
+  type AdminItemDirty,
+  type AdminItemDraft,
+} from "../lib/admin-item-draft";
 import { PhotoReorderStrip } from "../components/photo-reorder";
+import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
 import { wrapRowStyle } from "../components/admin-layout";
 
 function itemStatusTone(
@@ -227,6 +238,21 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       : null,
     declinedExactPlants,
     plantPatterns,
+    adminOverrideClosed: plantRequest
+      ? await requestHasEventReason(
+          shop,
+          requestId,
+          ADMIN_OVERRIDE_CLOSE_REASON,
+        )
+      : false,
+    draftOrderAdmin: draftOrder
+      ? {
+          shopifyDraftOrderGid: draftOrder.shopifyDraftOrderGid,
+          voidedAt: draftOrder.voidedAt
+            ? formatDateTime(draftOrder.voidedAt)
+            : null,
+        }
+      : null,
   };
 };
 
@@ -463,6 +489,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       if (!result.ok) return { ok: false, error: result.error };
       return { ok: true };
     }
+
+    if (intent === "admin-override-close") {
+      const result = await adminOverrideCloseRequest({
+        shop,
+        requestId,
+        admin,
+        confirmed: String(form.get("confirmed")) === "true",
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error,
+          pendingAdminOverrideClose: Boolean(result.pendingAdminOverrideClose),
+        };
+      }
+      return { ok: true };
+    }
   } catch (error) {
     return {
       ok: false,
@@ -688,26 +731,59 @@ function PlantItemCard({
 }) {
   const fetcher = useFetcher<typeof action>();
   const photoFetcher = useFetcher<typeof action>();
-  const [offeredName, setOfferedName] = useState(item.offeredName);
-  const [customerNotes, setCustomerNotes] = useState(item.customerFacingNotes);
-  const [fulfillment, setFulfillment] = useState<FulfillmentType>(
-    item.fulfillmentType,
-  );
-  const [unavailableReason, setUnavailableReason] = useState(
-    item.unavailableReason,
-  );
-  const [price, setPrice] = useState(item.price);
-  const [weightLbs, setWeightLbs] = useState(item.weightLbs);
+  const serverDraft = (source: PlantItem): AdminItemDraft => ({
+    offeredName: source.offeredName,
+    customerFacingNotes: source.customerFacingNotes,
+    fulfillmentType: source.fulfillmentType,
+    unavailableReason: source.unavailableReason,
+    price: source.price,
+    weightLbs: source.weightLbs,
+  });
+  const dirtyRef = useRef<AdminItemDirty>({});
+  const [draft, setDraft] = useState<AdminItemDraft>(() => serverDraft(item));
   const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
-    setOfferedName(item.offeredName);
-    setCustomerNotes(item.customerFacingNotes);
-    setFulfillment(item.fulfillmentType);
-    setUnavailableReason(item.unavailableReason);
-    setPrice(item.price);
-    setWeightLbs(item.weightLbs);
+    setDraft((local) => mergeAdminItemDraft(local, serverDraft(item), dirtyRef.current));
   }, [item]);
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data && "ok" in fetcher.data && fetcher.data.ok) {
+      dirtyRef.current = {};
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  const offeredName = draft.offeredName;
+  const customerNotes = draft.customerFacingNotes;
+  const fulfillment = draft.fulfillmentType;
+  const unavailableReason = draft.unavailableReason;
+  const price = draft.price;
+  const weightLbs = draft.weightLbs;
+
+  const setOfferedName = (value: string) => {
+    dirtyRef.current.offeredName = true;
+    setDraft((current) => ({ ...current, offeredName: value }));
+  };
+  const setCustomerNotes = (value: string) => {
+    dirtyRef.current.customerFacingNotes = true;
+    setDraft((current) => ({ ...current, customerFacingNotes: value }));
+  };
+  const setFulfillment = (value: FulfillmentType) => {
+    dirtyRef.current.fulfillmentType = true;
+    setDraft((current) => ({ ...current, fulfillmentType: value }));
+  };
+  const setUnavailableReason = (value: UnavailableReason) => {
+    dirtyRef.current.unavailableReason = true;
+    setDraft((current) => ({ ...current, unavailableReason: value }));
+  };
+  const setPrice = (value: number) => {
+    dirtyRef.current.price = true;
+    setDraft((current) => ({ ...current, price: value }));
+  };
+  const setWeightLbs = (value: number) => {
+    dirtyRef.current.weightLbs = true;
+    setDraft((current) => ({ ...current, weightLbs: value }));
+  };
 
   const isAvailable = fulfillment !== "not_available";
   const growersChoice = fulfillment === "growers_choice";
@@ -715,6 +791,18 @@ function PlantItemCard({
 
   const saveField = (fields: Record<string, string>) => {
     if (fieldsLocked) return;
+    if (fields.offeredName !== undefined) dirtyRef.current.offeredName = true;
+    if (fields.customerFacingNotes !== undefined) {
+      dirtyRef.current.customerFacingNotes = true;
+    }
+    if (fields.availability !== undefined || fields.fulfillmentType !== undefined) {
+      dirtyRef.current.fulfillmentType = true;
+    }
+    if (fields.unavailableReason !== undefined) {
+      dirtyRef.current.unavailableReason = true;
+    }
+    if (fields.price !== undefined) dirtyRef.current.price = true;
+    if (fields.weightLbs !== undefined) dirtyRef.current.weightLbs = true;
     const data = new FormData();
     data.set("intent", "update-item");
     data.set("itemId", item.id);
@@ -830,18 +918,14 @@ function PlantItemCard({
                 <label htmlFor={`price-${item.id}`}>
                   <s-text color="subdued">Price</s-text>
                 </label>
-                <input
+                <ReplaceZeroNumberInput
                   id={`price-${item.id}`}
-                  type="number"
-                  min={0}
-                  step={0.01}
                   value={price}
+                  step={0.01}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  onChange={(event) =>
-                    setPrice(Number.parseFloat(event.currentTarget.value) || 0)
-                  }
-                  onBlur={() => saveField({ price: String(price) })}
+                  onValueChange={setPrice}
+                  onCommit={(next) => saveField({ price: String(next) })}
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
@@ -853,20 +937,14 @@ function PlantItemCard({
                       : "Weight in lbs (internal only)"}
                   </s-text>
                 </label>
-                <input
+                <ReplaceZeroNumberInput
                   id={`weight-${item.id}`}
-                  type="number"
-                  min={0}
-                  step={0.1}
                   value={weightLbs}
+                  step={0.1}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  onChange={(event) =>
-                    setWeightLbs(
-                      Number.parseFloat(event.currentTarget.value) || 0,
-                    )
-                  }
-                  onBlur={() => saveField({ weightLbs: String(weightLbs) })}
+                  onValueChange={setWeightLbs}
+                  onCommit={(next) => saveField({ weightLbs: String(next) })}
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
@@ -1289,7 +1367,17 @@ function DeclinedExactPlantsSection({
  * re-submitting an answered offer is refused, so a Shopify failure at that
  * moment left an accepted request with no way to pay. This is the way back.
  */
-function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
+function PaymentLinkSection({
+  paymentLink,
+  requestStatus,
+  invoiceVoided,
+  requestPaid,
+}: {
+  paymentLink: string | null;
+  requestStatus: RequestStatus;
+  invoiceVoided: boolean;
+  requestPaid: boolean;
+}) {
   if (paymentLink) {
     return (
       <s-stack direction="block" gap="small">
@@ -1299,18 +1387,32 @@ function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
     );
   }
 
+  if (
+    !shouldOfferAdminPaymentLinkRecovery({
+      hasAcceptedItems: true,
+      paymentLink,
+      requestStatus,
+      invoiceVoided,
+      requestPaid,
+    })
+  ) {
+    return null;
+  }
+
   return (
     <s-stack direction="block" gap="base">
       <s-banner tone="critical">
         <s-text>
-          This customer accepted plants but no Shopify draft order exists, so
-          they have no way to pay. Create the payment link and email it to them.
+          This customer accepted plants but Shopify never created their invoice,
+          so the confirmation email went out without a checkout link. Resend the
+          payment link and confirmation email only to recover that failure — it
+          is not how invoices are normally sent.
         </s-text>
       </s-banner>
       <Form method="post">
         <input type="hidden" name="intent" value="create-payment-link" />
         <s-button variant="primary" type="submit">
-          Create payment link and email it
+          Resend payment link / confirmation email
         </s-button>
       </Form>
     </s-stack>
@@ -1320,10 +1422,9 @@ function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
 /**
  * Ends a request whose customer accepted nothing.
  *
- * Closing it also takes its declined plants out of the EXACT PLANTS review
- * queue — `exactPlantReleaseReason` never releases a plant on a Closed request
- * — so the merchant is told that before they press it rather than after they
- * go looking for the listing.
+ * Closing does not take declined Exact Plants out of the EXACT PLANTS review
+ * queue — `exactPlantReleaseReason` still returns `customer_declined` on a
+ * Closed unpaid request.
  */
 function CloseRequestSection() {
   return (
@@ -1385,11 +1486,15 @@ function CustomerResponseSection({
   status,
   paymentLink,
   inventoryHold,
+  invoiceVoided,
+  requestPaid,
 }: {
   response: Awaited<ReturnType<typeof getCustomerResponse>>;
   status: RequestStatus;
   paymentLink: string | null;
   inventoryHold: InventoryHold | null;
+  invoiceVoided: boolean;
+  requestPaid: boolean;
 }) {
   if (!response) {
     return (
@@ -1449,7 +1554,12 @@ function CustomerResponseSection({
               <InventoryHoldNotice hold={inventoryHold} />
             ) : null}
             {accepted.length > 0 ? (
-              <PaymentLinkSection paymentLink={paymentLink} />
+              <PaymentLinkSection
+                paymentLink={paymentLink}
+                requestStatus={status}
+                invoiceVoided={invoiceVoided}
+                requestPaid={requestPaid}
+              />
             ) : null}
           </s-stack>
         </s-box>
@@ -1472,6 +1582,97 @@ function CustomerResponseSection({
         {accepted.length === 0 && status !== "Closed" ? (
           <CloseRequestSection />
         ) : null}
+      </s-stack>
+    </s-section>
+  );
+}
+
+function ShopifyDraftOrderSection({
+  shop,
+  draft,
+}: {
+  shop: string;
+  draft: {
+    shopifyDraftOrderGid: string | null;
+    voidedAt: string | null;
+  } | null;
+}) {
+  if (!draft) return null;
+  const state = adminDraftOrderLinkState({
+    shop,
+    shopifyDraftOrderGid: draft.shopifyDraftOrderGid,
+    voidedAt: draft.voidedAt,
+  });
+  if (state.kind === "none") return null;
+
+  return (
+    <s-section heading="Shopify Draft Order">
+      <s-stack direction="block" gap="base">
+        {state.kind === "live" ? (
+          <>
+            <s-link href={state.href} target="_blank">
+              Open Draft Order in Shopify
+            </s-link>
+            <s-banner tone="warning">
+              <s-text>
+                The portal snapshot is what the customer accepted. Editing the
+                Draft Order in Shopify does not rewrite that history. The
+                invoice may then differ from the offer and customer response
+                recorded here.
+              </s-text>
+            </s-banner>
+          </>
+        ) : (
+          <s-text>Draft Order voided on {draft.voidedAt}</s-text>
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
+function AdminOverrideCloseSection({
+  pendingConfirmation,
+}: {
+  pendingConfirmation: boolean;
+}) {
+  if (pendingConfirmation) {
+    return (
+      <s-section heading="Close Entire Request">
+        <s-stack direction="block" gap="base">
+          <s-banner tone="warning">
+            <s-text>
+              This ends the request now. It is an admin override, not a paid or
+              completed closure. History, offer snapshots, and customer
+              accepted/rejected answers stay. Declined Exact Plants remain
+              eligible for EXACT PLANTS review. An unpaid Draft Order will be
+              voided so it cannot still be paid.
+            </s-text>
+          </s-banner>
+          <Form method="post">
+            <input type="hidden" name="intent" value="admin-override-close" />
+            <input type="hidden" name="confirmed" value="true" />
+            <s-button variant="primary" tone="critical" type="submit">
+              Confirm Close Entire Request
+            </s-button>
+          </Form>
+        </s-stack>
+      </s-section>
+    );
+  }
+
+  return (
+    <s-section heading="Close Entire Request">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          End this request even if the customer has not paid or the hold has
+          not run out. History is kept. A live unpaid invoice will be voided.
+        </s-text>
+        <Form method="post">
+          <input type="hidden" name="intent" value="admin-override-close" />
+          <s-button variant="secondary" type="submit">
+            Close Entire Request
+          </s-button>
+        </Form>
       </s-stack>
     </s-section>
   );
@@ -1536,12 +1737,22 @@ export default function RequestDetail() {
     inventoryHold,
     declinedExactPlants,
     plantPatterns,
+    adminOverrideClosed,
+    draftOrderAdmin,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
+  const pendingAdminOverrideClose = Boolean(
+    actionData &&
+      "pendingAdminOverrideClose" in actionData &&
+      actionData.pendingAdminOverrideClose,
+  );
   // The action already returned these; without this the page silently ignored a
   // failed photo upload and looked as though nothing had happened.
-  const actionError = actionData && !actionData.ok ? actionData.error : null;
+  const actionError =
+    actionData && !actionData.ok && !pendingAdminOverrideClose
+      ? actionData.error
+      : null;
 
   useEffect(() => {
     const onFocus = () => revalidator.revalidate();
@@ -1591,13 +1802,26 @@ export default function RequestDetail() {
         </s-section>
       ) : null}
 
+      {adminOverrideClosed ? (
+        <s-section>
+          <s-banner tone="info">
+            <s-text>
+              This request was closed by admin override. It is not a paid or
+              completed closure. History, offer snapshots, and customer
+              accepted/rejected answers are kept. Declined Exact Plants remain
+              eligible for EXACT PLANTS review.
+            </s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
       {invoiceVoided ? (
         <s-section>
           <s-banner tone="warning">
             <s-text>
-              The Shopify invoice for this expired offer was deleted so it can
-              no longer be paid. The draft order reference, line items and
-              offer snapshot are kept here.
+              The Shopify invoice for this request was deleted so it can no
+              longer be paid. The draft order reference, line items and offer
+              snapshot are kept here.
             </s-text>
           </s-banner>
         </s-section>
@@ -1664,7 +1888,17 @@ export default function RequestDetail() {
         status={plantRequest.status}
         paymentLink={paymentLink}
         inventoryHold={inventoryHold}
+        invoiceVoided={invoiceVoided}
+        requestPaid={Boolean(plantRequest.paidAt)}
       />
+
+      <ShopifyDraftOrderSection shop={shop} draft={draftOrderAdmin} />
+
+      {plantRequest.status !== "Closed" ? (
+        <AdminOverrideCloseSection
+          pendingConfirmation={pendingAdminOverrideClose}
+        />
+      ) : null}
 
       <EmailSection emails={emails} />
 

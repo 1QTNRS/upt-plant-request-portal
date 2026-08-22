@@ -1,7 +1,11 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { data, useActionData, useLoaderData } from "react-router";
 
-import { CustomerOfferView } from "../components/customer-offer-view";
+import {
+  CustomerOfferView,
+  CustomerSupportNote,
+} from "../components/customer-offer-view";
+import { CustomerEnhanceScripts } from "../components/customer-enhance";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
 import {
   fedexRemovalNeedsConfirmation,
@@ -14,12 +18,18 @@ import {
   customerStatusTone,
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
+  shouldRenderCustomerSupportNote,
 } from "../lib/portal";
 import {
   handleCustomerOfferAction,
   loadCustomerOfferPage,
 } from "../lib/offer-response.server";
-import { getRequest } from "../lib/portal.server";
+import { formatCustomerDateTime } from "../lib/customer-time";
+import {
+  getCustomerTimeZone,
+  getRequest,
+  saveCustomerTimeZone,
+} from "../lib/portal.server";
 import { offlineAdminClient } from "../lib/offline-admin.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
@@ -58,10 +68,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       fedexRemovalWarning: "",
       requestClosed: false,
       requestPaid: false,
+      requestStatus: null,
       paidAt: null,
+      paidAtIso: null,
+      customerTimeZone: null,
       backHref: customerPortalRelativeLinks(false).home,
       formAction: "",
       statusLabel: "",
+      submittedAt: "",
     };
   }
 
@@ -69,6 +83,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const admin = await offlineAdminClient(context.shop);
   const page = await loadCustomerOfferPage(context.shop, requestId, admin);
   const links = customerPortalRelativeLinks(context.viaAppProxy);
+  const customerTimeZone = plantRequest
+    ? await getCustomerTimeZone(context.shop, plantRequest.email)
+    : null;
   return {
     forbidden: false as const,
     request: plantRequest,
@@ -85,6 +102,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     // The storefront path for this page. React Router would otherwise render
     // the app's own /customer/requests/:id, which 404s on the shop's domain.
     formAction: links.requestDetail(requestId),
+    customerTimeZone,
+    submittedAt: plantRequest
+      ? formatCustomerDateTime(new Date(plantRequest.submittedAtIso), customerTimeZone)
+      : "",
   };
 };
 
@@ -93,9 +114,25 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const authorized = await authorizeRequest(request, requestId);
   if (!authorized) throw data("Not found", { status: 404 });
 
-  const { context } = authorized;
+  const { context, plantRequest } = authorized;
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+  if (plantRequest) {
+    await saveCustomerTimeZone(
+      context.shop,
+      plantRequest.email,
+      form.get("customerTimeZone"),
+    );
+  }
+  if (intent === "save-timezone") {
+    return {
+      ok: true as const,
+      pendingFedexRemoval: false,
+      submittedChoices: {},
+      fedexSelected: true,
+      error: null as string | null,
+    };
+  }
   const choices = readOfferChoices(form);
 
   // Keeping the upgrade returns to the form with it checked again.
@@ -180,7 +217,12 @@ export default function CustomerRequestDetail() {
             >
               {data.statusLabel}
             </s-badge>
-            <s-text>Submitted {data.request.submittedDate}</s-text>
+            <s-text>
+              Submitted{" "}
+              <time dateTime={data.request.submittedAtIso} data-customer-time>
+                {data.submittedAt || data.request.submittedDate}
+              </time>
+            </s-text>
             <s-text>Requested plants:</s-text>
             {data.request.items.map((item) => (
               <s-text key={item.id}>{item.plantName}</s-text>
@@ -188,9 +230,26 @@ export default function CustomerRequestDetail() {
             <s-text color="subdued">
               We&apos;ll notify you when your personal offer is ready.
             </s-text>
+            {shouldRenderCustomerSupportNote({
+              status: data.request.status,
+              requestClosed: data.request.status === "Closed",
+            }) ? (
+              <CustomerSupportNote />
+            ) : null}
             <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
         </s-section>
+        <form
+          method="post"
+          action={data.formAction}
+          data-tz-capture
+          data-known-tz={data.customerTimeZone ?? ""}
+          hidden
+        >
+          <input type="hidden" name="intent" value="save-timezone" />
+          <input type="hidden" name="customerTimeZone" defaultValue="" />
+        </form>
+        <CustomerEnhanceScripts />
       </s-page>
     );
   }
@@ -213,7 +272,10 @@ export default function CustomerRequestDetail() {
       backHref={data.backHref}
       requestClosed={data.requestClosed}
       requestPaid={data.requestPaid}
+      requestStatus={data.request?.status ?? data.requestStatus}
       paidAt={data.paidAt}
+      paidAtIso={data.paidAtIso}
+      customerTimeZone={data.customerTimeZone}
       formAction={data.formAction}
       submittedChoices={actionData?.submittedChoices}
       fedexSelected={actionData?.fedexSelected ?? true}

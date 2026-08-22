@@ -3,13 +3,20 @@ import { after, before, describe, it } from "node:test";
 
 import prisma from "../db.server";
 import { exactPlantReleaseReason } from "./exact-plants";
+import { listExactPlantCandidates } from "./exact-plants.server";
 import {
+  adminOverrideCloseRequest,
   closeDeclinedRequest,
   createPaymentLinkForRequest,
   handleCustomerOfferAction,
   loadCustomerOfferPage,
 } from "./offer-response.server";
-import { formatCustomerStatusLabel } from "./portal";
+import {
+  ADMIN_OVERRIDE_CLOSE_REASON,
+  INVOICE_VOIDED_BY_ADMIN_REASON,
+  adminDraftOrderLinkState,
+  formatCustomerStatusLabel,
+} from "./portal";
 import {
   closeRequest,
   expireOverdueOffers,
@@ -398,9 +405,10 @@ describe("the admin can create a missing payment link", () => {
 });
 
 /**
- * The stored status stays Pending on purpose. Closing a request whose customer
- * rejected everything would take its declined plant out of the EXACT PLANTS
- * review queue, because `exactPlantReleaseReason` requires an open request.
+ * The stored status stays Pending until something closes or expires the
+ * request. Closing a declined request must not take its Exact Plants out of
+ * the EXACT PLANTS review queue — `exactPlantReleaseReason` still returns
+ * `customer_declined` on a Closed unpaid request.
  */
 describe("what the customer is told is owed", () => {
   before(purge);
@@ -669,6 +677,27 @@ describe("a customer who accepts nothing", () => {
     ]);
   });
 
+  it("refuses a crafted POST that removes FedEx without acknowledgement", async () => {
+    const { requestId, first, second } = await offeredRequest();
+
+    const blocked = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+      }),
+    });
+
+    assert.equal(blocked.ok, false);
+    assert.equal(
+      "pendingFedexRemoval" in blocked && blocked.pendingFedexRemoval,
+      true,
+    );
+    assert.equal(await getCustomerResponse(shop, requestId), null);
+  });
+
   it("keeps the two-step FedEx confirmation for a customer who accepted something", async () => {
     const { requestId, first, second } = await offeredRequest();
 
@@ -813,6 +842,206 @@ describe("closing a request the customer declined outright", () => {
     assert.equal(result.ok, false);
     assert.match("error" in result ? result.error : "", /has not answered/);
     assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+  });
+});
+
+describe("admin override close", () => {
+  before(purge);
+  after(purge);
+
+  it("refuses to close until confirmation is posted", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const result = await adminOverrideCloseRequest({
+      shop,
+      requestId,
+      confirmed: false,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(
+      "pendingAdminOverrideClose" in result && result.pendingAdminOverrideClose,
+      true,
+    );
+    assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: ADMIN_OVERRIDE_CLOSE_REASON },
+      }),
+      0,
+    );
+  });
+
+  it("closes an active request, timestamps it, and records Admin Override Close", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    const beforeResponse = await getCustomerResponse(shop, requestId);
+    const beforeDraft = await getDraftOrder(shop, requestId);
+    assert.ok(beforeDraft?.invoiceUrl);
+
+    const result = await adminOverrideCloseRequest({
+      shop,
+      requestId,
+      confirmed: true,
+    });
+    assert.deepEqual(result, { ok: true, alreadyClosed: false });
+
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Closed");
+    assert.ok(request?.closedAt);
+    assert.equal(request?.paidAt, undefined);
+
+    const events = await prisma.statusEvent.findMany({
+      where: { requestId },
+      orderBy: { createdAt: "asc" },
+    });
+    assert.ok(events.some((event) => event.reason === ADMIN_OVERRIDE_CLOSE_REASON));
+    assert.ok(
+      !events.some((event) => event.reason === "Payment completed"),
+      "override close is not a paid closure",
+    );
+
+    const afterResponse = await getCustomerResponse(shop, requestId);
+    assert.equal(afterResponse?.items.length, beforeResponse?.items.length);
+    assert.equal(
+      afterResponse?.items.find((item) => item.sourceItemId === first.id)?.choice,
+      "accept",
+    );
+    assert.equal(
+      afterResponse?.items.find((item) => item.sourceItemId === second.id)?.choice,
+      "reject",
+    );
+
+    const draft = await getDraftOrder(shop, requestId);
+    assert.ok(draft?.voidedAt);
+    assert.ok(draft?.shopifyDraftOrderGid || draft?.invoiceUrl);
+    assert.deepEqual(
+      adminDraftOrderLinkState({
+        shop,
+        shopifyDraftOrderGid: draft?.shopifyDraftOrderGid,
+        voidedAt: draft?.voidedAt,
+      }),
+      { kind: "voided" },
+    );
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: INVOICE_VOIDED_BY_ADMIN_REASON },
+      }),
+      1,
+    );
+  });
+
+  it("keeps a declined Exact Plant eligible and a declined Grower's Choice excluded", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    await prisma.offerItem.updateMany({
+      where: { requestItemId: second.id },
+      data: { fulfillmentType: "growers_choice" },
+    });
+
+    await adminOverrideCloseRequest({ shop, requestId, confirmed: true });
+
+    const candidates = await listExactPlantCandidates(shop, requestId);
+    assert.equal(candidates.some((row) => row.requestItemId === first.id), true);
+    assert.equal(candidates.some((row) => row.requestItemId === second.id), false);
+    assert.equal(
+      exactPlantReleaseReason({
+        hasOfferItem: true,
+        offerAvailability: "available",
+        responseChoice: "reject",
+        requestStatus: "Closed",
+      }),
+      "customer_declined",
+    );
+    assert.equal(
+      exactPlantReleaseReason({
+        hasOfferItem: true,
+        offerAvailability: "available",
+        offerFulfillmentType: "growers_choice",
+        responseChoice: "reject",
+        requestStatus: "Closed",
+      }),
+      null,
+    );
+  });
+
+  it("is idempotent: a second override does not append another close event", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    await adminOverrideCloseRequest({ shop, requestId, confirmed: true });
+    const closedAt = (await getRequest(shop, requestId))?.closedAtIso;
+    const again = await adminOverrideCloseRequest({
+      shop,
+      requestId,
+      confirmed: true,
+    });
+    assert.deepEqual(again, { ok: true, alreadyClosed: true });
+    assert.equal((await getRequest(shop, requestId))?.closedAtIso, closedAt);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: ADMIN_OVERRIDE_CLOSE_REASON },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: INVOICE_VOIDED_BY_ADMIN_REASON },
+      }),
+      1,
+    );
+  });
+
+  it("can close a New request that has never been offered", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Anthurium" }],
+    });
+    const result = await adminOverrideCloseRequest({
+      shop,
+      requestId: created.id,
+      confirmed: true,
+    });
+    assert.deepEqual(result, { ok: true, alreadyClosed: false });
+    assert.equal((await getRequest(shop, created.id))?.status, "Closed");
+    assert.equal(await getDraftOrder(shop, created.id), null);
   });
 });
 

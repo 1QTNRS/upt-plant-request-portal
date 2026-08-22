@@ -15,7 +15,12 @@ import {
   type CustomerContext,
 } from "./customer-session.server";
 import { getDisplayRequestNumber, type CustomerMyRequestRow } from "./portal";
-import { findOrCreateCustomer, listCustomerRequests } from "./portal.server";
+import { formatCustomerDate } from "./customer-time";
+import {
+  findOrCreateCustomer,
+  getCustomerTimeZone,
+  listCustomerRequests,
+} from "./portal.server";
 import { ensureShopSeeded } from "./seed-demo.server";
 
 /**
@@ -49,15 +54,17 @@ export type CustomerPortalData = {
   browseAction: string;
   /** Rows carried in the query string by the add/remove buttons. */
   plantLines: PlantLine[] | null;
+  customerTimeZone: string | null;
 };
 
 function toRequestRow(
   request: Awaited<ReturnType<typeof listCustomerRequests>>[number],
+  timeZone: string | null,
 ): CustomerMyRequestRow {
   return {
     id: request.id,
     requestNumber: getDisplayRequestNumber(request),
-    submittedDate: request.submittedDate,
+    submittedDate: formatCustomerDate(new Date(request.submittedAtIso), timeZone),
     plantsRequested: request.items.map((item) => item.plantName).join(", "),
     status: request.status,
     hasPayableItems: request.hasPayableItems,
@@ -87,6 +94,7 @@ export async function loadCustomerPortal(
     submittedMessage: submittedNumber
       ? `Request submitted. Your request number is ${submittedNumber}. We'll notify you when matching plants become available.`
       : null,
+    customerTimeZone: null as string | null,
   };
 
   const signedOut: CustomerPortalData = {
@@ -123,7 +131,7 @@ export async function loadCustomerPortal(
         identityError: identity.shopUnreachable
           ? CUSTOMER_LOOKUP_UNAVAILABLE
           : "We could not read the email address on your store account. Add an email to your account to submit a new plant request.",
-        myRequests: requests.map(toRequestRow),
+        myRequests: requests.map((request) => toRequestRow(request, null)),
       },
     };
   }
@@ -137,6 +145,7 @@ export async function loadCustomerPortal(
     email: customer.email,
     shopifyCustomerId: customer.shopifyCustomerId ?? undefined,
   });
+  const customerTimeZone = await getCustomerTimeZone(customer.shop, customer.email);
 
   return {
     context,
@@ -147,7 +156,8 @@ export async function loadCustomerPortal(
       email: customer.email,
       canSubmitRequests: true,
       identityError: null,
-      myRequests: requests.map(toRequestRow),
+      myRequests: requests.map((request) => toRequestRow(request, customerTimeZone)),
+      customerTimeZone,
     },
   };
 }
