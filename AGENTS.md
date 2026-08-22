@@ -64,6 +64,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Shopify folds `read_x` into the `write_x` that implies it, so a correctly installed store's granted list omits the read scopes. Compare through `coveredScopes` (`env.server.ts`), never as raw strings.
 - Both Render services deploy from `cursor/production-readiness-blockers-7617` with auto-deploy on. Deploying another branch's commit by id works but is replaced by the next push to that branch.
 - The dev store contradicts Shopify's own docs in several places (null `Publication.catalog`, POS handle `pos`, missing `Shop.domainsPaginated`). The handoff has the table; check it before trusting a deprecation notice.
+- The Help glossary (`help-glossary.ts`, `help-topics.ts`) is content in code, and every entry quotes the file it is grounded in. `help-content.test.ts` reads those files and fails when a quote has moved, so **changing a business rule breaks the entry that describes it** — update the entry rather than the quote. Answers must come from that content; the assistant refuses what is not in it.
 
 ### Security invariants
 

@@ -680,6 +680,62 @@ what keeps it open, and a provider with a different wire shape can be dropped in
 by implementing `PlantIdentityProvider`. The analytics page prints whether AI is
 on and, when off, exactly which variables would turn it on.
 
+### Help / Ask UPT Portal
+
+`/app/help` is an **admin-only** page that answers questions about how this app
+works — statuses, derived labels, behaviour flags, the conversion percentages,
+the fulfilment routes and the EXACT PLANTS workflow. `requireAdmin` gates both
+the loader and the action, and `app/lib/help-assistant.test.ts` asserts that no
+customer route or component references the help modules and that nothing outside
+an `app.*` route reaches them, in the same spirit as the behaviour-flag scan.
+
+The content is `app/lib/help-glossary.ts` (terms) and `app/lib/help-topics.ts`
+(workflows). It lives **in code, not in the database and not read from Markdown
+at runtime**: the Dockerfile copies `build`, `prisma`, `scripts`, `public` and
+`server.js` and no Markdown at all, so an assistant that read `AGENTS.md` at
+runtime would find nothing in production.
+
+Every entry carries citations — a repo path, a locator and a quote.
+`app/lib/help-content.test.ts` reads each cited file and fails when a quote is no
+longer in it, and where the behaviour is computed it calls the function and
+asserts the answer the glossary gives. That is what stops an entry describing a
+rule the code has since replaced. **Changing a business rule means the glossary
+entry citing it fails until it is updated.**
+
+`app/lib/help-retrieval.ts` is pure: no database, no network, no AI. It matches
+glossary terms and aliases exactly and within one edit per long word, and
+otherwise ranks passages by IDF-weighted overlap. It refuses unless the question
+either names a term or is largely accounted for by one passage that the question
+*names the subject of*. Two guards keep it honest:
+
+- a one-word alias more than half the passages use cannot pick an entry — every
+  passage talks about offering something, so "can we offer net-30 terms?" is not
+  a question about the `offered` item status. An entry's own **title** is exempt,
+  so `Expired` still works.
+- word overlap alone is not enough. "Can a customer change their shipping
+  address after paying?" is mostly words the Draft order entry uses, and that
+  entry does not say whether an address can be changed, so it is refused.
+
+Refusing is the intended outcome for anything undocumented; the refusal names
+the nearest entries rather than answering from them. `answerPortalQuestion` takes
+an optional `HelpRequestContext` (request number, status, derived customer label,
+whether anything is payable, the hold deadline, the fulfilment routes) which
+boosts the ordering of the entries that state applies to. It **cannot** turn a
+refusal into an answer, and per-request answers are not implemented yet — the
+seam exists so "why is REQ123 Pending?" does not need the answer path rebuilt.
+
+AI is optional here too and off by default, configured exactly like plant
+identity: `HELP_ASSISTANT_AI_PROVIDER`, `HELP_ASSISTANT_AI_BASE_URL`,
+`HELP_ASSISTANT_AI_MODEL` and `HELP_ASSISTANT_AI_API_KEY`, all four required
+together, plus an optional `HELP_ASSISTANT_AI_TIMEOUT_MS` defaulting to 8000.
+`app/lib/ai-provider.server.ts` holds the configuration contract and the request
+shared with plant identity. A provider may only reword and choose between the
+passages it was handed: a returned id that was not supplied is discarded, a reply
+naming none of them is treated as no reply, and the passage's citations are shown
+beside whatever wording comes back. A question that scored nothing is refused
+before any provider is called. Absence, failure and timeout are all
+indistinguishable from "no improvement".
+
 ### Internal behaviour flags
 
 `app/lib/plant-behavior.ts` adds the **Repeated Request / Decline Pattern** flag,
@@ -708,11 +764,11 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/growers-choice-and-reservation-9639`:
+Last verified on `cursor/admin-help-assistant-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 578 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 652 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
