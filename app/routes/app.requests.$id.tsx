@@ -1404,15 +1404,15 @@ function PaymentLinkSection({
       <s-banner tone="critical">
         <s-text>
           This customer accepted plants but Shopify never created their invoice,
-          so the confirmation email went out without a checkout link. Create the
-          payment link only to recover that failure — it is not how invoices are
-          normally sent.
+          so the confirmation email went out without a checkout link. Resend the
+          payment link and confirmation email only to recover that failure — it
+          is not how invoices are normally sent.
         </s-text>
       </s-banner>
       <Form method="post">
         <input type="hidden" name="intent" value="create-payment-link" />
         <s-button variant="primary" type="submit">
-          Create payment link and email it
+          Resend payment link / confirmation email
         </s-button>
       </Form>
     </s-stack>
