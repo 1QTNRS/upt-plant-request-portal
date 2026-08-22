@@ -37,8 +37,10 @@ export const REQUIRED_SHOPIFY_SCOPES = [
   // stock. Reading `Location.id` to know where to stock it is covered by the
   // inventory scopes; every other Location field would need read_locations.
   "write_inventory",
-  // Required to configure the app proxy that serves the storefront customer
-  // portal. See https://shopify.dev/docs/apps/build/online-store/app-proxies
+  // Configuring an app proxy requires this scope. Without it the [app_proxy]
+  // block does not take effect, so https://<shop>/apps/plant-requests — the
+  // only address customers ever see — 404s on the storefront.
+  // https://shopify.dev/docs/apps/build/online-store/app-proxies
   "write_app_proxy",
 ] as const;
 

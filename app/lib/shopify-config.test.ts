@@ -39,6 +39,10 @@ function bool(toml: string, key: string): boolean | undefined {
   return raw === undefined ? undefined : raw === "true";
 }
 
+function scopeList(toml: string): string[] {
+  return (str(toml, "scopes") ?? "").split(",").map((scope) => scope.trim());
+}
+
 function strList(toml: string, key: string): string[] {
   const block = toml.match(new RegExp(`${key}\\s*=\\s*\\[([^\\]]*)\\]`))?.[1] ?? "";
   return [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
@@ -92,6 +96,28 @@ describe("shopify.app.toml (production)", () => {
     assert.deepEqual(
       scopes.split(",").map((scope) => scope.trim()).sort(),
       [...REQUIRED_SHOPIFY_SCOPES].sort(),
+    );
+  });
+
+  it("requests write_inventory, without which a listing cannot hold stock", () => {
+    // Same shape as the check above, and the same failure mode: an EXACT PLANTS
+    // listing is one physical plant, and without this scope it cannot be given
+    // one unit of tracked stock, so approving one dies at the inventory step.
+    assert.ok(
+      scopeList(section(toml, "access_scopes")).includes("write_inventory"),
+      "one plant, one unit of stock requires the write_inventory access scope",
+    );
+  });
+
+  it("requests write_app_proxy, without which [app_proxy] does nothing", () => {
+    // Checked separately from the list above, which only proves the TOML and
+    // REQUIRED_SHOPIFY_SCOPES agree and so stays green when both omit a scope.
+    // Omitting this one leaves the storefront portal 404ing on the real shop
+    // while every other check passes.
+    assert.ok(toml.includes("[app_proxy]"), "expected an app proxy to configure");
+    assert.ok(
+      scopeList(section(toml, "access_scopes")).includes("write_app_proxy"),
+      "an app proxy requires the write_app_proxy access scope",
     );
   });
 

@@ -213,6 +213,10 @@ write_draft_orders,read_draft_orders,read_orders,read_customers,write_files,read
 sells. It also covers reading `Location.id`, which is the only Location field
 the app touches — anything more would additionally need `read_locations`.
 
+`write_app_proxy` is what makes the `[app_proxy]` block take effect. Without it
+the storefront address customers use — `https://<shop>/apps/plant-requests` —
+404s, even though every other part of the app is configured correctly.
+
 Webhooks: `app/uninstalled`, `app/scopes_update`, `orders/paid`, plus the three
 compliance topics. `api_version` in `shopify.app.toml` must equal `apiVersion` in
 `app/shopify.server.ts`; a test enforces it.
