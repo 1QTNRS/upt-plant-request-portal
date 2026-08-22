@@ -18,15 +18,19 @@ export const EMPTY_PLANT_LINE: PlantLine = { plantName: "", notes: "" };
 const fieldStyle: React.CSSProperties = {
   display: "block",
   width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
   marginTop: "8px",
-  padding: "8px",
+  padding: "12px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
 };
 
 const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
+  padding: "12px 16px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
