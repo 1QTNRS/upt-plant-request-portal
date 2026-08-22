@@ -72,6 +72,8 @@ export function CustomerOfferView({
   response,
   invoiceUrl,
   fedexRemovalWarning,
+  statusLabel,
+  statusTone = "info",
   backHref,
   requestClosed,
   requestPaid = false,
@@ -86,6 +88,9 @@ export function CustomerOfferView({
   response: CustomerOfferResponse | null;
   invoiceUrl?: string | null;
   fedexRemovalWarning: string;
+  /** Derived from the stored status; the same label the request list shows. */
+  statusLabel?: string;
+  statusTone?: "info" | "warning" | "caution" | "success" | "critical";
   backHref?: string;
   requestClosed: boolean;
   /** Set once `orders/paid` has closed the request. */
@@ -125,6 +130,7 @@ export function CustomerOfferView({
   const allUnavailable = purchasable.length === 0;
   const submitted = Boolean(response);
   const acceptedItems = (response?.items ?? []).filter((item) => item.choice === "accept");
+  const rejectedItems = (response?.items ?? []).filter((item) => item.choice === "reject");
   const hasAccepted = acceptedItems.length > 0;
   // A closed request has nothing left to collect: paid through `orders/paid`,
   // or closed by the customer once they had rejected everything.
@@ -142,6 +148,8 @@ export function CustomerOfferView({
           allUnavailable,
         })}
       >
+        <StatusBadge label={statusLabel} tone={statusTone} />
+
         {requestPaid ? (
           <s-section>
             <s-stack direction="block" gap="base">
@@ -231,14 +239,38 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {!hasAccepted && !allUnavailable && !requestClosed ? (
+        {!hasAccepted && !allUnavailable ? (
           <s-section>
             <s-stack direction="block" gap="base">
               <s-text>
-                You did not accept any plants from this offer. Close this request
-                when you are finished. No checkout link will be created.
+                You did not accept any plants from this offer, so there is
+                nothing to pay. No checkout link was created and the FedEx
+                Priority Overnight upgrade was not applied.
               </s-text>
-              <CloseRequestButton formAction={formAction} />
+              {requestClosed ? null : (
+                <>
+                  <s-text color="subdued">
+                    Close this request when you are finished.
+                  </s-text>
+                  <CloseRequestButton formAction={formAction} />
+                </>
+              )}
+            </s-stack>
+          </s-section>
+        ) : null}
+
+        {!hasAccepted && rejectedItems.length > 0 ? (
+          /*
+           * What the customer turned down, exactly as the offer froze it. This
+           * is the only record they have once the request is closed, so it
+           * comes from the response snapshot rather than the live request —
+           * a later admin edit must not rewrite what they were shown.
+           */
+          <s-section heading="Plants you declined">
+            <s-stack direction="block" gap="base">
+              {rejectedItems.map((item) => (
+                <DeclinedItemCard key={item.offerItemId} item={item} />
+              ))}
             </s-stack>
           </s-section>
         ) : null}
@@ -308,6 +340,8 @@ export function CustomerOfferView({
             : offer.title
       }
     >
+      <StatusBadge label={statusLabel} tone={statusTone} />
+
       <OfferExpiryBanner
         expirationDays={offer.expirationDays}
         expiresAt={offer.expiresAt}
@@ -469,6 +503,67 @@ export function CustomerOfferView({
         </form>
       )}
     </s-page>
+  );
+}
+
+function StatusBadge({
+  label,
+  tone,
+}: {
+  label?: string;
+  tone: "info" | "warning" | "caution" | "success" | "critical";
+}) {
+  if (!label) return null;
+  return (
+    <s-section>
+      <s-badge tone={tone}>{label}</s-badge>
+    </s-section>
+  );
+}
+
+/** One plant the customer rejected, as the offer and the answer froze it. */
+function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][number] }) {
+  return (
+    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+      <s-stack direction="block" gap="base">
+        {item.photoUrls.length > 0 ? (
+          <div style={photoRowStyle}>
+            {item.photoUrls.map((url, index) => (
+              <img
+                key={url}
+                src={url}
+                alt={
+                  item.photoUrls.length > 1
+                    ? `${item.plantName}, photo ${index + 1} of ${item.photoUrls.length}`
+                    : item.plantName
+                }
+                width={200}
+                height={200}
+                style={{
+                  display: "block",
+                  objectFit: "cover",
+                  borderRadius: "8px",
+                  flexShrink: 0,
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        <s-stack direction="block" gap="base">
+          <s-heading>{item.plantName}</s-heading>
+          <s-text>{formatCurrency(item.price)}</s-text>
+          <s-badge tone="critical">Declined</s-badge>
+        </s-stack>
+
+        {item.customerNotes.trim() ? (
+          <s-stack direction="block" gap="small">
+            <s-text color="subdued">Customer Notes / Disclaimers</s-text>
+            <s-text>{item.customerNotes}</s-text>
+          </s-stack>
+        ) : null}
+      </s-stack>
+    </s-box>
   );
 }
 

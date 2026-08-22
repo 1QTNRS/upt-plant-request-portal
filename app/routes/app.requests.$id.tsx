@@ -22,11 +22,16 @@ import {
   redeliverEmailMessage,
 } from "../lib/emails.server";
 import { listExactPlantCandidates } from "../lib/exact-plants.server";
-import { createPaymentLinkForRequest } from "../lib/offer-response.server";
+import {
+  closeDeclinedRequest,
+  createPaymentLinkForRequest,
+} from "../lib/offer-response.server";
 import {
   formatCurrency,
   formatDateTime,
   getDisplayRequestNumber,
+  incompleteOfferItems,
+  offerReadinessMessage,
   requestStatusTone,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
@@ -320,6 +325,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         requestId,
         admin,
       });
+      if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true };
+    }
+
+    if (intent === "close-request") {
+      const result = await closeDeclinedRequest({ shop, requestId });
       if (!result.ok) return { ok: false, error: result.error };
       return { ok: true };
     }
@@ -633,8 +644,9 @@ type OutboxMessage = Awaited<ReturnType<typeof loader>>["emails"][number];
 const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
   request_received: "Request received",
   admin_new_request: "New request (admin)",
+  admin_response: "Customer responded (admin)",
   offer_ready: "Offer ready",
-  confirmation: "Selections confirmed",
+  confirmation: "Response summary",
   checkout_link: "Payment link",
   expiration_reminder: "Expiration reminder",
   compliance_data_request: "Customer data request",
@@ -741,11 +753,13 @@ function SendOfferSection({
   status,
   sentOffer,
   offerEmail,
+  items,
 }: {
   status: RequestStatus;
   sentOffer?: SentOffer;
   /** The outbox row, which is the only evidence the customer was told. */
   offerEmail?: OutboxMessage;
+  items: PlantItem[];
 }) {
   const [expirationDays, setExpirationDays] = useState<OfferExpirationDays>(3);
   const navigation = useNavigation();
@@ -817,11 +831,26 @@ function SendOfferSection({
     );
   }
 
+  // `sendOffer` refuses the same submission, but a merchant should find out
+  // before they press the button and freeze the snapshot.
+  const problems = incompleteOfferItems(items);
+
   return (
     <Form method="post">
       <s-stack direction="block" gap="base">
         <input type="hidden" name="intent" value="send-offer" />
         <input type="hidden" name="expirationDays" value={expirationDays} />
+        {problems.length > 0 ? (
+          <s-banner tone="critical">
+            <s-stack direction="block" gap="small">
+              <s-text>{offerReadinessMessage(problems)}</s-text>
+              <s-text color="subdued">
+                Customer-facing notes are optional. Not Available items need
+                none of these.
+              </s-text>
+            </s-stack>
+          </s-banner>
+        ) : null}
         <s-paragraph>
           Choose how long the customer has to review and accept this offer.
         </s-paragraph>
@@ -845,7 +874,12 @@ function SendOfferSection({
             </button>
           ))}
         </s-stack>
-        <s-button variant="primary" type="submit" {...(sending ? { loading: true } : {})}>
+        <s-button
+          variant="primary"
+          type="submit"
+          {...(sending ? { loading: true } : {})}
+          {...(problems.length > 0 ? { disabled: true } : {})}
+        >
           Send Offer
         </s-button>
       </s-stack>
@@ -952,6 +986,33 @@ function PaymentLinkSection({ paymentLink }: { paymentLink: string | null }) {
   );
 }
 
+/**
+ * Ends a request whose customer accepted nothing.
+ *
+ * Closing it also takes its declined plants out of the EXACT PLANTS review
+ * queue — `exactPlantReleaseReason` never releases a plant on a Closed request
+ * — so the merchant is told that before they press it rather than after they
+ * go looking for the listing.
+ */
+function CloseRequestSection() {
+  return (
+    <s-stack direction="block" gap="base">
+      <s-text color="subdued">
+        The customer declined every item, so nothing is owed and no draft order
+        exists. Closing the request records that it is finished. List any
+        declined plants in EXACT PLANTS first: a closed request is no longer in
+        the review queue.
+      </s-text>
+      <Form method="post">
+        <input type="hidden" name="intent" value="close-request" />
+        <s-button variant="primary" type="submit">
+          Close Request
+        </s-button>
+      </Form>
+    </s-stack>
+  );
+}
+
 function CustomerResponseSection({
   response,
   status,
@@ -1030,6 +1091,10 @@ function CustomerResponseSection({
             )}
           </s-stack>
         </s-box>
+
+        {accepted.length === 0 && status !== "Closed" ? (
+          <CloseRequestSection />
+        ) : null}
       </s-stack>
     </s-section>
   );
@@ -1124,6 +1189,7 @@ export default function RequestDetail() {
           status={plantRequest.status}
           sentOffer={plantRequest.sentOffer}
           offerEmail={emails.find((email) => email.templateKey === "offer_ready")}
+          items={plantRequest.items}
         />
       </s-section>
 

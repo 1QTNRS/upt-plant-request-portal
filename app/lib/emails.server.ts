@@ -5,13 +5,15 @@ import { customerLinksForShop } from "./customer-links.server";
 import { DEFAULT_EMAIL_FROM, isProduction } from "./env.server";
 import {
   buildAdminNewRequestEmail,
+  buildAdminResponseEmail,
   buildCheckoutEmail,
-  buildConfirmationEmail,
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
   buildRequestReceivedEmail,
+  buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatDateTime,
+  type ResponseSummaryItem,
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
 
@@ -423,16 +425,19 @@ export async function notifyCheckoutLink(
   });
 }
 
-export async function notifyConfirmation(
+/**
+ * The single customer email for a submitted response.
+ *
+ * Keyed on `confirmation:{requestId}`, so a retry or a double submit cannot
+ * send a second copy — and the key is the one the separate confirmation used,
+ * so a customer who already has that mail is not sent this one as well.
+ */
+export async function notifyResponseSummary(
   shop: string,
   input: {
     requestId: string;
-    acceptedItems: Array<{
-      plantName: string;
-      price: number;
-      quantity: number;
-      customerNotes: string;
-    }>;
+    acceptedItems: ResponseSummaryItem[];
+    rejectedItems: ResponseSummaryItem[];
     fedexSelected: boolean;
     fedexPrice: number;
     invoiceUrl?: string;
@@ -442,25 +447,65 @@ export async function notifyConfirmation(
   if (!request) return;
   const settings = await getShopSettings(shop);
 
-  const email = buildConfirmationEmail({
+  const email = buildResponseSummaryEmail({
     customerName: request.customer,
-    customerEmail: request.email,
     requestNumber: request.requestNumber,
     acceptedItems: input.acceptedItems,
+    rejectedItems: input.rejectedItems,
     fedexSelected: input.fedexSelected,
     fedexPrice: input.fedexPrice,
     fedexDisclaimer: input.fedexSelected
       ? undefined
       : settings.fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING,
     invoiceUrl: input.invoiceUrl,
+    // Only accepted plants are still held, and only then is the hold something
+    // the customer has to act before.
+    expiresAt:
+      input.acceptedItems.length > 0 ? request.sentOffer?.expiresAt : undefined,
   });
 
-  await queueEmail({
+  return queueEmail({
     shop,
     requestId: input.requestId,
     toEmail: request.email,
     ...email,
     templateKey: "confirmation",
+  });
+}
+
+/**
+ * Tells UPT that a customer answered, once per response.
+ *
+ * One of only two events that reach the admin mailbox; the other is a new
+ * request. Anything per item, per status change or per payment is Shopify's job
+ * or nobody's.
+ */
+export async function notifyAdminResponse(
+  shop: string,
+  input: { requestId: string; acceptedCount: number; rejectedCount: number },
+) {
+  const request = await getRequest(shop, input.requestId);
+  if (!request) return;
+
+  const settings = await getShopSettings(shop);
+  const adminEmail =
+    settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
+  if (!adminEmail) return;
+
+  const email = buildAdminResponseEmail({
+    requestNumber: request.requestNumber,
+    customerName: request.customer,
+    customerEmail: request.email,
+    acceptedCount: input.acceptedCount,
+    rejectedCount: input.rejectedCount,
+  });
+
+  return queueEmail({
+    shop,
+    requestId: input.requestId,
+    toEmail: adminEmail,
+    ...email,
+    templateKey: "admin_response",
   });
 }
 

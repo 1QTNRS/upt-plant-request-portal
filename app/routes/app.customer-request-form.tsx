@@ -40,6 +40,8 @@ function toMyRequestRows(email: string, shopifyCustomerId?: string) {
       submittedDate: request.submittedDate,
       plantsRequested: request.items.map((item) => item.plantName).join(", "),
       status: request.status,
+      hasPayableItems: request.hasPayableItems,
+      hasResponded: request.hasResponded,
     }));
   };
 }

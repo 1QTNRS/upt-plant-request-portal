@@ -3,7 +3,10 @@ import { data, useActionData, useLoaderData } from "react-router";
 
 import { CustomerOfferView } from "../components/customer-offer-view";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
-import { readOfferChoices } from "../lib/customer-portal";
+import {
+  fedexRemovalNeedsConfirmation,
+  readOfferChoices,
+} from "../lib/customer-portal";
 import { readCustomerContext } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { identityOwnsRequest } from "../lib/customer-identity";
@@ -58,6 +61,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       paidAt: null,
       backHref: customerPortalRelativeLinks(false).home,
       formAction: "",
+      statusLabel: "",
     };
   }
 
@@ -68,6 +72,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     forbidden: false as const,
     request: plantRequest,
     ...page,
+    // The same derived label the customer's request list shows. Stored statuses
+    // stay New / Pending / Closed / Expired.
+    statusLabel: plantRequest
+      ? formatCustomerStatusLabel(plantRequest.status, {
+          hasPayableItems: plantRequest.hasPayableItems,
+          hasResponded: plantRequest.hasResponded,
+        })
+      : "",
     backHref: links.home,
     // The storefront path for this page. React Router would otherwise render
     // the app's own /customer/requests/:id, which 404s on the shop's domain.
@@ -101,8 +113,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   // a second round-trip that carries the customer's choices forward.
   if (
     intent === "submit-response" &&
-    String(form.get("fedexUpgradeSelected")) !== "true" &&
-    String(form.get("fedexRemovalAcknowledged")) !== "true"
+    fedexRemovalNeedsConfirmation({
+      choices,
+      fedexSelected: String(form.get("fedexUpgradeSelected")) === "true",
+      acknowledged: String(form.get("fedexRemovalAcknowledged")) === "true",
+    })
   ) {
     return {
       ok: false as const,
@@ -157,7 +172,7 @@ export default function CustomerRequestDetail() {
         <s-section heading="Request details">
           <s-stack direction="block" gap="base">
             <s-badge tone={requestStatusTone(data.request.status)}>
-              {formatCustomerStatusLabel(data.request.status)}
+              {data.statusLabel}
             </s-badge>
             <s-text>Submitted {data.request.submittedDate}</s-text>
             <s-text>Requested plants:</s-text>
@@ -180,6 +195,10 @@ export default function CustomerRequestDetail() {
       response={data.response}
       invoiceUrl={data.invoiceUrl}
       fedexRemovalWarning={data.fedexRemovalWarning}
+      statusLabel={data.statusLabel}
+      statusTone={
+        data.request ? requestStatusTone(data.request.status) : undefined
+      }
       backHref={data.backHref}
       requestClosed={data.requestClosed}
       requestPaid={data.requestPaid}
