@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -80,7 +80,13 @@ import {
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
 import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
+import {
+  mergeAdminItemDraft,
+  type AdminItemDirty,
+  type AdminItemDraft,
+} from "../lib/admin-item-draft";
 import { PhotoReorderStrip } from "../components/photo-reorder";
+import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
 import { wrapRowStyle } from "../components/admin-layout";
 
 function itemStatusTone(
@@ -688,26 +694,59 @@ function PlantItemCard({
 }) {
   const fetcher = useFetcher<typeof action>();
   const photoFetcher = useFetcher<typeof action>();
-  const [offeredName, setOfferedName] = useState(item.offeredName);
-  const [customerNotes, setCustomerNotes] = useState(item.customerFacingNotes);
-  const [fulfillment, setFulfillment] = useState<FulfillmentType>(
-    item.fulfillmentType,
-  );
-  const [unavailableReason, setUnavailableReason] = useState(
-    item.unavailableReason,
-  );
-  const [price, setPrice] = useState(item.price);
-  const [weightLbs, setWeightLbs] = useState(item.weightLbs);
+  const serverDraft = (source: PlantItem): AdminItemDraft => ({
+    offeredName: source.offeredName,
+    customerFacingNotes: source.customerFacingNotes,
+    fulfillmentType: source.fulfillmentType,
+    unavailableReason: source.unavailableReason,
+    price: source.price,
+    weightLbs: source.weightLbs,
+  });
+  const dirtyRef = useRef<AdminItemDirty>({});
+  const [draft, setDraft] = useState<AdminItemDraft>(() => serverDraft(item));
   const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
-    setOfferedName(item.offeredName);
-    setCustomerNotes(item.customerFacingNotes);
-    setFulfillment(item.fulfillmentType);
-    setUnavailableReason(item.unavailableReason);
-    setPrice(item.price);
-    setWeightLbs(item.weightLbs);
+    setDraft((local) => mergeAdminItemDraft(local, serverDraft(item), dirtyRef.current));
   }, [item]);
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data && "ok" in fetcher.data && fetcher.data.ok) {
+      dirtyRef.current = {};
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  const offeredName = draft.offeredName;
+  const customerNotes = draft.customerFacingNotes;
+  const fulfillment = draft.fulfillmentType;
+  const unavailableReason = draft.unavailableReason;
+  const price = draft.price;
+  const weightLbs = draft.weightLbs;
+
+  const setOfferedName = (value: string) => {
+    dirtyRef.current.offeredName = true;
+    setDraft((current) => ({ ...current, offeredName: value }));
+  };
+  const setCustomerNotes = (value: string) => {
+    dirtyRef.current.customerFacingNotes = true;
+    setDraft((current) => ({ ...current, customerFacingNotes: value }));
+  };
+  const setFulfillment = (value: FulfillmentType) => {
+    dirtyRef.current.fulfillmentType = true;
+    setDraft((current) => ({ ...current, fulfillmentType: value }));
+  };
+  const setUnavailableReason = (value: UnavailableReason) => {
+    dirtyRef.current.unavailableReason = true;
+    setDraft((current) => ({ ...current, unavailableReason: value }));
+  };
+  const setPrice = (value: number) => {
+    dirtyRef.current.price = true;
+    setDraft((current) => ({ ...current, price: value }));
+  };
+  const setWeightLbs = (value: number) => {
+    dirtyRef.current.weightLbs = true;
+    setDraft((current) => ({ ...current, weightLbs: value }));
+  };
 
   const isAvailable = fulfillment !== "not_available";
   const growersChoice = fulfillment === "growers_choice";
@@ -715,6 +754,18 @@ function PlantItemCard({
 
   const saveField = (fields: Record<string, string>) => {
     if (fieldsLocked) return;
+    if (fields.offeredName !== undefined) dirtyRef.current.offeredName = true;
+    if (fields.customerFacingNotes !== undefined) {
+      dirtyRef.current.customerFacingNotes = true;
+    }
+    if (fields.availability !== undefined || fields.fulfillmentType !== undefined) {
+      dirtyRef.current.fulfillmentType = true;
+    }
+    if (fields.unavailableReason !== undefined) {
+      dirtyRef.current.unavailableReason = true;
+    }
+    if (fields.price !== undefined) dirtyRef.current.price = true;
+    if (fields.weightLbs !== undefined) dirtyRef.current.weightLbs = true;
     const data = new FormData();
     data.set("intent", "update-item");
     data.set("itemId", item.id);
@@ -830,18 +881,14 @@ function PlantItemCard({
                 <label htmlFor={`price-${item.id}`}>
                   <s-text color="subdued">Price</s-text>
                 </label>
-                <input
+                <ReplaceZeroNumberInput
                   id={`price-${item.id}`}
-                  type="number"
-                  min={0}
-                  step={0.01}
                   value={price}
+                  step={0.01}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  onChange={(event) =>
-                    setPrice(Number.parseFloat(event.currentTarget.value) || 0)
-                  }
-                  onBlur={() => saveField({ price: String(price) })}
+                  onValueChange={setPrice}
+                  onCommit={(next) => saveField({ price: String(next) })}
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
@@ -853,20 +900,14 @@ function PlantItemCard({
                       : "Weight in lbs (internal only)"}
                   </s-text>
                 </label>
-                <input
+                <ReplaceZeroNumberInput
                   id={`weight-${item.id}`}
-                  type="number"
-                  min={0}
-                  step={0.1}
                   value={weightLbs}
+                  step={0.1}
                   readOnly={fieldsLocked}
                   disabled={fieldsLocked}
-                  onChange={(event) =>
-                    setWeightLbs(
-                      Number.parseFloat(event.currentTarget.value) || 0,
-                    )
-                  }
-                  onBlur={() => saveField({ weightLbs: String(weightLbs) })}
+                  onValueChange={setWeightLbs}
+                  onCommit={(next) => saveField({ weightLbs: String(next) })}
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
