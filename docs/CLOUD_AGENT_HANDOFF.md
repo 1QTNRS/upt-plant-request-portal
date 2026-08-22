@@ -4,8 +4,8 @@ Durable status for the next Cloud Agent. Do **not** rebuild this app. Continue f
 
 - Repo: `https://github.com/1qtnrs/upt-plant-request-portal`
 - PR #22 (Prisma persistence + declined EXACT PLANTS listings) is **merged to `main`**.
-- Working branch: `cursor/expired-invoice-void-5eef` (base: `main`) — invoice void + UI polish.
-- Pull request: https://github.com/1QTNRS/upt-plant-request-portal/pull/31
+- Working branch: `cursor/expired-invoice-void-5eef` (base: `main`) — remaining admin refinements after the #31 squash.
+- Pull request: https://github.com/1QTNRS/upt-plant-request-portal/pull/32
 
 **Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) first.** Every remaining
 blocker is an account action, a hosting decision, or a live-store verification.
@@ -887,11 +887,11 @@ now includes `write_inventory`), Shopify Files uploads at scale, and a real
 
 ## Unfinished work
 
-Dev-store admin offer corrections on this branch (price zero-replace, photo
-actions no longer resetting sibling item drafts, customer-local timestamps,
-FedEx removal warning) are in code and waiting on a fresh install of this
-commit. Owner decision 2 (void the expired unpaid invoice) is implemented and
-was re-verified on the dev store. Everything else left needs an account action,
+Owner decision 2 (void the expired unpaid invoice) is on `main` via PR #31.
+The remaining admin refinements on this branch (dashboard status filter,
+EXACT PLANTS dismiss, admin override close, Draft Order admin link, customer
+timezone display, FedEx removal warning, item-draft persistence, price
+zero-replace) are in code. Everything else left needs an account action,
 a hosting decision, or a live store —
 enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) and in the verification
