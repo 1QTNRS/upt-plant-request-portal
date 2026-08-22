@@ -256,6 +256,8 @@ export const HEADING_WEIGHT_BONUS = 0.75;
 type PassageIndex = {
   passages: HelpPassage[];
   weightOf: (token: string) => number;
+  /** Whether a single word is specific enough to name one entry by itself. */
+  isDistinctive: (token: string) => boolean;
   tokensById: Map<string, Set<string>>;
   headingTokensById: Map<string, Set<string>>;
   unknownWeight: number;
@@ -301,6 +303,8 @@ function buildIndex(passages: HelpPassage[]): PassageIndex {
       const frequency = documentFrequency.get(token);
       return frequency ? Math.log(1 + total / frequency) : unknownWeight;
     },
+    isDistinctive: (token) =>
+      (documentFrequency.get(token) ?? 0) <= total / 2,
   };
 }
 
@@ -313,6 +317,11 @@ export type RankedPassage = {
   /** Extra ordering weight for a passage the request context makes relevant. */
   boost: number;
   matchedTokens: string[];
+  /**
+   * Whether the question names something specific that this passage is *about*,
+   * rather than words its body happens to use.
+   */
+  namesSubject: boolean;
 };
 
 /**
@@ -324,6 +333,33 @@ export type RankedPassage = {
  * can never turn a question the app cannot answer into one it will.
  */
 export const CONTEXT_BOOST = 1.5;
+
+/**
+ * The terms a question actually names, once one-word aliases that name nothing
+ * are dropped.
+ *
+ * A named term beats retrieval outright, so a one-word alias is only allowed to
+ * carry that if the word belongs to the entry rather than to the documentation
+ * as a whole. `offered` is an alias of Item status, but more than half the
+ * passages talk about offering something, so "can we offer net-30 terms to
+ * wholesale buyers?" is not a question about item statuses — and with no term
+ * named, it goes to retrieval and is refused, which is the right answer.
+ *
+ * An entry's own title is exempt: `Expired` is one common word and is still
+ * exactly what an admin typing it wants.
+ */
+function namedTerms(
+  question: string,
+  passages: HelpPassage[],
+  index: PassageIndex,
+): TermMatch[] {
+  const titles = new Set(passages.map((passage) => passage.title));
+  return matchedTerms(question, passages).filter((term) => {
+    if (term.length > 1 || titles.has(term.matched)) return true;
+    const [word] = helpTokens(term.matched);
+    return word !== undefined && index.isDistinctive(word);
+  });
+}
 
 export type HelpRequestContext = {
   requestNumber: string;
@@ -419,15 +455,18 @@ export function rankHelpPassages(input: {
     const matchedTokens = questionTokens.filter((token) => carried.has(token));
     if (matchedTokens.length === 0) continue;
     const score = matchedTokens.reduce((sum, token) => sum + index.weightOf(token), 0);
-    const headingScore = matchedTokens
-      .filter((token) => heading.has(token))
-      .reduce((sum, token) => sum + index.weightOf(token) * HEADING_WEIGHT_BONUS, 0);
+    const inHeading = matchedTokens.filter((token) => heading.has(token));
+    const headingScore = inHeading.reduce(
+      (sum, token) => sum + index.weightOf(token) * HEADING_WEIGHT_BONUS,
+      0,
+    );
     ranked.push({
       passage,
       score,
       headingScore,
       boost: boosted.has(passage.id) ? CONTEXT_BOOST : 0,
       matchedTokens,
+      namesSubject: inHeading.some((token) => index.isDistinctive(token)),
     });
   }
 
@@ -442,7 +481,7 @@ export function rankHelpPassages(input: {
   return {
     question: input.question,
     ranked,
-    terms: matchedTerms(input.question, passages),
+    terms: namedTerms(input.question, passages, index),
     coverage: askedWeight === 0 ? 0 : (ranked[0]?.score ?? 0) / askedWeight,
     contextIds,
   };
@@ -450,11 +489,15 @@ export function rankHelpPassages(input: {
 
 /**
  * How much of a question the best passage has to account for before an answer
- * is offered, and how much weight that has to amount to.
+ * is offered without a term having been named, and how much weight that has to
+ * amount to.
  *
  * Both are needed. Coverage alone would answer a two-word question from a
  * passage that happens to contain one common word; weight alone would answer a
- * long question from a passage matching a single rare one.
+ * long question from a passage matching a single rare one. Neither is enough on
+ * its own either, which is what `namesSubject` is for: "can a customer change
+ * their shipping address after paying?" is mostly words the draft-order entry
+ * uses, and that entry does not say whether an address can be changed.
  */
 export const MIN_QUESTION_COVERAGE = 0.5;
 export const MIN_PASSAGE_SCORE = 1.2;
@@ -551,6 +594,7 @@ export function resolveHelpQuestion(input: {
   const best = ranking.ranked[0];
   if (
     best &&
+    best.namesSubject &&
     ranking.coverage >= MIN_QUESTION_COVERAGE &&
     best.score >= MIN_PASSAGE_SCORE
   ) {

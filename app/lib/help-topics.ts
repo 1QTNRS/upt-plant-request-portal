@@ -75,6 +75,9 @@ export const HELP_TOPICS: HelpTopic[] = [
       "how exact plants works",
       "listing queue",
       "publishing a released plant",
+      "published automatically",
+      "auto publish",
+      "why a plant appeared in the shop",
     ],
     summary:
       "A released exact plant reaches a review queue, an admin approves it, and only then does one Shopify product appear in the EXACT PLANTS collection.",

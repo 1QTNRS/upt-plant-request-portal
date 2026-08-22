@@ -683,6 +683,9 @@ export const GLOSSARY: GlossaryEntry[] = [
       "expires at",
       "3 5 7 day hold",
       "offer snapshot",
+      "how long a customer has to respond",
+      "how long the customer has to reply",
+      "response deadline",
     ],
     category: "offer",
     summary:

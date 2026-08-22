@@ -20,6 +20,7 @@ import {
 import {
   contextPassageIds,
   matchedTerms,
+  MIN_QUESTION_COVERAGE,
   NOT_DOCUMENTED_ANSWER,
   rankHelpPassages,
   resolveHelpQuestion,
@@ -64,6 +65,8 @@ describe("the assistant answers the questions it exists for", () => {
     ],
     ["When is the customer actually charged?", "When money is taken"],
     ["Can a customer see another customer's requests?", "What a customer can see"],
+    ["How long does a customer have to respond?", "Offer hold"],
+    ["Does the app reserve stock in Shopify?", "Grower's Choice"],
   ];
 
   for (const [question, title] of expected) {
@@ -112,6 +115,9 @@ describe("it says so when something is not documented", () => {
     "What tax rate is applied at checkout?",
     "Do you ship internationally?",
     "Can I edit a customer's saved credit card?",
+    "Can we offer net-30 terms to wholesale buyers?",
+    "Can a customer change their shipping address after paying?",
+    "How do I issue a partial refund?",
   ];
 
   for (const question of undocumented) {
@@ -137,6 +143,46 @@ describe("it says so when something is not documented", () => {
     const answer = await answerPortalQuestion({ question: "   ", ...withoutAi });
     assert.equal(answer.documented, false);
     assert.match(answer.text, /Ask a question/);
+  });
+
+  it("does not let a one-word alias the whole corpus uses name an entry", () => {
+    // `offered` is an alias of Item status, and nearly every passage talks about
+    // offering something, so the word cannot be what picked that entry.
+    const named = resolveHelpQuestion({
+      question: "can we offer net-30 terms to wholesale buyers",
+    });
+    assert.equal(named.documented, false);
+
+    // The same alias still reaches the entry when the question is about it.
+    const asked = resolveHelpQuestion({ question: "what is item status" });
+    assert.equal(asked.passages[0].id, "item-status");
+  });
+
+  it("keeps one-word entry titles reachable even so", () => {
+    for (const [question, id] of [
+      ["what does New mean", "new"],
+      ["what does Pending mean", "pending"],
+      ["what does Closed mean", "closed"],
+      ["what does Expired mean", "expired"],
+    ]) {
+      const resolved = resolveHelpQuestion({ question });
+      assert.equal(resolved.match, "term", question);
+      assert.equal(resolved.passages[0].id, id, question);
+    }
+  });
+
+  it("will not answer from a passage the question does not name", () => {
+    const question = "can a customer change their shipping address after paying";
+    const ranking = rankHelpPassages({ question });
+
+    // The draft-order entry carries most of the words and says nothing about
+    // changing an address, so overlap alone must not be enough.
+    assert.ok(
+      ranking.coverage >= MIN_QUESTION_COVERAGE,
+      "the words should overlap, which is what makes this the interesting case",
+    );
+    assert.equal(ranking.ranked[0].namesSubject, false);
+    assert.equal(resolveHelpQuestion({ question }).documented, false);
   });
 });
 
