@@ -35,9 +35,11 @@ import {
   type DraftOrderLineItem,
 } from "./portal";
 import {
+  claimDraftOrderCreation,
   getDraftOrder,
   getShopSettings,
   parseDraftOrderLineItems,
+  releaseDraftOrderClaim,
   saveDraftOrderReference,
   updateShopSettings,
 } from "./portal.server";
@@ -541,11 +543,14 @@ export async function createDraftOrderForRequest(
   // create a second one — and never re-check or re-ask for stock, because the
   // hold this request is entitled to has already been taken and asking again
   // would read our own reservation as somebody else's sale.
+  //
+  // The checkout link is what marks the row as a real draft order rather than a
+  // claim: it is only ever written once Shopify has returned one.
   const recorded = await getDraftOrder(shop, input.requestId);
-  if (recorded?.shopifyDraftOrderGid && recorded.invoiceUrl) {
+  if (recorded?.invoiceUrl) {
     return {
       invoiceUrl: recorded.invoiceUrl,
-      shopifyDraftOrderGid: recorded.shopifyDraftOrderGid,
+      shopifyDraftOrderGid: recorded.shopifyDraftOrderGid ?? undefined,
       lineItems: parseDraftOrderLineItems(recorded.lineItemsJson),
       reserveInventoryUntil: recorded.reserveInventoryUntil ?? undefined,
       inventoryReserved: Boolean(recorded.reserveInventoryUntil),
@@ -576,6 +581,44 @@ export async function createDraftOrderForRequest(
 
   requireAdminClient(admin, shop, "Creating a Shopify draft order");
 
+  // Exclusive from here on. Everything below either creates a draft order in
+  // Shopify or reserves stock, and a second caller doing it concurrently would
+  // hold the same plant twice.
+  await claimDraftOrderCreation(shop, input.requestId);
+
+  try {
+    return await createClaimedDraftOrder(admin, shop, {
+      ...input,
+      lineItems,
+      reserveInventoryUntil,
+    });
+  } catch (error) {
+    // Nothing was created, so the claim is only in the way of the retry the
+    // merchant is about to make.
+    await releaseDraftOrderClaim(shop, input.requestId);
+    throw error;
+  }
+}
+
+async function createClaimedDraftOrder(
+  admin: GraphqlClient | undefined,
+  shop: string,
+  input: {
+    requestId: string;
+    requestNumber: string;
+    customerEmail: string;
+    acceptedItems: AcceptedDraftOrderItem[];
+    lineItems: DraftOrderLineItem[];
+    reserveInventoryUntil?: string;
+  },
+): Promise<{
+  invoiceUrl: string;
+  shopifyDraftOrderGid?: string;
+  lineItems: DraftOrderLineItem[];
+  reserveInventoryUntil?: Date;
+  inventoryReserved: boolean;
+}> {
+  const { lineItems, reserveInventoryUntil } = input;
   let shopifyDraftOrderGid: string | undefined;
   let invoiceUrl: string | undefined;
   let reservedUntil: string | undefined;

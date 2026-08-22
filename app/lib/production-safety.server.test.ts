@@ -65,6 +65,7 @@ function acceptPayload(requestId: string, itemId: string) {
         sourceItemId: itemId,
         plantName: "Philodendron Spiritus Sancti",
         choice: "accept" as const,
+        fulfillmentType: "exact_plant" as const,
         price: 250,
         quantity: 1,
         lineRevenue: 250,

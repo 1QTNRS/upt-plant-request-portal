@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   buildAdminResponseEmail,
+  buildDraftOrderInput,
   buildDraftOrderLineItems,
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
@@ -22,6 +23,8 @@ import {
   plantRevenueFromLines,
   plantRevenueFromPaidOrderLines,
   primaryBehaviorFlag,
+  reserveInventoryUntilFor,
+  variantBackedLines,
   computeTimeRemaining,
 } from "./portal";
 
@@ -185,6 +188,7 @@ describe("draft orders", () => {
     const lines = buildDraftOrderLineItems({
       acceptedItems: [
         {
+          itemId: "item-1",
           plantName: "Monstera Exact",
           quantity: 1,
           price: 85,
@@ -216,6 +220,149 @@ describe("draft orders", () => {
       fedexPrice: 15,
     });
     assert.deepEqual(lines, []);
+  });
+
+  it("sells a Grower's Choice plant as the real Shopify variant", () => {
+    const lines = buildDraftOrderLineItems({
+      acceptedItems: [
+        {
+          itemId: "item-1",
+          plantName: "Monstera Thai Constellation",
+          quantity: 1,
+          price: 285,
+          weightLbs: 4.5,
+          variantId: "gid://shopify/ProductVariant/1",
+        },
+      ],
+      fedexSelected: false,
+      fedexLabel: "FedEx Priority Overnight Upgrade",
+      fedexPrice: 15,
+    });
+
+    assert.equal(lines[0]?.variantId, "gid://shopify/ProductVariant/1");
+    assert.deepEqual(variantBackedLines(lines).map((line) => line.variantId), [
+      "gid://shopify/ProductVariant/1",
+    ]);
+  });
+
+  it("leaves an exact plant as a custom line, having no product in Shopify yet", () => {
+    const lines = buildDraftOrderLineItems({
+      acceptedItems: [
+        {
+          itemId: "item-1",
+          plantName: "Monstera Albo Exact",
+          quantity: 1,
+          price: 250,
+          weightLbs: 3,
+        },
+      ],
+      fedexSelected: false,
+      fedexLabel: "FedEx Priority Overnight Upgrade",
+      fedexPrice: 15,
+    });
+
+    assert.equal(lines[0]?.variantId, undefined);
+    assert.deepEqual(variantBackedLines(lines), []);
+  });
+});
+
+describe("how long Shopify holds the stock", () => {
+  const now = new Date("2026-08-22T12:00:00.000Z");
+  const deadline = new Date("2026-08-25T12:00:00.000Z");
+
+  const growersChoiceLine = {
+    title: "Monstera Thai Constellation",
+    quantity: 1,
+    price: 285,
+    weightLbs: 4.5,
+    kind: "plant" as const,
+    variantId: "gid://shopify/ProductVariant/1",
+  };
+  const exactPlantLine = {
+    title: "Monstera Albo Exact",
+    quantity: 1,
+    price: 250,
+    weightLbs: 3,
+    kind: "plant" as const,
+  };
+  const fedexLine = {
+    title: "FedEx Priority Overnight Upgrade",
+    quantity: 1,
+    price: 15,
+    weightLbs: 0,
+    kind: "fedex" as const,
+    variantId: "gid://shopify/ProductVariant/42",
+  };
+
+  it("holds it until the customer's own payment deadline, and no longer", () => {
+    assert.equal(
+      reserveInventoryUntilFor({
+        lineItems: [growersChoiceLine, fedexLine],
+        holdEndsAt: deadline,
+        now,
+      }),
+      deadline.toISOString(),
+    );
+  });
+
+  it("holds nothing for an order that sells no store stock", () => {
+    // Asking would newly hold the FedEx variant, which is a shipping service
+    // and has never been held for anyone.
+    assert.equal(
+      reserveInventoryUntilFor({
+        lineItems: [exactPlantLine, fedexLine],
+        holdEndsAt: deadline,
+        now,
+      }),
+      undefined,
+    );
+  });
+
+  it("asks for nothing when the deadline has already passed", () => {
+    assert.equal(
+      reserveInventoryUntilFor({
+        lineItems: [growersChoiceLine],
+        holdEndsAt: new Date("2026-08-20T12:00:00.000Z"),
+        now,
+      }),
+      undefined,
+    );
+  });
+
+  it("puts the deadline and the real variant into the draft order Shopify receives", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [growersChoiceLine],
+      reserveInventoryUntil: deadline.toISOString(),
+    });
+
+    assert.equal(input.reserveInventoryUntil, deadline.toISOString());
+    assert.deepEqual(input.lineItems, [
+      {
+        variantId: "gid://shopify/ProductVariant/1",
+        quantity: 1,
+        // The amount the customer answered, not whatever the variant costs by
+        // the time they open the invoice.
+        originalUnitPriceWithCurrency: { amount: "285.00", currencyCode: "USD" },
+        requiresShipping: true,
+        weight: { value: 4.5, unit: "POUNDS" },
+      },
+    ]);
+  });
+
+  it("sends no reservation field at all when nothing is being held", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [exactPlantLine],
+    });
+
+    assert.equal("reserveInventoryUntil" in input, false);
   });
 });
 
@@ -502,6 +649,91 @@ describe("an offer cannot be sent on an incomplete item", () => {
 
   it("has nothing to say about a complete offer", () => {
     assert.equal(offerReadinessMessage([]), "");
+  });
+});
+
+describe("an offer cannot be sent on an incomplete Grower's Choice item", () => {
+  const linkedStock = {
+    productGid: "gid://shopify/Product/1",
+    productTitle: "Monstera Thai Constellation",
+    variantGid: "gid://shopify/ProductVariant/1",
+    variantTitle: "6 inch",
+    variantPrice: 285,
+    variantWeightLbs: 4.5,
+    inventoryQuantity: 3,
+    inventoryTracked: true,
+  };
+  const ready = {
+    plantName: "Monstera Thai",
+    offeredName: "Monstera Thai Constellation",
+    availability: "available",
+    fulfillmentType: "growers_choice",
+    price: 285,
+    weightLbs: 0,
+    quantity: 1,
+    photos: [],
+    linkedStock,
+  };
+
+  it("needs no exact photo, because there is no one plant to photograph", () => {
+    assert.deepEqual(incompleteOfferItems([ready]), []);
+  });
+
+  it("takes the weight from the linked variant when the item has none", () => {
+    assert.deepEqual(
+      incompleteOfferItems([
+        { ...ready, linkedStock: { ...linkedStock, variantWeightLbs: 0 }, weightLbs: 3 },
+      ]),
+      [],
+    );
+  });
+
+  it("asks for a listing before anything else when nothing is linked", () => {
+    assert.deepEqual(
+      incompleteOfferItems([{ ...ready, linkedStock: undefined }]),
+      [
+        {
+          itemName: "Monstera Thai Constellation",
+          missing: ["a linked store listing", "a weight"],
+        },
+      ],
+    );
+  });
+
+  it("refuses a listing that no longer holds enough", () => {
+    assert.deepEqual(
+      incompleteOfferItems([
+        { ...ready, quantity: 2, linkedStock: { ...linkedStock, inventoryQuantity: 1 } },
+      ]),
+      [
+        {
+          itemName: "Monstera Thai Constellation",
+          missing: ["enough stock on the linked listing"],
+        },
+      ],
+    );
+  });
+
+  it("accepts a listing Shopify does not count, which has nothing to be short of", () => {
+    assert.deepEqual(
+      incompleteOfferItems([
+        {
+          ...ready,
+          linkedStock: {
+            ...linkedStock,
+            inventoryTracked: false,
+            inventoryQuantity: undefined,
+          },
+        },
+      ]),
+      [],
+    );
+  });
+
+  it("still needs a price, which is what the customer is billed", () => {
+    assert.deepEqual(incompleteOfferItems([{ ...ready, price: 0 }]), [
+      { itemName: "Monstera Thai Constellation", missing: ["a price"] },
+    ]);
   });
 });
 

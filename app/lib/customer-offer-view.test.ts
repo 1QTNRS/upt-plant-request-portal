@@ -36,6 +36,7 @@ function plant(overrides: Partial<OfferPlantItem> = {}): OfferPlantItem {
     notesFromUpt: "One older leaf has a small scar.",
     quantity: 1,
     availability: "available",
+    fulfillmentType: "exact_plant",
     ...overrides,
   };
 }
@@ -84,6 +85,7 @@ function answer(
       lineRevenue: entry.choice === "accept" ? 250 : 0,
       customerNotes: "One older leaf has a small scar.",
       photoUrls: PHOTOS,
+      fulfillmentType: "exact_plant" as const,
     })),
   };
 }

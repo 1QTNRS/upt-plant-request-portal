@@ -18,15 +18,22 @@ import {
 } from "./portal";
 
 const ACCEPTED = [
-  { plantName: "Monstera Thai Constellation", quantity: 1, price: 285, weightLbs: 4.5 },
+  {
+    itemId: "item_1",
+    plantName: "Monstera Thai Constellation",
+    quantity: 1,
+    price: 285,
+    weightLbs: 4.5,
+  },
 ];
 
-function lineItems(fedexSelected: boolean) {
+function lineItems(fedexSelected: boolean, fedexVariantGid?: string) {
   return buildDraftOrderLineItems({
     acceptedItems: ACCEPTED,
     fedexSelected,
     fedexLabel: "FedEx Priority Overnight Upgrade",
     fedexPrice: 15,
+    fedexVariantGid,
   });
 }
 
@@ -111,8 +118,7 @@ describe("draft order input", () => {
       requestNumber: "REQ2178",
       customerEmail: "customer@example.com",
       currencyCode: "USD",
-      lineItems: lineItems(true),
-      fedexVariantGid: "gid://shopify/ProductVariant/42",
+      lineItems: lineItems(true, "gid://shopify/ProductVariant/42"),
     });
     assert.deepEqual(input.lineItems.at(-1), {
       variantId: "gid://shopify/ProductVariant/42",
@@ -129,6 +135,7 @@ describe("draft order input", () => {
       fedexSelected: true,
       fedexLabel: "FedEx Priority Overnight Upgrade",
       fedexPrice: 24.5,
+      fedexVariantGid: "gid://shopify/ProductVariant/42",
     });
     const input = buildDraftOrderInput({
       requestId: "req_1",
@@ -136,7 +143,6 @@ describe("draft order input", () => {
       customerEmail: "customer@example.com",
       currencyCode: "USD",
       lineItems: quoted,
-      fedexVariantGid: "gid://shopify/ProductVariant/42",
     });
     assert.deepEqual(
       input.lineItems.at(-1)?.originalUnitPriceWithCurrency,

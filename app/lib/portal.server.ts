@@ -1471,6 +1471,75 @@ export async function saveDraftOrderReference(
   });
 }
 
+/** How long one attempt at creating a draft order may hold the claim. */
+const DRAFT_ORDER_CLAIM_MS = 2 * 60 * 1000;
+
+export class DraftOrderInFlightError extends Error {
+  constructor() {
+    super(
+      "An order for this request is already being created. Refresh the page to see the payment link.",
+    );
+    this.name = "DraftOrderInFlightError";
+  }
+}
+
+/**
+ * Claims the right to create this request's draft order, or refuses.
+ *
+ * Reading "no draft order recorded" and creating one are separated by several
+ * Shopify round trips, so two submissions — a double click, a retried POST, a
+ * webhook redelivery landing beside the customer's own submit, or two instances
+ * of the app — can both get through that read. Both would then ask Shopify to
+ * hold the same plant, and a Grower's Choice line would be reserved twice
+ * against stock of one.
+ *
+ * The unique index on `requestId` is what makes the claim exclusive: exactly
+ * one caller creates the row. A claim older than the window it takes to talk to
+ * Shopify is taken over, so an attempt that died mid-flight cannot leave the
+ * request permanently unpayable.
+ */
+export async function claimDraftOrderCreation(
+  shop: string,
+  requestId: string,
+): Promise<void> {
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: { id: true },
+  });
+  if (!request) throw new Error("Request not found.");
+
+  try {
+    await prisma.draftOrderReference.create({ data: { requestId } });
+    return;
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+  }
+
+  const { count } = await prisma.draftOrderReference.updateMany({
+    where: {
+      requestId,
+      invoiceUrl: null,
+      createdAt: { lt: new Date(Date.now() - DRAFT_ORDER_CLAIM_MS) },
+    },
+    data: { createdAt: new Date() },
+  });
+  if (count === 0) throw new DraftOrderInFlightError();
+}
+
+/**
+ * Gives the claim back after an attempt that created nothing in Shopify, so the
+ * merchant's retry does not have to wait out the window. Only ever removes a
+ * row with no checkout link, which is a claim and not a draft order.
+ */
+export async function releaseDraftOrderClaim(
+  shop: string,
+  requestId: string,
+): Promise<void> {
+  await prisma.draftOrderReference.deleteMany({
+    where: { requestId, request: { shop }, invoiceUrl: null },
+  });
+}
+
 export function parseDraftOrderLineItems(raw: string | null | undefined): DraftOrderLineItem[] {
   if (!raw) return [];
   try {
