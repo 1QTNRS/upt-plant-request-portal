@@ -36,6 +36,7 @@ export default function App() {
       <s-link href="/app/customer-request-form">Request Form</s-link>
       <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
       <s-link href="/app/settings">Settings</s-link>
+      <s-link href="/app/help">Help</s-link>
     </s-app-nav>
   );
 
@@ -57,6 +58,7 @@ export default function App() {
           <s-link href="/app/customer-request-form">Request Form</s-link>
           <s-link href="/app/customer-offer-preview">Offer Preview</s-link>
           <s-link href="/app/settings">Settings</s-link>
+          <s-link href="/app/help">Help</s-link>
         </div>
         {banner}
         <Outlet />
