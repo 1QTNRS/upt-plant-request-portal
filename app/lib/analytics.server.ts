@@ -1,5 +1,10 @@
 import prisma from "../db.server";
 import { exactPlantReleaseReason } from "./exact-plants";
+import { customerPlantPatterns } from "./plant-behavior.server";
+import {
+  backfillCanonicalPlants,
+  canonicalPlantVariants,
+} from "./plant-identity.server";
 import {
   computeBehaviorFlags,
   computeNoPaymentRate,
@@ -90,11 +95,16 @@ function monthKey(date: Date): string {
 
 export async function getAnalytics(shop: string, range: AnalyticsRange) {
   await expireOverdueOffers(shop);
+  // Every per-plant figure below groups on canonical identity, so rows that
+  // predate it — or that were written while the resolver was unavailable — have
+  // to be claimed before anything is counted, or they would each read as a plant
+  // of their own. Idempotent: a shop with nothing outstanding pays one query.
+  await backfillCanonicalPlants(shop);
 
   const requests = await prisma.plantRequest.findMany({
     where: { shop, submittedAt: { gte: range.start, lte: range.end } },
     include: {
-      items: { orderBy: REQUEST_ITEM_ORDER },
+      items: { orderBy: REQUEST_ITEM_ORDER, include: { canonicalPlant: true } },
       offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       draftOrder: true,
@@ -123,7 +133,13 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   };
 
   const closedPaid = requests.filter((request) => request.paidAt);
-  const plantRevenue = (request: (typeof requests)[number]) => {
+  // Narrowed to the two rows revenue is actually read from, so it accepts both
+  // the ranged and the whole-shop query without them having to load the same
+  // relations.
+  const plantRevenue = (request: {
+    shopifyOrder: { plantRevenue: number } | null;
+    draftOrder: { lineItemsJson: string } | null;
+  }) => {
     if (request.shopifyOrder) return request.shopifyOrder.plantRevenue;
     return plantRevenueFromLines(parseLineItems(request.draftOrder?.lineItemsJson));
   };
@@ -200,8 +216,16 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     neverRespondedExpired: 0,
   };
 
+  /**
+   * One row per canonical plant identity, never per typed spelling. `plantName`
+   * is the identity's name and `variants` is every wording customers actually
+   * used for it, so the owner can see what a row is made of and tell a genuine
+   * grouping from an over-eager one.
+   */
   type PlantBucket = {
+    plantId: string;
     plantName: string;
+    variants: Set<string>;
     offeredNames: Set<string>;
     requestCount: number;
     purchaseCount: number;
@@ -210,15 +234,42 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     revenue: number;
   };
   const plants = new Map<string, PlantBucket>();
+  const variantsByCanonicalId = await canonicalPlantVariants(shop);
+
+  type PlantIdentity = { plantId: string; plantName: string; variants: string[] };
+
+  const identityOf = (item: {
+    plantName: string;
+    canonicalPlantId: string | null;
+    canonicalPlant: { id: string; displayName: string } | null;
+  }): PlantIdentity => {
+    const typed = item.plantName.trim();
+    if (item.canonicalPlant) {
+      return {
+        plantId: item.canonicalPlant.id,
+        plantName: item.canonicalPlant.displayName,
+        variants: variantsByCanonicalId.get(item.canonicalPlant.id) ?? [typed],
+      };
+    }
+    // No identity yet, which the backfill above should have prevented. Falling
+    // back to the typed name keeps the row visible rather than dropping the
+    // request from every plant figure.
+    return {
+      plantId: `typed:${typed.toLowerCase() || "unknown"}`,
+      plantName: typed || "Unknown",
+      variants: typed ? [typed] : [],
+    };
+  };
 
   const bumpPlant = (
-    plantName: string,
-    field: keyof Omit<PlantBucket, "plantName" | "offeredNames">,
+    identity: PlantIdentity,
+    field: keyof Omit<PlantBucket, "plantId" | "plantName" | "variants" | "offeredNames">,
     amount = 1,
   ) => {
-    const key = plantName.trim() || "Unknown";
-    const current = plants.get(key) ?? {
-      plantName: key,
+    const current = plants.get(identity.plantId) ?? {
+      plantId: identity.plantId,
+      plantName: identity.plantName,
+      variants: new Set<string>(identity.variants),
       offeredNames: new Set<string>(),
       requestCount: 0,
       purchaseCount: 0,
@@ -227,14 +278,13 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       revenue: 0,
     };
     current[field] += amount;
-    plants.set(key, current);
+    plants.set(identity.plantId, current);
   };
 
-  const noteOfferedName = (plantName: string, offeredName: string) => {
-    const key = plantName.trim() || "Unknown";
+  const noteOfferedName = (identity: PlantIdentity, offeredName: string) => {
     const offered = offeredName.trim();
-    const bucket = plants.get(key);
-    if (!bucket || !offered || offered === key) return;
+    const bucket = plants.get(identity.plantId);
+    if (!bucket || !offered || bucket.variants.has(offered)) return;
     bucket.offeredNames.add(offered);
   };
 
@@ -243,31 +293,34 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     // for, found through requestItemId. Keying the offer and response figures
     // on their own plantName instead split every renamed plant into two rows —
     // one with the requests, one with the purchases — each converting at 0%.
-    const requestedName = new Map(
-      request.items.map((item) => [item.id, item.plantName]),
+    const requestedIdentity = new Map(
+      request.items.map((item) => [item.id, identityOf(item)]),
     );
+    const fallbackIdentity = (requestItemId: string, plantName: string) =>
+      requestedIdentity.get(requestItemId) ??
+      identityOf({ plantName, canonicalPlantId: null, canonicalPlant: null });
 
     for (const item of request.items) {
       itemFunnel.requested += 1;
-      bumpPlant(item.plantName, "requestCount");
+      bumpPlant(identityOf(item), "requestCount");
     }
     for (const item of request.offer?.items ?? []) {
       if (item.availability !== "available") continue;
       itemFunnel.offered += 1;
-      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
-      bumpPlant(plantName, "offeredCount");
-      noteOfferedName(plantName, item.plantName);
+      const identity = fallbackIdentity(item.requestItemId, item.plantName);
+      bumpPlant(identity, "offeredCount");
+      noteOfferedName(identity, item.plantName);
     }
     for (const item of request.response?.items ?? []) {
       if (item.choice !== "accept") continue;
       itemFunnel.accepted += 1;
-      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
-      bumpPlant(plantName, "acceptedCount");
-      noteOfferedName(plantName, item.plantName);
+      const identity = fallbackIdentity(item.requestItemId, item.plantName);
+      bumpPlant(identity, "acceptedCount");
+      noteOfferedName(identity, item.plantName);
       if (request.paidAt) {
         itemFunnel.purchased += 1;
-        bumpPlant(plantName, "purchaseCount");
-        bumpPlant(plantName, "revenue", item.price * item.quantity);
+        bumpPlant(identity, "purchaseCount");
+        bumpPlant(identity, "revenue", item.price * item.quantity);
       }
     }
 
@@ -353,8 +406,20 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     customers.set(key, current);
   }
 
+  // Internal only, and computed per canonical plant rather than per typed name:
+  // three spellings of one plant turned down three times is the pattern, and on
+  // raw text it looks like three unrelated plants asked for once each.
+  const plantPatterns = await customerPlantPatterns(shop);
+  const patternsByEmail = new Map(
+    plantPatterns.map((row) => [row.email, row.patterns]),
+  );
+
   const customerRows = [...customers.values()].map((customer) => {
-    const flags = computeBehaviorFlags(customer);
+    const patterns = patternsByEmail.get(customer.email.toLowerCase()) ?? [];
+    const flags = computeBehaviorFlags({
+      ...customer,
+      repeatedRequestDeclinePlants: patterns.length,
+    });
     return {
       customerName: customer.customerName,
       email: customer.email,
@@ -382,6 +447,18 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       lastRequestDate: formatDate(customer.lastRequestDate),
       behaviorFlag: primaryBehaviorFlag(flags) as BehaviorFlag,
       behaviorFlags: flags,
+      plantPatterns: patterns.map((pattern) => ({
+        canonicalPlantId: pattern.activity.canonicalPlantId,
+        plantName: pattern.activity.displayName,
+        summary: pattern.summary,
+        timesRequested: pattern.activity.timesRequested,
+        timesOffered: pattern.activity.timesOffered,
+        timesDeclined: pattern.activity.timesDeclined,
+        timesPurchased: pattern.activity.timesPurchased,
+        rangeDays: pattern.activity.rangeDays,
+        mostRecentRequestDate: formatDate(pattern.activity.mostRecentRequestAt),
+        requestedNames: pattern.activity.requestedNames,
+      })),
     };
   });
 
@@ -422,13 +499,18 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     };
   });
 
-  const plantMetrics = [...plants.values()].map(({ offeredNames, ...plant }) => ({
-    ...plant,
-    // What UPT called the plant when it offered it, when that differs from the
-    // requested name. A column rather than a row of its own.
-    offeredName: [...offeredNames].sort().join(", "),
-    conversionRate: percent(plant.purchaseCount, plant.requestCount),
-  }));
+  const plantMetrics = [...plants.values()].map(
+    ({ offeredNames, variants, ...plant }) => ({
+      ...plant,
+      // What UPT called the plant when it offered it, when that differs from the
+      // requested name. A column rather than a row of its own.
+      offeredName: [...offeredNames].sort().join(", "),
+      // The customer wordings counted under this identity. Shown so a grouping
+      // the owner disagrees with is visible instead of invisible.
+      variants: [...variants].sort().join(", "),
+      conversionRate: percent(plant.purchaseCount, plant.requestCount),
+    }),
+  );
 
   return {
     financial: {
@@ -491,6 +573,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       ).length,
       highRequestLowPurchaseCustomers: customerRows.filter(
         (row) => row.behaviorFlag === "High Request / Low Purchase",
+      ).length,
+      repeatedRequestDeclineCustomers: customerRows.filter(
+        (row) => row.plantPatterns.length > 0,
       ).length,
     },
   };

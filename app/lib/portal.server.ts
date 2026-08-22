@@ -10,6 +10,7 @@ import type {
 import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
 import { isDemoDataEnabled } from "./environment.server";
+import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
@@ -508,6 +509,19 @@ export async function submitCustomerRequest(
     },
     include: requestInclude,
   });
+
+  // Best effort on purpose. The customer's request is already saved and their
+  // own wording is on it; a failure to work out which plant they meant is an
+  // analytics gap the backfill sweep closes on the next admin page load, and it
+  // must never turn a submitted request into an error page.
+  try {
+    await assignCanonicalPlantsForRequest(shop, created.id);
+  } catch (error) {
+    console.warn(
+      `Could not resolve a canonical plant identity for request ${created.requestNumber}.`,
+      error,
+    );
+  }
 
   return toPlantRequest(created);
 }

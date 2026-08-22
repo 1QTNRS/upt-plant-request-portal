@@ -370,10 +370,16 @@ export function percent(numerator: number, denominator: number): number {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
+/**
+ * Internal admin labels. None of these is ever rendered on a customer-facing
+ * page: they exist so the owner can read a customer's history, not to gate
+ * anything the customer can do.
+ */
 export type BehaviorFlag =
   | "Good Customer"
   | "Strong Buyer"
   | "Partial Buyer"
+  | "Repeated Request / Decline Pattern"
   | "High Request / Low Purchase"
   | "Approval Drop-Off"
   | "Expired Offer Risk"
@@ -390,6 +396,12 @@ export type CustomerBehaviorMetrics = {
   closedPaidRequests: number;
   expiredRequests: number;
   totalRevenue: number;
+  /**
+   * Canonical plants this customer has repeatedly asked for and repeatedly turned
+   * down. Counted in `plant-behavior.server.ts`, which needs the plant identities
+   * these totals have already been summed across.
+   */
+  repeatedRequestDeclinePlants?: number;
 };
 
 export function computeNoPaymentRate(
@@ -412,6 +424,10 @@ export function computeBehaviorFlags(
     metrics.itemsAccepted === 0
       ? 0
       : metrics.itemsPurchased / metrics.itemsAccepted;
+
+  if ((metrics.repeatedRequestDeclinePlants ?? 0) > 0) {
+    flags.push("Repeated Request / Decline Pattern");
+  }
 
   if (metrics.itemsAccepted > 0 && metrics.itemsPurchased === 0) {
     flags.push("Approval Drop-Off");
@@ -452,6 +468,9 @@ export function computeBehaviorFlags(
 
 export function primaryBehaviorFlag(flags: BehaviorFlag[]): BehaviorFlag {
   const priority: BehaviorFlag[] = [
+    // First because it is the most specific thing known about the customer: it
+    // names a plant, whereas everything below it is a ratio.
+    "Repeated Request / Decline Pattern",
     "Approval Drop-Off",
     "High Request / Low Purchase",
     "Expired Offer Risk",
@@ -479,6 +498,7 @@ export function behaviorFlagTone(
     case "Partial Buyer":
       return "info";
     case "High Request / Low Purchase":
+    case "Repeated Request / Decline Pattern":
       return "warning";
     case "Approval Drop-Off":
     case "Expired Offer Risk":

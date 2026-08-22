@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Form, useLoaderData, useSearchParams } from "react-router";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { Form, useActionData, useLoaderData, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
@@ -9,6 +13,12 @@ import {
   resolveAnalyticsRange,
   type DateRangeId,
 } from "../lib/analytics.server";
+import { plantIdentityAiStatus } from "../lib/plant-identity-ai.server";
+import {
+  confirmPlantIdentitySuggestion,
+  listPlantIdentitySuggestions,
+  rejectPlantIdentitySuggestion,
+} from "../lib/plant-identity.server";
 import {
   behaviorFlagTone,
   formatCurrency,
@@ -62,7 +72,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     resolveAnalyticsRange(range, customStart, customEnd),
   );
-  return { range, customStart, customEnd, data };
+  return {
+    range,
+    customStart,
+    customEnd,
+    data,
+    plantIdentitySuggestions: await listPlantIdentitySuggestions(shop),
+    aiStatus: plantIdentityAiStatus(),
+  };
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { shop } = await requireAdmin(request);
+  const form = await request.formData();
+  const intent = String(form.get("intent") || "");
+  const suggestionId = String(form.get("suggestionId") || "");
+
+  if (intent === "same-plant") {
+    return confirmPlantIdentitySuggestion(shop, suggestionId);
+  }
+  if (intent === "keep-separate") {
+    return rejectPlantIdentitySuggestion(shop, suggestionId);
+  }
+  return { ok: false, error: "Unknown action" };
 };
 
 function MetricCard({ label, value }: { label: string; value: string }) {
@@ -83,8 +115,10 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 }
 
 type PlantMetric = {
+  plantId: string;
   plantName: string;
   offeredName: string;
+  variants: string;
   requestCount: number;
   purchaseCount: number;
   revenue: number;
@@ -133,6 +167,7 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           <s-table-header listSlot="primary">
             {headerLabel("plantName", "Plant Name")}
           </s-table-header>
+          <s-table-header>{headerLabel("variants", "Customer Wordings")}</s-table-header>
           <s-table-header>{headerLabel("offeredName", "Offered As")}</s-table-header>
           <s-table-header>{headerLabel("requestCount", "Request Count")}</s-table-header>
           <s-table-header>{headerLabel("purchaseCount", "Purchase Count")}</s-table-header>
@@ -141,8 +176,9 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
         </s-table-header-row>
         <s-table-body>
           {sorted.map((plant) => (
-            <s-table-row key={plant.plantName}>
+            <s-table-row key={plant.plantId}>
               <s-table-cell>{plant.plantName}</s-table-cell>
+              <s-table-cell>{plant.variants || "—"}</s-table-cell>
               <s-table-cell>{plant.offeredName || "—"}</s-table-cell>
               <s-table-cell>{plant.requestCount}</s-table-cell>
               <s-table-cell>{plant.purchaseCount}</s-table-cell>
@@ -156,8 +192,159 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
   );
 }
 
+type PlantIdentitySuggestion = Awaited<
+  ReturnType<typeof loader>
+>["plantIdentitySuggestions"][number];
+
+/**
+ * Medium-confidence matches, which merge nothing until they are answered.
+ *
+ * Both spellings keep their own row in every figure above while a suggestion sits
+ * here, so the queue being ignored costs the owner nothing but detail. Answering
+ * Same Plant is permanent: the mapping is stored and reused, so the next time a
+ * customer types that spelling it never reaches this list.
+ */
+function PlantIdentitySuggestions({
+  suggestions,
+  aiStatus,
+}: {
+  suggestions: PlantIdentitySuggestion[];
+  aiStatus: Awaited<ReturnType<typeof loader>>["aiStatus"];
+}) {
+  return (
+    <s-section heading="Plant Name Review">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">{aiStatus.detail}</s-text>
+        {suggestions.length === 0 ? (
+          <s-text color="subdued">
+            No plant names are waiting on a decision. Names that differ only in
+            capitalisation, spacing, punctuation, an abbreviated genus or a single
+            mistyped character are grouped automatically; anything carrying a
+            different cultivar, accession, clone, collection number or locality is
+            always kept separate.
+          </s-text>
+        ) : (
+          suggestions.map((suggestion) => (
+            <s-box
+              key={suggestion.id}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
+            >
+              <s-stack direction="block" gap="small">
+                <s-heading>
+                  {suggestion.originalName} → {suggestion.suggestedDisplayName}
+                </s-heading>
+                <s-text color="subdued">{suggestion.reason}</s-text>
+                <s-text color="subdued">
+                  Customer typed: {suggestion.originalName}
+                </s-text>
+                <s-text color="subdued">
+                  Already counted under {suggestion.suggestedDisplayName}:{" "}
+                  {suggestion.suggestedVariants.join(", ") || "—"}
+                </s-text>
+                <s-text color="subdued">
+                  {suggestion.affectedItems === 1
+                    ? "1 request line would move."
+                    : `${suggestion.affectedItems} request lines would move.`}
+                  {suggestion.source === "deterministic"
+                    ? ""
+                    : ` Suggested by ${suggestion.source}.`}
+                </s-text>
+                <s-stack direction="inline" gap="small">
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="same-plant" />
+                    <input
+                      type="hidden"
+                      name="suggestionId"
+                      value={suggestion.id}
+                    />
+                    <s-button variant="primary" type="submit">
+                      Same Plant
+                    </s-button>
+                  </Form>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="keep-separate" />
+                    <input
+                      type="hidden"
+                      name="suggestionId"
+                      value={suggestion.id}
+                    />
+                    <s-button variant="secondary" type="submit">
+                      Keep Separate
+                    </s-button>
+                  </Form>
+                </s-stack>
+              </s-stack>
+            </s-box>
+          ))
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
+/**
+ * Internal insight, admin-only. Nothing here blocks a customer, changes what is
+ * offered or reaches a customer-facing page; it exists so the owner knows before
+ * sourcing a plant for the fourth time.
+ */
+function RepeatedRequestDeclinePatterns({
+  customers,
+}: {
+  customers: Awaited<ReturnType<typeof loader>>["data"]["customers"];
+}) {
+  const flagged = customers.filter((customer) => customer.plantPatterns.length > 0);
+  if (flagged.length === 0) return null;
+
+  return (
+    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+      <s-stack direction="block" gap="base">
+        <s-heading>Repeated Request / Decline Pattern</s-heading>
+        <s-text color="subdued">
+          Internal only. Counted per plant identity, so the same plant asked for
+          under several spellings counts once per request rather than as several
+          plants.
+        </s-text>
+        {flagged.map((customer) =>
+          customer.plantPatterns.map((pattern) => (
+            <s-box
+              key={`${customer.email}-${pattern.canonicalPlantId}`}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+            >
+              <s-stack direction="block" gap="small">
+                <s-stack direction="inline" gap="base">
+                  <s-text>
+                    <strong>{customer.customerName}</strong>
+                  </s-text>
+                  <s-badge tone="warning">Repeated Request / Decline Pattern</s-badge>
+                </s-stack>
+                <s-text>{pattern.summary}</s-text>
+                <s-text color="subdued">
+                  Requested {pattern.timesRequested} · offered{" "}
+                  {pattern.timesOffered} · declined {pattern.timesDeclined} ·
+                  purchased {pattern.timesPurchased} · over {pattern.rangeDays}{" "}
+                  days · most recent {pattern.mostRecentRequestDate}
+                </s-text>
+                <s-text color="subdued">
+                  Typed as: {pattern.requestedNames.join(", ")}
+                </s-text>
+              </s-stack>
+            </s-box>
+          )),
+        )}
+      </s-stack>
+    </s-box>
+  );
+}
+
 export default function Analytics() {
-  const { range, customStart, customEnd, data } = useLoaderData<typeof loader>();
+  const { range, customStart, customEnd, data, plantIdentitySuggestions, aiStatus } =
+    useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const [, setSearchParams] = useSearchParams();
 
   const setRange = (next: DateRangeId) => {
@@ -172,6 +359,14 @@ export default function Analytics() {
 
   return (
     <s-page heading="Analytics">
+      {actionData && !actionData.ok ? (
+        <s-section>
+          <s-banner tone="critical">
+            <s-text>{actionData.error}</s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
       <s-section heading="Date Range">
         <s-stack direction="inline" gap="small">
           {DATE_FILTERS.map((filter) => (
@@ -286,7 +481,9 @@ export default function Analytics() {
             <MetricCard label="Customers With Expired Offers" value={String(data.customerSummary.customersWithExpiredOffers)} />
             <MetricCard label="Customers With Closed/Paid Requests" value={String(data.customerSummary.customersWithClosedPaidRequests)} />
             <MetricCard label="High Request / Low Purchase Customers" value={String(data.customerSummary.highRequestLowPurchaseCustomers)} />
+            <MetricCard label="Repeated Request / Decline Customers" value={String(data.customerSummary.repeatedRequestDeclineCustomers)} />
           </s-stack>
+          <RepeatedRequestDeclinePatterns customers={data.customers} />
           <s-table>
             <s-table-header-row>
               <s-table-header listSlot="primary">Customer Name</s-table-header>
@@ -374,6 +571,11 @@ export default function Analytics() {
           </s-table-body>
         </s-table>
       </s-section>
+
+      <PlantIdentitySuggestions
+        suggestions={plantIdentitySuggestions}
+        aiStatus={aiStatus}
+      />
 
       <PlantTable heading="Most Requested Plants" plants={data.plants.mostRequested} />
       <PlantTable heading="Most Purchased Plants" plants={data.plants.mostPurchased} />

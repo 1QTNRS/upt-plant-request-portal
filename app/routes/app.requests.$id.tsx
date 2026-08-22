@@ -23,6 +23,7 @@ import {
 } from "../lib/emails.server";
 import { listExactPlantCandidates } from "../lib/exact-plants.server";
 import { createPaymentLinkForRequest } from "../lib/offer-response.server";
+import { requestPlantPatterns } from "../lib/plant-behavior.server";
 import {
   formatCurrency,
   formatDateTime,
@@ -150,6 +151,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     ? await listExactPlantCandidates(shop, requestId)
     : [];
 
+  // Internal insight for whoever is about to price this request. Never sent to
+  // the customer and never a reason to refuse them anything.
+  const plantPatterns = plantRequest
+    ? (await requestPlantPatterns(shop, requestId)).map((pattern) => ({
+        canonicalPlantId: pattern.activity.canonicalPlantId,
+        summary: pattern.summary,
+        timesRequested: pattern.activity.timesRequested,
+        timesOffered: pattern.activity.timesOffered,
+        timesDeclined: pattern.activity.timesDeclined,
+        timesPurchased: pattern.activity.timesPurchased,
+        rangeDays: pattern.activity.rangeDays,
+        mostRecentRequestDate: formatDateTime(pattern.activity.mostRecentRequestAt),
+        requestedNames: pattern.activity.requestedNames,
+      }))
+    : [];
+
   return {
     requestId,
     plantRequest,
@@ -157,6 +174,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     emails,
     paymentLink: draftOrder?.invoiceUrl ?? null,
     declinedExactPlants,
+    plantPatterns,
   };
 };
 
@@ -1035,9 +1053,62 @@ function CustomerResponseSection({
   );
 }
 
+/**
+ * Internal only. This never reaches the customer, never blocks their request and
+ * never changes what they are offered — it is here so whoever is about to source
+ * and price this plant knows the customer has turned it down before.
+ */
+function PlantPatternSection({
+  patterns,
+}: {
+  patterns: Awaited<ReturnType<typeof loader>>["plantPatterns"];
+}) {
+  if (patterns.length === 0) return null;
+
+  return (
+    <s-section heading="Internal insight">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          Admin only. Not shown to the customer anywhere, and not a reason to
+          refuse or change this request.
+        </s-text>
+        {patterns.map((pattern) => (
+          <s-box
+            key={pattern.canonicalPlantId}
+            padding="base"
+            borderWidth="base"
+            borderRadius="base"
+            background="subdued"
+          >
+            <s-stack direction="block" gap="small">
+              <s-badge tone="warning">Repeated Request / Decline Pattern</s-badge>
+              <s-text>{pattern.summary}</s-text>
+              <s-text color="subdued">
+                Requested {pattern.timesRequested} · offered {pattern.timesOffered}{" "}
+                · declined {pattern.timesDeclined} · purchased{" "}
+                {pattern.timesPurchased} · over {pattern.rangeDays} days · most
+                recent {pattern.mostRecentRequestDate}
+              </s-text>
+              <s-text color="subdued">
+                Typed as: {pattern.requestedNames.join(", ")}
+              </s-text>
+            </s-stack>
+          </s-box>
+        ))}
+      </s-stack>
+    </s-section>
+  );
+}
+
 export default function RequestDetail() {
-  const { plantRequest, response, emails, paymentLink, declinedExactPlants } =
-    useLoaderData<typeof loader>();
+  const {
+    plantRequest,
+    response,
+    emails,
+    paymentLink,
+    declinedExactPlants,
+    plantPatterns,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
   // The action already returned these; without this the page silently ignored a
@@ -1101,6 +1172,8 @@ export default function RequestDetail() {
           </s-stack>
         </s-stack>
       </s-section>
+
+      <PlantPatternSection patterns={plantPatterns} />
 
       <s-section heading="Plant items">
         {!canEditItems && (

@@ -100,12 +100,88 @@ model PlantRequest {
   @@index([shop, submittedAt])
 }
 
+/**
+ * The internal, normalised identity a plant is counted under.
+ *
+ * `canonicalKey` is the deterministic output of `canonicalPlantKey`, so the same
+ * spelling always lands on the same row; `displayName` is the first spelling the
+ * shop saw, which is what the owner recognises. The customer's own wording lives
+ * on `RequestItem.plantName` and in `PlantNameAlias.originalName` and is never
+ * rewritten to match this.
+ */
+model CanonicalPlant {
+  id           String                    @id @default(cuid())
+  shop         String
+  canonicalKey String
+  displayName  String
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  aliases      PlantNameAlias[]
+  suggestions  PlantIdentitySuggestion[]
+  requestItems RequestItem[]
+
+  @@unique([shop, canonicalKey])
+  @@index([shop, displayName])
+}
+
+/**
+ * One customer spelling, mapped to the identity it counts under.
+ *
+ * `source` records how the mapping was reached — `deterministic` for a
+ * normaliser match, `admin_confirmed` once an admin has answered Same Plant,
+ * which is what makes a confirmed merge outlive the suggestion that produced it.
+ */
+model PlantNameAlias {
+  id               String         @id @default(cuid())
+  shop             String
+  aliasKey         String
+  originalName     String
+  canonicalPlantId String
+  canonicalPlant   CanonicalPlant @relation(fields: [canonicalPlantId], references: [id], onDelete: Cascade)
+  source           String         @default("deterministic")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([shop, aliasKey])
+  @@index([canonicalPlantId])
+}
+
+/**
+ * A medium-confidence match waiting on an admin.
+ *
+ * Nothing is merged while a suggestion is `open`: the two spellings stay
+ * separate identities until someone answers. A `rejected` row is kept forever so
+ * the same pair is never proposed twice.
+ */
+model PlantIdentitySuggestion {
+  id                        String         @id @default(cuid())
+  shop                      String
+  originalName              String
+  aliasKey                  String
+  suggestedCanonicalPlantId String
+  suggestedCanonicalPlant   CanonicalPlant @relation(fields: [suggestedCanonicalPlantId], references: [id], onDelete: Cascade)
+  confidence                Float          @default(0)
+  reason                    String
+  source                    String         @default("deterministic")
+  status                    String         @default("open")
+  resolvedAt                DateTime?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  @@unique([shop, aliasKey, suggestedCanonicalPlantId])
+  @@index([shop, status])
+}
+
 model RequestItem {
   id                    String           @id @default(cuid())
   requestId             String
   request               PlantRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
   plantName             String
   offeredName           String
+  // Null until the identity resolver has seen the row. Analytics group on this;
+  // plantName stays exactly as the customer typed it.
+  canonicalPlantId      String?
+  canonicalPlant        CanonicalPlant?  @relation(fields: [canonicalPlantId], references: [id], onDelete: SetNull)
   budget                String?
   customerRequestNotes  String?
   quantity              Int              @default(1)
@@ -125,6 +201,9 @@ model RequestItem {
 
   @@index([requestId])
   @@index([plantName])
+  // The backfill sweep asks for the rows that still have no identity, and every
+  // per-plant figure joins on this.
+  @@index([canonicalPlantId])
 }
 
 model PhotoReference {
