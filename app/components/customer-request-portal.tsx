@@ -260,13 +260,26 @@ export function OfferExpiryBanner({
   expiresAtIso,
   urgencyMessage,
   holdMessage,
+  requestClosed = false,
 }: {
   expirationDays: number;
   expiresAt: string;
   expiresAtIso: string;
   urgencyMessage: string;
   holdMessage: string;
+  /** Closed by payment or by the customer; the hold is moot either way. */
+  requestClosed?: boolean;
 }) {
+  if (requestClosed) {
+    return (
+      <s-banner tone="info">
+        <s-text>
+          This request is closed. There is nothing left to answer or pay.
+        </s-text>
+      </s-banner>
+    );
+  }
+
   /*
    * The hold decides what this says, not the day the offer was sent. Once it
    * lapses the plant becomes an EXACT PLANTS candidate for public sale, so

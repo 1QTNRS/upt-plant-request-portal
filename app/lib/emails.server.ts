@@ -11,6 +11,7 @@ import {
   buildOfferReadyEmail,
   buildRequestReceivedEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  formatDateTime,
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
 
@@ -505,7 +506,7 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
     const email = buildExpirationReminderEmail({
       customerName: request.customerName,
       requestNumber: request.requestNumber,
-      expiresAt: request.offer.expiresAt.toISOString(),
+      expiresAt: formatDateTime(request.offer.expiresAt),
       offerLink: links.requestDetail(request.id),
       // A customer who has already accepted needs to pay, not to review the
       // offer again; sending them here without the link they need wastes the

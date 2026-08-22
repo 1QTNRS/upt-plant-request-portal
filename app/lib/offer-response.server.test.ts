@@ -9,6 +9,8 @@ import {
 } from "./offer-response.server";
 import { formatCustomerStatusLabel } from "./portal";
 import {
+  closeRequest,
+  expireOverdueOffers,
   getCustomerResponse,
   getDraftOrder,
   getRequest,
@@ -535,5 +537,67 @@ describe("the customer offer page", () => {
     assert.equal(afterPayment.requestPaid, true);
     assert.equal(afterPayment.requestClosed, true);
     assert.ok(afterPayment.paidAt, "the page states when the payment arrived");
+  });
+});
+
+describe("a request that is already closed", () => {
+  before(purge);
+  after(purge);
+
+  it("refuses an answer instead of billing for it", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await closeRequest(shop, requestId, "Customer closed request");
+
+    // Reachable by posting a stale tab: the customer's own page shows the
+    // request as closed and offers no controls.
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(
+      "error" in result && result.error ? result.error : "",
+      /already closed/,
+    );
+    assert.equal(await getCustomerResponse(shop, requestId), null);
+    assert.equal(await getDraftOrder(shop, requestId), null);
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: { shop, requestId, templateKey: { in: ["confirmation", "checkout_link"] } },
+      }),
+      0,
+      "no confirmation and no payment link for a closed request",
+    );
+  });
+
+  it("refuses an answer to an offer that expired and was then closed", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await prisma.offer.update({
+      where: { requestId },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await expireOverdueOffers(shop);
+    await closeRequest(shop, requestId, "Customer closed request");
+
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(await getDraftOrder(shop, requestId), null);
   });
 });

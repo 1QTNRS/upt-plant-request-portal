@@ -342,3 +342,26 @@ describe("a hold that lapsed before payment", () => {
     assert.match(live, /emailed this link to you just in case/);
   });
 });
+
+describe("a request the customer already closed", () => {
+  const closed = render({
+    offer: offer({ expiresAt: inThreeDays() }),
+    response: null,
+    fedexRemovalWarning: "",
+    requestClosed: true,
+  });
+
+  it("stops presenting the offer as live", () => {
+    // Closing an all-unavailable request used to hand back the countdown and
+    // the same Close Request button, while the portal list already said Closed.
+    assert.match(closed, /Request closed/);
+    assert.match(closed, /nothing left to answer or pay/);
+    assert.ok(!closed.includes("being held for you"));
+    assert.ok(!closed.includes("remaining"));
+  });
+
+  it("offers no way to answer or close it again", () => {
+    assert.equal([...closed.matchAll(/type="radio"/g)].length, 0);
+    assert.ok(!closed.includes("Close Request"));
+  });
+});

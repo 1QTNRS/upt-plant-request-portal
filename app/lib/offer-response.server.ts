@@ -7,6 +7,7 @@ import {
   getShopSettings,
   OfferAlreadyAnsweredError,
   OfferExpiredError,
+  RequestClosedError,
   saveCustomerResponse,
 } from "./portal.server";
 import { notifyCheckoutLink, notifyConfirmation } from "./emails.server";
@@ -194,6 +195,13 @@ export async function handleCustomerOfferAction(input: {
         ok: false as const,
         error:
           "This offer expired before your answer reached us. Please contact us and we will see whether the plant is still available.",
+      };
+    }
+    if (error instanceof RequestClosedError) {
+      return {
+        ok: false as const,
+        error:
+          "This request is already closed, so we did not record an answer. Please contact us if that is not what you expected.",
       };
     }
     throw error;

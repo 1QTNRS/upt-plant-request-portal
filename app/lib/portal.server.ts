@@ -60,6 +60,14 @@ export class OfferAlreadyAnsweredError extends Error {
  * people answer at the last minute. It has to reach the customer as a message
  * rather than an unhandled error, or their choices are lost behind a crash page.
  */
+/** The request was already finished — paid, or closed by the customer. */
+export class RequestClosedError extends Error {
+  constructor() {
+    super("This request is closed.");
+    this.name = "RequestClosedError";
+  }
+}
+
 export class OfferExpiredError extends Error {
   constructor() {
     super("This offer has expired.");
@@ -870,6 +878,14 @@ export async function saveCustomerResponse(
 ): Promise<CustomerOfferResponse> {
   const request = await loadRequest(shop, input.requestId);
   if (!request) throw new Error("Request not found.");
+  // A Closed request is finished: paid, or closed by the customer. Accepting an
+  // answer against one bills for plants nobody is holding and emails a payment
+  // link the customer's own page does not show, and it is reachable by posting
+  // a stale tab. It also let an Expired request slip past the check below once
+  // it had been closed.
+  if (normalizeRequestStatus(request.status) === "Closed") {
+    throw new RequestClosedError();
+  }
   if (normalizeRequestStatus(request.status) === "Expired") {
     throw new OfferExpiredError();
   }

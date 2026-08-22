@@ -364,3 +364,17 @@ describe("behavior flags", () => {
     assert.equal(primaryBehaviorFlag(flags), "Approval Drop-Off");
   });
 });
+
+describe("expiration reminder wording", () => {
+  it("gives the customer a readable date, not a machine timestamp", () => {
+    const email = buildExpirationReminderEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ13",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+      offerLink: "https://shop.myshopify.com/apps/plant-requests/requests/req_1",
+    });
+
+    assert.match(email.bodyText, /Aug 26, 2026, 10:02 PM UTC/);
+    assert.ok(!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(email.bodyText));
+  });
+});

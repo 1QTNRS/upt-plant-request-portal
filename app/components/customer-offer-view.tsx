@@ -291,16 +291,30 @@ export function CustomerOfferView({
   // The hold, not the request status, decides whether this offer can still be
   // answered: the expiry sweep may not have run yet, and the server refuses a
   // late answer either way, so the page must stop offering one.
-  const expired = isOfferExpired(offer.expiresAtIso);
+  //
+  // A closed request counts the same way. The terminal state used to be decided
+  // by a recorded answer, so a customer who closed an all-unavailable request
+  // was handed the live offer again — countdown, "held for you", and the same
+  // Close Request button — while their own request list already said Closed.
+  const expired = isOfferExpired(offer.expiresAtIso) || requestClosed;
 
   return (
-    <s-page heading={expired ? "This offer has expired" : offer.title}>
+    <s-page
+      heading={
+        requestClosed
+          ? "Request closed"
+          : expired
+            ? "This offer has expired"
+            : offer.title
+      }
+    >
       <OfferExpiryBanner
         expirationDays={offer.expirationDays}
         expiresAt={offer.expiresAt}
         expiresAtIso={offer.expiresAtIso}
         urgencyMessage={offer.urgencyMessage}
         holdMessage={offer.holdMessage}
+        requestClosed={requestClosed}
       />
 
       {expired ? (
