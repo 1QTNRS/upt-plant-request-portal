@@ -132,7 +132,8 @@ const deleted = {
   },
 };
 
-describe("voiding an expired unpaid invoice", () => {
+describe("expired invoice void", { concurrency: false }, () => {
+describe("voiding an expired unpaid invoice", { concurrency: false }, () => {
   before(reset);
   after(reset);
 
@@ -358,7 +359,7 @@ describe("voiding an expired unpaid invoice", () => {
   });
 });
 
-describe("overlapping void sweeps", () => {
+describe("overlapping void sweeps", { concurrency: false }, () => {
   before(reset);
   after(reset);
 
@@ -403,7 +404,7 @@ describe("overlapping void sweeps", () => {
   });
 });
 
-describe("payment arriving after a void", () => {
+describe("payment arriving after a void", { concurrency: false }, () => {
   before(reset);
   after(reset);
 
@@ -452,4 +453,5 @@ describe("payment arriving after a void", () => {
       1,
     );
   });
+});
 });

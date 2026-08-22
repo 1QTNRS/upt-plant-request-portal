@@ -119,7 +119,10 @@ describe("maintenance reporting", () => {
       data: { expiresAt },
     });
 
-    const result = await runOfferMaintenance("https://portal.example.com");
+    const result = await runOfferMaintenance(
+      "https://portal.example.com",
+      async () => undefined,
+    );
     const entry = result.shops.find((row) => row.shop === shop);
 
     assert.ok(entry, "the shop must appear in the run");

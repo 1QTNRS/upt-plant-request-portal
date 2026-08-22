@@ -42,8 +42,17 @@ async function claimVoid(
     where: {
       requestId,
       voidedAt: null,
-      NOT: { voidError: COMPLETED_BEFORE_VOID },
-      OR: [{ voidStartedAt: null }, { voidStartedAt: { lt: staleBefore } }],
+      AND: [
+        {
+          OR: [
+            { voidError: null },
+            { voidError: { not: COMPLETED_BEFORE_VOID } },
+          ],
+        },
+        {
+          OR: [{ voidStartedAt: null }, { voidStartedAt: { lt: staleBefore } }],
+        },
+      ],
     },
     data: {
       voidStartedAt: now,
@@ -163,10 +172,19 @@ export async function voidExpiredDraftOrders(
       paidAt: null,
       draftOrder: {
         voidedAt: null,
-        NOT: { voidError: COMPLETED_BEFORE_VOID },
-        OR: [
-          { invoiceUrl: { not: null } },
-          { shopifyDraftOrderGid: { not: null } },
+        AND: [
+          {
+            OR: [
+              { voidError: null },
+              { voidError: { not: COMPLETED_BEFORE_VOID } },
+            ],
+          },
+          {
+            OR: [
+              { invoiceUrl: { not: null } },
+              { shopifyDraftOrderGid: { not: null } },
+            ],
+          },
         ],
       },
     },

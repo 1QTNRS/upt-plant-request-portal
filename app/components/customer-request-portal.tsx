@@ -295,7 +295,7 @@ export function OfferExpiryBanner({
             <strong>This offer has expired</strong>
           </s-text>
           <s-text>
-            The hold ended on {expiresAt}. These plants are no longer being held
+            The hold ended on {expiresAt}. These plants are no longer held
             for you and this offer can no longer be answered.
           </s-text>
           <s-text>
