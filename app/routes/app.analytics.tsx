@@ -25,6 +25,11 @@ import {
   type BehaviorFlag,
 } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
+import {
+  AdminResponsiveStyles,
+  statCardStyle,
+  WrappingRow,
+} from "../components/admin-layout";
 
 type SortDirection = "asc" | "desc";
 
@@ -99,18 +104,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <s-box
-      padding="base"
-      borderWidth="base"
-      borderRadius="base"
-      background="subdued"
-      inlineSize="200px"
-    >
-      <s-stack direction="block" gap="small">
-        <s-text color="subdued">{label}</s-text>
-        <s-heading>{value}</s-heading>
-      </s-stack>
-    </s-box>
+    <div style={statCardStyle}>
+      <s-box
+        padding="base"
+        borderWidth="base"
+        borderRadius="base"
+        background="subdued"
+      >
+        <s-stack direction="block" gap="small">
+          <s-text color="subdued">{label}</s-text>
+          <s-heading>{value}</s-heading>
+        </s-stack>
+      </s-box>
+    </div>
   );
 }
 
@@ -313,28 +319,6 @@ function FulfillmentSource({
           actually offered on. The FedEx upgrade is a shipping service and is
           never counted here.
         </s-text>
-        <s-stack direction="inline" gap="base">
-          <MetricCard
-            label="Requests Filled From Existing Stock"
-            value={String(fulfillment.requestsFulfilledFromExistingStock)}
-          />
-          <MetricCard
-            label="Existing Stock Acceptance Rate"
-            value={`${fulfillment.existingStockAcceptanceRate}%`}
-          />
-          <MetricCard
-            label="Existing Stock Purchase Rate"
-            value={`${fulfillment.existingStockPurchaseRate}%`}
-          />
-          <MetricCard
-            label="Exact Plant Conversion"
-            value={`${fulfillment.exactPlantConversionRate}%`}
-          />
-          <MetricCard
-            label="Grower's Choice Conversion"
-            value={`${fulfillment.existingStockConversionRate}%`}
-          />
-        </s-stack>
         <s-table>
           <s-table-header-row>
             <s-table-header listSlot="primary">Fulfilment Source</s-table-header>
@@ -438,6 +422,7 @@ export default function Analytics() {
 
   return (
     <s-page heading="Analytics">
+      <AdminResponsiveStyles />
       {actionData && !actionData.ok ? (
         <s-section>
           <s-banner tone="critical">
@@ -447,7 +432,7 @@ export default function Analytics() {
       ) : null}
 
       <s-section heading="Date Range">
-        <s-stack direction="inline" gap="small">
+        <WrappingRow>
           {DATE_FILTERS.map((filter) => (
             <s-button
               key={filter.id}
@@ -457,30 +442,30 @@ export default function Analytics() {
               {filter.label}
             </s-button>
           ))}
-        </s-stack>
+        </WrappingRow>
         {range === "custom" && (
           <Form method="get">
             <input type="hidden" name="range" value="custom" />
-            <s-stack direction="inline" gap="base">
+            <WrappingRow>
               <s-text-field name="start" label="Start date" value={customStart} />
               <s-text-field name="end" label="End date" value={customEnd} />
               <s-button variant="primary" type="submit">
                 Apply
               </s-button>
-            </s-stack>
+            </WrappingRow>
           </Form>
         )}
       </s-section>
 
       <s-section heading="Financial Metrics">
-        <s-stack direction="inline" gap="base">
+        <WrappingRow>
           <MetricCard label="Revenue This Month" value={formatCurrency(data.financial.revenueThisMonth)} />
           <MetricCard label="Revenue Last Month" value={formatCurrency(data.financial.revenueLastMonth)} />
           <MetricCard label="Growth vs Previous Month" value={formatPercent(data.financial.growthVsPreviousMonth)} />
           <MetricCard label="Average Order Value" value={formatCurrency(data.financial.averageOrderValue)} />
           <MetricCard label="Revenue From Closed Requests" value={formatCurrency(data.financial.revenueFromClosedRequests)} />
           <MetricCard label="Revenue Lost To Expired Requests" value={formatCurrency(data.financial.revenueLostToExpiredRequests)} />
-        </s-stack>
+        </WrappingRow>
       </s-section>
 
       <s-section heading="Revenue By Month">
@@ -501,7 +486,7 @@ export default function Analytics() {
       </s-section>
 
       <s-section heading="Request Metrics">
-        <s-stack direction="inline" gap="base">
+        <WrappingRow>
           <MetricCard label="Total Requests" value={String(data.requests.total)} />
           <MetricCard label="New" value={String(data.requests.new)} />
           <MetricCard label="Pending" value={String(data.requests.pending)} />
@@ -509,20 +494,19 @@ export default function Analytics() {
           <MetricCard label="Closed" value={String(data.requests.closed)} />
           <MetricCard label="Close Rate" value={`${data.requests.closeRate}%`} />
           <MetricCard label="Expiration Rate" value={`${data.requests.expirationRate}%`} />
-        </s-stack>
+        </WrappingRow>
       </s-section>
 
       <s-section heading="Item Funnel">
-        <s-stack direction="inline" gap="base">
+        <WrappingRow>
           <MetricCard label="Total items requested" value={String(data.itemFunnel.requested)} />
           <MetricCard label="Total items offered" value={String(data.itemFunnel.offered)} />
           <MetricCard label="Total items accepted" value={String(data.itemFunnel.accepted)} />
           <MetricCard label="Total items purchased" value={String(data.itemFunnel.purchased)} />
           <MetricCard label="Accepted vs Purchased %" value={`${data.itemFunnel.acceptedVsPurchasedPercent}%`} />
           <MetricCard label="Request-to-Purchase %" value={`${data.itemFunnel.requestToPurchasePercent}%`} />
-          <MetricCard label="Item purchase conversion rate" value={`${data.itemFunnel.itemPurchaseConversionRate}%`} />
           <MetricCard label="Item drop-off rate" value={`${data.itemFunnel.itemDropOffRate}%`} />
-        </s-stack>
+        </WrappingRow>
       </s-section>
 
       <s-section heading="Exact Plants Released">
@@ -532,7 +516,7 @@ export default function Analytics() {
             EXACT PLANTS listing. Counted separately because a decline, an unpaid
             hold and no reply at all are different problems.
           </s-text>
-          <s-stack direction="inline" gap="base">
+          <WrappingRow>
             <MetricCard
               label="Customer Declined"
               value={String(data.releasedItems.customerDeclined)}
@@ -549,7 +533,7 @@ export default function Analytics() {
               label="Total released"
               value={String(data.releasedItems.total)}
             />
-          </s-stack>
+          </WrappingRow>
         </s-stack>
       </s-section>
 
@@ -557,14 +541,48 @@ export default function Analytics() {
 
       <s-section heading="Customer Behavior">
         <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="base">
+          <WrappingRow>
             <MetricCard label="Repeat Request Customers" value={String(data.customerSummary.repeatRequestCustomers)} />
             <MetricCard label="Customers With Expired Offers" value={String(data.customerSummary.customersWithExpiredOffers)} />
             <MetricCard label="Customers With Closed/Paid Requests" value={String(data.customerSummary.customersWithClosedPaidRequests)} />
             <MetricCard label="High Request / Low Purchase Customers" value={String(data.customerSummary.highRequestLowPurchaseCustomers)} />
-            <MetricCard label="Repeated Request / Decline Customers" value={String(data.customerSummary.repeatedRequestDeclineCustomers)} />
-          </s-stack>
+          </WrappingRow>
           <RepeatedRequestDeclinePatterns customers={data.customers} />
+          <div className="upt-narrow-only">
+            {data.customers.map((customer) => (
+              <article key={customer.email} className="upt-request-card">
+                <dl>
+                  <dt>Customer</dt>
+                  <dd>{customer.customerName}</dd>
+                  <dt>Email</dt>
+                  <dd>{customer.email}</dd>
+                  <dt>Requests / Offers</dt>
+                  <dd>
+                    {customer.totalRequests} / {customer.offersSent}
+                  </dd>
+                  <dt>Items requested / offered / accepted / purchased</dt>
+                  <dd>
+                    {customer.itemsRequested} / {customer.itemsOffered} /{" "}
+                    {customer.itemsAccepted} / {customer.itemsPurchased}
+                  </dd>
+                  <dt>Closed/Paid · Expired · No-Payment Rate</dt>
+                  <dd>
+                    {customer.closedPaidRequests} · {customer.expiredRequests} ·{" "}
+                    {customer.noPaymentRate}%
+                  </dd>
+                  <dt>Revenue</dt>
+                  <dd>{formatCurrency(customer.totalRevenue)}</dd>
+                  <dt>Behavior Flag</dt>
+                  <dd>
+                    <s-badge tone={behaviorFlagTone(customer.behaviorFlag as BehaviorFlag)}>
+                      {customer.behaviorFlag}
+                    </s-badge>
+                  </dd>
+                </dl>
+              </article>
+            ))}
+          </div>
+          <div className="upt-wide-only">
           <s-table>
             <s-table-header-row>
               <s-table-header listSlot="primary">Customer Name</s-table-header>
@@ -611,10 +629,43 @@ export default function Analytics() {
               ))}
             </s-table-body>
           </s-table>
+          </div>
         </s-stack>
       </s-section>
 
       <s-section heading="Item Conversion Analytics">
+        <div className="upt-narrow-only">
+          {data.itemPurchaseRows.map((row) => (
+            <article key={`${row.email}-${row.requestId}`} className="upt-request-card">
+              <dl>
+                <dt>Customer</dt>
+                <dd>{row.customerName}</dd>
+                <dt>Email</dt>
+                <dd>{row.email}</dd>
+                <dt>Request</dt>
+                <dd>{row.requestId}</dd>
+                <dt>Items requested / offered / accepted / purchased</dt>
+                <dd>
+                  {row.itemsRequested} / {row.itemsOffered} / {row.itemsAccepted} /{" "}
+                  {row.itemsPurchased}
+                </dd>
+                <dt>Accepted vs Purchased %</dt>
+                <dd>{row.acceptedVsPurchasedPercent}%</dd>
+                <dt>Request-to-Purchase %</dt>
+                <dd>{row.requestToPurchasePercent}%</dd>
+                <dt>Item Revenue</dt>
+                <dd>{formatCurrency(row.itemRevenue)}</dd>
+                <dt>Behavior Flag</dt>
+                <dd>
+                  <s-badge tone={behaviorFlagTone(row.behaviorFlag)}>
+                    {row.behaviorFlag}
+                  </s-badge>
+                </dd>
+              </dl>
+            </article>
+          ))}
+        </div>
+        <div className="upt-wide-only">
         <s-table>
           <s-table-header-row>
             <s-table-header listSlot="primary">Customer Name</s-table-header>
@@ -651,6 +702,7 @@ export default function Analytics() {
             ))}
           </s-table-body>
         </s-table>
+        </div>
       </s-section>
 
       <PlantIdentitySuggestions
@@ -661,7 +713,6 @@ export default function Analytics() {
       <PlantTable heading="Most Requested Plants" plants={data.plants.mostRequested} />
       <PlantTable heading="Most Purchased Plants" plants={data.plants.mostPurchased} />
       <PlantTable heading="Highest Revenue Plants" plants={data.plants.highestRevenue} />
-      <PlantTable heading="Revenue By Plant" plants={data.plants.revenueByPlant} />
     </s-page>
   );
 }

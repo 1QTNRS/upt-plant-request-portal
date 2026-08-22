@@ -38,6 +38,7 @@ import {
   offerHasPayableItems,
   offerIsAllExactPlants,
   offerReadinessMessage,
+  PAYMENT_AFTER_VOID_REASON,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
@@ -126,6 +127,8 @@ type RequestWithRelations = DbPlantRequest & {
     invoiceUrl: string | null;
     shopifyDraftOrderGid: string | null;
     createdAt: Date;
+    voidedAt?: Date | null;
+    voidError?: string | null;
   } | null;
 };
 
@@ -926,6 +929,30 @@ export async function removeItemPhoto(
  * editorial decision rather than a nicety — and it is frozen into the offer
  * snapshot the moment the offer is sent.
  */
+/**
+ * Writes a whole photo order. Safe to replay: the same id list is a no-op.
+ * Refuses a list that is not a permutation of the current photos.
+ */
+export async function reorderItemPhotos(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  orderedIds: string[],
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const current = photos.map((photo) => photo.id);
+  if (orderedIds.length !== current.length) return getRequest(shop, requestId);
+  if (new Set(orderedIds).size !== orderedIds.length) return getRequest(shop, requestId);
+  if (!orderedIds.every((id) => current.includes(id))) return getRequest(shop, requestId);
+
+  await resequencePhotos(itemId, orderedIds);
+  return getRequest(shop, requestId);
+}
+
 export async function moveItemPhoto(
   shop: string,
   requestId: string,
@@ -1425,12 +1452,16 @@ export async function markRequestPaid(
       });
     }
     if (!alreadyPaid) {
+      const afterVoid =
+        Boolean(request.draftOrder?.voidedAt) || request.status === "Expired";
       await tx.statusEvent.create({
         data: {
           requestId,
           fromStatus: request.status,
           toStatus: "Closed",
-          reason: "Payment completed",
+          reason: afterVoid
+            ? PAYMENT_AFTER_VOID_REASON
+            : "Payment completed",
         },
       });
     }

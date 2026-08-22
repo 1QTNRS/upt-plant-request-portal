@@ -221,6 +221,11 @@ async function inputSamples() {
       }),
     },
     {
+      label: "draftOrderDelete($input)",
+      type: "DraftOrderDeleteInput!",
+      value: { id: "gid://shopify/DraftOrder/1" },
+    },
+    {
       label: "productCreate($product)",
       type: "ProductCreateInput!",
       value: exactPlant.product,

@@ -432,6 +432,23 @@ export function requestStatusTone(
   }
 }
 
+/**
+ * Tone for the derived customer label. Stored Pending stays Pending; this only
+ * changes how the three customer-facing labels read.
+ */
+export function customerStatusTone(
+  status: RequestStatus,
+  options: { hasPayableItems?: boolean; hasResponded?: boolean } = {},
+): "info" | "warning" | "caution" | "success" | "critical" {
+  if (status === "Pending") {
+    const label = formatCustomerStatusLabel(status, options);
+    if (label === NOTHING_TO_PAY_LABEL) return "info";
+    if (label === NEEDS_PAYMENT_LABEL) return "warning";
+    return "caution";
+  }
+  return requestStatusTone(status);
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -1180,6 +1197,52 @@ export function buildRequestReceivedEmail(input: {
       "",
       "Thank you,",
       "Unsolicited Plant Talks",
+    ].join("\n"),
+  };
+}
+
+/** The invoice Shopify issued is gone; money must still be recorded. */
+export const PAYMENT_AFTER_VOID_REASON = "Payment After Expiration/Void";
+
+/** The sweep successfully made an expired unpaid invoice non-payable. */
+export const INVOICE_VOIDED_REASON = "Invoice voided after expiration";
+
+/**
+ * The checkout URL a customer may still be shown.
+ *
+ * After the hold ends the invoice must not be offered: Shopify will still
+ * complete a stale draft order, and a Grower's Choice unit is back on open
+ * sale. A voided row or a closed/paid request is the same rule.
+ */
+export function payableInvoiceUrl(input: {
+  invoiceUrl?: string | null;
+  voidedAt?: Date | string | null;
+  requestClosed?: boolean;
+  requestPaid?: boolean;
+  expiresAtIso?: string | null;
+  now?: Date;
+}): string | null {
+  if (input.requestClosed || input.requestPaid) return null;
+  if (input.voidedAt) return null;
+  if (input.expiresAtIso && isOfferExpired(input.expiresAtIso, input.now)) {
+    return null;
+  }
+  return input.invoiceUrl ?? null;
+}
+
+export function buildAdminPaymentAfterVoidEmail(input: {
+  requestNumber: string;
+  orderNumber?: string;
+}): { subject: string; bodyText: string } {
+  const order = input.orderNumber ? ` (${input.orderNumber})` : "";
+  return {
+    subject: `URGENT: Payment after expiration on ${input.requestNumber}`,
+    bodyText: [
+      `A Shopify order${order} paid an invoice that this portal had already voided for ${input.requestNumber}.`,
+      "",
+      "The payment was recorded and the request is Closed so the money is not lost.",
+      "The plant is no longer eligible for EXACT PLANTS listing.",
+      "This is not a normal payment — check whether the same plant was already relisted or sold.",
     ].join("\n"),
   };
 }

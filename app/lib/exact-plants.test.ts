@@ -6,6 +6,7 @@ import {
   buildExactPlantProductCreateInput,
   declinedItemTag,
   EXACT_PLANT_RELEASE_LABELS,
+  exactPlantReleaseTone,
   EXACT_PLANTS_COLLECTION_TITLE,
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
@@ -159,6 +160,9 @@ describe("exact plant release eligibility", () => {
       assert.ok(EXACT_PLANT_RELEASE_LABELS[reason].length > 0);
     }
     assert.equal(EXACT_PLANT_RELEASE_LABELS.customer_declined, "Customer Declined");
+    assert.equal(exactPlantReleaseTone("customer_declined"), "warning");
+    assert.equal(exactPlantReleaseTone("accepted_unpaid_expired"), "caution");
+    assert.equal(exactPlantReleaseTone("never_responded_expired"), "info");
   });
 });
 

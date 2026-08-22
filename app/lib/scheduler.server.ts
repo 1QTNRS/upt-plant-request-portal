@@ -1,12 +1,25 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import prisma from "../db.server";
+import { voidExpiredDraftOrders } from "./draft-order-void.server";
 import { notifyExpirationReminders, redeliverPendingEmails } from "./emails.server";
 import { expireOverdueOffers } from "./portal.server";
+import type { GraphqlClient } from "./shopify-ops.server";
+
+/** Loaded lazily so unit tests of the sweep do not boot the Shopify SDK. */
+export type SweepAdminLoader = (
+  shop: string,
+) => Promise<GraphqlClient | undefined>;
+
+async function defaultSweepAdmin(shop: string): Promise<GraphqlClient | undefined> {
+  const { offlineAdminClient } = await import("./offline-admin.server");
+  return offlineAdminClient(shop);
+}
 
 export type ShopMaintenanceResult = {
   shop: string;
   expired: number;
+  invoicesVoided: number;
   /** Reminder rows created. Not the same as reminders that reached anyone. */
   remindersQueued: number;
   remindersSent: number;
@@ -77,6 +90,7 @@ export async function shopsWithPortalData(): Promise<string[]> {
  */
 export async function runOfferMaintenance(
   appUrl = process.env.SHOPIFY_APP_URL ?? "",
+  loadAdmin: SweepAdminLoader = defaultSweepAdmin,
 ): Promise<MaintenanceResult> {
   const shops = await shopsWithPortalData();
   const results: ShopMaintenanceResult[] = [];
@@ -84,6 +98,8 @@ export async function runOfferMaintenance(
   for (const shop of shops) {
     try {
       const expired = await expireOverdueOffers(shop);
+      const admin = await loadAdmin(shop);
+      const voided = await voidExpiredDraftOrders(shop, admin);
       // Retried before the reminders so a reminder queued by this same run is
       // not attempted twice within it, which would burn its attempt budget.
       const retried = await redeliverPendingEmails(shop);
@@ -93,6 +109,7 @@ export async function runOfferMaintenance(
       results.push({
         shop,
         expired,
+        invoicesVoided: voided.voided,
         remindersQueued: after.queued - before.queued,
         remindersSent: after.sent - before.sent,
         emailsRetried: retried.attempted,
@@ -103,6 +120,7 @@ export async function runOfferMaintenance(
       results.push({
         shop,
         expired: 0,
+        invoicesVoided: 0,
         remindersQueued: 0,
         remindersSent: 0,
         emailsRetried: 0,

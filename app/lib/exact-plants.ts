@@ -47,6 +47,19 @@ export const EXACT_PLANT_RELEASE_LABELS: Record<ExactPlantReleaseReason, string>
   never_responded_expired: "Customer Never Responded/Expired",
 };
 
+export function exactPlantReleaseTone(
+  reason: ExactPlantReleaseReason,
+): "info" | "warning" | "caution" {
+  switch (reason) {
+    case "customer_declined":
+      return "warning";
+    case "accepted_unpaid_expired":
+      return "caution";
+    case "never_responded_expired":
+      return "info";
+  }
+}
+
 export type ExactPlantEligibilityInput = {
   hasOfferItem: boolean;
   offerAvailability?: string | null;

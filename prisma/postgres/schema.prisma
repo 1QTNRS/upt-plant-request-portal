@@ -340,6 +340,12 @@ model DraftOrderReference {
   // own at that moment; this is the record of what was asked for, so the
   // merchant can be told when the stock comes back.
   reserveInventoryUntil DateTime?
+  // When the expired unpaid invoice was made non-payable. The Shopify draft
+  // order is deleted; this row and the offer/response snapshots stay.
+  voidedAt       DateTime?
+  voidStartedAt  DateTime?
+  voidError      String?
+  voidAttempts   Int         @default(0)
 }
 
 model ShopifyOrderReference {

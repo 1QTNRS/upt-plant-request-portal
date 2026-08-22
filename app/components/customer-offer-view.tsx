@@ -16,7 +16,8 @@ import { OfferExpiryBanner } from "./customer-request-portal";
 type ItemChoice = "accept" | "reject" | "unavailable";
 
 const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
+  padding: "12px 20px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   background: "#ffffff",
@@ -27,11 +28,21 @@ const buttonStyle: React.CSSProperties = {
 const choiceLabelStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: "6px",
-  padding: "8px 16px",
+  gap: "10px",
+  padding: "12px 20px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   cursor: "pointer",
+};
+
+const offerPhotoStyle: React.CSSProperties = {
+  display: "block",
+  objectFit: "cover",
+  borderRadius: "8px",
+  maxWidth: "100%",
+  width: "min(200px, 100%)",
+  height: "auto",
 };
 
 /**
@@ -172,40 +183,43 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {hasAccepted && invoiceUrl && !requestClosed ? (
+        {hasAccepted && invoiceUrl && !requestClosed && !holdEnded ? (
           <s-section>
             <s-stack direction="block" gap="base">
-              {holdEnded ? (
-                /*
-                 * The hold has lapsed, and an expired unpaid request releases
-                 * its plants for review as EXACT PLANTS listings. The invoice
-                 * Shopify issued is still payable, so the link stays — but
-                 * presenting it as a live hold would be a promise this page
-                 * cannot keep, and paying against it is no longer guaranteed
-                 * to get the plant.
-                 */
-                <s-banner tone="warning">
-                  <s-text>
-                    Your hold ended{offer.expiresAt ? ` on ${offer.expiresAt}` : ""}.
-                    Please contact us before paying — we can no longer guarantee
-                    these plants are still reserved for you.
-                  </s-text>
-                </s-banner>
-              ) : (
-                <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
-              )}
+              <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
               <s-text color="subdued">{offer.customerEmail}</s-text>
               <s-link href={invoiceUrl}>Continue to Checkout</s-link>
             </s-stack>
           </s-section>
         ) : null}
 
-        {hasAccepted && !invoiceUrl && !requestClosed ? (
+        {hasAccepted && holdEnded && !requestPaid && !requestClosed ? (
+          <s-section>
+            <s-banner tone="critical">
+              <s-stack direction="block" gap="small">
+                <s-text>
+                  <strong>Offer Expired</strong>
+                </s-text>
+                <s-text>
+                  The items are no longer being held
+                  {offer.expiresAt ? ` — the hold ended on ${offer.expiresAt}` : ""}.
+                  The previous checkout/payment link is no longer valid.
+                </s-text>
+                <s-text>
+                  You may submit a new request if you are still interested.
+                </s-text>
+              </s-stack>
+            </s-banner>
+          </s-section>
+        ) : null}
+
+        {hasAccepted && !invoiceUrl && !requestClosed && !requestPaid && !holdEnded ? (
           /*
            * There is no payment link, and nothing on this page will produce one:
            * re-submitting an answered offer is refused. Telling the customer a
            * link had been emailed and would appear here shortly was false on
-           * both counts.
+           * both counts. After the hold ends the expired banner above is the
+           * only message — this one would claim the plants are still held.
            */
           <s-section>
             <s-stack direction="block" gap="base">
@@ -550,12 +564,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
               alt={`${item.plantName}, from our store listing`}
               width={200}
               height={200}
-              style={{
-                display: "block",
-                objectFit: "cover",
-                borderRadius: "8px",
-                flexShrink: 0,
-              }}
+              style={offerPhotoStyle}
             />
           </div>
         ) : null}
@@ -573,12 +582,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
                 }
                 width={200}
                 height={200}
-                style={{
-                  display: "block",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                }}
+                style={offerPhotoStyle}
               />
             ))}
           </div>
@@ -634,12 +638,7 @@ function OfferItemCard({
               alt={`${item.plantName}, from our store listing`}
               width={200}
               height={200}
-              style={{
-                display: "block",
-                objectFit: "cover",
-                borderRadius: "8px",
-                flexShrink: 0,
-              }}
+              style={offerPhotoStyle}
             />
           </div>
         ) : null}
@@ -662,12 +661,7 @@ function OfferItemCard({
                 }
                 width={200}
                 height={200}
-                style={{
-                  display: "block",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                }}
+                style={offerPhotoStyle}
               />
             ))}
           </div>
@@ -713,7 +707,7 @@ function OfferItemCard({
            * item when the page does not hydrate, which it never does through the
            * app proxy — the customer would silently accept everything.
            */
-          <s-stack direction="inline" gap="small">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {(["accept", "reject"] as const).map((option) => (
               <label key={option} style={choiceLabelStyle}>
                 <input
@@ -726,7 +720,7 @@ function OfferItemCard({
                 <s-text>{option === "accept" ? "Accept" : "Reject"}</s-text>
               </label>
             ))}
-          </s-stack>
+          </div>
         ) : null}
 
         {available && !answerable ? (

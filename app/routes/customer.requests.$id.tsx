@@ -11,9 +11,9 @@ import { readCustomerContext } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { identityOwnsRequest } from "../lib/customer-identity";
 import {
+  customerStatusTone,
   formatCustomerStatusLabel,
   getDisplayRequestNumber,
-  requestStatusTone,
 } from "../lib/portal";
 import {
   handleCustomerOfferAction,
@@ -66,7 +66,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   }
 
   const { context, plantRequest } = authorized;
-  const page = await loadCustomerOfferPage(context.shop, requestId);
+  const admin = await offlineAdminClient(context.shop);
+  const page = await loadCustomerOfferPage(context.shop, requestId, admin);
   const links = customerPortalRelativeLinks(context.viaAppProxy);
   return {
     forbidden: false as const,
@@ -171,7 +172,12 @@ export default function CustomerRequestDetail() {
       <s-page heading={getDisplayRequestNumber(data.request)}>
         <s-section heading="Request details">
           <s-stack direction="block" gap="base">
-            <s-badge tone={requestStatusTone(data.request.status)}>
+            <s-badge
+              tone={customerStatusTone(data.request.status, {
+                hasPayableItems: data.request.hasPayableItems,
+                hasResponded: data.request.hasResponded,
+              })}
+            >
               {data.statusLabel}
             </s-badge>
             <s-text>Submitted {data.request.submittedDate}</s-text>
@@ -197,7 +203,12 @@ export default function CustomerRequestDetail() {
       fedexRemovalWarning={data.fedexRemovalWarning}
       statusLabel={data.statusLabel}
       statusTone={
-        data.request ? requestStatusTone(data.request.status) : undefined
+        data.request
+          ? customerStatusTone(data.request.status, {
+              hasPayableItems: data.request.hasPayableItems,
+              hasResponded: data.request.hasResponded,
+            })
+          : undefined
       }
       backHref={data.backHref}
       requestClosed={data.requestClosed}

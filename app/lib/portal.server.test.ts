@@ -14,6 +14,7 @@ import {
   listRequests,
   moveItemPhoto,
   removeItemPhoto,
+  reorderItemPhotos,
   saveCustomerResponse,
   sendOffer,
   submitCustomerRequest,
@@ -584,6 +585,42 @@ describe("exact plant photos before the offer is sent", () => {
     await assert.rejects(
       () => moveItemPhoto(photoShop, created.id, itemId, photo.id, "down"),
       /before an offer is sent/,
+    );
+    await assert.rejects(
+      () => reorderItemPhotos(photoShop, created.id, itemId, [photo.id]),
+      /before an offer is sent/,
+    );
+  });
+
+  it("accepts a whole photo ordering and ignores a list that is not a permutation", async () => {
+    const created = await submitCustomerRequest(photoShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Philodendron Pink Princess" }],
+    });
+    const itemId = created.items[0].id;
+    await addItemPhotos(photoShop, created.id, itemId, [
+      { url: "https://cdn.example.com/1.jpg" },
+      { url: "https://cdn.example.com/2.jpg" },
+      { url: "https://cdn.example.com/3.jpg" },
+    ]);
+    const [a, b, c] = await photosOf(created.id, itemId);
+
+    await reorderItemPhotos(photoShop, created.id, itemId, [c.id, a.id, b.id]);
+    assert.deepEqual(
+      (await photosOf(created.id, itemId)).map((photo) => photo.url),
+      [
+        "https://cdn.example.com/3.jpg",
+        "https://cdn.example.com/1.jpg",
+        "https://cdn.example.com/2.jpg",
+      ],
+    );
+
+    await reorderItemPhotos(photoShop, created.id, itemId, [c.id, a.id]);
+    assert.deepEqual(
+      (await photosOf(created.id, itemId)).map((photo) => photo.id),
+      [c.id, a.id, b.id],
+      "a partial list must not drop a photo",
     );
   });
 });

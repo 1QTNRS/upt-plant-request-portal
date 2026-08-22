@@ -1,8 +1,11 @@
+import { voidExpiredDraftOrder } from "./draft-order-void.server";
+import { payableInvoiceUrl } from "./portal";
 import {
   acceptedOfferLines,
   buildCustomerOffer,
   clearFulfillmentIssues,
   closeRequest,
+  expireOverdueOffers,
   getCustomerResponse,
   getDraftOrder,
   getRequest,
@@ -25,7 +28,11 @@ import {
 import { RESERVATION_NOT_CONFIRMED } from "./growers-choice";
 import type { AdminContext } from "./admin-auth.server";
 
-export async function loadCustomerOfferPage(shop: string, requestId: string | null) {
+export async function loadCustomerOfferPage(
+  shop: string,
+  requestId: string | null,
+  admin?: Parameters<typeof voidExpiredDraftOrder>[2],
+) {
   const settings = await getShopSettings(shop);
   if (!requestId) {
     return {
@@ -39,6 +46,11 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
     };
   }
 
+  await expireOverdueOffers(shop);
+  if (admin) {
+    await voidExpiredDraftOrder(shop, requestId, admin);
+  }
+
   const offer = await buildCustomerOffer(shop, requestId);
   const response = await getCustomerResponse(shop, requestId);
   const request = await getRequest(shop, requestId);
@@ -47,7 +59,13 @@ export async function loadCustomerOfferPage(shop: string, requestId: string | nu
   return {
     offer,
     response,
-    invoiceUrl: draft?.invoiceUrl ?? null,
+    invoiceUrl: payableInvoiceUrl({
+      invoiceUrl: draft?.invoiceUrl,
+      voidedAt: draft?.voidedAt,
+      requestClosed: request?.status === "Closed",
+      requestPaid: Boolean(request?.paidAt),
+      expiresAtIso: offer?.expiresAtIso,
+    }),
     fedexRemovalWarning: settings.fedexRemovalWarning,
     requestClosed: request?.status === "Closed",
     requestPaid: Boolean(request?.paidAt),

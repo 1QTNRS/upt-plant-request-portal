@@ -1,9 +1,9 @@
 
 import {
   computeTimeRemaining,
+  customerStatusTone,
   formatCustomerStatusLabel,
   isOfferExpired,
-  requestStatusTone,
   type CustomerMyRequestRow,
   type RequestStatus,
 } from "../lib/portal";
@@ -18,15 +18,19 @@ export const EMPTY_PLANT_LINE: PlantLine = { plantName: "", notes: "" };
 const fieldStyle: React.CSSProperties = {
   display: "block",
   width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
   marginTop: "8px",
-  padding: "8px",
+  padding: "12px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
 };
 
 const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
+  padding: "12px 16px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
@@ -238,7 +242,12 @@ export function CustomerRequestPortal({
                     </s-link>
                   </s-table-cell>
                   <s-table-cell>
-                    <s-badge tone={requestStatusTone(request.status as RequestStatus)}>
+                    <s-badge
+                      tone={customerStatusTone(request.status as RequestStatus, {
+                        hasPayableItems: request.hasPayableItems,
+                        hasResponded: request.hasResponded,
+                      })}
+                    >
                       {formatCustomerStatusLabel(request.status, {
                         hasPayableItems: request.hasPayableItems,
                         hasResponded: request.hasResponded,
@@ -295,12 +304,12 @@ export function OfferExpiryBanner({
             <strong>This offer has expired</strong>
           </s-text>
           <s-text>
-            The hold ended on {expiresAt}. These plants are no longer reserved
+            The hold ended on {expiresAt}. These plants are no longer held
             for you and this offer can no longer be answered.
           </s-text>
           <s-text>
-            Contact us if you are still interested and we will check whether the
-            plant is available.
+            The previous checkout/payment link is no longer valid. You may
+            submit a new request if you are still interested.
           </s-text>
         </s-stack>
       </s-banner>

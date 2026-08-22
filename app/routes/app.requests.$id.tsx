@@ -45,6 +45,7 @@ import {
   getDisplayRequestNumber,
   incompleteOfferItems,
   offerReadinessMessage,
+  payableInvoiceUrl,
   requestStatusTone,
   UNAVAILABLE_REASON_OPTIONS,
   type ItemAvailabilityStatus,
@@ -57,6 +58,7 @@ import {
 } from "../lib/portal";
 import {
   addItemPhotos,
+  expireOverdueOffers,
   getCustomerResponse,
   getDraftOrder,
   getRequest,
@@ -64,6 +66,7 @@ import {
   markRequestViewed,
   moveItemPhoto,
   removeItemPhoto,
+  reorderItemPhotos,
   sendOffer,
   unlinkExistingStock,
   updateRequestItem,
@@ -76,6 +79,9 @@ import {
   uploadPlantPhoto,
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
+import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
+import { PhotoReorderStrip } from "../components/photo-reorder";
+import { wrapRowStyle } from "../components/admin-layout";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -97,11 +103,14 @@ function itemStatusTone(
 }
 
 const numberInputStyle = {
-  width: "120px",
+  width: "100%",
+  maxWidth: "160px",
+  minWidth: "120px",
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
+  boxSizing: "border-box" as const,
 } as const;
 
 const disabledNumberInputStyle = {
@@ -148,9 +157,11 @@ const editableTextareaStyle = {
 };
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { shop } = await requireAdmin(request);
+  const { shop, admin } = await requireAdmin(request);
   await ensureShopSeeded(shop);
   const requestId = params.id ?? "";
+  await expireOverdueOffers(shop);
+  await voidExpiredDraftOrder(shop, requestId, admin);
   const plantRequest = await getRequest(shop, requestId);
   if (plantRequest) {
     await markRequestViewed(shop, requestId);
@@ -194,7 +205,17 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     plantRequest,
     response,
     emails,
-    paymentLink: draftOrder?.invoiceUrl ?? null,
+    paymentLink: payableInvoiceUrl({
+      invoiceUrl: draftOrder?.invoiceUrl,
+      voidedAt: draftOrder?.voidedAt,
+      requestClosed: plantRequest?.status === "Closed",
+      requestPaid: Boolean(plantRequest?.paidAt),
+      expiresAtIso: plantRequest?.sentOffer?.expiresAtIso,
+    }),
+    paymentAfterVoid: Boolean(
+      plantRequest?.paidAt && (draftOrder?.voidedAt || plantRequest.expiredAt),
+    ),
+    invoiceVoided: Boolean(draftOrder?.voidedAt && !plantRequest?.paidAt),
     inventoryHold: draftOrder?.reserveInventoryUntil
       ? {
           state: inventoryHoldState({
@@ -321,6 +342,20 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         requestId,
         String(form.get("itemId") || ""),
         String(form.get("photoId") || ""),
+      );
+      return { ok: true };
+    }
+
+    if (intent === "reorder-photos") {
+      const orderedIds = String(form.get("photoIds") || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      await reorderItemPhotos(
+        shop,
+        requestId,
+        String(form.get("itemId") || ""),
+        orderedIds,
       );
       return { ok: true };
     }
@@ -543,13 +578,13 @@ function ExistingStockPanel({
               {linked ? "Change the linked listing" : "Search existing website stock"}
             </s-text>
           </label>
-          <s-stack direction="inline" gap="small">
+          <div style={wrapRowStyle}>
             <input
               id={`stock-search-${item.id}`}
               value={term}
               placeholder="Product title, variant, or SKU"
               onChange={(event) => setTerm(event.currentTarget.value)}
-              style={textInputStyle}
+              style={{ ...textInputStyle, flex: "1 1 200px", minWidth: 0, maxWidth: "100%" }}
             />
             <s-button
               variant="secondary"
@@ -566,7 +601,7 @@ function ExistingStockPanel({
             >
               Search Shopify
             </s-button>
-          </s-stack>
+          </div>
 
           {linkError ? (
             <s-banner tone="critical">
@@ -730,7 +765,7 @@ function PlantItemCard({
 
         <s-stack direction="block" gap="small">
           <s-text color="subdued">How this plant will be supplied</s-text>
-          <s-stack direction="inline" gap="small">
+          <div style={wrapRowStyle}>
             {FULFILLMENT_CHOICES.map((choice) => (
               <s-button
                 key={choice}
@@ -741,7 +776,7 @@ function PlantItemCard({
                 {FULFILLMENT_CHOICE_LABELS[choice]}
               </s-button>
             ))}
-          </s-stack>
+          </div>
         </s-stack>
 
         {growersChoice ? (
@@ -790,7 +825,7 @@ function PlantItemCard({
               />
             </s-stack>
 
-            <s-stack direction="inline" gap="large">
+            <div style={wrapRowStyle}>
               <s-stack direction="block" gap="small">
                 <label htmlFor={`price-${item.id}`}>
                   <s-text color="subdued">Price</s-text>
@@ -835,7 +870,7 @@ function PlantItemCard({
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
-            </s-stack>
+            </div>
 
             {/*
               A Grower's Choice customer is not being sold the plant in the
@@ -845,67 +880,35 @@ function PlantItemCard({
             {growersChoice ? null : (
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Exact plant photos</s-text>
-              <s-stack direction="inline" gap="base">
-                {(canEdit && item.photos.length > 0
-                  ? item.photos
-                  : item.photoUrls.map((url) => ({ id: url, url }))
-                ).map((photo, index, all) => (
-                  <s-stack key={photo.id} direction="block" gap="small">
-                    <img
-                      src={photo.url}
-                      alt={item.offeredName || item.plantName}
-                      width={120}
-                      height={120}
-                      style={{
-                        display: "block",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    {index === 0 ? (
-                      <s-badge tone="info">Customer sees first</s-badge>
-                    ) : null}
-                    {canEdit && item.photos.length > 0 ? (
-                      <s-stack direction="inline" gap="small">
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="move-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <input type="hidden" name="direction" value="up" />
-                          <s-button
-                            variant="secondary"
-                            type="submit"
-                            {...(index === 0 ? { disabled: true } : {})}
-                          >
-                            Move left
-                          </s-button>
-                        </photoFetcher.Form>
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="move-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <input type="hidden" name="direction" value="down" />
-                          <s-button
-                            variant="secondary"
-                            type="submit"
-                            {...(index === all.length - 1 ? { disabled: true } : {})}
-                          >
-                            Move right
-                          </s-button>
-                        </photoFetcher.Form>
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="remove-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <s-button variant="secondary" tone="critical" type="submit">
-                            Remove
-                          </s-button>
-                        </photoFetcher.Form>
-                      </s-stack>
-                    ) : null}
-                  </s-stack>
-                ))}
-              </s-stack>
+              {canEdit && item.photos.length > 0 ? (
+                <PhotoReorderStrip
+                  itemId={item.id}
+                  photos={item.photos}
+                  alt={item.offeredName || item.plantName}
+                />
+              ) : (
+                <div style={wrapRowStyle}>
+                  {item.photoUrls.map((url, index) => (
+                    <s-stack key={url} direction="block" gap="small">
+                      <img
+                        src={url}
+                        alt={item.offeredName || item.plantName}
+                        width={120}
+                        height={120}
+                        style={{
+                          display: "block",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                          maxWidth: "100%",
+                        }}
+                      />
+                      {index === 0 ? (
+                        <s-badge tone="info">Customer sees first</s-badge>
+                      ) : null}
+                    </s-stack>
+                  ))}
+                </div>
+              )}
               {canEdit ? (
                 <s-stack direction="block" gap="small">
                   <photoFetcher.Form method="post" encType="multipart/form-data">
@@ -1528,6 +1531,8 @@ export default function RequestDetail() {
     response,
     emails,
     paymentLink,
+    paymentAfterVoid,
+    invoiceVoided,
     inventoryHold,
     declinedExactPlants,
     plantPatterns,
@@ -1569,6 +1574,31 @@ export default function RequestDetail() {
         <s-section>
           <s-banner tone="critical">
             <s-text>{actionError}</s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
+      {paymentAfterVoid ? (
+        <s-section>
+          <s-banner tone="critical">
+            <s-text>
+              Payment After Expiration/Void — Shopify recorded a payment on an
+              invoice this portal had already made non-payable. The money is
+              booked and the request is Closed, but a human must check whether
+              the same plant was already relisted or sold.
+            </s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+
+      {invoiceVoided ? (
+        <s-section>
+          <s-banner tone="warning">
+            <s-text>
+              The Shopify invoice for this expired offer was deleted so it can
+              no longer be paid. The draft order reference, line items and
+              offer snapshot are kept here.
+            </s-text>
           </s-banner>
         </s-section>
       ) : null}

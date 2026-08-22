@@ -14,7 +14,7 @@ import {
   getExactPlantReview,
 } from "../lib/exact-plants.server";
 import { formatCurrency } from "../lib/portal";
-import { EXACT_PLANT_RELEASE_LABELS } from "../lib/exact-plants";
+import { EXACT_PLANT_RELEASE_LABELS, exactPlantReleaseTone } from "../lib/exact-plants";
 
 const inputStyle = {
   width: "100%",
@@ -154,7 +154,9 @@ export default function ExactPlantListingReview() {
       <s-section>
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="small">
-            <s-badge>{EXACT_PLANT_RELEASE_LABELS[review.releaseReason]}</s-badge>
+            <s-badge tone={exactPlantReleaseTone(review.releaseReason)}>
+              {EXACT_PLANT_RELEASE_LABELS[review.releaseReason]}
+            </s-badge>
           </s-stack>
           <s-banner tone="info">
             <s-text>
