@@ -1,4 +1,5 @@
 import {
+  isGrowersChoice,
   linkedStockShortfall,
   resolveFulfillmentType,
   resolveLinkedWeightLbs,
@@ -499,12 +500,34 @@ export function matchesAdminSearch(
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
-export function getOfferHoldMessage(expiresAt: string): string {
-  return `These exact plants are being held for you until ${expiresAt}. After that, this offer may be released.`;
+/**
+ * Names what is on offer without promising an exact plant that is not one.
+ *
+ * A Grower's Choice line is picked from stock at dispatch, so calling it an
+ * exact plant beside a listing photo reads as the promise the disclosure right
+ * under it takes back.
+ */
+function offeredPlantsSubject(allExactPlants: boolean): string {
+  return allExactPlants ? "These exact plants" : "These plants";
 }
 
-export function getOfferUrgencyMessage(): string {
-  return "These exact plants are reserved for you. Review and respond before this offer expires.";
+export function getOfferHoldMessage(expiresAt: string, allExactPlants = true): string {
+  return `${offeredPlantsSubject(
+    allExactPlants,
+  )} are being held for you until ${expiresAt}. After that, this offer may be released.`;
+}
+
+export function getOfferUrgencyMessage(allExactPlants = true): string {
+  return `${offeredPlantsSubject(
+    allExactPlants,
+  )} are reserved for you. Review and respond before this offer expires.`;
+}
+
+/** True when no offered line is supplied from stock the store already lists. */
+export function offerIsAllExactPlants(
+  items: Array<{ availability: string | null | undefined; fulfillmentType?: string | null }>,
+): boolean {
+  return !items.some((item) => isGrowersChoice(item));
 }
 
 export function computeTimeRemaining(expiresAtIso: string, now = new Date()): string | null {
@@ -1190,6 +1213,7 @@ export function buildOfferReadyEmail(input: {
   requestNumber: string;
   expiresAt: string;
   offerLink: string;
+  allExactPlants?: boolean;
 }): { subject: string; bodyText: string } {
   return {
     subject: `UPT has responded to your plant request (${input.requestNumber})`,
@@ -1197,7 +1221,7 @@ export function buildOfferReadyEmail(input: {
       `Hi ${input.customerName || "there"},`,
       "",
       `UPT has responded to your plant request ${input.requestNumber}. Your personal offer is ready to review, and you decide which plants you want.`,
-      getOfferHoldMessage(input.expiresAt),
+      getOfferHoldMessage(input.expiresAt, input.allExactPlants ?? true),
       "",
       "Review your offer:",
       input.offerLink,

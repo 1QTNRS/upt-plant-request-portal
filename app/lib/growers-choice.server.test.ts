@@ -6,6 +6,7 @@ import { listExactPlantCandidates } from "./exact-plants.server";
 import { createPaymentLinkForRequest } from "./offer-response.server";
 import {
   acceptedOfferLines,
+  buildCustomerOffer,
   claimDraftOrderCreation,
   DraftOrderInFlightError,
   getCustomerResponse,
@@ -400,6 +401,38 @@ describe("the offer snapshot of a Grower's Choice plant", () => {
         variantId: VARIANT_GID,
       },
     ]);
+  });
+});
+
+describe("what a Grower's Choice offer page claims is being held", () => {
+  before(reset);
+  after(reset);
+
+  it("stops calling the plants exact, there being no one plant set aside", async () => {
+    const { requestId } = await offeredFromStock();
+    const offer = await buildCustomerOffer(shop, requestId);
+
+    assert.match(offer!.urgencyMessage, /These plants are reserved for you/);
+    assert.match(offer!.holdMessage, /These plants are being held for you/);
+    assert.doesNotMatch(offer!.urgencyMessage, /exact/i);
+    assert.doesNotMatch(offer!.holdMessage, /exact/i);
+  });
+
+  it("still promises the exact plant on an offer of nothing else", async () => {
+    const { requestId, itemId } = await newRequest();
+    await updateRequestItem(shop, {
+      requestId,
+      itemId,
+      availability: "available",
+      price: 480,
+      weightLbs: 6,
+      photoUrls: ["https://cdn.shopify.com/s/files/1/exact.jpg"],
+    });
+    await sendOffer(shop, requestId, 3);
+    const offer = await buildCustomerOffer(shop, requestId);
+
+    assert.match(offer!.urgencyMessage, /These exact plants are reserved for you/);
+    assert.match(offer!.holdMessage, /These exact plants are being held for you/);
   });
 });
 

@@ -36,6 +36,7 @@ import {
   normalizeUnavailableReason,
   normalizeWeight,
   offerHasPayableItems,
+  offerIsAllExactPlants,
   offerReadinessMessage,
   type CustomerOfferResponse,
   type CustomerResponseItem,
@@ -1101,13 +1102,14 @@ export async function buildCustomerOffer(
   if (!request?.offer) return null;
 
   const expiresAt = formatDateTime(request.offer.expiresAt);
+  const allExactPlants = offerIsAllExactPlants(request.offer.items);
   return {
     title: "Your Personal Plant Offer from UPT",
     expirationDays: request.offer.expirationDays,
     expiresAt,
     expiresAtIso: request.offer.expiresAt.toISOString(),
-    urgencyMessage: getOfferUrgencyMessage(),
-    holdMessage: getOfferHoldMessage(expiresAt),
+    urgencyMessage: getOfferUrgencyMessage(allExactPlants),
+    holdMessage: getOfferHoldMessage(expiresAt, allExactPlants),
     fedexUpgradeLabel: settings.fedexUpgradeLabel,
     fedexUpgradePrice: settings.fedexUpgradePrice,
     customerEmail: request.customerEmail,

@@ -12,12 +12,15 @@ import {
   formatCustomerStatusLabel,
   formatRequestNumber,
   getDisplayRequestNumber,
+  getOfferHoldMessage,
+  getOfferUrgencyMessage,
   incompleteOfferItems,
   isOfferExpired,
   matchesAdminSearch,
   normalizeRequestStatus,
   normalizeUnavailableReason,
   offerHasPayableItems,
+  offerIsAllExactPlants,
   offerReadinessMessage,
   parseRequestNumber,
   plantRevenueFromLines,
@@ -588,6 +591,47 @@ describe("the offer-ready email", () => {
     // They may decline every plant on it.
     assert.doesNotMatch(email.subject, /pay/i);
     assert.doesNotMatch(email.bodyText, /payment|invoice|checkout/i);
+  });
+
+  it("calls the plants exact only when every one of them is", () => {
+    assert.match(email.bodyText, /These exact plants are being held/);
+    const mixed = buildOfferReadyEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+      offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+      allExactPlants: false,
+    });
+    assert.match(mixed.bodyText, /These plants are being held/);
+    assert.doesNotMatch(mixed.bodyText, /exact/i);
+  });
+});
+
+describe("naming what is on offer", () => {
+  const exactPlant = { availability: "available", fulfillmentType: "exact_plant" };
+  const growersChoice = { availability: "available", fulfillmentType: "growers_choice" };
+
+  it("promises an exact plant only when no line comes from store stock", () => {
+    assert.equal(offerIsAllExactPlants([exactPlant, exactPlant]), true);
+    assert.equal(offerIsAllExactPlants([exactPlant, growersChoice]), false);
+    assert.equal(offerIsAllExactPlants([]), true);
+  });
+
+  it("counts an unavailable plant as neither, whatever route it was on", () => {
+    assert.equal(
+      offerIsAllExactPlants([
+        exactPlant,
+        { availability: "not_available", fulfillmentType: "growers_choice" },
+      ]),
+      true,
+    );
+  });
+
+  it("drops the word exact from both the urgency and the hold sentence", () => {
+    assert.match(getOfferUrgencyMessage(true), /These exact plants are reserved/);
+    assert.match(getOfferUrgencyMessage(false), /These plants are reserved/);
+    assert.doesNotMatch(getOfferUrgencyMessage(false), /exact/i);
+    assert.match(getOfferHoldMessage("Aug 26", false), /These plants are being held for you/);
   });
 });
 

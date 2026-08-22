@@ -13,6 +13,7 @@ import {
   buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatDateTime,
+  offerIsAllExactPlants,
   type ResponseSummaryItem,
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
@@ -393,6 +394,7 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
     requestNumber: request.requestNumber,
     expiresAt: request.sentOffer.expiresAt,
     offerLink,
+    allExactPlants: offerIsAllExactPlants(request.items),
   });
   return queueEmail({
     shop,
