@@ -3,6 +3,8 @@ import prisma from "../db.server";
 import { requireAdminClient } from "./environment.server";
 import {
   buildExactPlantListingDraft,
+  canDismissExactPlantFromQueue,
+  EXACT_PLANT_DISMISSED_REASON,
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
   type ExactPlantReleaseReason,
@@ -145,6 +147,7 @@ export async function listExactPlantCandidates(
 
   return offerItems.flatMap((offerItem) => {
     const item = offerItem.requestItem;
+    if (item.exactPlantDismissedAt) return [];
     const responseItem = item.responseItems[0];
     const reason = exactPlantReleaseReason({
       hasOfferItem: true,
@@ -201,6 +204,12 @@ export async function getExactPlantReview(
 
   if (!item) {
     throw new ExactPlantListingError("Exact plant not found.");
+  }
+
+  if (item.exactPlantDismissedAt) {
+    throw new ExactPlantListingError(
+      "This plant was dismissed from the EXACT PLANTS queue and will not be listed.",
+    );
   }
 
   const offerItem = item.offerItems[0];
@@ -439,4 +448,91 @@ export async function createExactPlantListing(
     });
     throw new ExactPlantListingError(message);
   }
+}
+
+/**
+ * Remove an eligible, not-yet-listed plant from the active EXACT PLANTS queue.
+ *
+ * Confirmation is required. History stays: the request, customer response,
+ * offer snapshot, photos, price history and analytics are not deleted. A
+ * Shopify product is not created, and an already-listed product is not
+ * deleted. The timestamp plus StatusEvent are what keep the item from
+ * reappearing on refresh or a later maintenance run.
+ */
+export async function dismissExactPlantFromQueue(input: {
+  shop: string;
+  requestItemId: string;
+  confirmed: boolean;
+}): Promise<
+  | { ok: true; alreadyDismissed: boolean }
+  | { ok: false; error: string; pendingDismiss?: boolean }
+> {
+  if (!input.confirmed) {
+    return {
+      ok: false,
+      error: "Confirm Dismiss from EXACT PLANTS to proceed.",
+      pendingDismiss: true,
+    };
+  }
+
+  const item = await prisma.requestItem.findFirst({
+    where: { id: input.requestItemId, request: { shop: input.shop } },
+    include: {
+      exactPlantListing: true,
+      offerItems: true,
+      responseItems: true,
+      request: true,
+    },
+  });
+  if (!item) {
+    return { ok: false, error: "This exact plant could not be loaded." };
+  }
+
+  if (item.exactPlantDismissedAt) {
+    return { ok: true, alreadyDismissed: true };
+  }
+
+  const offerItem = item.offerItems[0];
+  const responseItem = item.responseItems[0];
+  const releaseReason = exactPlantReleaseReason({
+    hasOfferItem: Boolean(offerItem),
+    offerAvailability: offerItem?.availability,
+    offerFulfillmentType: offerItem?.fulfillmentType,
+    responseChoice: responseItem?.choice,
+    requestStatus: item.request.status,
+    paidAt: item.request.paidAt,
+  });
+  if (!releaseReason) {
+    return { ok: false, error: "This item is not in the EXACT PLANTS queue." };
+  }
+
+  if (
+    !canDismissExactPlantFromQueue({
+      listing: item.exactPlantListing,
+    })
+  ) {
+    return {
+      ok: false,
+      error:
+        "This item already has an EXACT PLANTS listing and cannot be dismissed from the queue.",
+    };
+  }
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.requestItem.update({
+      where: { id: item.id },
+      data: { exactPlantDismissedAt: now },
+    }),
+    prisma.statusEvent.create({
+      data: {
+        requestId: item.requestId,
+        fromStatus: item.request.status,
+        toStatus: item.request.status,
+        reason: EXACT_PLANT_DISMISSED_REASON,
+      },
+    }),
+  ]);
+
+  return { ok: true, alreadyDismissed: false };
 }

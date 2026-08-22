@@ -23,7 +23,7 @@ Implemented end-to-end in app code:
 - Customer request submit (plant name required, notes optional, no quantity UI, quantity stored as 1, **no Budget field**)
 - Request numbers: sequential `REQ1`, `REQ2`, … `REQ2178` (no year prefix, no zero-padding)
 - Private customer request list (identity-scoped)
-- Admin dashboard with search (customer name, email, request number, plant/offered name)
+- Admin dashboard with search (customer name, email, request number, plant/offered name) and a stored-status filter (All / New / Pending / Expired / Closed). Search and status combine. Overview stat counts stay on the full dataset.
 - Admin request detail: three fulfilment routes per item — Offer Exact Plant / Link Existing Website Stock / Not Available — offered name, price, weight, customer-facing notes, multi-photo upload
 - Grower's Choice: admin searches the shop's live Shopify products and variants, links a purchasable one, and the draft order sells that real variant with a Shopify inventory reservation ending at the customer's payment deadline
 - Offer send with 3/5/7 day hold; offer snapshot freezes name, price, weight, photos, notes, availability, fulfilment route and the linked product/variant titles
@@ -32,7 +32,7 @@ Implemented end-to-end in app code:
 - Draft-order creation for **accepted plants only** (GraphQL when an Admin API client exists; demo fallback invoice URL otherwise)
 - `orders/paid` webhook → request **Closed**, accepted items **Sold**
 - Unpaid offer expiry → **Expired** (checked when loading requests / analytics), then `draftOrderDelete` so the issued invoice 404s
-- Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created
+- Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created. **Dismiss from EXACT PLANTS** (confirmation required) removes an eligible, not-yet-listed queue item without creating a product or deleting history; `exactPlantDismissedAt` plus `Admin Dismissed from EXACT PLANTS` keep it out of later queue refreshes. Already-listed products cannot be dismissed or deleted this way.
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
 - Settings: FedEx warning text and admin notification email
@@ -408,7 +408,7 @@ Nothing is lost once a send fails:
 - `runOfferMaintenance` sweeps `queued` / `failed` / `preview` rows oldest-first, bounded per run and by `EmailMessage.attempts` (`MAX_DELIVERY_ATTEMPTS`), which is roughly a day of hourly retries.
 - Every send carries `Idempotency-Key: EmailMessage.id`, which Resend honours for 24 hours, so a retry after a lost reply cannot put a second copy in the customer's inbox. Resend's own message id is stored in `providerMessageId`.
 - The Resend `fetch` has a 10 second `AbortSignal.timeout`. Without it a hung `api.resend.com` held the customer's own form POST open for the whole retry loop, for a plant request that was already committed.
-- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "create payment link and email it" action. `bodyText` is deliberately not sent to the browser: it contains payment links.
+- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "Resend payment link / confirmation email" recovery action (shown only after a live Shopify invoice miss). `bodyText` is deliberately not sent to the browser: it contains payment links.
 
 The expiration reminder goes only to customers who either never answered or accepted something — never to one who rejected every plant — and an accepted-but-unpaid reminder leads with the recorded `DraftOrderReference.invoiceUrl` rather than inviting them to review an offer they already answered.
 
@@ -1014,6 +1014,7 @@ shows a critical banner, and one admin email is sent.
 9. **Declined item** means: UPT marked Available, UPT created an **exact-plant** offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available, and it is **not** a rejected Grower's Choice item — that plant already has its own Shopify product, and an EXACT PLANTS listing is one physical plant with one unit of tracked stock.
 9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never once the request is **paid**. Being `Closed` is not itself disqualifying: see decision 1 below.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
+10a. **Dismiss from EXACT PLANTS** is an admin queue action for an eligible, not-yet-listed plant. Confirmation is required. It does not create or delete a Shopify product, and it does not delete the request, customer response, offer snapshot, photos or history. `exactPlantDismissedAt` plus a StatusEvent reason `Admin Dismissed from EXACT PLANTS` keep the item out of later queue refreshes. If a product GID already exists, this action must refuse.
 11. Listing prefill/publish: title, price, weight, selected exact-plant photos only. Exclude customer-facing notes/disclaimers, customer identity, request information, and customer response information.
 12. One Shopify product per declined item. Retries/refreshes/repeated response processing must not duplicate. On failure, keep the rejection and allow idempotent retry.
 13. Do not create EXACT PLANTS listings for accepted items, UPT Not Available items, never-offered items, or FedEx.

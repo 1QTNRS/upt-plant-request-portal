@@ -547,7 +547,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "Eligibility is `exactPlantReleaseReason`, the one rule the listing queue, the review form and analytics all use. It gives three reasons and keeps them apart: `customer_declined`, `accepted_unpaid_expired` and `never_responded_expired`.",
       "A plant is only ever released when it is promised to nobody. Never while a hold is live, never for a UPT Not Available item, never for a Grower's Choice line, and never for a paid request. Candidates are read from offer items rather than from customer responses, because an offer that simply expired has no response rows at all and would otherwise be missed.",
-      "Nothing is auto-published. The customer's rejection is saved without creating a product; an admin opens the review form and approves it, and Cancel creates nothing.",
+      "Nothing is auto-published. The customer's rejection is saved without creating a product; an admin opens the review form and approves it, and Cancel creates nothing. Dismiss from EXACT PLANTS is the other queue action: it requires confirmation, writes `Admin Dismissed from EXACT PLANTS` plus `exactPlantDismissedAt`, and removes the item from the active queue without creating a Shopify product or deleting the request, response, offer snapshot, photos or history. A plant that already has a product GID cannot be dismissed.",
       "The listing prefills and publishes title, price, weight and the selected exact-plant photos only — never customer-facing notes or disclaimers, customer identity, request information or customer response information.",
       "One Shopify product per item, added to the existing EXACT PLANTS collection and published to Online Store and Point of Sale only. The variant tracks inventory, denies oversell and is stocked with one unit before it is published, because an untracked plant can be sold to several customers and a tracked one published before it is stocked shows as sold out.",
       "The `upt-declined-item:{requestItemId}` tag is the idempotency key: a retry updates the product that already exists rather than creating a second one. The `declined` wording predates expired offers becoming eligible and is kept because renaming it would orphan the products created under it.",
@@ -558,6 +558,11 @@ export const GLOSSARY: GlossaryEntry[] = [
         locator: "exactPlantReleaseReason",
         quote:
           "An item is only ever released while it is not promised to anyone",
+      },
+      {
+        path: "app/lib/exact-plants.ts",
+        locator: "EXACT_PLANT_DISMISSED_REASON",
+        quote: 'export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";',
       },
       {
         path: HANDOFF,

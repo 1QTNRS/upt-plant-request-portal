@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
 import prisma from "../db.server";
+import { EXACT_PLANT_DISMISSED_REASON } from "./exact-plants";
 import {
   createExactPlantListing,
+  dismissExactPlantFromQueue,
   ExactPlantListingError,
   getExactPlantReview,
   listExactPlantCandidates,
@@ -693,6 +695,245 @@ describe("expired offers release their exact plants", () => {
     await assert.rejects(
       () => getExactPlantReview(shop, availableId),
       /paid and closed/,
+    );
+  });
+});
+
+describe("admin dismiss from EXACT PLANTS", () => {
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  it("requires confirmation and then removes only that queue item", async () => {
+    const { request, availableId, unavailableId } = await createOfferedRequest();
+    const pending = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: false,
+    });
+    assert.equal(pending.ok, false);
+    if (!pending.ok) {
+      assert.equal(pending.pendingDismiss, true);
+    }
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: availableId } }))
+        .exactPlantDismissedAt,
+      null,
+    );
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      true,
+    );
+
+    const dismissed = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: true,
+    });
+    assert.deepEqual(dismissed, { ok: true, alreadyDismissed: false });
+
+    const item = await prisma.requestItem.findUniqueOrThrow({
+      where: { id: availableId },
+      include: {
+        photos: true,
+        responseItems: true,
+        offerItems: true,
+        exactPlantListing: true,
+        request: { include: { offer: true, statusEvents: true } },
+      },
+    });
+    assert.ok(item.exactPlantDismissedAt);
+    assert.equal(item.exactPlantListing, null);
+    assert.ok(item.photos.length > 0);
+    assert.equal(item.responseItems[0]?.choice, "reject");
+    assert.ok(item.offerItems[0]);
+    assert.ok(item.request.offer);
+    assert.equal(item.request.status, "Pending");
+    assert.ok(
+      item.request.statusEvents.some(
+        (event) => event.reason === EXACT_PLANT_DISMISSED_REASON,
+      ),
+    );
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      false,
+    );
+    if (unavailableId) {
+      assert.equal(
+        (await prisma.requestItem.findUniqueOrThrow({ where: { id: unavailableId } }))
+          .exactPlantDismissedAt,
+        null,
+      );
+    }
+
+    const again = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: true,
+    });
+    assert.deepEqual(again, { ok: true, alreadyDismissed: true });
+    assert.equal((await listExactPlantCandidates(shop)).length, 0);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId: request.id, reason: EXACT_PLANT_DISMISSED_REASON },
+      }),
+      1,
+    );
+
+    await assert.rejects(
+      () => getExactPlantReview(shop, availableId),
+      /dismissed from the EXACT PLANTS queue/,
+    );
+    await assert.rejects(
+      () =>
+        createExactPlantListing(undefined, shop, {
+          requestItemId: availableId,
+          title: "Should not list",
+          price: 1,
+          weightLbs: 1,
+          photoUrls: [],
+        }),
+      /dismissed from the EXACT PLANTS queue/,
+    );
+    assert.equal(
+      await prisma.exactPlantListing.count({ where: { requestItemId: availableId } }),
+      0,
+    );
+  });
+
+  it("does not dismiss a listed plant or delete its Shopify product row", async () => {
+    const { availableId } = await createOfferedRequest();
+    await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Listed plant",
+      price: 175,
+      weightLbs: 9.5,
+      photoUrls: [],
+    });
+
+    const result = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: true,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error, /already has an EXACT PLANTS listing/);
+    }
+
+    const listing = await prisma.exactPlantListing.findUniqueOrThrow({
+      where: { requestItemId: availableId },
+    });
+    assert.equal(listing.status, "listed");
+    assert.ok(listing.shopifyProductGid);
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: availableId } }))
+        .exactPlantDismissedAt,
+      null,
+    );
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      true,
+    );
+  });
+
+  it("does not dismiss a failed listing that already created a Shopify product", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Failed with product",
+        price: 175,
+        weightLbs: 9.5,
+        photoUrlsJson: "[]",
+        status: "failed",
+        shopifyProductGid: "gid://shopify/Product/already-created",
+      },
+    });
+
+    const result = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: availableId } }))
+        .exactPlantDismissedAt,
+      null,
+    );
+  });
+
+  it("does not dismiss accepted items, Grower's Choice items, or unrelated requests", async () => {
+    const accepted = await createOfferedRequest({ acceptAvailable: true });
+    const acceptedResult = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: accepted.availableId,
+      confirmed: true,
+    });
+    assert.equal(acceptedResult.ok, false);
+    if (!acceptedResult.ok) {
+      assert.match(acceptedResult.error, /not in the EXACT PLANTS queue/);
+    }
+
+    const growers = await createOfferedRequest();
+    await prisma.requestItem.update({
+      where: { id: growers.availableId },
+      data: { fulfillmentType: "growers_choice" },
+    });
+    await prisma.offerItem.updateMany({
+      where: { requestItemId: growers.availableId },
+      data: { fulfillmentType: "growers_choice" },
+    });
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === growers.availableId,
+      ),
+      false,
+    );
+    const growersResult = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: growers.availableId,
+      confirmed: true,
+    });
+    assert.equal(growersResult.ok, false);
+
+    const other = await createOfferedRequest();
+    await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: other.availableId,
+      confirmed: true,
+    });
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === other.availableId,
+      ),
+      false,
+    );
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({
+        where: { id: accepted.availableId },
+      })).exactPlantDismissedAt,
+      null,
+    );
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({
+        where: { id: growers.availableId },
+      })).exactPlantDismissedAt,
+      null,
     );
   });
 });

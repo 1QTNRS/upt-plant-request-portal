@@ -9,12 +9,17 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
+  canDismissExactPlantFromQueue,
+  EXACT_PLANT_RELEASE_LABELS,
+  exactPlantReleaseTone,
+} from "../lib/exact-plants";
+import {
   createExactPlantListing,
+  dismissExactPlantFromQueue,
   ExactPlantListingError,
   getExactPlantReview,
 } from "../lib/exact-plants.server";
 import { formatCurrency } from "../lib/portal";
-import { EXACT_PLANT_RELEASE_LABELS, exactPlantReleaseTone } from "../lib/exact-plants";
 
 const inputStyle = {
   width: "100%",
@@ -62,8 +67,24 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const form = await request.formData();
   const returnTo = safeReturnTo(String(form.get("returnTo") || ""));
 
-  if (String(form.get("intent")) !== "create-listing") {
-    return { error: "Unknown action." };
+  const intent = String(form.get("intent") || "");
+  if (intent === "dismiss-exact-plant") {
+    const result = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: itemId,
+      confirmed: String(form.get("confirmed")) === "true",
+    });
+    if (!result.ok) {
+      return {
+        error: result.error,
+        pendingDismiss: Boolean(result.pendingDismiss),
+      };
+    }
+    throw redirect(returnTo);
+  }
+
+  if (intent !== "create-listing") {
+    return { error: "Unknown action.", pendingDismiss: false };
   }
 
   try {
@@ -83,7 +104,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         : error instanceof Error
           ? error.message
           : "Listing creation failed.";
-    return { error: message };
+    return { error: message, pendingDismiss: false };
   }
 };
 
@@ -122,6 +143,8 @@ export default function ExactPlantListingReview() {
   const listed = review.listing?.status === "listed" && review.listing.shopifyProductGid;
   const submitting = navigation.state !== "idle";
   const formError = actionData?.error ?? review.listing?.lastError;
+  const canDismiss = canDismissExactPlantFromQueue({ listing: review.listing });
+  const pendingDismiss = Boolean(actionData?.pendingDismiss);
 
   if (listed) {
     return (
@@ -323,6 +346,44 @@ export default function ExactPlantListingReview() {
           </s-stack>
         </s-section>
       </Form>
+
+      {canDismiss ? (
+        <s-section heading="Dismiss from EXACT PLANTS">
+          <s-stack direction="block" gap="base">
+            {pendingDismiss ? (
+              <s-banner tone="warning">
+                <s-text>
+                  This removes the plant from the EXACT PLANTS queue. No Shopify
+                  product is created. The original request, customer response,
+                  offer snapshot, photos, and history stay.
+                </s-text>
+              </s-banner>
+            ) : (
+              <s-text color="subdued">
+                Use this when you do not want to create an EXACT PLANTS listing
+                for this plant. It leaves the queue and does not publish
+                anything.
+              </s-text>
+            )}
+            <Form method="post">
+              <input type="hidden" name="intent" value="dismiss-exact-plant" />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              {pendingDismiss ? (
+                <input type="hidden" name="confirmed" value="true" />
+              ) : null}
+              <s-button
+                variant={pendingDismiss ? "primary" : "secondary"}
+                {...(pendingDismiss ? { tone: "critical" } : {})}
+                type="submit"
+              >
+                {pendingDismiss
+                  ? "Confirm Dismiss from EXACT PLANTS"
+                  : "Dismiss from EXACT PLANTS"}
+              </s-button>
+            </Form>
+          </s-stack>
+        </s-section>
+      ) : null}
     </s-page>
   );
 }

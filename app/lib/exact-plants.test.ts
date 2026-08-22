@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import {
   buildExactPlantListingDraft,
   buildExactPlantProductCreateInput,
+  canDismissExactPlantFromQueue,
   declinedItemTag,
+  EXACT_PLANT_DISMISSED_REASON,
   EXACT_PLANT_RELEASE_LABELS,
   exactPlantReleaseTone,
   EXACT_PLANTS_COLLECTION_TITLE,
@@ -214,6 +216,37 @@ describe("exact plant ineligibility messages", () => {
     assert.match(
       exactPlantIneligibilityReason({ hasOfferItem: false }) ?? "",
       /never offered/,
+    );
+  });
+});
+
+describe("exact plant queue dismiss", () => {
+  it("allows dismiss only for eligible plants that have not been listed", () => {
+    assert.equal(EXACT_PLANT_DISMISSED_REASON, "Admin Dismissed from EXACT PLANTS");
+    assert.equal(canDismissExactPlantFromQueue({}), true);
+    assert.equal(
+      canDismissExactPlantFromQueue({ listing: { status: "failed" } }),
+      true,
+    );
+    assert.equal(
+      canDismissExactPlantFromQueue({ dismissedAt: new Date() }),
+      false,
+    );
+    assert.equal(
+      canDismissExactPlantFromQueue({
+        listing: { status: "listed", shopifyProductGid: "gid://shopify/Product/1" },
+      }),
+      false,
+    );
+    assert.equal(
+      canDismissExactPlantFromQueue({
+        listing: { status: "failed", shopifyProductGid: "gid://shopify/Product/1" },
+      }),
+      false,
+    );
+    assert.equal(
+      canDismissExactPlantFromQueue({ listing: { status: "creating" } }),
+      false,
     );
   });
 });

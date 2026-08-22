@@ -225,6 +225,10 @@ model RequestItem {
   customerFacingNotes   String           @default("")
   itemStatus            String           @default("Requested")
   purchasedAt           DateTime?
+  // Set when an admin dismisses an eligible plant from the EXACT PLANTS
+  // queue without creating a Shopify product. Eligibility is unchanged;
+  // the timestamp is what keeps it out of the active queue.
+  exactPlantDismissedAt DateTime?
   photos                PhotoReference[]
   offerItems            OfferItem[]
   responseItems         ResponseItem[]
