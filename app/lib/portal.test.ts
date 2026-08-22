@@ -29,7 +29,10 @@ import {
   getOfferUrgencyMessage,
   incompleteOfferItems,
   isOfferExpired,
+  filterAdminDashboardRequests,
   matchesAdminSearch,
+  parseAdminDashboardStatusFilter,
+  summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
   offerHasPayableItems,
@@ -196,6 +199,79 @@ describe("admin search", () => {
     assert.equal(matchesAdminSearch(request, "41"), true);
     assert.equal(matchesAdminSearch(request, "exact"), true);
     assert.equal(matchesAdminSearch(request, "calathea"), false);
+  });
+});
+
+describe("admin dashboard status filter", () => {
+  const requests = [
+    {
+      status: "New" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ1",
+      items: [{ plantName: "Monstera" }],
+    },
+    {
+      status: "Pending" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ2",
+      items: [{ plantName: "Philodendron" }],
+    },
+    {
+      status: "Pending" as const,
+      customer: "Sarah Mitchell",
+      email: "sarah@example.com",
+      requestNumber: "REQ3",
+      items: [{ plantName: "Calathea" }],
+    },
+    {
+      status: "Expired" as const,
+      customer: "Jordan Lee",
+      email: "jordan@example.com",
+      requestNumber: "REQ4",
+      items: [{ plantName: "Hoya" }],
+    },
+    {
+      status: "Closed" as const,
+      customer: "Alex Rivera",
+      email: "alex@example.com",
+      requestNumber: "REQ5",
+      items: [{ plantName: "Anthurium" }],
+    },
+  ];
+
+  it("defaults missing or unknown values to All", () => {
+    assert.equal(parseAdminDashboardStatusFilter(null), "All");
+    assert.equal(parseAdminDashboardStatusFilter(""), "All");
+    assert.equal(parseAdminDashboardStatusFilter("pending"), "All");
+    assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
+  });
+
+  it("filters the visible list by stored admin status", () => {
+    const pending = filterAdminDashboardRequests(requests, "", "Pending");
+    assert.deepEqual(
+      pending.map((request) => request.requestNumber),
+      ["REQ2", "REQ3"],
+    );
+  });
+
+  it("keeps search and status working together", () => {
+    const filtered = filterAdminDashboardRequests(requests, "Alex", "Pending");
+    assert.deepEqual(
+      filtered.map((request) => request.requestNumber),
+      ["REQ2"],
+    );
+  });
+
+  it("leaves dashboard stat counts on the full dataset", () => {
+    const filtered = filterAdminDashboardRequests(requests, "Alex", "Pending");
+    const stats = summarizeAdminDashboardStats(requests);
+    assert.equal(filtered.length, 1);
+    assert.equal(stats.newRequests, 1);
+    assert.equal(stats.pending, 2);
+    assert.equal(stats.expired, 1);
+    assert.equal(stats.closed, 1);
   });
 });
 

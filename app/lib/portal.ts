@@ -520,6 +520,63 @@ export function matchesAdminSearch(
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
+export const ADMIN_DASHBOARD_STATUS_FILTERS = [
+  "All",
+  "New",
+  "Pending",
+  "Expired",
+  "Closed",
+] as const;
+
+export type AdminDashboardStatusFilter =
+  (typeof ADMIN_DASHBOARD_STATUS_FILTERS)[number];
+
+export function parseAdminDashboardStatusFilter(
+  value: string | null | undefined,
+): AdminDashboardStatusFilter {
+  if (
+    value &&
+    (ADMIN_DASHBOARD_STATUS_FILTERS as readonly string[]).includes(value)
+  ) {
+    return value as AdminDashboardStatusFilter;
+  }
+  return "All";
+}
+
+export function matchesAdminStatusFilter(
+  status: RequestStatus,
+  filter: AdminDashboardStatusFilter,
+): boolean {
+  return filter === "All" || status === filter;
+}
+
+export function filterAdminDashboardRequests<
+  T extends {
+    status: RequestStatus;
+    customer: string;
+    email?: string;
+    requestNumber: string;
+    items: Array<{ plantName: string; offeredName?: string }>;
+  },
+>(requests: T[], query: string, statusFilter: AdminDashboardStatusFilter): T[] {
+  return requests.filter(
+    (request) =>
+      matchesAdminStatusFilter(request.status, statusFilter) &&
+      matchesAdminSearch(request, query),
+  );
+}
+
+export function summarizeAdminDashboardStats(
+  requests: Array<{ status: RequestStatus }>,
+) {
+  return {
+    newRequests: requests.filter((request) => request.status === "New").length,
+    pending: requests.filter((request) => request.status === "Pending").length,
+    closed: requests.filter((request) => request.status === "Closed").length,
+    expired: requests.filter((request) => request.status === "Expired").length,
+  };
+}
+
 /**
  * Names what is on offer without promising an exact plant that is not one.
  *

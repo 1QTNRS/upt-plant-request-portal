@@ -24,7 +24,11 @@ import {
   updateShopSettings,
 } from "./portal.server";
 import { ensureShopSeeded } from "./seed-demo.server";
-import { matchesAdminSearch } from "./portal";
+import {
+  filterAdminDashboardRequests,
+  matchesAdminSearch,
+  summarizeAdminDashboardStats,
+} from "./portal";
 
 const shop = `${DEMO_SHOP}-test`;
 
@@ -60,6 +64,27 @@ describe("plant request persistence", () => {
       ),
       true,
     );
+  });
+
+  it("filters the dashboard list by stored status without changing stat counts", async () => {
+    const requests = await listRequests(shop);
+    const stats = summarizeAdminDashboardStats(requests);
+    const pendingAlex = filterAdminDashboardRequests(
+      requests,
+      "Alex Rivera",
+      "Pending",
+    );
+    assert.ok(pendingAlex.length > 0);
+    assert.ok(pendingAlex.every((request) => request.status === "Pending"));
+    assert.ok(
+      pendingAlex.every((request) => request.customer === "Alex Rivera"),
+    );
+    assert.equal(
+      summarizeAdminDashboardStats(requests).pending,
+      stats.pending,
+    );
+    assert.ok(stats.pending >= pendingAlex.length);
+    assert.ok(stats.newRequests + stats.pending + stats.closed + stats.expired >= requests.length);
   });
 
   it("keeps customer requests private by account identity", async () => {
