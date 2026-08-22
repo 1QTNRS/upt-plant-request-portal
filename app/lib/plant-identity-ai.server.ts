@@ -29,9 +29,21 @@
  *
  * Optional: `PLANT_IDENTITY_AI_TIMEOUT_MS` (default 5000). The call is on an
  * admin page load, so it is aborted rather than allowed to hold the page.
+ *
+ * The configuration contract and the request itself live in
+ * `ai-provider.server.ts`, which every optional assist in this app shares.
+ * What stays here is the part that decides what an answer may do.
  */
 
+import {
+  missingAiProviderDetail,
+  readAiProviderConfig,
+  requestChatCompletion,
+  type AiProviderConfig,
+} from "./ai-provider.server";
 import type { PlantMatchConfidence } from "./plant-identity";
+
+export const PLANT_IDENTITY_AI_PREFIX = "PLANT_IDENTITY_AI";
 
 export type CanonicalPlantCandidate = {
   canonicalPlantId: string;
@@ -72,35 +84,12 @@ export const AI_MAX_CONFIDENCE: PlantMatchConfidence = "medium";
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
-export type PlantIdentityAiConfig = {
-  provider: string;
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-  timeoutMs: number;
-};
+export type PlantIdentityAiConfig = AiProviderConfig;
 
 export function readPlantIdentityAiConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): PlantIdentityAiConfig | null {
-  const provider = env.PLANT_IDENTITY_AI_PROVIDER?.trim();
-  const baseUrl = env.PLANT_IDENTITY_AI_BASE_URL?.trim();
-  const model = env.PLANT_IDENTITY_AI_MODEL?.trim();
-  const apiKey = env.PLANT_IDENTITY_AI_API_KEY?.trim();
-  if (!provider || !baseUrl || !model || !apiKey) return null;
-
-  const timeout = Number.parseInt(
-    env.PLANT_IDENTITY_AI_TIMEOUT_MS?.trim() || "",
-    10,
-  );
-  return {
-    provider,
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    model,
-    apiKey,
-    timeoutMs:
-      Number.isFinite(timeout) && timeout > 0 ? timeout : DEFAULT_TIMEOUT_MS,
-  };
+  return readAiProviderConfig(PLANT_IDENTITY_AI_PREFIX, env, DEFAULT_TIMEOUT_MS);
 }
 
 export type PlantIdentityAiStatus = {
@@ -120,8 +109,10 @@ export function plantIdentityAiStatus(
       enabled: false,
       provider: null,
       model: null,
-      detail:
-        "AI assistance is off. Name matching is running on the built-in rules, which need no credentials. Set PLANT_IDENTITY_AI_PROVIDER, PLANT_IDENTITY_AI_BASE_URL, PLANT_IDENTITY_AI_MODEL and PLANT_IDENTITY_AI_API_KEY to add AI suggestions.",
+      detail: missingAiProviderDetail(
+        PLANT_IDENTITY_AI_PREFIX,
+        "AI assistance is off. Name matching is running on the built-in rules, which need no credentials.",
+      ),
     };
   }
   return {
@@ -186,36 +177,11 @@ export function httpPlantIdentityProvider(
     async suggestCanonicalPlant(name, candidates) {
       if (candidates.length === 0) return null;
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), config.timeoutMs);
-      try {
-        const response = await fetch(`${config.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${config.apiKey}`,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: config.model,
-            temperature: 0,
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              {
-                role: "user",
-                content: JSON.stringify({ name, candidates }),
-              },
-            ],
-          }),
-        });
-        if (!response.ok) return null;
-        const payload = (await response.json()) as {
-          choices?: Array<{ message?: { content?: unknown } }>;
-        };
-        return parseProviderReply(payload.choices?.[0]?.message?.content, candidates);
-      } finally {
-        clearTimeout(timer);
-      }
+      const reply = await requestChatCompletion(config, {
+        system: SYSTEM_PROMPT,
+        user: JSON.stringify({ name, candidates }),
+      });
+      return parseProviderReply(reply, candidates);
     },
   };
 }
