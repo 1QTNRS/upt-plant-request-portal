@@ -329,6 +329,12 @@ A rejected Grower's Choice item does **not** enter the EXACT PLANTS queue: the
 product already exists in the store, and listing it again would create a second
 product for a plant that already has one. A rejected exact plant still does.
 
+The offer banner and the offer-ready email say "these exact plants are being held
+for you" only when `offerIsAllExactPlants`. A Grower's Choice plant is picked from
+stock at dispatch, so on an offer carrying one the sentence drops "exact" — beside
+a listing photo it otherwise promises the individual that the disclosure directly
+under it takes back.
+
 ### Shopify Files
 
 Admin photo upload on New requests uses Files when `admin` exists, otherwise `public/uploads/` or data URLs. `fileCreate` is asynchronous, so `uploadPlantPhoto` polls `fileStatus` until `READY` before reading the CDN URL.
@@ -706,7 +712,7 @@ Last verified on `cursor/growers-choice-and-reservation-9639`:
 
 | Check | Result |
 | --- | --- |
-| `npm test` | 572 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
+| `npm test` | 578 passing, against **both** SQLite and PostgreSQL 16. `pretest` regenerates the Prisma client, so switching `DATABASE_URL` needs no manual step |
 | `npm run typecheck` | pass (`react-router typegen && tsc --noEmit`) |
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
