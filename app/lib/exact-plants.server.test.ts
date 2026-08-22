@@ -119,6 +119,24 @@ async function createOfferedRequest(options?: {
   return { request: created, availableId: available.id, unavailableId: unavailable?.id };
 }
 
+/**
+ * Stands in for the Admin API. An operation with no canned response is refused
+ * the way Shopify refuses one the app has no scope for, so a test can say
+ * exactly how far the listing got before it broke.
+ */
+function stubAdmin(responses: Record<string, unknown>) {
+  return {
+    graphql: async (query: string) => {
+      const operation = query.match(/\b(?:query|mutation)\s+(\w+)/)?.[1] ?? "unknown";
+      const data = responses[operation];
+      if (data === undefined) {
+        throw new Error(`Access denied for ${operation}`);
+      }
+      return { json: async () => ({ data }) };
+    },
+  } as unknown as Parameters<typeof createExactPlantListing>[0];
+}
+
 describe("declined exact plant listings", () => {
   before(async () => {
     await prisma.plantRequest.deleteMany({ where: { shop } });
@@ -211,6 +229,103 @@ describe("declined exact plant listings", () => {
     assert.equal(listingCount, 1);
   });
 
+  it("lets only one of two simultaneous approvals create the product", async () => {
+    const { availableId } = await createOfferedRequest();
+    const approve = () =>
+      createExactPlantListing(undefined, shop, {
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        photoUrls: [],
+      });
+
+    // Two admin clicks, or one click and a retried POST. Before the claim both
+    // passed the "already listed?" read and both called productCreate, leaving
+    // a published product in the store that no row pointed at.
+    //
+    // Whether the two calls interleave or the first finishes before the second
+    // starts depends on how fast the database is, so the assertion is on the
+    // outcome either ordering has to produce: one plant, one product.
+    const results = await Promise.allSettled([approve(), approve()]);
+    const listed = results
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => (r as PromiseFulfilledResult<{ shopifyProductGid?: string | null }>).value);
+    const refused = results.filter((r) => r.status === "rejected");
+
+    assert.equal(
+      await prisma.exactPlantListing.count({ where: { requestItemId: availableId } }),
+      1,
+      "one declined item gets one listing row",
+    );
+    assert.equal(new Set(listed.map((row) => row.shopifyProductGid)).size, 1);
+    for (const rejection of refused) {
+      assert.match(
+        (rejection as PromiseRejectedResult).reason.message,
+        /already being listed/,
+      );
+    }
+
+    const row = await prisma.exactPlantListing.findUnique({
+      where: { requestItemId: availableId },
+    });
+    assert.equal(row?.status, "listed");
+  });
+
+  it("refuses an approval while another is already creating the product", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        status: "creating",
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        createExactPlantListing(undefined, shop, {
+          requestItemId: availableId,
+          title: "Thai Constellation Showcase",
+          price: 189,
+          weightLbs: 9.5,
+          photoUrls: [],
+        }),
+      /already being listed/,
+    );
+  });
+
+  it("takes over a claim left behind by a process that died", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Thai Constellation Showcase",
+        price: 189,
+        weightLbs: 9.5,
+        status: "creating",
+      },
+    });
+    // Older than the stale-claim window, so the plant does not stay unlistable.
+    await prisma.exactPlantListing.update({
+      where: { requestItemId: availableId },
+      data: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    const created = await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Thai Constellation Showcase",
+      price: 189,
+      weightLbs: 9.5,
+      photoUrls: [],
+    });
+    assert.equal(created.status, "listed");
+  });
+
   it("keeps the rejection and allows an idempotent retry after listing failure", async () => {
     const { request, availableId } = await createOfferedRequest();
     const failingAdmin = {
@@ -251,6 +366,170 @@ describe("declined exact plant listings", () => {
     });
     assert.equal(retried.status, "listed");
     assert.ok(retried.shopifyProductGid);
+  });
+
+  it("records the product Shopify created even when the listing then fails", async () => {
+    const { availableId } = await createOfferedRequest();
+    const productGid = "gid://shopify/Product/8058632831019";
+
+    // Exactly the dev-store failure: productCreate succeeds, then the
+    // inventory step is refused because write_inventory is not granted.
+    await assert.rejects(
+      () =>
+        createExactPlantListing(
+          stubAdmin({
+            ExactPlantProductByTag: { products: { nodes: [] } },
+            ExactPlantsCollection: {
+              collections: {
+                nodes: [
+                  {
+                    id: "gid://shopify/Collection/1",
+                    title: "EXACT PLANTS",
+                    handle: "exact-plants",
+                  },
+                ],
+              },
+            },
+            CreateExactPlantProduct: {
+              productCreate: {
+                product: {
+                  id: productGid,
+                  handle: "thai-constellation-exact",
+                  variants: {
+                    nodes: [
+                      {
+                        id: "gid://shopify/ProductVariant/1",
+                        inventoryItem: { id: "gid://shopify/InventoryItem/1" },
+                      },
+                    ],
+                  },
+                },
+                userErrors: [],
+              },
+            },
+            UpdateExactPlantVariant: { productVariantsBulkUpdate: { userErrors: [] } },
+          }),
+          shop,
+          {
+            requestItemId: availableId,
+            title: "Thai Constellation Exact",
+            price: 175,
+            weightLbs: 9.5,
+            photoUrls: ["https://cdn.shopify.com/s/files/1/thai-one.jpg"],
+          },
+        ),
+      /ExactPlantInventoryLocation/,
+    );
+
+    const row = await prisma.exactPlantListing.findUniqueOrThrow({
+      where: { requestItemId: availableId },
+    });
+    // The product exists in the store from productCreate onwards, so the row
+    // has to point at it. It used to keep a null GID, which left the product
+    // orphaned as soon as the item stopped being an eligible candidate.
+    assert.equal(row.shopifyProductGid, productGid);
+    assert.equal(row.shopifyProductHandle, "thai-constellation-exact");
+    assert.equal(row.status, "failed", "a listing that did not publish is not listed");
+
+    const candidate = (await listExactPlantCandidates(shop)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.equal(candidate?.listing?.status, "failed");
+    assert.match(
+      candidate?.listing?.productAdminUrl ?? "",
+      /products\/8058632831019$/,
+      "the admin needs a link to the half-built product",
+    );
+  });
+
+  it("keeps a retry that fails again honest about not being listed", async () => {
+    const { availableId } = await createOfferedRequest();
+    const productGid = "gid://shopify/Product/8058632831020";
+    const existingProduct = {
+      products: {
+        nodes: [
+          {
+            id: productGid,
+            handle: "thai-constellation-exact-2",
+            variants: {
+              nodes: [
+                {
+                  id: "gid://shopify/ProductVariant/2",
+                  inventoryItem: { id: "gid://shopify/InventoryItem/2" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    await prisma.exactPlantListing.create({
+      data: {
+        shop,
+        requestItemId: availableId,
+        title: "Thai Constellation Exact",
+        price: 175,
+        weightLbs: 9.5,
+        photoUrlsJson: JSON.stringify([
+          "https://cdn.shopify.com/s/files/1/thai-one.jpg",
+        ]),
+        shopifyProductGid: productGid,
+        shopifyProductHandle: "thai-constellation-exact-2",
+        status: "failed",
+        lastError: "Access denied for ExactPlantInventoryLocation",
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        createExactPlantListing(
+          stubAdmin({
+            ExactPlantProductByTag: existingProduct,
+            ExactPlantsCollection: {
+              collections: {
+                nodes: [
+                  {
+                    id: "gid://shopify/Collection/1",
+                    title: "EXACT PLANTS",
+                    handle: "exact-plants",
+                  },
+                ],
+              },
+            },
+            ExactPlantProductMedia: {
+              product: {
+                media: {
+                  nodes: [],
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+            UpdateExactPlantProduct: {
+              productUpdate: {
+                product: { id: productGid, handle: "thai-constellation-exact-2" },
+                userErrors: [],
+              },
+            },
+            UpdateExactPlantVariant: { productVariantsBulkUpdate: { userErrors: [] } },
+          }),
+          shop,
+          {
+            requestItemId: availableId,
+            title: "Thai Constellation Exact",
+            price: 175,
+            weightLbs: 9.5,
+            photoUrls: ["https://cdn.shopify.com/s/files/1/thai-one.jpg"],
+          },
+        ),
+      /ExactPlantInventoryLocation/,
+    );
+
+    const row = await prisma.exactPlantListing.findUniqueOrThrow({
+      where: { requestItemId: availableId },
+    });
+    // A recorded GID says a product exists, not that it was published.
+    assert.equal(row.status, "failed");
+    assert.equal(row.shopifyProductGid, productGid);
   });
 
   it("does not create listings for accepted or UPT not-available items", async () => {

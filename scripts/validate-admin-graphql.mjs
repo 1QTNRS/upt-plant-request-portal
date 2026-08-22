@@ -74,7 +74,12 @@ async function fetchIntrospection(version) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: getIntrospectionQuery() }),
+    // Without this Shopify omits deprecated input fields entirely, so a payload
+    // that uses one fails as "field is not defined by type" and the deprecation
+    // check below can never fire.
+    body: JSON.stringify({
+      query: getIntrospectionQuery({ inputValueDeprecation: true }),
+    }),
   });
   if (!response.ok) {
     throw new Error(`${endpoint} responded ${response.status}`);
@@ -139,9 +144,12 @@ async function inputSamples() {
   const { buildDraftOrderInput, buildDraftOrderLineItems } = await import(
     "../app/lib/portal.ts"
   );
-  const { buildExactPlantProductCreateInput } = await import(
-    "../app/lib/exact-plants.ts"
-  );
+  const {
+    buildExactPlantInventoryInput,
+    buildExactPlantProductCreateInput,
+    buildExactPlantVariantInput,
+    planExactPlantMedia,
+  } = await import("../app/lib/exact-plants.ts");
 
   const lineItems = buildDraftOrderLineItems({
     acceptedItems: [
@@ -197,14 +205,24 @@ async function inputSamples() {
       label: "productVariantsBulkUpdate($variants)",
       type: "[ProductVariantsBulkInput!]!",
       value: [
-        {
-          id: "gid://shopify/ProductVariant/1",
-          price: "285.00",
-          inventoryItem: {
-            measurement: { weight: { value: 4.5, unit: "POUNDS" } },
-          },
-        },
+        buildExactPlantVariantInput({
+          variantId: "gid://shopify/ProductVariant/1",
+          price: 285,
+          weightLbs: 4.5,
+        }),
       ],
+    },
+    {
+      label: "inventorySetQuantities($input)",
+      type: "InventorySetQuantitiesInput!",
+      // `ignoreCompareQuantity` is deprecated in 2025-10 and still mandatory
+      // there; its replacement does not exist until 2026-01. See
+      // buildExactPlantInventoryInput.
+      allowDeprecated: ["InventorySetQuantitiesInput.ignoreCompareQuantity"],
+      value: buildExactPlantInventoryInput({
+        inventoryItemId: "gid://shopify/InventoryItem/1",
+        locationId: "gid://shopify/Location/1",
+      }),
     },
     {
       label: "fileCreate($files)",
@@ -239,16 +257,44 @@ async function inputSamples() {
       type: "ProductUpdateInput!",
       value: { id: "gid://shopify/Product/1", title: "Monstera Thai Constellation" },
     },
+    {
+      label: "productUpdate($media)",
+      type: "[CreateMediaInput!]",
+      value: planExactPlantMedia({
+        existing: [
+          {
+            id: "gid://shopify/MediaImage/1",
+            sourceUrl: "https://cdn.shopify.com/s/files/1/0/removed.jpg",
+          },
+        ],
+        title: "Monstera Thai Constellation",
+        photoUrls: ["https://cdn.shopify.com/s/files/1/0/photo.jpg"],
+      }).create,
+    },
+    {
+      label: "fileUpdate($files)",
+      type: "[FileUpdateInput!]!",
+      value: [
+        {
+          id: "gid://shopify/MediaImage/1",
+          referencesToRemove: ["gid://shopify/Product/1"],
+        },
+      ],
+    },
   ];
 }
 
 /** Deprecated input fields present in a payload, as `Type.field` paths. */
-function deprecatedInputFields(type, value, seen = new Set()) {
+function deprecatedInputFields(type, value, seen = new Set(), allowed = new Set()) {
   if (value === null || value === undefined) return [];
-  if (isNonNullType(type)) return deprecatedInputFields(type.ofType, value, seen);
+  if (isNonNullType(type)) {
+    return deprecatedInputFields(type.ofType, value, seen, allowed);
+  }
   if (isListType(type)) {
     const items = Array.isArray(value) ? value : [value];
-    return items.flatMap((item) => deprecatedInputFields(type.ofType, item, seen));
+    return items.flatMap((item) =>
+      deprecatedInputFields(type.ofType, item, seen, allowed),
+    );
   }
   if (!isInputObjectType(type) || typeof value !== "object") return [];
 
@@ -258,11 +304,11 @@ function deprecatedInputFields(type, value, seen = new Set()) {
     const field = fields[key];
     if (!field) continue;
     const path = `${type.name}.${key}`;
-    if (field.deprecationReason && !seen.has(path)) {
+    if (field.deprecationReason && !seen.has(path) && !allowed.has(path)) {
       seen.add(path);
       found.push(`${path} (${field.deprecationReason})`);
     }
-    found.push(...deprecatedInputFields(field.type, entry, seen));
+    found.push(...deprecatedInputFields(field.type, entry, seen, allowed));
   }
   return found;
 }
@@ -279,9 +325,12 @@ function validateInputSample(schema, sample) {
     errors.push(`${error.message}${location}`);
   });
   errors.push(
-    ...deprecatedInputFields(type, sample.value).map(
-      (field) => `uses deprecated input field ${field}`,
-    ),
+    ...deprecatedInputFields(
+      type,
+      sample.value,
+      new Set(),
+      new Set(sample.allowDeprecated ?? []),
+    ).map((field) => `uses deprecated input field ${field}`),
   );
   return errors;
 }

@@ -1,7 +1,13 @@
 import { createCookie } from "react-router";
 
-import { appProxySignatureIsValid } from "./app-proxy";
+import {
+  APP_PROXY_ORIGIN_HEADER,
+  appProxyRequestIsFresh,
+  appProxySignatureIsValid,
+  storefrontOriginIsAllowed,
+} from "./app-proxy";
 import { isProduction } from "./env.server";
+import { storefrontHostsForShop } from "./shop-domains.server";
 import { DEMO_SHOP, isDevAdminBypass } from "./shop";
 
 export type CustomerIdentity = {
@@ -61,6 +67,17 @@ export function readAppProxyContext(
     return null;
   }
 
+  // A valid signature is a bearer token for this customer's identity, and the
+  // signed URL travels through logs and referrers. Shopify re-signs every hop,
+  // so refusing a stale one costs nothing and bounds a replay to minutes.
+  if (!appProxyRequestIsFresh(search)) {
+    console.warn(
+      `Refused a stale app proxy request for ${search.get("shop") ?? "unknown shop"} ` +
+        `signed at ${search.get("timestamp") ?? "no timestamp"}.`,
+    );
+    return null;
+  }
+
   const shop = search.get("shop");
   if (!shop) return null;
 
@@ -68,6 +85,32 @@ export function readAppProxyContext(
     shop,
     loggedInCustomerId: search.get("logged_in_customer_id") || null,
   };
+}
+
+/**
+ * Whether a form submission Shopify proxied really came from the shop's own
+ * storefront.
+ *
+ * `server.js` withholds the storefront `Origin` from React Router's cross-origin
+ * check, because that check cannot tell Shopify's proxy from an attacker. The
+ * header is only set for proxy requests that carried an origin, so its absence
+ * means there was nothing to vet.
+ */
+async function forwardedOriginIsTrusted(
+  request: Request,
+  shop: string,
+): Promise<boolean> {
+  const forwarded = request.headers.get(APP_PROXY_ORIGIN_HEADER);
+  if (!forwarded) return true;
+
+  const hosts = await storefrontHostsForShop(shop);
+  if (storefrontOriginIsAllowed(forwarded, hosts)) return true;
+
+  console.warn(
+    `Refused a proxied ${request.method} for ${shop} from origin ${forwarded}; ` +
+      `expected one of ${hosts.join(", ")}.`,
+  );
+  return false;
 }
 
 /**
@@ -81,6 +124,7 @@ export async function readCustomerContext(
 ): Promise<CustomerContext | null> {
   const proxy = readAppProxyContext(request);
   if (proxy) {
+    if (!(await forwardedOriginIsTrusted(request, proxy.shop))) return null;
     return {
       shop: proxy.shop,
       viaAppProxy: true,

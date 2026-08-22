@@ -1,7 +1,20 @@
 import type { ActionFunctionArgs } from "react-router";
 
-import { formatRequestNumber, parseRequestNumber } from "../lib/portal";
-import { findRequestByNumber, markRequestPaid } from "../lib/portal.server";
+import {
+  formatRequestNumber,
+  parseRequestNumber,
+  plantRevenueFromLines,
+  plantRevenueFromPaidOrderLines,
+  type PaidOrderLine,
+} from "../lib/portal";
+import {
+  findRequestByNumber,
+  getCustomerResponse,
+  getDraftOrder,
+  getShopSettings,
+  markRequestPaid,
+  parseDraftOrderLineItems,
+} from "../lib/portal.server";
 import { authenticate } from "../shopify.server";
 
 type PaidOrderPayload = {
@@ -12,20 +25,56 @@ type PaidOrderPayload = {
   email?: string;
   note?: string;
   tags?: string;
-  line_items?: Array<{ title?: string; price?: string; quantity?: number }>;
+  line_items?: PaidOrderLine[];
 };
 
-function plantRevenueFromPayload(payload: PaidOrderPayload): number {
-  return (payload.line_items ?? [])
-    .filter((item) => {
-      const title = (item.title ?? "").toLowerCase();
-      return !title.includes("fedex") && !title.includes("priority overnight");
-    })
-    .reduce((sum, item) => {
-      const price = Number.parseFloat(item.price ?? "0");
-      const quantity = item.quantity ?? 1;
-      return sum + (Number.isFinite(price) ? price * quantity : 0);
-    }, 0);
+/**
+ * Last resort when no draft order was recorded for the request, so the lines
+ * carry no `kind` the app set itself.
+ *
+ * The shipping upgrade is recognized from the variant and label the app stores
+ * for it, never from a substring of a title the merchant owns. When the
+ * customer paid for the upgrade and no line matches either, the shipping charge
+ * is counted as plant revenue and said out loud: this one value feeds every
+ * revenue figure on the dashboard, so over-stating it by the upgrade beats
+ * dropping a plant.
+ */
+async function plantRevenueFromPayload(
+  shop: string,
+  requestId: string,
+  payload: PaidOrderPayload,
+): Promise<number> {
+  const settings = await getShopSettings(shop);
+  const response = await getCustomerResponse(shop, requestId);
+  const lines = payload.line_items ?? [];
+  const result = plantRevenueFromPaidOrderLines(lines, {
+    variantGid: settings.fedexVariantGid,
+    upgradeLabel: settings.fedexUpgradeLabel,
+    upgradeSelected: response?.fedexUpgradeSelected,
+  });
+
+  if (result.unidentifiedUpgrade) {
+    console.error(
+      `orders/paid for ${shop}: order ${orderLabel(payload)} kept the ` +
+        `${settings.fedexUpgradeLabel} upgrade, but none of its ${lines.length} ` +
+        "line item(s) match the stored FedEx variant or label, so plant revenue " +
+        `of ${result.plantRevenue} still includes the shipping charge. Check ` +
+        "ShopSettings.fedexVariantGid and fedexUpgradeLabel against the store.",
+    );
+  }
+
+  return result.plantRevenue;
+}
+
+/** Plant revenue from the lines the app itself recorded, or null if it has none. */
+async function plantRevenueFromRecordedLines(
+  shop: string,
+  requestId: string,
+): Promise<number | null> {
+  const draftOrder = await getDraftOrder(shop, requestId);
+  const lines = parseDraftOrderLineItems(draftOrder?.lineItemsJson);
+  if (lines.length === 0) return null;
+  return plantRevenueFromLines(lines);
 }
 
 function requestNumberFromPayload(payload: PaidOrderPayload): string | null {
@@ -96,10 +145,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response();
   }
 
+  const recorded = await plantRevenueFromRecordedLines(shop, plantRequest.id);
   await markRequestPaid(shop, plantRequest.id, {
     shopifyOrderGid,
     orderNumber: String(order.name || order.order_number || ""),
-    plantRevenue: plantRevenueFromPayload(order),
+    plantRevenue:
+      recorded ?? (await plantRevenueFromPayload(shop, plantRequest.id, order)),
   });
   console.log(`${topic} for ${shop}: closed ${requestNumber} from order ${orderLabel(order)}.`);
 

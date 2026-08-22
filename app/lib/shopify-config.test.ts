@@ -99,6 +99,16 @@ describe("shopify.app.toml (production)", () => {
     );
   });
 
+  it("requests write_inventory, without which a listing cannot hold stock", () => {
+    // Same shape as the check above, and the same failure mode: an EXACT PLANTS
+    // listing is one physical plant, and without this scope it cannot be given
+    // one unit of tracked stock, so approving one dies at the inventory step.
+    assert.ok(
+      scopeList(section(toml, "access_scopes")).includes("write_inventory"),
+      "one plant, one unit of stock requires the write_inventory access scope",
+    );
+  });
+
   it("requests write_app_proxy, without which [app_proxy] does nothing", () => {
     // Checked separately from the list above, which only proves the TOML and
     // REQUIRED_SHOPIFY_SCOPES agree and so stays green when both omit a scope.

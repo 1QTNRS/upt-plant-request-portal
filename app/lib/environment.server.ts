@@ -1,4 +1,4 @@
-import { isProduction } from "./env.server";
+import { DEFAULT_EMAIL_FROM, isProduction } from "./env.server";
 import { DEMO_SHOP, isDevAdminBypass } from "./shop";
 
 /**
@@ -87,6 +87,12 @@ export function missingProductionSecrets(): MissingSecret[] {
     missing.push({
       name: "RESEND_API_KEY",
       reason: "Without it, emails stay in the outbox with status \"preview\" and are never delivered.",
+    });
+  }
+  if (!process.env.EMAIL_FROM) {
+    missing.push({
+      name: "EMAIL_FROM",
+      reason: `Sending falls back to ${DEFAULT_EMAIL_FROM}; Resend rejects every send from a domain that is not verified in this account.`,
     });
   }
   if (!process.env.CRON_SECRET) {

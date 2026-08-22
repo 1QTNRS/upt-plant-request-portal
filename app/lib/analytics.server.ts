@@ -10,7 +10,11 @@ import {
   type BehaviorFlag,
   type DraftOrderLineItem,
 } from "./portal";
-import { expireOverdueOffers } from "./portal.server";
+import {
+  expireOverdueOffers,
+  OFFER_ITEM_ORDER,
+  REQUEST_ITEM_ORDER,
+} from "./portal.server";
 
 export type DateRangeId =
   | "7d"
@@ -90,9 +94,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   const requests = await prisma.plantRequest.findMany({
     where: { shop, submittedAt: { gte: range.start, lte: range.end } },
     include: {
-      items: true,
-      offer: { include: { items: true } },
-      response: { include: { items: true } },
+      items: { orderBy: REQUEST_ITEM_ORDER },
+      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       draftOrder: true,
       shopifyOrder: true,
     },
@@ -102,9 +106,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   const allShopRequests = await prisma.plantRequest.findMany({
     where: { shop },
     include: {
-      items: true,
-      offer: { include: { items: true } },
-      response: { include: { items: true } },
+      items: { orderBy: REQUEST_ITEM_ORDER },
+      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
+      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
       draftOrder: true,
       shopifyOrder: true,
     },
@@ -141,15 +145,29 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     )
     .reduce((sum, request) => sum + plantRevenue(request), 0);
 
+  // Closed does not mean paid: a customer closing their own request, or an
+  // admin closing one by hand, leaves paidAt null. Counting those as revenue
+  // reported money nobody sent, and reported it right beside a correctly-zero
+  // "revenue this month" — the larger, wrong number being the one that reads
+  // like a total.
   const revenueFromClosed = requests
-    .filter((request) => request.status === "Closed")
+    .filter((request) => request.status === "Closed" && request.paidAt)
     .reduce((sum, request) => sum + plantRevenue(request), 0);
 
   const revenueLostExpired = requests
     .filter((request) => request.status === "Expired")
     .reduce((sum, request) => {
+      const declined = new Set(
+        (request.response?.items ?? [])
+          .filter((item) => item.choice === "reject")
+          .map((item) => item.requestItemId),
+      );
+      // A plant the customer turned down was never at risk of being lost to a
+      // missed deadline, and counting it here also double-counts it against
+      // releasedItems.customerDeclined, which the two are kept apart to avoid.
       const offered = (request.offer?.items ?? []).filter(
-        (item) => item.availability === "available",
+        (item) =>
+          item.availability === "available" && !declined.has(item.requestItemId),
       );
       return (
         sum +
@@ -184,6 +202,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
 
   type PlantBucket = {
     plantName: string;
+    offeredNames: Set<string>;
     requestCount: number;
     purchaseCount: number;
     offeredCount: number;
@@ -194,12 +213,13 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
 
   const bumpPlant = (
     plantName: string,
-    field: keyof Omit<PlantBucket, "plantName">,
+    field: keyof Omit<PlantBucket, "plantName" | "offeredNames">,
     amount = 1,
   ) => {
     const key = plantName.trim() || "Unknown";
     const current = plants.get(key) ?? {
       plantName: key,
+      offeredNames: new Set<string>(),
       requestCount: 0,
       purchaseCount: 0,
       offeredCount: 0,
@@ -210,7 +230,23 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     plants.set(key, current);
   };
 
+  const noteOfferedName = (plantName: string, offeredName: string) => {
+    const key = plantName.trim() || "Unknown";
+    const offered = offeredName.trim();
+    const bucket = plants.get(key);
+    if (!bucket || !offered || offered === key) return;
+    bucket.offeredNames.add(offered);
+  };
+
   for (const request of requests) {
+    // Every figure in this table is attributed to the plant the customer asked
+    // for, found through requestItemId. Keying the offer and response figures
+    // on their own plantName instead split every renamed plant into two rows —
+    // one with the requests, one with the purchases — each converting at 0%.
+    const requestedName = new Map(
+      request.items.map((item) => [item.id, item.plantName]),
+    );
+
     for (const item of request.items) {
       itemFunnel.requested += 1;
       bumpPlant(item.plantName, "requestCount");
@@ -218,16 +254,20 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     for (const item of request.offer?.items ?? []) {
       if (item.availability !== "available") continue;
       itemFunnel.offered += 1;
-      bumpPlant(item.plantName, "offeredCount");
+      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
+      bumpPlant(plantName, "offeredCount");
+      noteOfferedName(plantName, item.plantName);
     }
     for (const item of request.response?.items ?? []) {
       if (item.choice !== "accept") continue;
       itemFunnel.accepted += 1;
-      bumpPlant(item.plantName, "acceptedCount");
+      const plantName = requestedName.get(item.requestItemId) ?? item.plantName;
+      bumpPlant(plantName, "acceptedCount");
+      noteOfferedName(plantName, item.plantName);
       if (request.paidAt) {
         itemFunnel.purchased += 1;
-        bumpPlant(item.plantName, "purchaseCount");
-        bumpPlant(item.plantName, "revenue", item.price * item.quantity);
+        bumpPlant(plantName, "purchaseCount");
+        bumpPlant(plantName, "revenue", item.price * item.quantity);
       }
     }
 
@@ -382,8 +422,11 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     };
   });
 
-  const plantMetrics = [...plants.values()].map((plant) => ({
+  const plantMetrics = [...plants.values()].map(({ offeredNames, ...plant }) => ({
     ...plant,
+    // What UPT called the plant when it offered it, when that differs from the
+    // requested name. A column rather than a row of its own.
+    offeredName: [...offeredNames].sort().join(", "),
     conversionRate: percent(plant.purchaseCount, plant.requestCount),
   }));
 

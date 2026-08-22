@@ -18,6 +18,15 @@ import { createExactPlantShopifyProduct } from "./shopify-ops.server";
 
 type GraphqlClient = NonNullable<AdminContext["admin"]>;
 
+/**
+ * Marks an item whose product is being created right now, so a second approval
+ * cannot start its own `productCreate` for the same plant.
+ */
+const CREATING = "creating";
+const STALE_CLAIM_MS = 5 * 60 * 1000;
+const ALREADY_LISTING_MESSAGE =
+  "This plant is already being listed. Refresh the page to see the result.";
+
 export class ExactPlantListingError extends Error {
   constructor(message: string) {
     super(message);
@@ -293,14 +302,74 @@ export async function createExactPlantListing(
     return toListingRecord(existing);
   }
 
+  // Claim the item before talking to Shopify. The read above and the write
+  // below are separated by a network round trip, so two approvals - two admin
+  // clicks, or one click and a retried POST - could both pass it and both call
+  // productCreate. The second upsert would then overwrite the first product's
+  // GID, leaving a published product in the store that nothing in the database
+  // points at, findable only by hand. The unique index on requestItemId is what
+  // makes the claim exclusive.
+  if (!existing) {
+    try {
+      await prisma.exactPlantListing.create({
+        data: {
+          shop,
+          requestItemId: input.requestItemId,
+          title: approved.title,
+          price: approved.price,
+          weightLbs: approved.weightLbs,
+          photoUrlsJson: JSON.stringify(approved.photoUrls),
+          status: CREATING,
+        },
+      });
+    } catch {
+      throw new ExactPlantListingError(ALREADY_LISTING_MESSAGE);
+    }
+  } else if (existing.status === CREATING) {
+    // A claim older than this outlived whatever was holding it, so it is safe
+    // to take over rather than leaving the item unlistable forever.
+    const { count } = await prisma.exactPlantListing.updateMany({
+      where: {
+        requestItemId: input.requestItemId,
+        status: CREATING,
+        updatedAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) },
+      },
+      data: { status: CREATING, lastError: null },
+    });
+    if (count === 0) throw new ExactPlantListingError(ALREADY_LISTING_MESSAGE);
+  }
+
+  // Shopify creating the product and the listing being finished are two
+  // different moments, and everything between them can fail. Recording the
+  // product as soon as it exists is what leaves the admin a link to it: the row
+  // used to keep a null GID, so a listing that failed at the inventory step
+  // left a product in the store that nothing in the app pointed at once the
+  // item stopped being eligible.
+  const recordProduct = async (product: {
+    productGid: string;
+    handle: string;
+  }) => {
+    await prisma.exactPlantListing.update({
+      where: { requestItemId: input.requestItemId },
+      data: {
+        shopifyProductGid: product.productGid,
+        shopifyProductHandle: product.handle,
+      },
+    });
+  };
+
   try {
     requireAdminClient(admin, shop, "Creating an EXACT PLANTS product");
     const created = admin
-      ? await createExactPlantShopifyProduct(admin, {
-          requestItemId: input.requestItemId,
-          ...approved,
-          appUrl: process.env.SHOPIFY_APP_URL,
-        })
+      ? await createExactPlantShopifyProduct(
+          admin,
+          {
+            requestItemId: input.requestItemId,
+            ...approved,
+            appUrl: process.env.SHOPIFY_APP_URL,
+          },
+          recordProduct,
+        )
       : demoProduct(input.requestItemId);
 
     const saved = await prisma.exactPlantListing.upsert({
@@ -350,12 +419,19 @@ export async function createExactPlantListing(
         status: "failed",
         lastError: message,
       },
+      // The GID `recordProduct` wrote is deliberately left alone: it is the
+      // only link to a product Shopify has already created. A listing that did
+      // not get published is still `failed` — the status stays `listed` only
+      // when a previous attempt genuinely published this plant.
       update: {
         title: approved.title,
         price: approved.price,
         weightLbs: approved.weightLbs,
         photoUrlsJson: JSON.stringify(approved.photoUrls),
-        status: existing?.shopifyProductGid ? "listed" : "failed",
+        status:
+          existing?.status === "listed" && existing.shopifyProductGid
+            ? "listed"
+            : "failed",
         lastError: message,
       },
     });

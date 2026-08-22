@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { queueEmail } from "./emails.server";
 import { getShopSettings } from "./portal.server";
 
 /**
@@ -39,6 +40,17 @@ function customerWhere(shop: string, payload: CompliancePayload) {
   if (email) or.push({ email });
   if (or.length === 0) return null;
   return { shop, OR: or };
+}
+
+/**
+ * Distinguishes a Shopify redelivery from a genuine second data request.
+ * Shopify sends `data_request.id` for this topic; the fallback is scoped to the
+ * day so a request the same customer makes later is not taken for a redelivery.
+ */
+function dataRequestKey(payload: CompliancePayload): string {
+  if (payload.data_request?.id) return String(payload.data_request.id);
+  const customer = payload.customer?.id ?? payload.customer?.email ?? "unknown";
+  return `${customer}:${new Date().toISOString().slice(0, 10)}`;
 }
 
 /** Renders the export as text so it can be emailed to the store owner. */
@@ -122,15 +134,16 @@ export async function handleCustomerDataRequest(
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
   if (adminEmail) {
-    await prisma.emailMessage.create({
-      data: {
-        shop,
-        toEmail: adminEmail,
-        subject: `Customer data request — UPT Plant Request Portal (${payload.customer?.id ?? "unknown customer"})`,
-        bodyText: formatCustomerDataExport(exports),
-        templateKey: "compliance_data_request",
-        status: "queued",
-      },
+    // Must go through the outbox helper: a row written straight to the table is
+    // never delivered by anything, and this webhook carries a legal response
+    // deadline. The key covers Shopify redelivering the same request.
+    await queueEmail({
+      shop,
+      toEmail: adminEmail,
+      subject: `Customer data request — UPT Plant Request Portal (${payload.customer?.id ?? "unknown customer"})`,
+      bodyText: formatCustomerDataExport(exports),
+      templateKey: "compliance_data_request",
+      idempotencyKey: `compliance_data_request:${dataRequestKey(payload)}`,
     });
   } else {
     console.warn(

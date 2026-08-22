@@ -310,10 +310,20 @@ describe("the offer response works without JavaScript", () => {
     assert.match(server, /missingChoices/);
   });
 
-  it("holds no client state for anything that affects checkout", () => {
-    // The photo lightbox is the only remaining state and is decorative.
-    const stateHooks = [...source.matchAll(/useState<([^>]*)>/g)].map((m) => m[1]);
-    assert.deepEqual(stateHooks, ["PhotoLightboxState | null"]);
+  it("holds no client state at all", () => {
+    assert.ok(!source.includes("useState"));
+    assert.ok(!source.includes("useEffect"));
+    assert.ok(
+      !source.includes("onClick"),
+      "onClick does nothing on a page that never hydrates",
+    );
+  });
+
+  it("renders every photo the offer froze, not just the first", () => {
+    // The rest used to be reachable only through a lightbox opened by onClick,
+    // so on the storefront the customer never saw them.
+    assert.match(source, /item\.photoUrls\.map\(/);
+    assert.ok(!/src=\{item\.photoUrl\}/.test(source));
   });
 });
 

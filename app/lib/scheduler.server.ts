@@ -1,13 +1,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import prisma from "../db.server";
-import { notifyExpirationReminders } from "./emails.server";
+import { notifyExpirationReminders, redeliverPendingEmails } from "./emails.server";
 import { expireOverdueOffers } from "./portal.server";
 
 export type ShopMaintenanceResult = {
   shop: string;
   expired: number;
+  /** Reminder rows created. Not the same as reminders that reached anyone. */
+  remindersQueued: number;
   remindersSent: number;
+  emailsRetried: number;
+  emailsRedelivered: number;
   error?: string;
 };
 
@@ -46,9 +50,12 @@ export function readCronSecret(request: Request): string | null {
  * sitting in Pending forever.
  */
 export async function shopsWithPortalData(): Promise<string[]> {
+  // groupBy pushes the DISTINCT into SQL. Prisma applies `distinct` on
+  // findMany in memory, so this hourly job was reading every request and every
+  // session row across the wire to produce a list of one.
   const [requests, sessions] = await Promise.all([
-    prisma.plantRequest.findMany({ distinct: ["shop"], select: { shop: true } }),
-    prisma.session.findMany({ distinct: ["shop"], select: { shop: true } }),
+    prisma.plantRequest.groupBy({ by: ["shop"] }),
+    prisma.session.groupBy({ by: ["shop"] }),
   ]);
   return [
     ...new Set([
@@ -59,8 +66,8 @@ export async function shopsWithPortalData(): Promise<string[]> {
 }
 
 /**
- * Flips unpaid offers past their hold to Expired and emails a reminder for
- * offers expiring within 24 hours.
+ * Flips unpaid offers past their hold to Expired, retries email nobody received
+ * and emails a reminder for offers expiring within 24 hours.
  *
  * `expireOverdueOffers` also runs from request loaders, so it stays the source
  * of truth for status; this only guarantees it happens without someone opening
@@ -77,16 +84,29 @@ export async function runOfferMaintenance(
   for (const shop of shops) {
     try {
       const expired = await expireOverdueOffers(shop);
+      // Retried before the reminders so a reminder queued by this same run is
+      // not attempted twice within it, which would burn its attempt budget.
+      const retried = await redeliverPendingEmails(shop);
       const before = await countReminders(shop);
       await notifyExpirationReminders(shop, appUrl);
       const after = await countReminders(shop);
-      results.push({ shop, expired, remindersSent: after - before });
+      results.push({
+        shop,
+        expired,
+        remindersQueued: after.queued - before.queued,
+        remindersSent: after.sent - before.sent,
+        emailsRetried: retried.attempted,
+        emailsRedelivered: retried.delivered,
+      });
     } catch (error) {
       // One broken shop must not stop the sweep for the others.
       results.push({
         shop,
         expired: 0,
+        remindersQueued: 0,
         remindersSent: 0,
+        emailsRetried: 0,
+        emailsRedelivered: 0,
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -95,8 +115,18 @@ export async function runOfferMaintenance(
   return { ranAt: new Date().toISOString(), shops: results };
 }
 
-function countReminders(shop: string): Promise<number> {
-  return prisma.emailMessage.count({
-    where: { shop, templateKey: "expiration_reminder" },
-  });
+/**
+ * Rows and deliveries counted apart. A total Resend outage still creates a
+ * reminder row per request, so counting rows alone reported "reminders sent"
+ * for a run in which nobody was reminded of anything.
+ */
+async function countReminders(
+  shop: string,
+): Promise<{ queued: number; sent: number }> {
+  const where = { shop, templateKey: "expiration_reminder" };
+  const [queued, sent] = await Promise.all([
+    prisma.emailMessage.count({ where }),
+    prisma.emailMessage.count({ where: { ...where, status: "sent" } }),
+  ]);
+  return { queued, sent };
 }

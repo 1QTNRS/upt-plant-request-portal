@@ -1,6 +1,8 @@
+import type { EmailMessage } from "@prisma/client";
+
 import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
-import { isProduction } from "./env.server";
+import { DEFAULT_EMAIL_FROM, isProduction } from "./env.server";
 import {
   buildAdminNewRequestEmail,
   buildCheckoutEmail,
@@ -9,6 +11,7 @@ import {
   buildOfferReadyEmail,
   buildRequestReceivedEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  formatDateTime,
 } from "./portal";
 import { getRequest, getShopSettings } from "./portal.server";
 
@@ -20,7 +23,7 @@ function defaultIdempotencyKey(templateKey: string, requestId?: string): string 
   return requestId ? `${templateKey}:${requestId}` : undefined;
 }
 
-async function queueEmail(input: {
+export type QueueEmailInput = {
   shop: string;
   requestId?: string;
   toEmail: string;
@@ -28,8 +31,21 @@ async function queueEmail(input: {
   bodyText: string;
   templateKey: string;
   idempotencyKey?: string;
-}) {
-  if (!input.toEmail.trim()) return null;
+  /** Injected by tests; otherwise resolved from RESEND_API_KEY. */
+  sender?: EmailSender;
+};
+
+export async function queueEmail(input: QueueEmailInput) {
+  if (!input.toEmail.trim()) {
+    // Clearing the admin notification address in Settings silently stops every
+    // admin notification, so the omission has to leave a trace somewhere.
+    console.warn(
+      `No recipient for the "${input.templateKey}" email on ${input.shop}${
+        input.requestId ? ` (request ${input.requestId})` : ""
+      }: nothing was queued.`,
+    );
+    return null;
+  }
 
   const idempotencyKey =
     input.idempotencyKey ?? defaultIdempotencyKey(input.templateKey, input.requestId);
@@ -38,7 +54,11 @@ async function queueEmail(input: {
     const existing = await prisma.emailMessage.findFirst({
       where: { shop: input.shop, idempotencyKey },
     });
-    if (existing) return existing;
+    // Only a sent message is finished. Returning a queued, preview or failed
+    // row untouched is what used to make a single lost message permanent — the
+    // customer was never told about their offer and nothing ever tried again.
+    if (existing?.status === "sent") return existing;
+    if (existing) return deliverEmail(existing, input.sender);
   }
 
   let message;
@@ -56,8 +76,9 @@ async function queueEmail(input: {
       },
     });
   } catch (error) {
-    // Lost a race against a concurrent request for the same key. The unique
-    // index guarantees the other caller already queued and delivered it.
+    // Lost a race against a concurrent request for the same key. The other
+    // caller is delivering it right now; attempting it here too would only
+    // duplicate the work, and the redelivery sweep covers it if that fails.
     if (idempotencyKey && isUniqueConstraintError(error)) {
       return prisma.emailMessage.findFirst({
         where: { shop: input.shop, idempotencyKey },
@@ -66,7 +87,7 @@ async function queueEmail(input: {
     throw error;
   }
 
-  return deliverEmail(message.id, input.toEmail, input.subject, input.bodyText);
+  return deliverEmail(message, input.sender);
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -77,9 +98,6 @@ function isUniqueConstraintError(error: unknown): boolean {
     (error as { code?: string }).code === "P2002"
   );
 }
-
-export const DEFAULT_EMAIL_FROM =
-  "UPT Plant Requests <noreply@unsolicitedplanttalks.com>";
 
 /** Resend's error body is JSON; its `message` is what a human needs to see. */
 export function summarizeResendError(status: number, body: string): string {
@@ -98,76 +116,230 @@ export function summarizeResendError(status: number, body: string): string {
   return `Resend responded ${status}: ${message}`.slice(0, 1000);
 }
 
+/** Resend answers a successful send with `{"id": "..."}`. */
+export function parseResendMessageId(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { id?: unknown };
+    return typeof parsed.id === "string" && parsed.id ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
+export type EmailSendResult =
+  | { ok: true; providerMessageId: string | null }
+  | { ok: false; error: string; retryable: boolean };
+
+/** The one call that leaves the process. Replaceable so delivery is testable. */
+export type EmailSender = (message: {
+  /** Also Resend's idempotency key, so a lost reply cannot double-send. */
+  id: string;
+  from: string;
+  toEmail: string;
+  subject: string;
+  bodyText: string;
+}) => Promise<EmailSendResult>;
+
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 const DELIVERY_ATTEMPTS = 3;
+
+/**
+ * A hung `api.resend.com` used to hold the customer's own form POST open for
+ * the whole retry loop. Their plant request is already committed by then, so
+ * they would see an error for a request that exists and submit it again.
+ */
+const RESEND_TIMEOUT_MS = 10_000;
 
 function retryDelayMs(attempt: number): number {
   return 250 * 2 ** attempt;
 }
 
-async function deliverEmail(
-  id: string,
-  toEmail: string,
-  subject: string,
-  bodyText: string,
-) {
-  const resendKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+export function resendSender(
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): EmailSender {
+  return async (message) => {
+    try {
+      const response = await fetchImpl("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          // Resend honours this for 24 hours. Without it a send whose reply was
+          // lost is indistinguishable from one that never happened, so every
+          // retry below is a second copy in the customer's inbox.
+          "Idempotency-Key": message.id,
+        },
+        body: JSON.stringify({
+          from: message.from,
+          to: [message.toEmail],
+          subject: message.subject,
+          text: message.bodyText,
+        }),
+        signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+      });
 
-  if (!resendKey) {
+      const body = await response.text();
+      if (response.ok) {
+        return { ok: true, providerMessageId: parseResendMessageId(body) };
+      }
+      return {
+        ok: false,
+        error: summarizeResendError(response.status, body),
+        // A rejected address or unverified domain will be rejected again.
+        retryable: RETRYABLE_STATUSES.has(response.status),
+      };
+    } catch (error) {
+      // A timeout or a dropped connection. Resend may still have accepted the
+      // message, which is what the idempotency key above protects.
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown email error",
+        retryable: true,
+      };
+    }
+  };
+}
+
+/** Null when RESEND_API_KEY is unset: there is nothing to deliver through. */
+export function resolveEmailSender(): EmailSender | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  return apiKey ? resendSender(apiKey) : null;
+}
+
+async function deliverEmail(
+  message: EmailMessage,
+  sender?: EmailSender,
+): Promise<EmailMessage> {
+  const from = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+  const send = sender ?? resolveEmailSender();
+
+  if (!send) {
     if (isProduction()) {
       // Customers never receive offer or checkout links in this state, so it
       // must be visible in the logs rather than only as an outbox row.
       console.warn(
-        `RESEND_API_KEY is not set: "${subject}" for ${toEmail} was stored but not delivered.`,
+        `RESEND_API_KEY is not set: "${message.subject}" for ${message.toEmail} was stored but not delivered.`,
       );
     }
-    await prisma.emailMessage.update({
-      where: { id },
+    return prisma.emailMessage.update({
+      where: { id: message.id },
       data: { status: "preview" },
     });
-    return prisma.emailMessage.findUnique({ where: { id } });
+  }
+
+  if (!process.env.EMAIL_FROM && isProduction()) {
+    console.warn(
+      `EMAIL_FROM is not set: sending "${message.subject}" as ${DEFAULT_EMAIL_FROM}, which may not be a verified Resend sender.`,
+    );
   }
 
   let lastError = "Unknown email error";
+  let attempts = message.attempts;
 
   for (let attempt = 0; attempt < DELIVERY_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          "Content-Type": "application/json",
+    attempts += 1;
+    const result = await send({
+      id: message.id,
+      from,
+      toEmail: message.toEmail,
+      subject: message.subject,
+      bodyText: message.bodyText,
+    });
+
+    if (result.ok) {
+      return prisma.emailMessage.update({
+        where: { id: message.id },
+        data: {
+          status: "sent",
+          sentAt: new Date(),
+          error: null,
+          attempts,
+          providerMessageId: result.providerMessageId ?? message.providerMessageId,
         },
-        body: JSON.stringify({ from, to: [toEmail], subject, text: bodyText }),
       });
-
-      if (response.ok) {
-        await prisma.emailMessage.update({
-          where: { id },
-          data: { status: "sent", sentAt: new Date(), error: null },
-        });
-        return prisma.emailMessage.findUnique({ where: { id } });
-      }
-
-      lastError = summarizeResendError(response.status, await response.text());
-      // A rejected address or unverified domain will be rejected again.
-      if (!RETRYABLE_STATUSES.has(response.status)) break;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : "Unknown email error";
     }
 
+    lastError = result.error;
+    if (!result.retryable) break;
     if (attempt < DELIVERY_ATTEMPTS - 1) {
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)));
     }
   }
 
-  console.error(`Could not deliver "${subject}" to ${toEmail}: ${lastError}`);
-  await prisma.emailMessage.update({
-    where: { id },
-    data: { status: "failed", error: lastError },
+  console.error(
+    `Could not deliver "${message.subject}" to ${message.toEmail}: ${lastError}`,
+  );
+  return prisma.emailMessage.update({
+    where: { id: message.id },
+    data: { status: "failed", error: lastError, attempts },
   });
-  return prisma.emailMessage.findUnique({ where: { id } });
+}
+
+/** Anything that has not reached the recipient yet. */
+const UNDELIVERED_STATUSES = ["queued", "failed", "preview"];
+
+/**
+ * Total Resend calls one message may ever cost. `DELIVERY_ATTEMPTS` of them go
+ * on the first try, and a permanently rejected address only spends one per
+ * sweep, so this is roughly a day of hourly retries before the portal gives up
+ * and leaves the row for a human.
+ */
+const MAX_DELIVERY_ATTEMPTS = 24;
+
+/** Messages retried per shop per sweep, so one shop cannot monopolise a run. */
+const REDELIVERY_BATCH = 20;
+
+/**
+ * Retries messages that never reached their recipient, oldest first.
+ *
+ * Every template matters to someone: a lost `offer_ready` means the customer is
+ * never told they have an offer, the hold lapses, and the plant is released for
+ * listing without anyone knowing an email failed. `preview` rows are included
+ * because everything queued before RESEND_API_KEY was configured is sitting in
+ * that state.
+ */
+export async function redeliverPendingEmails(
+  shop: string,
+  options: { limit?: number; sender?: EmailSender } = {},
+): Promise<{ attempted: number; delivered: number }> {
+  const sender = options.sender ?? resolveEmailSender();
+  // Without a Resend key nothing can be delivered, and re-running delivery
+  // would only overwrite the recorded error with `preview`.
+  if (!sender) return { attempted: 0, delivered: 0 };
+
+  const pending = await prisma.emailMessage.findMany({
+    where: {
+      shop,
+      status: { in: UNDELIVERED_STATUSES },
+      attempts: { lt: MAX_DELIVERY_ATTEMPTS },
+    },
+    orderBy: { createdAt: "asc" },
+    take: options.limit ?? REDELIVERY_BATCH,
+  });
+
+  let delivered = 0;
+  for (const message of pending) {
+    const updated = await deliverEmail(message, sender);
+    if (updated.status === "sent") delivered += 1;
+  }
+
+  return { attempted: pending.length, delivered };
+}
+
+/**
+ * Retries one message on demand from the admin request page. Ignores the
+ * attempt bound: a human asking again is not a runaway loop.
+ */
+export async function redeliverEmailMessage(
+  shop: string,
+  id: string,
+  options: { sender?: EmailSender } = {},
+): Promise<EmailMessage | null> {
+  const message = await prisma.emailMessage.findFirst({ where: { id, shop } });
+  if (!message) return null;
+  if (message.status === "sent") return message;
+  return deliverEmail(message, options.sender);
 }
 
 export async function notifyNewRequest(shop: string, requestId: string) {
@@ -220,7 +392,7 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
     expiresAt: request.sentOffer.expiresAt,
     offerLink,
   });
-  await queueEmail({
+  return queueEmail({
     shop,
     requestId,
     toEmail: request.email,
@@ -242,7 +414,7 @@ export async function notifyCheckoutLink(
     requestNumber: request.requestNumber,
     invoiceUrl,
   });
-  await queueEmail({
+  return queueEmail({
     shop,
     requestId,
     toEmail: request.email,
@@ -306,8 +478,20 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
       offer: {
         expiresAt: { gt: now, lte: soon },
       },
+      // Pending is set when the offer is sent and nothing moves it when the
+      // customer answers, so without this the last nudge before the hold lapses
+      // also goes to customers who rejected every plant on the offer.
+      OR: [
+        { response: null },
+        { response: { items: { some: { choice: "accept" } } } },
+      ],
     },
-    include: { offer: true, emails: true },
+    include: {
+      offer: true,
+      draftOrder: true,
+      emails: { select: { templateKey: true } },
+      response: { select: { items: { select: { choice: true } } } },
+    },
   });
 
   for (const request of pending) {
@@ -316,11 +500,18 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
     );
     if (alreadySent || !request.offer) continue;
 
+    const accepted =
+      request.response?.items.some((item) => item.choice === "accept") ?? false;
+
     const email = buildExpirationReminderEmail({
       customerName: request.customerName,
       requestNumber: request.requestNumber,
-      expiresAt: request.offer.expiresAt.toISOString(),
+      expiresAt: formatDateTime(request.offer.expiresAt),
       offerLink: links.requestDetail(request.id),
+      // A customer who has already accepted needs to pay, not to review the
+      // offer again; sending them here without the link they need wastes the
+      // one reminder they get.
+      invoiceUrl: accepted ? request.draftOrder?.invoiceUrl ?? undefined : undefined,
     });
     await queueEmail({
       shop,
@@ -332,9 +523,24 @@ export async function notifyExpirationReminders(shop: string, appUrl: string) {
   }
 }
 
+/**
+ * The outbox as the merchant sees it. `bodyText` is deliberately excluded: it
+ * carries payment links, and the request page has no reason to render them.
+ */
 export async function listEmailsForRequest(shop: string, requestId: string) {
   return prisma.emailMessage.findMany({
     where: { shop, requestId },
+    select: {
+      id: true,
+      templateKey: true,
+      toEmail: true,
+      subject: true,
+      status: true,
+      error: true,
+      attempts: true,
+      createdAt: true,
+      sentAt: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 }

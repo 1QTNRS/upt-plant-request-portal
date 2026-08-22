@@ -6,8 +6,10 @@ import { describe, it } from "node:test";
 
 import {
   APP_PROXY_BASE_PATH,
+  APP_PROXY_MAX_AGE_SECONDS,
   APP_PROXY_PREFIX,
   APP_PROXY_SUBPATH,
+  appProxyRequestIsFresh,
   appProxySignatureIsValid,
   CUSTOMER_PORTAL_PATH,
   customerPortalLinks,
@@ -82,6 +84,49 @@ describe("app proxy signature verification", () => {
   it("rejects verification when no secret is configured", () => {
     const search = sign({ shop: "s.myshopify.com" });
     assert.equal(appProxySignatureIsValid(search, ""), false);
+  });
+});
+
+describe("app proxy request freshness", () => {
+  const signedAt = 1780000000;
+  const at = (offsetSeconds: number) => (signedAt + offsetSeconds) * 1000;
+  const search = (timestamp?: string) =>
+    new URLSearchParams(timestamp === undefined ? {} : { timestamp });
+
+  it("accepts a request Shopify signed just now", () => {
+    assert.equal(
+      appProxyRequestIsFresh(search(String(signedAt)), { now: at(2) }),
+      true,
+    );
+  });
+
+  it("refuses a signature replayed after the window", () => {
+    assert.equal(
+      appProxyRequestIsFresh(search(String(signedAt)), {
+        now: at(APP_PROXY_MAX_AGE_SECONDS + 1),
+      }),
+      false,
+    );
+  });
+
+  it("refuses the hour-old capture that made this necessary", () => {
+    assert.equal(
+      appProxyRequestIsFresh(search(String(signedAt)), { now: at(3457) }),
+      false,
+    );
+  });
+
+  it("tolerates a clock that runs behind Shopify's", () => {
+    assert.equal(
+      appProxyRequestIsFresh(search(String(signedAt)), { now: at(-60) }),
+      true,
+    );
+  });
+
+  it("refuses a request with no or an unusable timestamp", () => {
+    assert.equal(appProxyRequestIsFresh(search(), { now: at(0) }), false);
+    assert.equal(appProxyRequestIsFresh(search("soon"), { now: at(0) }), false);
+    assert.equal(appProxyRequestIsFresh(search(""), { now: at(0) }), false);
   });
 });
 

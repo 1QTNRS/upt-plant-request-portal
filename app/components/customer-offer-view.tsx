@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
-
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   formatCurrency,
+  isOfferExpired,
   type CustomerOfferResponse,
   type OfferPlantItem,
   type SampleCustomerOffer,
@@ -10,21 +9,6 @@ import {
 import { OfferExpiryBanner } from "./customer-request-portal";
 
 type ItemChoice = "accept" | "reject" | "unavailable";
-
-type PhotoLightboxState = {
-  plantName: string;
-  photos: string[];
-  index: number;
-};
-
-const modalButtonStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  borderRadius: "8px",
-  border: "1px solid #c9cccf",
-  background: "#ffffff",
-  font: "inherit",
-  cursor: "pointer",
-};
 
 const buttonStyle: React.CSSProperties = {
   padding: "8px 16px",
@@ -45,125 +29,42 @@ const choiceLabelStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function PhotoLightbox({
-  state,
-  onClose,
-  onNavigate,
-}: {
-  state: PhotoLightboxState;
-  onClose: () => void;
-  onNavigate: (index: number) => void;
-}) {
-  const hasMultiple = state.photos.length > 1;
+/**
+ * The storefront loads none of the app's CSS or JavaScript, so the gallery is a
+ * plain flex row of images with inline styles.
+ */
+const photoRowStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
+};
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      if (event.key === "ArrowLeft" && hasMultiple) {
-        onNavigate((state.index - 1 + state.photos.length) % state.photos.length);
-      }
-      if (event.key === "ArrowRight" && hasMultiple) {
-        onNavigate((state.index + 1) % state.photos.length);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hasMultiple, onClose, onNavigate, state.index, state.photos.length]);
-
+function CloseRequestButton({ formAction }: { formAction?: string }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1100,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-      }}
-    >
-      <div
-        role="presentation"
-        onClick={onClose}
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.8)",
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${state.plantName} photos`}
-        style={{ position: "relative", zIndex: 1101, width: "min(900px, 100%)" }}
-      >
-        <s-box padding="large" borderWidth="base" borderRadius="base" background="base">
-          <s-stack direction="block" gap="base">
-            <s-stack direction="inline">
-              <s-heading>{state.plantName}</s-heading>
-              <button
-                type="button"
-                aria-label="Close photo viewer"
-                style={{ ...modalButtonStyle, marginLeft: "auto" }}
-                onClick={onClose}
-              >
-                Close
-              </button>
-            </s-stack>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "16px",
-              }}
-            >
-              {hasMultiple ? (
-                <button
-                  type="button"
-                  aria-label="Previous photo"
-                  style={modalButtonStyle}
-                  onClick={() =>
-                    onNavigate(
-                      (state.index - 1 + state.photos.length) % state.photos.length,
-                    )
-                  }
-                >
-                  ←
-                </button>
-              ) : null}
-              <img
-                src={state.photos[state.index]}
-                alt={`${state.plantName} ${state.index + 1}`}
-                style={{
-                  display: "block",
-                  maxWidth: "100%",
-                  maxHeight: "70vh",
-                  objectFit: "contain",
-                  borderRadius: "8px",
-                }}
-              />
-              {hasMultiple ? (
-                <button
-                  type="button"
-                  aria-label="Next photo"
-                  style={modalButtonStyle}
-                  onClick={() => onNavigate((state.index + 1) % state.photos.length)}
-                >
-                  →
-                </button>
-              ) : null}
-            </div>
-            {hasMultiple ? (
-              <s-text color="subdued">
-                Photo {state.index + 1} of {state.photos.length}
-              </s-text>
-            ) : null}
-          </s-stack>
-        </s-box>
-      </div>
-    </div>
+    <form method="post" action={formAction}>
+      <button type="submit" name="intent" value="close-request" style={buttonStyle}>
+        Close Request
+      </button>
+    </form>
   );
+}
+
+function answeredOfferHeading(state: {
+  requestPaid: boolean;
+  requestClosed: boolean;
+  hasAccepted: boolean;
+  hasCheckoutLink: boolean;
+  allUnavailable: boolean;
+}): string {
+  if (state.requestPaid) return "Payment received";
+  if (state.requestClosed) return "Request closed";
+  if (state.hasAccepted) {
+    return state.hasCheckoutLink
+      ? "Your private checkout link is ready"
+      : "Your selections are saved";
+  }
+  if (state.allUnavailable) return "Nothing to pay for";
+  return "Your selections are saved";
 }
 
 export function CustomerOfferView({
@@ -173,7 +74,8 @@ export function CustomerOfferView({
   fedexRemovalWarning,
   backHref,
   requestClosed,
-  confirmationEmail,
+  requestPaid = false,
+  paidAt,
   formAction,
   submittedChoices,
   fedexSelected = true,
@@ -186,7 +88,9 @@ export function CustomerOfferView({
   fedexRemovalWarning: string;
   backHref?: string;
   requestClosed: boolean;
-  confirmationEmail?: { subject: string; bodyText: string } | null;
+  /** Set once `orders/paid` has closed the request. */
+  requestPaid?: boolean;
+  paidAt?: string | null;
   /**
    * Where the form posts. Must be the storefront proxy path — React Router
    * would otherwise render the app's own `/customer/...` path, which does not
@@ -201,10 +105,6 @@ export function CustomerOfferView({
   /** Validation message from the last submission, e.g. an unanswered plant. */
   error?: string | null;
 }) {
-  const [photoLightbox, setPhotoLightbox] = useState<PhotoLightboxState | null>(
-    null,
-  );
-
   if (!offer) {
     return (
       <s-page heading="Customer Offer">
@@ -226,43 +126,108 @@ export function CustomerOfferView({
   const submitted = Boolean(response);
   const acceptedItems = (response?.items ?? []).filter((item) => item.choice === "accept");
   const hasAccepted = acceptedItems.length > 0;
+  // A closed request has nothing left to collect: paid through `orders/paid`,
+  // or closed by the customer once they had rejected everything.
+  const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;
+  const holdEnded = isOfferExpired(offer.expiresAtIso) && !requestClosed;
 
   if (submitted) {
     return (
       <s-page
-        heading={
-          hasAccepted
-            ? "Your private checkout link is ready"
-            : requestClosed
-              ? "Request closed"
-              : allUnavailable
-                ? "Nothing to pay for"
-                : "Your selections are saved"
-        }
+        heading={answeredOfferHeading({
+          requestPaid,
+          requestClosed,
+          hasAccepted,
+          hasCheckoutLink,
+          allUnavailable,
+        })}
       >
-        {hasAccepted ? (
+        {requestPaid ? (
           <s-section>
             <s-stack direction="block" gap="base">
-              <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
-              <s-text color="subdued">{offer.customerEmail}</s-text>
-              {invoiceUrl ? (
-                <s-link href={invoiceUrl}>Continue to Checkout</s-link>
-              ) : (
-                <s-text color="subdued">
-                  Checkout link will appear here once the Shopify draft order is
-                  created.
+              <s-banner tone="success">
+                <s-text>
+                  We received your payment{paidAt ? ` on ${paidAt}` : ""}. This
+                  request is complete.
                 </s-text>
+              </s-banner>
+              <s-paragraph>
+                There is nothing left to pay. Your order confirmation went to{" "}
+                {offer.customerEmail}.
+              </s-paragraph>
+            </s-stack>
+          </s-section>
+        ) : null}
+
+        {hasAccepted && invoiceUrl && !requestClosed ? (
+          <s-section>
+            <s-stack direction="block" gap="base">
+              {holdEnded ? (
+                /*
+                 * The hold has lapsed, and an expired unpaid request releases
+                 * its plants for review as EXACT PLANTS listings. The invoice
+                 * Shopify issued is still payable, so the link stays — but
+                 * presenting it as a live hold would be a promise this page
+                 * cannot keep, and paying against it is no longer guaranteed
+                 * to get the plant.
+                 */
+                <s-banner tone="warning">
+                  <s-text>
+                    Your hold ended{offer.expiresAt ? ` on ${offer.expiresAt}` : ""}.
+                    Please contact us before paying — we can no longer guarantee
+                    these plants are still reserved for you.
+                  </s-text>
+                </s-banner>
+              ) : (
+                <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
               )}
+              <s-text color="subdued">{offer.customerEmail}</s-text>
+              <s-link href={invoiceUrl}>Continue to Checkout</s-link>
+            </s-stack>
+          </s-section>
+        ) : null}
+
+        {hasAccepted && !invoiceUrl && !requestClosed ? (
+          /*
+           * There is no payment link, and nothing on this page will produce one:
+           * re-submitting an answered offer is refused. Telling the customer a
+           * link had been emailed and would appear here shortly was false on
+           * both counts.
+           */
+          <s-section>
+            <s-stack direction="block" gap="base">
+              <s-banner tone="warning">
+                <s-text>
+                  We could not create your payment link yet. Your selections are
+                  saved and your plants are still held for you.
+                </s-text>
+              </s-banner>
+              <s-paragraph>
+                We will email the payment link to {offer.customerEmail} as soon as
+                it is ready. Nothing has been charged, and you do not need to
+                submit this offer again.
+              </s-paragraph>
             </s-stack>
           </s-section>
         ) : null}
 
         {!hasAccepted && allUnavailable ? (
           <s-section>
-            <s-text>
-              Unfortunately, none of the requested plants are currently available.
-              Please review the notes below for additional information.
-            </s-text>
+            <s-stack direction="block" gap="base">
+              <s-text>
+                Unfortunately, none of the requested plants are currently
+                available. Please review the notes below for additional
+                information.
+              </s-text>
+              {requestClosed ? null : (
+                /*
+                 * Without this the request has no action at all and sits open
+                 * until the hold lapses, even though there was never anything
+                 * to answer.
+                 */
+                <CloseRequestButton formAction={formAction} />
+              )}
+            </s-stack>
           </s-section>
         ) : null}
 
@@ -273,16 +238,7 @@ export function CustomerOfferView({
                 You did not accept any plants from this offer. Close this request
                 when you are finished. No checkout link will be created.
               </s-text>
-              <form method="post" action={formAction}>
-                <button
-                  type="submit"
-                  name="intent"
-                  value="close-request"
-                  style={buttonStyle}
-                >
-                  Close Request
-                </button>
-              </form>
+              <CloseRequestButton formAction={formAction} />
             </s-stack>
           </s-section>
         ) : null}
@@ -323,27 +279,6 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {confirmationEmail ? (
-          <s-section heading="Confirmation email preview">
-            <s-box
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-            >
-              <s-stack direction="block" gap="small">
-                <s-text color="subdued">To: {offer.customerEmail}</s-text>
-                <s-text>
-                  <strong>{confirmationEmail.subject}</strong>
-                </s-text>
-                {confirmationEmail.bodyText.split("\n").map((line, index) => (
-                  <s-text key={`${line}-${index}`}>{line || " "}</s-text>
-                ))}
-              </s-stack>
-            </s-box>
-          </s-section>
-        ) : null}
-
         {backHref ? (
           <s-section>
             <s-link href={backHref}>Back to My Requests</s-link>
@@ -353,17 +288,51 @@ export function CustomerOfferView({
     );
   }
 
+  // The hold, not the request status, decides whether this offer can still be
+  // answered: the expiry sweep may not have run yet, and the server refuses a
+  // late answer either way, so the page must stop offering one.
+  //
+  // A closed request counts the same way. The terminal state used to be decided
+  // by a recorded answer, so a customer who closed an all-unavailable request
+  // was handed the live offer again — countdown, "held for you", and the same
+  // Close Request button — while their own request list already said Closed.
+  const expired = isOfferExpired(offer.expiresAtIso) || requestClosed;
+
   return (
-    <s-page heading={offer.title}>
+    <s-page
+      heading={
+        requestClosed
+          ? "Request closed"
+          : expired
+            ? "This offer has expired"
+            : offer.title
+      }
+    >
       <OfferExpiryBanner
         expirationDays={offer.expirationDays}
         expiresAt={offer.expiresAt}
         expiresAtIso={offer.expiresAtIso}
         urgencyMessage={offer.urgencyMessage}
         holdMessage={offer.holdMessage}
+        requestClosed={requestClosed}
       />
 
-      {pendingFedexRemoval ? (
+      {expired ? (
+        <>
+          <s-section heading="Plants that were offered to you">
+            <s-stack direction="block" gap="base">
+              {offer.items.map((item) => (
+                <OfferItemCard key={item.id} item={item} answerable={false} />
+              ))}
+            </s-stack>
+          </s-section>
+          {backHref ? (
+            <s-section>
+              <s-link href={backHref}>Back to My Requests</s-link>
+            </s-section>
+          ) : null}
+        </>
+      ) : pendingFedexRemoval ? (
         /*
          * Removing the upgrade used to open a JS modal, which never opens on the
          * storefront. It is now a second server round-trip, so the warning is
@@ -432,13 +401,7 @@ export function CustomerOfferView({
                       ? submittedChoices?.[item.sourceItemId]
                       : "unavailable"
                   }
-                  onOpenPhotos={() =>
-                    setPhotoLightbox({
-                      plantName: item.plantName,
-                      photos: item.photoUrls,
-                      index: 0,
-                    })
-                  }
+                  answerable
                 />
               ))}
             </s-stack>
@@ -505,16 +468,6 @@ export function CustomerOfferView({
           )}
         </form>
       )}
-
-      {photoLightbox ? (
-        <PhotoLightbox
-          state={photoLightbox}
-          onClose={() => setPhotoLightbox(null)}
-          onNavigate={(index) =>
-            setPhotoLightbox((current) => (current ? { ...current, index } : current))
-          }
-        />
-      ) : null}
     </s-page>
   );
 }
@@ -522,35 +475,35 @@ export function CustomerOfferView({
 function OfferItemCard({
   item,
   choice,
-  onOpenPhotos,
+  answerable,
 }: {
   item: OfferPlantItem;
   /** Undefined until the customer picks one; nothing is pre-selected. */
   choice?: ItemChoice;
-  onOpenPhotos: () => void;
+  /** False once the hold has lapsed: the plant is no longer held for anyone. */
+  answerable: boolean;
 }) {
   const available = item.availability === "available";
 
   return (
     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
       <s-stack direction="block" gap="base">
-        <s-stack direction="inline" gap="large">
-          {available && item.photoUrl ? (
-            <button
-              type="button"
-              onClick={onOpenPhotos}
-              style={{
-                display: "block",
-                padding: 0,
-                border: "none",
-                background: "transparent",
-                cursor: "zoom-in",
-              }}
-              aria-label={`View larger photos of ${item.plantName}`}
-            >
+        {available && item.photoUrls.length > 0 ? (
+          /*
+           * Every photo the offer froze, as plain images. The storefront never
+           * hydrates, so a gallery behind a click handler shows the customer
+           * exactly one photo of the plant they are buying.
+           */
+          <div style={photoRowStyle}>
+            {item.photoUrls.map((url, index) => (
               <img
-                src={item.photoUrl}
-                alt={item.plantName}
+                key={url}
+                src={url}
+                alt={
+                  item.photoUrls.length > 1
+                    ? `${item.plantName}, photo ${index + 1} of ${item.photoUrls.length}`
+                    : item.plantName
+                }
                 width={200}
                 height={200}
                 style={{
@@ -560,18 +513,19 @@ function OfferItemCard({
                   flexShrink: 0,
                 }}
               />
-            </button>
-          ) : null}
-          <s-stack direction="block" gap="base">
-            <s-heading>{item.plantName}</s-heading>
-            {available ? (
-              <s-text>
-                <strong>{formatCurrency(item.price)}</strong>
-              </s-text>
-            ) : (
-              <s-badge tone="critical">Not Available</s-badge>
-            )}
-          </s-stack>
+            ))}
+          </div>
+        ) : null}
+
+        <s-stack direction="block" gap="base">
+          <s-heading>{item.plantName}</s-heading>
+          {available ? (
+            <s-text>
+              <strong>{formatCurrency(item.price)}</strong>
+            </s-text>
+          ) : (
+            <s-badge tone="critical">Not Available</s-badge>
+          )}
         </s-stack>
 
         {!available ? (
@@ -586,7 +540,7 @@ function OfferItemCard({
           <s-text>{item.notesFromUpt || " "}</s-text>
         </s-stack>
 
-        {available ? (
+        {available && answerable ? (
           /*
            * Native radios inside the submitting form. A choice held in React
            * state and mirrored into a hidden input submits the default for every
@@ -607,12 +561,20 @@ function OfferItemCard({
               </label>
             ))}
           </s-stack>
-        ) : (
+        ) : null}
+
+        {available && !answerable ? (
+          <s-text color="subdued">
+            This plant is no longer held for you and can no longer be accepted.
+          </s-text>
+        ) : null}
+
+        {!available ? (
           <s-text color="subdued">
             This plant is unavailable and cannot be accepted or rejected. It will
             be excluded from checkout.
           </s-text>
-        )}
+        ) : null}
       </s-stack>
     </s-box>
   );

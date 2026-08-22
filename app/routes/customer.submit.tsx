@@ -5,7 +5,10 @@ import {
   CustomerRequestPortal,
   EMPTY_PLANT_LINE,
 } from "../components/customer-request-portal";
-import { loadCustomerPortal } from "../lib/customer-portal.server";
+import {
+  CUSTOMER_LOOKUP_UNAVAILABLE,
+  loadCustomerPortal,
+} from "../lib/customer-portal.server";
 import {
   portalHome,
   readPlantLines,
@@ -92,7 +95,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!identity.email.trim()) {
     return {
       errors: [
-        "We could not read the email address on your customer account. Please contact us so we can take your request.",
+        identity.shopUnreachable
+          ? CUSTOMER_LOOKUP_UNAVAILABLE
+          : "We could not read the email address on your customer account. Please contact us so we can take your request.",
       ],
       plantLines: readPlantLines(form),
     };

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildConfirmationEmail,
   buildDraftOrderLineItems,
+  buildExpirationReminderEmail,
   computeBehaviorFlags,
   formatCustomerStatusLabel,
   formatRequestNumber,
@@ -12,8 +13,10 @@ import {
   matchesAdminSearch,
   normalizeRequestStatus,
   normalizeUnavailableReason,
+  offerHasPayableItems,
   parseRequestNumber,
   plantRevenueFromLines,
+  plantRevenueFromPaidOrderLines,
   primaryBehaviorFlag,
   computeTimeRemaining,
 } from "./portal";
@@ -43,6 +46,58 @@ describe("status mapping", () => {
     assert.equal(formatCustomerStatusLabel("New"), "New");
     assert.equal(normalizeRequestStatus("Purchased"), "Closed");
     assert.equal(normalizeRequestStatus("Offer Sent"), "Pending");
+  });
+
+  /*
+   * The stored status stays Pending — closing these requests would drop their
+   * declined plants out of the EXACT PLANTS review queue — so the label is what
+   * has to stop asking for money that will never be collected.
+   */
+  it("does not label a request with nothing payable Needs Payment", () => {
+    assert.equal(
+      formatCustomerStatusLabel("Pending", { hasPayableItems: false }),
+      "No Payment Needed",
+    );
+    assert.equal(
+      formatCustomerStatusLabel("Pending", { hasPayableItems: true }),
+      "Needs Payment",
+    );
+    // No offer sent yet: the label follows the status as before.
+    assert.equal(formatCustomerStatusLabel("Pending", {}), "Needs Payment");
+    assert.equal(
+      formatCustomerStatusLabel("Closed", { hasPayableItems: false }),
+      "Closed",
+    );
+  });
+
+  it("decides what is payable from the offer and the answer", () => {
+    const available = { availability: "available" };
+    const notAvailable = { availability: "not_available" };
+
+    // Unanswered: the customer can still accept until the hold ends.
+    assert.equal(
+      offerHasPayableItems({ offerItems: [available, notAvailable] }),
+      true,
+    );
+    assert.equal(
+      offerHasPayableItems({ offerItems: [notAvailable, notAvailable] }),
+      false,
+      "UPT had nothing available, so there was never anything to buy",
+    );
+    assert.equal(
+      offerHasPayableItems({
+        offerItems: [available, available],
+        responseChoices: ["reject", "reject"],
+      }),
+      false,
+    );
+    assert.equal(
+      offerHasPayableItems({
+        offerItems: [available, available],
+        responseChoices: ["reject", "accept"],
+      }),
+      true,
+    );
   });
 
   it("normalizes unavailable reason labels to the production set", () => {
@@ -126,6 +181,92 @@ describe("draft orders", () => {
   });
 });
 
+/**
+ * The fallback for a paid request with no recorded draft order, so there is no
+ * `kind` to read and the order's own lines are all there is.
+ */
+describe("plant revenue from a paid order's lines", () => {
+  const fedexVariant = "gid://shopify/ProductVariant/44556677";
+  const identity = {
+    variantGid: fedexVariant,
+    upgradeLabel: "FedEx Priority Overnight Upgrade",
+    upgradeSelected: true,
+  };
+
+  it("excludes the upgrade line the merchant renamed", () => {
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Philodendron Spiritus Sancti", price: "400.00", quantity: 1 },
+        {
+          title: "Express Shipping Guarantee",
+          price: "15.00",
+          quantity: 1,
+          variant_id: 44556677,
+        },
+      ],
+      identity,
+    );
+    assert.equal(result.plantRevenue, 400);
+    assert.equal(result.fedexLineCount, 1);
+    assert.equal(result.unidentifiedUpgrade, false);
+  });
+
+  it("counts a plant whose offered name contains Fedex", () => {
+    // The mirror image: the title substrings dropped this $300 plant and kept
+    // the $15 shipping line instead.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Renamed Fedex Exact", price: "300.00", quantity: 1 },
+        {
+          title: "Express Shipping Guarantee",
+          price: "15.00",
+          quantity: 1,
+          admin_graphql_api_variant_id: fedexVariant,
+        },
+      ],
+      identity,
+    );
+    assert.equal(result.plantRevenue, 300);
+  });
+
+  it("falls back to the stored upgrade label when the line carries no variant", () => {
+    // A custom line, which is what the app sends before it has resolved the
+    // FedEx variant on the store.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Monstera Albo Exact", price: "250.00", quantity: 1 },
+        { title: "FedEx Priority Overnight Upgrade", price: "15.00", quantity: 1 },
+      ],
+      { upgradeLabel: identity.upgradeLabel, upgradeSelected: true },
+    );
+    assert.equal(result.plantRevenue, 250);
+    assert.equal(result.fedexLineCount, 1);
+  });
+
+  it("counts every line when the customer removed the upgrade", () => {
+    const result = plantRevenueFromPaidOrderLines(
+      [{ title: "Fedex Special Exact", price: "120.00", quantity: 2 }],
+      { ...identity, upgradeSelected: false },
+    );
+    assert.equal(result.plantRevenue, 240);
+    assert.equal(result.unidentifiedUpgrade, false);
+  });
+
+  it("reports an upgrade it cannot find rather than guessing at one", () => {
+    // Over-stating revenue by the shipping charge is recoverable; silently
+    // dropping a plant from every revenue figure is not.
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Anthurium Warocqueanum Exact", price: "500.00", quantity: 1 },
+        { title: "Express Shipping Guarantee", price: "15.00", quantity: 1 },
+      ],
+      { variantGid: fedexVariant, upgradeLabel: "Renamed Upgrade", upgradeSelected: true },
+    );
+    assert.equal(result.plantRevenue, 515);
+    assert.equal(result.unidentifiedUpgrade, true);
+  });
+});
+
 describe("confirmation email", () => {
   it("includes accepted items only, FedEx disclaimer when removed, and checkout link", () => {
     const email = buildConfirmationEmail({
@@ -153,6 +294,38 @@ describe("confirmation email", () => {
     assert.match(email.bodyText, /https:\/\/checkout.example\/pay/);
     assert.doesNotMatch(email.bodyText, /Rejected/);
     assert.doesNotMatch(email.bodyText, /Fiddle Leaf/);
+  });
+});
+
+describe("expiration reminder email", () => {
+  const base = {
+    customerName: "Alex Rivera",
+    requestNumber: "REQ1",
+    expiresAt: "2026-08-22T12:00:00.000Z",
+    offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+  };
+
+  it("asks an unanswered customer to review the offer", () => {
+    const email = buildExpirationReminderEmail(base);
+    assert.match(email.subject, /expires soon/);
+    assert.match(email.bodyText, /Review your offer/);
+    assert.match(email.bodyText, /apps\/plant-requests/);
+  });
+
+  it("leads with the payment link when the customer already accepted", () => {
+    // This is the last thing they hear before the hold lapses, and "review your
+    // offer" is not what someone who has already accepted needs to do.
+    const email = buildExpirationReminderEmail({
+      ...base,
+      invoiceUrl: "https://shop.example.com/invoices/abc123",
+    });
+
+    assert.match(email.subject, /complete payment/i);
+    assert.ok(
+      email.bodyText.indexOf("https://shop.example.com/invoices/abc123") <
+        email.bodyText.indexOf(base.offerLink),
+    );
+    assert.doesNotMatch(email.bodyText, /Review your offer/);
   });
 });
 
@@ -189,5 +362,19 @@ describe("behavior flags", () => {
 
     assert.ok(flags.includes("Approval Drop-Off"));
     assert.equal(primaryBehaviorFlag(flags), "Approval Drop-Off");
+  });
+});
+
+describe("expiration reminder wording", () => {
+  it("gives the customer a readable date, not a machine timestamp", () => {
+    const email = buildExpirationReminderEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ13",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+      offerLink: "https://shop.myshopify.com/apps/plant-requests/requests/req_1",
+    });
+
+    assert.match(email.bodyText, /Aug 26, 2026, 10:02 PM UTC/);
+    assert.ok(!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(email.bodyText));
   });
 });

@@ -2,6 +2,7 @@
 import {
   computeTimeRemaining,
   formatCustomerStatusLabel,
+  isOfferExpired,
   requestStatusTone,
   type CustomerMyRequestRow,
   type RequestStatus,
@@ -238,7 +239,9 @@ export function CustomerRequestPortal({
                   </s-table-cell>
                   <s-table-cell>
                     <s-badge tone={requestStatusTone(request.status as RequestStatus)}>
-                      {formatCustomerStatusLabel(request.status)}
+                      {formatCustomerStatusLabel(request.status, {
+                        hasPayableItems: request.hasPayableItems,
+                      })}
                     </s-badge>
                   </s-table-cell>
                 </s-table-row>
@@ -257,13 +260,52 @@ export function OfferExpiryBanner({
   expiresAtIso,
   urgencyMessage,
   holdMessage,
+  requestClosed = false,
 }: {
   expirationDays: number;
   expiresAt: string;
   expiresAtIso: string;
   urgencyMessage: string;
   holdMessage: string;
+  /** Closed by payment or by the customer; the hold is moot either way. */
+  requestClosed?: boolean;
 }) {
+  if (requestClosed) {
+    return (
+      <s-banner tone="info">
+        <s-text>
+          This request is closed. There is nothing left to answer or pay.
+        </s-text>
+      </s-banner>
+    );
+  }
+
+  /*
+   * The hold decides what this says, not the day the offer was sent. Once it
+   * lapses the plant becomes an EXACT PLANTS candidate for public sale, so
+   * "reserved for you" and a countdown would contradict what the listing queue
+   * is already doing with it.
+   */
+  if (isOfferExpired(expiresAtIso)) {
+    return (
+      <s-banner tone="critical">
+        <s-stack direction="block" gap="small">
+          <s-text>
+            <strong>This offer has expired</strong>
+          </s-text>
+          <s-text>
+            The hold ended on {expiresAt}. These plants are no longer reserved
+            for you and this offer can no longer be answered.
+          </s-text>
+          <s-text>
+            Contact us if you are still interested and we will check whether the
+            plant is available.
+          </s-text>
+        </s-stack>
+      </s-banner>
+    );
+  }
+
   const remaining = computeTimeRemaining(expiresAtIso);
   return (
     <s-banner tone="warning">
