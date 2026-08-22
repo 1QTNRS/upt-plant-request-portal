@@ -70,11 +70,16 @@ export function exactPlantReleaseReason(
 ): ExactPlantReleaseReason | null {
   if (!input.hasOfferItem) return null;
   if (input.offerAvailability !== "available") return null;
-  // A sold plant stays sold; completed requests are out of scope entirely.
+  // A sold plant stays sold.
   if (input.paidAt) return null;
-  if (input.requestStatus === "Closed") return null;
 
+  // Declining survives the request being closed. Closed means paid, or closed
+  // because the customer wanted nothing — and the second kind holds precisely
+  // the plants this queue exists for. Treating the bare status as terminal
+  // dropped them the moment an admin tidied the request away.
   if (input.responseChoice === "reject") return "customer_declined";
+
+  if (input.requestStatus === "Closed") return null;
 
   if (input.requestStatus === "Expired") {
     if (input.responseChoice === "accept") return "accepted_unpaid_expired";
@@ -100,8 +105,11 @@ export function exactPlantIneligibilityReason(
   if (input.offerAvailability !== "available") {
     return "UPT Not Available items cannot become EXACT PLANTS listings.";
   }
-  if (input.paidAt || input.requestStatus === "Closed") {
+  if (input.paidAt) {
     return "This request has been paid and closed, so the plant is sold.";
+  }
+  if (input.requestStatus === "Closed") {
+    return "This request is closed and the customer did not decline this plant.";
   }
   if (input.responseChoice === "accept") {
     return "The customer accepted this plant and their hold has not expired yet.";

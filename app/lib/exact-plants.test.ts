@@ -78,8 +78,21 @@ describe("exact plant release eligibility", () => {
     );
   });
 
+  it("still releases a plant the customer declined on a closed request", () => {
+    // An admin closing a request where the customer wanted nothing used to drop
+    // exactly the plants this queue exists for. Closed means paid, or closed
+    // because there was nothing to pay for; only the first is terminal.
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({ responseChoice: "reject", requestStatus: "Closed" }),
+      ),
+      "customer_declined",
+    );
+  });
+
   it("never releases a sold plant, however the request ended", () => {
-    // Paid and Closed requests are out of scope; the plant is gone.
+    // Payment is what puts a plant out of scope, not the request being tidied
+    // away: see "still releases a plant the customer declined" below.
     assert.equal(
       exactPlantReleaseReason(
         offered({ responseChoice: "accept", requestStatus: "Closed", paidAt: new Date() }),
@@ -88,7 +101,7 @@ describe("exact plant release eligibility", () => {
     );
     assert.equal(
       exactPlantReleaseReason(
-        offered({ responseChoice: "reject", requestStatus: "Closed" }),
+        offered({ responseChoice: "accept", requestStatus: "Closed" }),
       ),
       null,
     );

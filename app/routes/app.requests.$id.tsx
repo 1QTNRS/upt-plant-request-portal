@@ -999,9 +999,8 @@ function CloseRequestSection() {
     <s-stack direction="block" gap="base">
       <s-text color="subdued">
         The customer declined every item, so nothing is owed and no draft order
-        exists. Closing the request records that it is finished. List any
-        declined plants in EXACT PLANTS first: a closed request is no longer in
-        the review queue.
+        exists. Closing the request records that it is finished. The declined
+        plants stay in the EXACT PLANTS review queue.
       </s-text>
       <Form method="post">
         <input type="hidden" name="intent" value="close-request" />

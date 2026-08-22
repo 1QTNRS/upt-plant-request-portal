@@ -117,9 +117,9 @@ export async function createPaymentLinkForRequest(input: {
  * live hold and withdraw the customer's own checkout link.
  *
  * Closing does not touch the offer or response snapshots, so the declined
- * history the customer and the analytics read stays intact. It does take the
- * request out of the EXACT PLANTS review queue: `exactPlantReleaseReason` never
- * releases a plant on a Closed request.
+ * history the customer and the analytics read stays intact, and the declined
+ * plants stay eligible for an EXACT PLANTS listing — closing tidies the request
+ * away, it does not decide the plants are spoken for.
  */
 export async function closeDeclinedRequest(input: {
   shop: string;

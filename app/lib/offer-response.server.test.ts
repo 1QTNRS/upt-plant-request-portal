@@ -766,36 +766,24 @@ describe("closing a request the customer declined outright", () => {
     assert.equal(declined?.customerNotes, "Notes for Monstera Albo.");
   });
 
-  /*
-   * Deliberate and flagged rather than worked around: `exactPlantReleaseReason`
-   * refuses a Closed request, so closing here takes the declined plants out of
-   * the EXACT PLANTS review queue. The admin page says so before the button is
-   * pressed. Changing that rule is not this change's call to make.
-   */
-  it("takes its declined plants out of the EXACT PLANTS review queue", async () => {
+  it("keeps its declined plants in the EXACT PLANTS review queue", async () => {
     const { requestId, first } = await declinedRequest();
 
-    assert.equal(
+    const reason = async () =>
       exactPlantReleaseReason({
         hasOfferItem: true,
         offerAvailability: "available",
         responseChoice: "reject",
         requestStatus: (await getRequest(shop, requestId))!.status,
-      }),
-      "customer_declined",
-    );
+      });
 
+    assert.equal(await reason(), "customer_declined");
+
+    // Closing is how an admin tidies away a request the customer wanted nothing
+    // from. It must not also throw away the plants that are now for sale.
     await closeDeclinedRequest({ shop, requestId });
 
-    assert.equal(
-      exactPlantReleaseReason({
-        hasOfferItem: true,
-        offerAvailability: "available",
-        responseChoice: "reject",
-        requestStatus: (await getRequest(shop, requestId))!.status,
-      }),
-      null,
-    );
+    assert.equal(await reason(), "customer_declined");
     void first;
   });
 
