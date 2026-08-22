@@ -4,7 +4,7 @@ Read **[docs/CLOUD_AGENT_HANDOFF.md](docs/CLOUD_AGENT_HANDOFF.md)** before chang
 
 Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Production hosting is **Render** (Docker web service, managed PostgreSQL, cron job), declared in `render.yaml`. Do not reimplement anything listed there, and edit `render.yaml` rather than configuring Render by hand.
 
-**One code task is outstanding and already decided** — making an expired hold's invoice unpayable. It is the second entry under "Business decisions taken by the owner" in the handoff. **Grower's Choice inventory reservation has never been observed working on a real store**; the handoff's "Required live dev-store verification" lists the four runs that would settle it, and until they pass, do not offer Grower's Choice on the real UPT store.
+Owner decision 2 is **implemented**: an expired unpaid hold deletes its Shopify draft order so the invoice 404s. Grower's Choice reservation has been observed on `upt-plant-request-dev` (Shopify reports **reserved**, not committed). Do not offer Grower's Choice on the real UPT store until that shop has approved `write_inventory` and the remaining account actions in the runbook.
 
 Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed React Router app on the existing working branch. Do not resurrect `app/lib/sample-*.ts` or other localStorage prototype modules as the source of truth.
 
@@ -84,7 +84,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Draft orders only for accepted plants. `orders/paid` closes the request.
 - A Declined Item is Available + offered + customer Reject. Not the same as UPT Not Available. Do not auto-publish. Admin review/approve only. One Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only.
 - **Owner decision:** a declined exact plant stays eligible for the EXACT PLANTS queue even once the request is `Closed`. Payment decides eligibility, not the status — `Closed` means paid *or* closed because there was nothing to pay for, and only the first puts a plant out of reach. Do not reintroduce a bare `Closed` check in `exactPlantReleaseReason`.
-- **Owner decision, not yet implemented:** when an unpaid hold expires, the Shopify draft order must be voided or made non-payable, so a released plant cannot be relisted *and* paid for. Today the invoice stays live and the customer is only warned. This is the next code task; the handoff has the constraints.
+- **Owner decision, implemented:** when an unpaid hold expires, `voidExpiredDraftOrders` deletes the Shopify draft order so the invoice 404s. Released inventory and a dead invoice stay together. `orders/paid` after a void still records the money and writes **Payment After Expiration/Void**.
 - A Grower's Choice item sells a real Shopify `variantId` and is reserved only at accept time, via `reserveInventoryUntil`, until the offer's own deadline. Linking reserves nothing. Never oversell: if stock has gone, create nothing and name the plant to the admin. A rejected Grower's Choice item does **not** enter the EXACT PLANTS queue — that plant already has a product.
 - An EXACT PLANTS listing is **one physical plant**: its variant tracks inventory, holds one unit, and denies oversell. Stock it before publishing, or it goes live showing as sold out.
 - A customer may only ever see their own requests. App-proxy identity is only trustworthy after the HMAC check in `app/lib/app-proxy.ts`; never read `logged_in_customer_id` without it.

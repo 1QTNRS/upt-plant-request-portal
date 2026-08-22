@@ -432,6 +432,23 @@ export function requestStatusTone(
   }
 }
 
+/**
+ * Tone for the derived customer label. Stored Pending stays Pending; this only
+ * changes how the three customer-facing labels read.
+ */
+export function customerStatusTone(
+  status: RequestStatus,
+  options: { hasPayableItems?: boolean; hasResponded?: boolean } = {},
+): "info" | "warning" | "caution" | "success" | "critical" {
+  if (status === "Pending") {
+    const label = formatCustomerStatusLabel(status, options);
+    if (label === NOTHING_TO_PAY_LABEL) return "info";
+    if (label === NEEDS_PAYMENT_LABEL) return "warning";
+    return "caution";
+  }
+  return requestStatusTone(status);
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

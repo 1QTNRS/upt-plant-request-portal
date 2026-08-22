@@ -66,6 +66,7 @@ import {
   markRequestViewed,
   moveItemPhoto,
   removeItemPhoto,
+  reorderItemPhotos,
   sendOffer,
   unlinkExistingStock,
   updateRequestItem,
@@ -79,6 +80,8 @@ import {
 } from "../lib/shopify-ops.server";
 import { saveLocalUpload } from "../lib/uploads.server";
 import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
+import { PhotoReorderStrip } from "../components/photo-reorder";
+import { wrapRowStyle } from "../components/admin-layout";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -100,11 +103,14 @@ function itemStatusTone(
 }
 
 const numberInputStyle = {
-  width: "120px",
+  width: "100%",
+  maxWidth: "160px",
+  minWidth: "120px",
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
+  boxSizing: "border-box" as const,
 } as const;
 
 const disabledNumberInputStyle = {
@@ -340,6 +346,20 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return { ok: true };
     }
 
+    if (intent === "reorder-photos") {
+      const orderedIds = String(form.get("photoIds") || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      await reorderItemPhotos(
+        shop,
+        requestId,
+        String(form.get("itemId") || ""),
+        orderedIds,
+      );
+      return { ok: true };
+    }
+
     if (intent === "move-photo") {
       await moveItemPhoto(
         shop,
@@ -558,13 +578,13 @@ function ExistingStockPanel({
               {linked ? "Change the linked listing" : "Search existing website stock"}
             </s-text>
           </label>
-          <s-stack direction="inline" gap="small">
+          <div style={wrapRowStyle}>
             <input
               id={`stock-search-${item.id}`}
               value={term}
               placeholder="Product title, variant, or SKU"
               onChange={(event) => setTerm(event.currentTarget.value)}
-              style={textInputStyle}
+              style={{ ...textInputStyle, flex: "1 1 200px", minWidth: 0, maxWidth: "100%" }}
             />
             <s-button
               variant="secondary"
@@ -581,7 +601,7 @@ function ExistingStockPanel({
             >
               Search Shopify
             </s-button>
-          </s-stack>
+          </div>
 
           {linkError ? (
             <s-banner tone="critical">
@@ -745,7 +765,7 @@ function PlantItemCard({
 
         <s-stack direction="block" gap="small">
           <s-text color="subdued">How this plant will be supplied</s-text>
-          <s-stack direction="inline" gap="small">
+          <div style={wrapRowStyle}>
             {FULFILLMENT_CHOICES.map((choice) => (
               <s-button
                 key={choice}
@@ -756,7 +776,7 @@ function PlantItemCard({
                 {FULFILLMENT_CHOICE_LABELS[choice]}
               </s-button>
             ))}
-          </s-stack>
+          </div>
         </s-stack>
 
         {growersChoice ? (
@@ -805,7 +825,7 @@ function PlantItemCard({
               />
             </s-stack>
 
-            <s-stack direction="inline" gap="large">
+            <div style={wrapRowStyle}>
               <s-stack direction="block" gap="small">
                 <label htmlFor={`price-${item.id}`}>
                   <s-text color="subdued">Price</s-text>
@@ -850,7 +870,7 @@ function PlantItemCard({
                   style={fieldsLocked ? disabledNumberInputStyle : numberInputStyle}
                 />
               </s-stack>
-            </s-stack>
+            </div>
 
             {/*
               A Grower's Choice customer is not being sold the plant in the
@@ -860,67 +880,35 @@ function PlantItemCard({
             {growersChoice ? null : (
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Exact plant photos</s-text>
-              <s-stack direction="inline" gap="base">
-                {(canEdit && item.photos.length > 0
-                  ? item.photos
-                  : item.photoUrls.map((url) => ({ id: url, url }))
-                ).map((photo, index, all) => (
-                  <s-stack key={photo.id} direction="block" gap="small">
-                    <img
-                      src={photo.url}
-                      alt={item.offeredName || item.plantName}
-                      width={120}
-                      height={120}
-                      style={{
-                        display: "block",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    {index === 0 ? (
-                      <s-badge tone="info">Customer sees first</s-badge>
-                    ) : null}
-                    {canEdit && item.photos.length > 0 ? (
-                      <s-stack direction="inline" gap="small">
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="move-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <input type="hidden" name="direction" value="up" />
-                          <s-button
-                            variant="secondary"
-                            type="submit"
-                            {...(index === 0 ? { disabled: true } : {})}
-                          >
-                            Move left
-                          </s-button>
-                        </photoFetcher.Form>
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="move-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <input type="hidden" name="direction" value="down" />
-                          <s-button
-                            variant="secondary"
-                            type="submit"
-                            {...(index === all.length - 1 ? { disabled: true } : {})}
-                          >
-                            Move right
-                          </s-button>
-                        </photoFetcher.Form>
-                        <photoFetcher.Form method="post">
-                          <input type="hidden" name="intent" value="remove-photo" />
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name="photoId" value={photo.id} />
-                          <s-button variant="secondary" tone="critical" type="submit">
-                            Remove
-                          </s-button>
-                        </photoFetcher.Form>
-                      </s-stack>
-                    ) : null}
-                  </s-stack>
-                ))}
-              </s-stack>
+              {canEdit && item.photos.length > 0 ? (
+                <PhotoReorderStrip
+                  itemId={item.id}
+                  photos={item.photos}
+                  alt={item.offeredName || item.plantName}
+                />
+              ) : (
+                <div style={wrapRowStyle}>
+                  {item.photoUrls.map((url, index) => (
+                    <s-stack key={url} direction="block" gap="small">
+                      <img
+                        src={url}
+                        alt={item.offeredName || item.plantName}
+                        width={120}
+                        height={120}
+                        style={{
+                          display: "block",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                          maxWidth: "100%",
+                        }}
+                      />
+                      {index === 0 ? (
+                        <s-badge tone="info">Customer sees first</s-badge>
+                      ) : null}
+                    </s-stack>
+                  ))}
+                </div>
+              )}
               {canEdit ? (
                 <s-stack direction="block" gap="small">
                   <photoFetcher.Form method="post" encType="multipart/form-data">

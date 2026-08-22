@@ -1,9 +1,9 @@
 
 import {
   computeTimeRemaining,
+  customerStatusTone,
   formatCustomerStatusLabel,
   isOfferExpired,
-  requestStatusTone,
   type CustomerMyRequestRow,
   type RequestStatus,
 } from "../lib/portal";
@@ -238,7 +238,12 @@ export function CustomerRequestPortal({
                     </s-link>
                   </s-table-cell>
                   <s-table-cell>
-                    <s-badge tone={requestStatusTone(request.status as RequestStatus)}>
+                    <s-badge
+                      tone={customerStatusTone(request.status as RequestStatus, {
+                        hasPayableItems: request.hasPayableItems,
+                        hasResponded: request.hasResponded,
+                      })}
+                    >
                       {formatCustomerStatusLabel(request.status, {
                         hasPayableItems: request.hasPayableItems,
                         hasResponded: request.hasResponded,

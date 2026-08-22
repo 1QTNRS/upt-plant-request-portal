@@ -14,6 +14,11 @@ import {
 } from "../lib/portal";
 import { listRequests } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
+import {
+  AdminResponsiveStyles,
+  statCardStyle,
+  WrappingRow,
+} from "../components/admin-layout";
 
 type DashboardData = {
   stats: {
@@ -91,29 +96,30 @@ export default function Dashboard() {
 
   return (
     <s-page heading="UPT Plant Request Portal">
+      <AdminResponsiveStyles />
       <s-section heading="Overview">
-        <s-stack direction="inline" gap="base">
+        <WrappingRow>
           {statCards.map((card) => (
-            <s-box
-              key={card.label}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-              inlineSize="180px"
-            >
-              <s-stack direction="block" gap="small">
-                <s-text color="subdued">{card.label}</s-text>
-                <s-heading>{card.value}</s-heading>
-              </s-stack>
-            </s-box>
+            <div key={card.label} style={statCardStyle}>
+              <s-box
+                padding="base"
+                borderWidth="base"
+                borderRadius="base"
+                background="subdued"
+              >
+                <s-stack direction="block" gap="small">
+                  <s-text color="subdued">{card.label}</s-text>
+                  <s-heading>{card.value}</s-heading>
+                </s-stack>
+              </s-box>
+            </div>
           ))}
-        </s-stack>
+        </WrappingRow>
       </s-section>
 
       <s-section heading="Search requests">
         <Form method="get">
-          <s-stack direction="inline" gap="base">
+          <WrappingRow>
             <s-text-field
               name="q"
               label="Search"
@@ -126,7 +132,7 @@ export default function Dashboard() {
             <s-button variant="primary" type="submit">
               Search
             </s-button>
-          </s-stack>
+          </WrappingRow>
         </Form>
         <s-text color="subdued">
           Showing {visibleCount} request{visibleCount === 1 ? "" : "s"}
@@ -135,6 +141,36 @@ export default function Dashboard() {
       </s-section>
 
       <s-section heading="Recent Requests">
+        <div className="upt-narrow-only">
+          {data.requests.map((request) => (
+            <article key={request.id} className="upt-request-card">
+              <dl>
+                <dt>Request Number</dt>
+                <dd>
+                  <s-link href={`/app/requests/${request.id}`}>
+                    {request.requestNumber}
+                  </s-link>
+                </dd>
+                <dt>Customer</dt>
+                <dd>{request.customer}</dd>
+                <dt>Email</dt>
+                <dd>{request.email}</dd>
+                <dt>Plants Requested</dt>
+                <dd>{request.plantsRequested}</dd>
+                <dt>Status</dt>
+                <dd>
+                  <s-badge tone={requestStatusTone(request.status)}>
+                    {request.status}
+                  </s-badge>
+                </dd>
+                <dt>Submitted Date</dt>
+                <dd>{request.submittedDate}</dd>
+              </dl>
+              <s-link href={`/app/requests/${request.id}`}>View items</s-link>
+            </article>
+          ))}
+        </div>
+        <div className="upt-wide-only">
         <s-table>
           <s-table-header-row>
             <s-table-header listSlot="primary">Request Number</s-table-header>
@@ -169,6 +205,7 @@ export default function Dashboard() {
             ))}
           </s-table-body>
         </s-table>
+        </div>
       </s-section>
     </s-page>
   );

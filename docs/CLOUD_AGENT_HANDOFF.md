@@ -4,8 +4,8 @@ Durable status for the next Cloud Agent. Do **not** rebuild this app. Continue f
 
 - Repo: `https://github.com/1qtnrs/upt-plant-request-portal`
 - PR #22 (Prisma persistence + declined EXACT PLANTS listings) is **merged to `main`**.
-- Working branch: `cursor/production-readiness-blockers-7617` (base: `main`) — production readiness.
-- Pull request: https://github.com/1qtnrs/upt-plant-request-portal/pull/24
+- Working branch: `cursor/expired-invoice-void-5eef` (base: `main`) — invoice void + UI polish.
+- Pull request: https://github.com/1QTNRS/upt-plant-request-portal/pull/31
 
 **Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) first.** Every remaining
 blocker is an account action, a hosting decision, or a live-store verification.
@@ -31,7 +31,7 @@ Implemented end-to-end in app code:
 - FedEx Priority Overnight upgrade checked by default; settings-driven removal warning; excluded from plant analytics
 - Draft-order creation for **accepted plants only** (GraphQL when an Admin API client exists; demo fallback invoice URL otherwise)
 - `orders/paid` webhook → request **Closed**, accepted items **Sold**
-- Unpaid offer expiry → **Expired** (checked when loading requests / analytics)
+- Unpaid offer expiry → **Expired** (checked when loading requests / analytics), then `draftOrderDelete` so the issued invoice 404s
 - Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
@@ -320,9 +320,13 @@ generic failure, because `draftOrderCreate` returns it as an ordinary user error
 On any failure nothing is created, so nothing is payable and nothing is charged,
 and the claim is given back so the merchant can retry as soon as they restock.
 
-**Release needs no code.** Shopify lets the hold go by itself at
-`reserveInventoryUntil` and turns it into a real deduction when the order is paid,
-so an unpaid expiry releases the stock even while the portal is down.
+Shopify also lets the hold go by itself at `reserveInventoryUntil` and turns it
+into a real deduction when the order is paid, so an unpaid expiry still releases
+the stock even while the portal is down. Observed on the dev store: the hold
+shows as **reserved** (not committed), `available` goes to 0, and
+`draftOrderDelete` returns that draft's reserved quantity immediately. The
+hourly sweep and the first page load after expiry also delete the unpaid draft
+so the invoice cannot be paid after the unit is back on sale.
 `inventoryHoldState` only reads which of those has happened, for the request page.
 
 A rejected Grower's Choice item does **not** enter the EXACT PLANTS queue: the
@@ -418,10 +422,15 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 
 `expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler. Each request is claimed with a conditional update, so the several sweeps a single page load starts cannot each write their own expiry event.
 
-Expiry releases the plants for EXACT PLANTS review but **does not yet stop the
-customer paying**: the Shopify invoice stays live. Owner decision 2 says it must
-not, and that is the next code task — see "Business decisions taken by the
-owner".
+Expiry releases the plants for EXACT PLANTS review. `voidExpiredDraftOrders`
+then deletes the unpaid Shopify draft order so the issued invoice 404s
+("This invoice is not available"). `expireOverdueOffers` stays a database-only
+claim; the Shopify delete runs from the hourly sweep and from the customer or
+admin loader that first notices the hold has ended. A `COMPLETED` draft is
+never deleted — a live store accepts that delete and would drop the admin
+record of a payment that just landed. If `orders/paid` arrives after a void,
+the payment is still recorded and the request is Closed, with a
+**Payment After Expiration/Void** event and one admin email.
 
 ### App proxy pages never hydrate — build them as plain HTML
 
@@ -822,55 +831,70 @@ branch replaces it. Merge before relying on anything being live.
 
 ## Required live dev-store verification
 
-**Grower's Choice inventory reservation has never been observed working.** It is
-built on `DraftOrderInput.reserveInventoryUntil`, which the 2025-10 schema
-confirms exists, and the code reads the granted deadline back rather than
-assuming it — but no run against a real store has shown Shopify actually
-granting, holding and releasing. Until these four pass, treat reservation as
-unproven, and do not offer Grower's Choice on the real UPT store.
+**Grower's Choice inventory reservation has been observed on the dev store.**
+Shopify grants it as **reserved**, not committed: after accept, available=0 and
+reserved=1, and `DraftOrderReference.reserveInventoryUntil` equals
+`offer.expiresAt`. The 2025-10 schema's `committed` wording is not what this
+store reports. Do not offer Grower's Choice on the real UPT store until that
+shop has approved `write_inventory` and the remaining runbook account actions.
 
-Run them on `upt-plant-request-dev.myshopify.com`, in order. Each says what to
-look at and what would count as a failure.
+Recorded facts that contradict the docs or a naive reading of the schema:
 
-1. **The reservation is granted.** Link a variant with exactly one unit, send
-   the offer, accept it as the customer. In the Shopify admin the variant should
-   read **1 committed, 0 available**, and `DraftOrderReference.reserveInventoryUntil`
-   should equal the offer's `expiresAt`. If the column is null the hold was asked
-   for and not granted; the app records a `fulfillmentIssue` for exactly this, so
-   check the request page too.
-2. **The reservation releases at expiry.** Leave that offer unpaid past its
-   deadline. The unit must return to **available** without anyone touching the
-   portal — Shopify is supposed to let the hold lapse on its own, so this must
-   hold even with the app stopped.
-3. **A stale invoice cannot be paid after expiry.** This one is expected to
-   **fail today** — it is owner decision 2 and is not implemented. Record what
-   Shopify does with the expired draft order so the implementer knows what they
-   are changing: try to open and pay the invoice after the hold has lapsed, and
-   note whether Shopify refuses it, and whether inventory is re-taken if it does
-   go through.
-4. **Insufficient inventory fails safely.** Link a one-unit variant, then buy
-   that unit through the storefront before the customer accepts. Accepting must
-   create **no** draft order, charge nothing, and name the plant to the admin.
-   Capture the exact `draftOrderCreate` `userErrors.message`: `isInventoryUserError`
-   matches on `inventor|stock|out of stock|unavailable quantity`, and a store
-   wording it otherwise would report a generic failure instead of a named stock
-   problem. It is a message-quality bug, not an oversell — the order is not
-   created either way — but tighten the match once the real wording is known.
+- A second `draftOrderCreate` on a 1-unit already-reserved variant is **not**
+  refused. Reserved goes to 2 and available goes to **-1**. The app pre-check
+  (`assertLinkedStockStillAvailable` / `reservationShortfalls`) is the real
+  oversell guard; do not rely on `isInventoryUserError`.
+- `draftOrderDelete` releases that draft's reserved quantity immediately
+  (reserved 1→0). It also succeeds on a `COMPLETED` draft and does **not** undo
+  the Order — skip COMPLETED or the admin draft record disappears.
+- A deleted invoice URL returns HTTP 404, title "This invoice is not available".
+
+Run them on `upt-plant-request-dev.myshopify.com`. Each says what to look at.
+
+1. **The reservation is granted.** *Observed on REQ5, Probe A
+   (`gid://shopify/ProductVariant/44937080307755`).* After accept: available=0,
+   reserved=1, `reserveInventoryUntil` = `offer.expiresAt`, no `fulfillmentIssue`.
+   Shopify admin will not show "1 committed".
+2. **The reservation releases at expiry.** Shopify still lapses the hold at
+   `reserveInventoryUntil` if the portal is down. With the void shipped, deleting
+   the draft releases reserved immediately — REQ5 went available=1 reserved=0
+   the moment the invoice was voided, before the original 2026-08-25 deadline.
+3. **A stale invoice cannot be paid after expiry.** *Implemented and
+   re-verified on REQ5, 2026-08-22.* After the portal expired the hold,
+   `voidExpiredDraftOrders` deleted draft `#D9`. Shopify then returned
+   `draftOrder: null`, inventory **available=1 reserved=0**, and the stored
+   invoice URL answered HTTP 404 titled "This invoice is not available". The
+   customer page said Offer Expired, dropped the checkout link, and did not
+   claim the plants were still held. Before the void shipped, the same store
+   still completed a stale draft (`draftOrderComplete` created order #1002 and
+   took inventory again) — that is why the delete exists.
+4. **Insufficient inventory fails safely.** *Observed on REQ7.* Zeroing Probe D
+   after the offer was sent, then accepting, created **no** draft order. The
+   admin banner named the plant: "GC Probe D: only 0 of the 1 needed is left in
+   stock." Shopify never returned a `draftOrderCreate` userError — the app
+   pre-check refused first. `isInventoryUserError` was not tightened because
+   there is no verbatim Shopify wording on this store.
 
 Also still unobserved on a live store, from earlier passes: EXACT PLANTS
-publishing end to end (blocked on `write_inventory`), Shopify Files uploads at
-scale, and a real `orders/paid` from an actual checkout rather than a
-self-signed webhook.
+publishing end to end on the **real** UPT shop (the dev store's offline session
+now includes `write_inventory`), Shopify Files uploads at scale, and a real
+`orders/paid` from an actual checkout rather than a self-signed webhook.
 
 ---
 
 ## Unfinished work
 
-One decided code task remains: **owner decision 2**, making an expired hold's
-invoice unpayable. Everything else left needs an account action, a hosting
-decision, or a live store — enumerated with exact screens in
+No decided application-code task remains. Owner decision 2 (void the expired
+unpaid invoice) is implemented and was re-verified on the dev store. Everything
+else left needs an account action, a hosting decision, or a live store —
+enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) and in the verification
 list above.
+
+One analytics correctness bug is **reported, not silently "fixed"**: the
+customer table, the item-conversion table and the revenue-this/last-month cards
+read `allShopRequests` and therefore ignore the Date Range picker. The ranged
+`requests` query already exists beside it. Treat that as its own change.
 
 **Done:** the Render Blueprint is applied and the web service is live at
 `https://upt-plant-request-portal.onrender.com`, verified from outside —
@@ -938,34 +962,27 @@ admin has to remember to list before closing.
 
 ### 2. An expired unpaid hold must make its invoice unpayable
 
-*Decided, *not yet implemented*. This is the next code task.*
+*Implemented.* Verified on `upt-plant-request-dev` against REQ5 (draft
+`gid://shopify/DraftOrder/1172817248299`).
 
-When a hold expires unpaid the plant is released for EXACT PLANTS review, but
-the Shopify draft order Shopify already issued **remains payable**. If the plant
-is then relisted and the original customer pays the stale invoice, the same
-physical plant is sold twice.
+Shopify has no draft-order void. `draftOrderDelete` is the accepted form of
+"unpayable": the checkout URL then 404s and that draft's reserved quantity
+returns immediately. The portal keeps the GID, invoice URL, line items and
+`voidedAt` on `DraftOrderReference`.
 
-The owner has decided the invoice must be voided or otherwise made non-payable
-when the hold expires, accepting that a late payment is refused rather than
-captured. That is the opposite of the current behaviour, which deliberately
-keeps the link alive and only warns the customer that the hold has ended.
+`expireOverdueOffers` stays a database-only claim so a page load cannot stall
+on Shopify. `voidExpiredDraftOrders` runs after it on the hourly sweep, and
+from the customer/admin loader that first sees the hold has ended — waiting a
+full hour would leave a payable invoice after the plant is released.
 
-What that means for whoever implements it:
+A live store will delete a `COMPLETED` draft without undoing the Order. The
+sweep re-reads status immediately before deleting and skips `COMPLETED`,
+recording `completed_before_void` so it is never retried.
 
-- `expireOverdueOffers` is the moment the request becomes `Expired`; the void
-  belongs on that path, and on the scheduler that drives it, not on a page load.
-- Voiding is a Shopify write on a resource holding money. It must be idempotent
-  — the sweep can run repeatedly and concurrently, and `DraftOrderReference`
-  already exists to record what happened.
-- A Grower's Choice draft order also carries `reserveInventoryUntil`. Confirm
-  whether deleting the draft releases the hold immediately or whether the hold
-  simply lapses on its own; do not assume.
-- The customer's page currently says the hold ended and to contact UPT before
-  paying, with the link still live. Once the invoice is void that copy is wrong
-  and must say the offer can no longer be paid.
-- Decide and document what happens if `orders/paid` arrives for a request whose
-  invoice was voided — it should not silently book revenue against a plant that
-  may already be relisted.
+`orders/paid` after a void is never ignored: the payment is recorded, the
+request is Closed, EXACT PLANTS eligibility drops (paid), a distinct
+**Payment After Expiration/Void** event is written, the admin request page
+shows a critical banner, and one admin email is sent.
 
 ---
 

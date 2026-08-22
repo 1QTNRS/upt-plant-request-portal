@@ -13,6 +13,7 @@ import {
   PAYMENT_AFTER_VOID_REASON,
   payableInvoiceUrl,
   computeBehaviorFlags,
+  customerStatusTone,
   formatCustomerStatusLabel,
   formatRequestNumber,
   getDisplayRequestNumber,
@@ -99,6 +100,18 @@ describe("status mapping", () => {
     );
     // Knowing nothing about the answer is not evidence that money is owed.
     assert.equal(formatCustomerStatusLabel("Pending", {}), "Offer Ready for Review");
+    assert.equal(
+      customerStatusTone("Pending", { hasResponded: false, hasPayableItems: true }),
+      "caution",
+    );
+    assert.equal(
+      customerStatusTone("Pending", { hasResponded: true, hasPayableItems: true }),
+      "warning",
+    );
+    assert.equal(
+      customerStatusTone("Pending", { hasPayableItems: false }),
+      "info",
+    );
   });
 
   it("leaves the terminal statuses as they are stored", () => {

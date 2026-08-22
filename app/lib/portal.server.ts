@@ -929,6 +929,30 @@ export async function removeItemPhoto(
  * editorial decision rather than a nicety — and it is frozen into the offer
  * snapshot the moment the offer is sent.
  */
+/**
+ * Writes a whole photo order. Safe to replay: the same id list is a no-op.
+ * Refuses a list that is not a permutation of the current photos.
+ */
+export async function reorderItemPhotos(
+  shop: string,
+  requestId: string,
+  itemId: string,
+  orderedIds: string[],
+): Promise<PlantRequest | null> {
+  const request = await loadRequest(shop, requestId);
+  if (!request) return null;
+  assertPhotosEditable(request);
+
+  const photos = request.items.find((item) => item.id === itemId)?.photos ?? [];
+  const current = photos.map((photo) => photo.id);
+  if (orderedIds.length !== current.length) return getRequest(shop, requestId);
+  if (new Set(orderedIds).size !== orderedIds.length) return getRequest(shop, requestId);
+  if (!orderedIds.every((id) => current.includes(id))) return getRequest(shop, requestId);
+
+  await resequencePhotos(itemId, orderedIds);
+  return getRequest(shop, requestId);
+}
+
 export async function moveItemPhoto(
   shop: string,
   requestId: string,

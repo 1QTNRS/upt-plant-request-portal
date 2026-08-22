@@ -4,7 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import { listExactPlantCandidates } from "../lib/exact-plants.server";
-import { EXACT_PLANT_RELEASE_LABELS } from "../lib/exact-plants";
+import { EXACT_PLANT_RELEASE_LABELS, exactPlantReleaseTone } from "../lib/exact-plants";
 import { formatCurrency } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
@@ -53,7 +53,9 @@ export default function ExactPlantsIndex() {
                   <s-stack direction="block" gap="small">
                     <s-heading>{item.title}</s-heading>
                     <s-stack direction="inline" gap="small">
-                      <s-badge>{EXACT_PLANT_RELEASE_LABELS[item.releaseReason]}</s-badge>
+                      <s-badge tone={exactPlantReleaseTone(item.releaseReason)}>
+                        {EXACT_PLANT_RELEASE_LABELS[item.releaseReason]}
+                      </s-badge>
                       <s-text color="subdued">{item.requestNumber}</s-text>
                     </s-stack>
                     <s-text>

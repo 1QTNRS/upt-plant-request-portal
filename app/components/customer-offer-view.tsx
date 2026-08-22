@@ -16,7 +16,8 @@ import { OfferExpiryBanner } from "./customer-request-portal";
 type ItemChoice = "accept" | "reject" | "unavailable";
 
 const buttonStyle: React.CSSProperties = {
-  padding: "8px 16px",
+  padding: "12px 20px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   background: "#ffffff",
@@ -27,11 +28,21 @@ const buttonStyle: React.CSSProperties = {
 const choiceLabelStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: "6px",
-  padding: "8px 16px",
+  gap: "10px",
+  padding: "12px 20px",
+  minHeight: 44,
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   cursor: "pointer",
+};
+
+const offerPhotoStyle: React.CSSProperties = {
+  display: "block",
+  objectFit: "cover",
+  borderRadius: "8px",
+  maxWidth: "100%",
+  width: "min(200px, 100%)",
+  height: "auto",
 };
 
 /**
@@ -553,12 +564,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
               alt={`${item.plantName}, from our store listing`}
               width={200}
               height={200}
-              style={{
-                display: "block",
-                objectFit: "cover",
-                borderRadius: "8px",
-                flexShrink: 0,
-              }}
+              style={offerPhotoStyle}
             />
           </div>
         ) : null}
@@ -576,12 +582,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
                 }
                 width={200}
                 height={200}
-                style={{
-                  display: "block",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                }}
+                style={offerPhotoStyle}
               />
             ))}
           </div>
@@ -637,12 +638,7 @@ function OfferItemCard({
               alt={`${item.plantName}, from our store listing`}
               width={200}
               height={200}
-              style={{
-                display: "block",
-                objectFit: "cover",
-                borderRadius: "8px",
-                flexShrink: 0,
-              }}
+              style={offerPhotoStyle}
             />
           </div>
         ) : null}
@@ -665,12 +661,7 @@ function OfferItemCard({
                 }
                 width={200}
                 height={200}
-                style={{
-                  display: "block",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                  flexShrink: 0,
-                }}
+                style={offerPhotoStyle}
               />
             ))}
           </div>
@@ -716,7 +707,7 @@ function OfferItemCard({
            * item when the page does not hydrate, which it never does through the
            * app proxy — the customer would silently accept everything.
            */
-          <s-stack direction="inline" gap="small">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {(["accept", "reject"] as const).map((option) => (
               <label key={option} style={choiceLabelStyle}>
                 <input
@@ -729,7 +720,7 @@ function OfferItemCard({
                 <s-text>{option === "accept" ? "Accept" : "Reject"}</s-text>
               </label>
             ))}
-          </s-stack>
+          </div>
         ) : null}
 
         {available && !answerable ? (
