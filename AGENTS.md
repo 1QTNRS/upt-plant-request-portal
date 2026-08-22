@@ -2,7 +2,9 @@
 
 Read **[docs/CLOUD_AGENT_HANDOFF.md](docs/CLOUD_AGENT_HANDOFF.md)** before changing this app. It is the durable handoff for Cloud Agents: what is live, what is still demo, Shopify gaps, business rules, and productionization steps.
 
-Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Production hosting is **Render** (Docker web service, managed PostgreSQL, cron job), declared in `render.yaml`. Every remaining blocker there is an account action or a live-store verification — not code. Do not reimplement anything listed there, and edit `render.yaml` rather than configuring Render by hand.
+Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Production hosting is **Render** (Docker web service, managed PostgreSQL, cron job), declared in `render.yaml`. Do not reimplement anything listed there, and edit `render.yaml` rather than configuring Render by hand.
+
+**One code task is outstanding and already decided** — making an expired hold's invoice unpayable. It is the second entry under "Business decisions taken by the owner" in the handoff. **Grower's Choice inventory reservation has never been observed working on a real store**; the handoff's "Required live dev-store verification" lists the four runs that would settle it, and until they pass, do not offer Grower's Choice on the real UPT store.
 
 Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed React Router app on the existing working branch. Do not resurrect `app/lib/sample-*.ts` or other localStorage prototype modules as the source of truth.
 
@@ -81,6 +83,9 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Offer snapshots freeze after send. FedEx is optional, default on, excluded from plant analytics, never listed in EXACT PLANTS.
 - Draft orders only for accepted plants. `orders/paid` closes the request.
 - A Declined Item is Available + offered + customer Reject. Not the same as UPT Not Available. Do not auto-publish. Admin review/approve only. One Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only.
+- **Owner decision:** a declined exact plant stays eligible for the EXACT PLANTS queue even once the request is `Closed`. Payment decides eligibility, not the status — `Closed` means paid *or* closed because there was nothing to pay for, and only the first puts a plant out of reach. Do not reintroduce a bare `Closed` check in `exactPlantReleaseReason`.
+- **Owner decision, not yet implemented:** when an unpaid hold expires, the Shopify draft order must be voided or made non-payable, so a released plant cannot be relisted *and* paid for. Today the invoice stays live and the customer is only warned. This is the next code task; the handoff has the constraints.
+- A Grower's Choice item sells a real Shopify `variantId` and is reserved only at accept time, via `reserveInventoryUntil`, until the offer's own deadline. Linking reserves nothing. Never oversell: if stock has gone, create nothing and name the plant to the admin. A rejected Grower's Choice item does **not** enter the EXACT PLANTS queue — that plant already has a product.
 - An EXACT PLANTS listing is **one physical plant**: its variant tracks inventory, holds one unit, and denies oversell. Stock it before publishing, or it goes live showing as sold out.
 - A customer may only ever see their own requests. App-proxy identity is only trustworthy after the HMAC check in `app/lib/app-proxy.ts`; never read `logged_in_customer_id` without it.
 - A plant keeps **two** names for good: `RequestItem.plantName` is the customer's own wording and is never normalised in place, `RequestItem.canonicalPlantId` is the identity analytics group on. Only `high` confidence links two spellings automatically; `medium` opens a `PlantIdentitySuggestion` for admin review and merges nothing. Cultivars, quoted names, accession/clone/collection/seedling numbers, collector codes and localities are never merged automatically — a silent wrong merge corrupts per-plant figures invisibly, which is worse than two rows.

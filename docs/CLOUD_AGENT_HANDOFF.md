@@ -416,7 +416,12 @@ available", so **never** hand a customer a `{appUrl}/customer/...` link.
 
 ### Expiration logic
 
-`expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler.
+`expireOverdueOffers(shop)` flips Pending unpaid requests to Expired when `offer.expiresAt` has passed. Invoked from request loaders and analytics, **and** from the scheduler. Each request is claimed with a conditional update, so the several sweeps a single page load starts cannot each write their own expiry event.
+
+Expiry releases the plants for EXACT PLANTS review but **does not yet stop the
+customer paying**: the Shopify invoice stays live. Owner decision 2 says it must
+not, and that is the next code task — see "Business decisions taken by the
+owner".
 
 ### App proxy pages never hydrate — build them as plain HTML
 
@@ -764,7 +769,7 @@ Admin dashboard `matchesAdminSearch` matches customer, email, stored and display
 
 ## Tests / build / typecheck results
 
-Last verified on `cursor/admin-help-assistant-9639`:
+Last verified on `cursor/post-dev-store-corrections-9639`, the branch carrying all four phases of this pass:
 
 | Check | Result |
 | --- | --- |
@@ -815,28 +820,92 @@ branch replaces it. Merge before relying on anything being live.
 
 ---
 
+## Required live dev-store verification
+
+**Grower's Choice inventory reservation has never been observed working.** It is
+built on `DraftOrderInput.reserveInventoryUntil`, which the 2025-10 schema
+confirms exists, and the code reads the granted deadline back rather than
+assuming it — but no run against a real store has shown Shopify actually
+granting, holding and releasing. Until these four pass, treat reservation as
+unproven, and do not offer Grower's Choice on the real UPT store.
+
+Run them on `upt-plant-request-dev.myshopify.com`, in order. Each says what to
+look at and what would count as a failure.
+
+1. **The reservation is granted.** Link a variant with exactly one unit, send
+   the offer, accept it as the customer. In the Shopify admin the variant should
+   read **1 committed, 0 available**, and `DraftOrderReference.reserveInventoryUntil`
+   should equal the offer's `expiresAt`. If the column is null the hold was asked
+   for and not granted; the app records a `fulfillmentIssue` for exactly this, so
+   check the request page too.
+2. **The reservation releases at expiry.** Leave that offer unpaid past its
+   deadline. The unit must return to **available** without anyone touching the
+   portal — Shopify is supposed to let the hold lapse on its own, so this must
+   hold even with the app stopped.
+3. **A stale invoice cannot be paid after expiry.** This one is expected to
+   **fail today** — it is owner decision 2 and is not implemented. Record what
+   Shopify does with the expired draft order so the implementer knows what they
+   are changing: try to open and pay the invoice after the hold has lapsed, and
+   note whether Shopify refuses it, and whether inventory is re-taken if it does
+   go through.
+4. **Insufficient inventory fails safely.** Link a one-unit variant, then buy
+   that unit through the storefront before the customer accepts. Accepting must
+   create **no** draft order, charge nothing, and name the plant to the admin.
+   Capture the exact `draftOrderCreate` `userErrors.message`: `isInventoryUserError`
+   matches on `inventor|stock|out of stock|unavailable quantity`, and a store
+   wording it otherwise would report a generic failure instead of a named stock
+   problem. It is a message-quality bug, not an oversell — the order is not
+   created either way — but tighten the match once the real wording is known.
+
+Also still unobserved on a live store, from earlier passes: EXACT PLANTS
+publishing end to end (blocked on `write_inventory`), Shopify Files uploads at
+scale, and a real `orders/paid` from an actual checkout rather than a
+self-signed webhook.
+
+---
+
 ## Unfinished work
 
-No known application-code work remains. Everything left needs an account action,
-a hosting decision, or a live store — all of it enumerated with exact screens in
-[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
+One decided code task remains: **owner decision 2**, making an expired hold's
+invoice unpayable. Everything else left needs an account action, a hosting
+decision, or a live store — enumerated with exact screens in
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) and in the verification
+list above.
 
 **Done:** the Render Blueprint is applied and the web service is live at
 `https://upt-plant-request-portal.onrender.com`, verified from outside —
 `/healthz` 200, unsigned `/customer` 404, `/cron/offer-maintenance` 401 (so
 `CRON_SECRET` is set). `shopify.app.toml` carries the production URLs.
 
-Remaining, all on the user:
+Remaining, all on the owner:
 
-1. Confirm the first hourly cron run and the Resend values (runbook §2, §4)
-2. Resend API key + verified sending domain (§5)
-3. Enable database backups (§6)
-4. `shopify app deploy`, then install and approve scopes on the store, and
-   confirm the FedEx product handle (§7)
-5. Live verification of draft orders, Files, EXACT PLANTS, Online Store/POS,
-   `orders/paid` (§8)
+1. `shopify app deploy`, then approve the scopes in the store admin. This is
+   what grants **`write_inventory`**, and every EXACT PLANTS listing approval
+   fails at the inventory step until it lands. It fails safely — the product is
+   created but stays unpublished and the listing records the error — but the
+   workflow cannot be finished. The app uses Shopify managed installation, so
+   editing `shopify.app.toml` alone changes nothing until it is deployed.
+2. Turn off **"automatically publish new products"** on the Microsoft Copilot
+   sales channel. Shopify puts every new product there a second after creation,
+   attributed to no app, and `publishableUnpublish` accepts that channel's id,
+   returns no error and leaves the product published. The app cannot revoke it;
+   it names the channel in the log instead. Until this is off, every EXACT
+   PLANTS listing — one physical plant — sits on a channel where it can be sold
+   again.
+3. Confirm the FedEx product handle on the real store (runbook §7). The dev
+   store has no product at that handle, so the variant-priced FedEx line has
+   never run against a real variant.
+4. Database backups (runbook §6) — Render point-in-time recovery is already on
+   for this plan, so this is confirming retention, not enabling it: 3 days on
+   Hobby, 7 on Pro. It has already been used once to recover this database.
+5. Optionally, AI keys. Everything works without them; see "AI is an optional
+   assist, off by default".
 
-Nothing is blocked on an agent.
+Both cron and Resend are confirmed working: the hourly job has been observed
+succeeding against the deployed service, and Resend accepted every message sent
+from the dev store with a verified sending domain.
+
+Nothing else is blocked on an agent.
 
 Genuinely optional, deliberately not done:
 
@@ -847,10 +916,63 @@ Genuinely optional, deliberately not done:
 
 ---
 
+## Business decisions taken by the owner
+
+These were decided by the shop owner, not inferred. Do not reverse either
+without asking; both concern which plant is for sale and who may pay for it.
+
+### 1. A declined exact plant stays listable after the request is closed
+
+*Implemented.*
+
+`exactPlantReleaseReason` used to refuse any `Closed` request, so an admin
+closing a request whose customer had declined everything dropped exactly the
+plants the review queue exists for. `Closed` means one of two different things —
+paid, or closed because there was nothing to pay for — and only the first puts a
+plant out of reach. **Payment decides eligibility, not the bare status.** The
+`paidAt` check already sits a line earlier, so removing the status check lost
+nothing else.
+
+Without this, the Close Request action and rule 9 contradict each other and an
+admin has to remember to list before closing.
+
+### 2. An expired unpaid hold must make its invoice unpayable
+
+*Decided, *not yet implemented*. This is the next code task.*
+
+When a hold expires unpaid the plant is released for EXACT PLANTS review, but
+the Shopify draft order Shopify already issued **remains payable**. If the plant
+is then relisted and the original customer pays the stale invoice, the same
+physical plant is sold twice.
+
+The owner has decided the invoice must be voided or otherwise made non-payable
+when the hold expires, accepting that a late payment is refused rather than
+captured. That is the opposite of the current behaviour, which deliberately
+keeps the link alive and only warns the customer that the hold has ended.
+
+What that means for whoever implements it:
+
+- `expireOverdueOffers` is the moment the request becomes `Expired`; the void
+  belongs on that path, and on the scheduler that drives it, not on a page load.
+- Voiding is a Shopify write on a resource holding money. It must be idempotent
+  — the sweep can run repeatedly and concurrently, and `DraftOrderReference`
+  already exists to record what happened.
+- A Grower's Choice draft order also carries `reserveInventoryUntil`. Confirm
+  whether deleting the draft releases the hold immediately or whether the hold
+  simply lapses on its own; do not assume.
+- The customer's page currently says the hold ended and to contact UPT before
+  paying, with the link still live. Once the invoice is void that copy is wrong
+  and must say the offer can no longer be paid.
+- Decide and document what happens if `orders/paid` arrives for a request whose
+  invoice was voided — it should not silently book revenue against a plant that
+  may already be relisted.
+
+---
+
 ## Business rules future agents must preserve
 
 1. **Do not rebuild** the portal. Extend the Prisma-backed React Router app.
-2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display is derived by `formatCustomerStatusLabel` from the stored status plus `hasPayableItems` (`offerHasPayableItems`) and `hasResponded`: Pending and unanswered → **Offer Ready for Review**; Pending and answered with something payable → **Needs Payment**; nothing payable → **No Payment Needed**. Fix the label, never the stored status: closing a request whose customer rejected everything would take its declined plant out of the EXACT PLANTS queue.
+2. Request statuses stored: **New / Pending / Closed / Expired**. Customer display is derived by `formatCustomerStatusLabel` from the stored status plus `hasPayableItems` (`offerHasPayableItems`) and `hasResponded`: Pending and unanswered → **Offer Ready for Review**; Pending and answered with something payable → **Needs Payment**; nothing payable → **No Payment Needed**. Fix the label, never the stored status.
 2a. What an item must carry to be offered depends on its fulfilment route. `incompleteOfferItems` names each item and its missing fields; `sendOffer` is the authority and throws `OfferIncompleteError`. An **exact plant** needs at least one exact plant photo, a price and a weight. A **Grower's Choice** item needs a linked purchasable variant with enough stock, a price and a weight — the linked variant's own weight where it has one — and **no exact photo**, there being no one plant to photograph. **Not Available** needs none of it. Customer-facing notes stay optional throughout.
 3. Customer form: plant name required; notes optional; **no quantity UI**; quantity defaults to 1. **Budget stays out** of the form, customer-facing details, and active workflow. Do not drop `RequestItem.budget` unless a migration is actually required.
 4. Name/email come from the customer account when possible. Customers see only their own requests.
@@ -860,7 +982,7 @@ Genuinely optional, deliberately not done:
 7a. Linking a listing reserves nothing. Stock is held only when the customer accepts and the draft order is created, only through `DraftOrderInput.reserveInventoryUntil`, and only until the offer's own payment deadline. Never oversell and never silently drop an item: if the stock has gone, create nothing and tell the admin which plant. Every inventory operation stays idempotent — a recorded reference, the Shopify tag lookup and the creation claim are all load-bearing.
 8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired.
 9. **Declined item** means: UPT marked Available, UPT created an **exact-plant** offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available, and it is **not** a rejected Grower's Choice item — that plant already has its own Shopify product, and an EXACT PLANTS listing is one physical plant with one unit of tracked stock.
-9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never for a paid or Closed request.
+9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and gives three reasons, kept distinct in the listing queue and in analytics: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, and never once the request is **paid**. Being `Closed` is not itself disqualifying: see decision 1 below.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
 11. Listing prefill/publish: title, price, weight, selected exact-plant photos only. Exclude customer-facing notes/disclaimers, customer identity, request information, and customer response information.
 12. One Shopify product per declined item. Retries/refreshes/repeated response processing must not duplicate. On failure, keep the rejection and allow idempotent retry.
