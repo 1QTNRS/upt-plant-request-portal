@@ -63,6 +63,8 @@ describe("customer photo lightbox", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-next/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-close/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerdown/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /setPointerCapture/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /root\.focus\(\)/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowLeft/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /Escape/);
     const offer = readFileSync(

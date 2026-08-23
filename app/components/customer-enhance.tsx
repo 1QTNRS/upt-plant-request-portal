@@ -217,6 +217,10 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     index = parseInt(link.getAttribute("data-index") || "0", 10) || 0;
     if (index < 0 || index >= urls.length) index = 0;
     root.hidden = false;
+    if (typeof root.tabIndex !== "number" || root.tabIndex < 0) {
+      root.tabIndex = -1;
+    }
+    root.focus();
     render();
   }
 
@@ -268,6 +272,9 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     tracking = true;
     startX = event.clientX;
     startY = event.clientY;
+    if (stage instanceof HTMLElement && event.pointerId != null) {
+      try { stage.setPointerCapture(event.pointerId); } catch (err) {}
+    }
   }
   function onPointerUp(event) {
     if (!tracking) return;

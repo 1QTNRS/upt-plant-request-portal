@@ -113,6 +113,7 @@ export function CustomerLightboxRoot() {
       <div
         id="customer-lightbox"
         hidden
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Plant photo"
