@@ -13,6 +13,7 @@ import {
   type ExactPlantTableSortState,
 } from "../lib/exact-plants";
 import { formatCurrency, formatDate } from "../lib/portal";
+import { AdminConfirmDialog } from "./admin-confirm-dialog";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
 
 const SORTABLE: Array<{
@@ -41,18 +42,20 @@ export function ExactPlantsTable({
   items,
   listingFilter,
   sort,
-  pendingDismissItemId,
+  mode = "queue",
 }: {
   items: ExactPlantCandidateRow[];
   listingFilter: string;
   sort: ExactPlantTableSortState;
-  pendingDismissItemId?: string | null;
+  mode?: "queue" | "dismissed";
 }) {
   const [viewer, setViewer] = useState<{
     urls: string[];
     alt: string;
     startIndex: number;
   } | null>(null);
+  const [dismissItemId, setDismissItemId] = useState<string | null>(null);
+  const dismissed = mode === "dismissed";
 
   return (
     <>
@@ -123,7 +126,7 @@ export function ExactPlantsTable({
               const canDismiss = canDismissExactPlantFromQueue({
                 listing: item.listing,
               });
-              const confirming = pendingDismissItemId === item.requestItemId;
+              const dismissedAt = item.dismissedAt;
               const photos = item.photoUrls.filter(Boolean);
               const eligibilityTone = ELIGIBILITY_TONE[exactPlantReleaseTone(item.releaseReason)];
               return (
@@ -199,7 +202,9 @@ export function ExactPlantsTable({
                     </span>
                   </td>
                   <td className="exact-plants-col-listing" style={tdStyle}>
-                    {listed ? (
+                    {dismissed ? (
+                      <s-badge>Dismissed</s-badge>
+                    ) : listed ? (
                       <s-badge tone="success">
                         {EXACT_PLANT_LISTING_FILTER_LABELS.listed}
                       </s-badge>
@@ -221,14 +226,16 @@ export function ExactPlantsTable({
                   <td className="exact-plants-col-date" style={tdStyle}>
                     <time
                       data-exact-plant-date
-                      dateTime={item.eligibleAt}
+                      dateTime={dismissedAt || item.eligibleAt}
                     >
-                      {formatDate(new Date(item.eligibleAt))}
+                      {formatDate(new Date(dismissedAt || item.eligibleAt))}
                     </time>
                   </td>
                   <td className="exact-plants-col-actions" style={tdStyle}>
                     <s-stack direction="block" gap="small">
-                      {listed ? (
+                      {dismissed ? (
+                        <s-text color="subdued">No listing</s-text>
+                      ) : listed ? (
                         item.listing?.productAdminUrl ? (
                           <s-link href={item.listing.productAdminUrl} target="_blank">
                             Open Shopify product
@@ -238,62 +245,22 @@ export function ExactPlantsTable({
                         <s-link href={reviewHref}>Create listing</s-link>
                       )}
                       {item.listing?.status === "failed" &&
-                      item.listing.productAdminUrl ? (
+                      item.listing.productAdminUrl &&
+                      !dismissed ? (
                         <s-link href={item.listing.productAdminUrl} target="_blank">
                           Open unpublished Shopify product
                         </s-link>
                       ) : null}
-                      {canDismiss ? (
-                        confirming ? (
-                          <Form method="post">
-                            <input
-                              type="hidden"
-                              name="intent"
-                              value="dismiss-exact-plant"
-                            />
-                            <input
-                              type="hidden"
-                              name="requestItemId"
-                              value={item.requestItemId}
-                            />
-                            <input type="hidden" name="confirmed" value="true" />
-                            <s-button
-                              variant="primary"
-                              tone="critical"
-                              type="submit"
-                            >
-                              Confirm Dismiss from EXACT PLANTS
-                            </s-button>
-                          </Form>
-                        ) : (
-                          <Form method="post">
-                            <input
-                              type="hidden"
-                              name="intent"
-                              value="dismiss-exact-plant"
-                            />
-                            <input
-                              type="hidden"
-                              name="requestItemId"
-                              value={item.requestItemId}
-                            />
-                            <s-button variant="secondary" type="submit">
-                              Dismiss
-                            </s-button>
-                          </Form>
-                        )
+                      {canDismiss && !dismissed ? (
+                        <s-button
+                          variant="secondary"
+                          type="button"
+                          onClick={() => setDismissItemId(item.requestItemId)}
+                        >
+                          Dismiss
+                        </s-button>
                       ) : null}
                     </s-stack>
-                    {confirming ? (
-                      <s-banner tone="warning">
-                        <s-text>
-                          This removes the plant from the EXACT PLANTS queue. No
-                          Shopify product is created. The original request,
-                          customer response, offer snapshot, photos, and history
-                          stay.
-                        </s-text>
-                      </s-banner>
-                    ) : null}
                   </td>
                 </tr>
               );
@@ -308,6 +275,30 @@ export function ExactPlantsTable({
           startIndex={viewer.startIndex}
           onClose={() => setViewer(null)}
         />
+      ) : null}
+      {dismissItemId ? (
+        <AdminConfirmDialog
+          title="Dismiss from EXACT PLANTS?"
+          confirmLabel="Confirm Dismiss from EXACT PLANTS"
+          onCancel={() => setDismissItemId(null)}
+          confirm={
+            <Form method="post">
+              <input type="hidden" name="intent" value="dismiss-exact-plant" />
+              <input type="hidden" name="requestItemId" value={dismissItemId} />
+              <input type="hidden" name="confirmed" value="true" />
+              <s-button variant="primary" tone="critical" type="submit">
+                Confirm Dismiss from EXACT PLANTS
+              </s-button>
+            </Form>
+          }
+        >
+          <s-text>
+            This removes the plant from the EXACT PLANTS queue. No Shopify
+            product is created. The original request, customer response, offer
+            snapshot, photos, and history stay. You can still find it on the
+            Dismissed tab.
+          </s-text>
+        </AdminConfirmDialog>
       ) : null}
     </>
   );

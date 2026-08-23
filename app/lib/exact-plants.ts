@@ -93,6 +93,7 @@ export const EXACT_PLANT_LISTING_FILTERS = [
   "not_yet_listed",
   "flagged",
   "listed",
+  "dismissed",
 ] as const;
 
 export type ExactPlantListingFilter =
@@ -106,6 +107,7 @@ export const EXACT_PLANT_LISTING_FILTER_LABELS: Record<
   not_yet_listed: "Not Yet Listed",
   flagged: "Flagged",
   listed: "Listed",
+  dismissed: "Dismissed",
 };
 
 export function parseExactPlantListingFilter(
@@ -133,7 +135,7 @@ export function exactPlantListingBucket(item: {
     status?: string | null;
     shopifyProductGid?: string | null;
   } | null;
-}): Exclude<ExactPlantListingFilter, "all"> {
+}): Exclude<ExactPlantListingFilter, "all" | "dismissed"> {
   if (item.listing?.status === "listed" && item.listing.shopifyProductGid) {
     return "listed";
   }
@@ -150,6 +152,7 @@ export function matchesExactPlantListingFilter(
   },
   filter: ExactPlantListingFilter,
 ): boolean {
+  if (filter === "dismissed") return false;
   if (filter === "all") return true;
   return exactPlantListingBucket(item) === filter;
 }
@@ -321,6 +324,7 @@ export function countExactPlantListingFilters<
     not_yet_listed: 0,
     flagged: 0,
     listed: 0,
+    dismissed: 0,
   };
   for (const item of items) {
     counts[exactPlantListingBucket(item)] += 1;

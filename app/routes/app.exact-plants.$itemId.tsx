@@ -7,6 +7,7 @@ import type {
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+import { AdminConfirmDialog } from "../components/admin-confirm-dialog";
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
   canDismissExactPlantFromQueue,
@@ -116,6 +117,7 @@ export default function ExactPlantListingReview() {
   const [price, setPrice] = useState(String(review?.draft.price ?? 0));
   const [weightLbs, setWeightLbs] = useState(String(review?.draft.weightLbs ?? 0));
   const [photoUrls, setPhotoUrls] = useState(review?.draft.photoUrls ?? []);
+  const [dismissOpen, setDismissOpen] = useState(false);
 
   useEffect(() => {
     if (!review) return;
@@ -144,7 +146,6 @@ export default function ExactPlantListingReview() {
   const submitting = navigation.state !== "idle";
   const formError = actionData?.error ?? review.listing?.lastError;
   const canDismiss = canDismissExactPlantFromQueue({ listing: review.listing });
-  const pendingDismiss = Boolean(actionData?.pendingDismiss);
 
   if (listed) {
     return (
@@ -350,39 +351,43 @@ export default function ExactPlantListingReview() {
       {canDismiss ? (
         <s-section heading="Dismiss from EXACT PLANTS">
           <s-stack direction="block" gap="base">
-            {pendingDismiss ? (
-              <s-banner tone="warning">
-                <s-text>
-                  This removes the plant from the EXACT PLANTS queue. No Shopify
-                  product is created. The original request, customer response,
-                  offer snapshot, photos, and history stay.
-                </s-text>
-              </s-banner>
-            ) : (
-              <s-text color="subdued">
-                Use this when you do not want to create an EXACT PLANTS listing
-                for this plant. It leaves the queue and does not publish
-                anything.
-              </s-text>
-            )}
+            <s-text color="subdued">
+              Use this when you do not want to create an EXACT PLANTS listing
+              for this plant. It leaves the active queue and does not publish
+              anything. The plant stays on the Dismissed tab.
+            </s-text>
+            <s-button
+              variant="secondary"
+              type="button"
+              onClick={() => setDismissOpen(true)}
+            >
+              Dismiss from EXACT PLANTS
+            </s-button>
+          </s-stack>
+        </s-section>
+      ) : null}
+      {dismissOpen ? (
+        <AdminConfirmDialog
+          title="Dismiss from EXACT PLANTS?"
+          confirmLabel="Confirm Dismiss from EXACT PLANTS"
+          onCancel={() => setDismissOpen(false)}
+          confirm={
             <Form method="post">
               <input type="hidden" name="intent" value="dismiss-exact-plant" />
               <input type="hidden" name="returnTo" value={returnTo} />
-              {pendingDismiss ? (
-                <input type="hidden" name="confirmed" value="true" />
-              ) : null}
-              <s-button
-                variant={pendingDismiss ? "primary" : "secondary"}
-                {...(pendingDismiss ? { tone: "critical" } : {})}
-                type="submit"
-              >
-                {pendingDismiss
-                  ? "Confirm Dismiss from EXACT PLANTS"
-                  : "Dismiss from EXACT PLANTS"}
+              <input type="hidden" name="confirmed" value="true" />
+              <s-button variant="primary" tone="critical" type="submit">
+                Confirm Dismiss from EXACT PLANTS
               </s-button>
             </Form>
-          </s-stack>
-        </s-section>
+          }
+        >
+          <s-text>
+            This removes the plant from the EXACT PLANTS queue. No Shopify
+            product is created. The original request, customer response, offer
+            snapshot, photos, and history stay.
+          </s-text>
+        </AdminConfirmDialog>
       ) : null}
     </s-page>
   );

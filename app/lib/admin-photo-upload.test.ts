@@ -304,6 +304,9 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /readEmbeddedAdminSessionToken/);
     assert.match(uploader, /applyAdminPhotoUploadHeaders/);
     assert.match(requestPage, /AdminPhotoStrip/);
+    assert.match(requestPage, /AdminPhotoThumbs/);
+    assert.match(uploader, /AdminPhotoLightbox/);
+    assert.match(uploader, /data-admin-photo-thumb/);
     assert.match(requestPage, /photoUploadsInProgress/);
     assert.match(requestPage, /mergeAdminItemDraft/);
     assert.match(photosRoute, /photoUploadThrownErrorPayload/);

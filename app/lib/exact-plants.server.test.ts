@@ -8,6 +8,7 @@ import {
   dismissExactPlantFromQueue,
   ExactPlantListingError,
   getExactPlantReview,
+  listDismissedExactPlants,
   listExactPlantCandidates,
 } from "./exact-plants.server";
 import { adminOverrideCloseRequest } from "./offer-response.server";
@@ -769,6 +770,12 @@ describe("admin dismiss from EXACT PLANTS", () => {
       ),
       false,
     );
+    const dismissedRows = await listDismissedExactPlants(shop);
+    assert.equal(
+      dismissedRows.some((row) => row.requestItemId === availableId),
+      true,
+    );
+    assert.ok(dismissedRows.find((row) => row.requestItemId === availableId)?.dismissedAt);
     if (unavailableId) {
       assert.equal(
         (await prisma.requestItem.findUniqueOrThrow({ where: { id: unavailableId } }))

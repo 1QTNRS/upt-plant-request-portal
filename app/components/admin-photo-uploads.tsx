@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useParams, useRevalidator } from "react-router";
 
+import { AdminPhotoLightbox } from "./admin-photo-lightbox";
 import {
   applyAdminPhotoUploadHeaders,
   cancelPhotoUpload,
@@ -96,6 +97,8 @@ export function AdminPhotoStrip({
   const xhrs = useRef(new Map<string, XMLHttpRequest>());
   const watchdogs = useRef(new Map<string, number>());
   const dragId = useRef<string | null>(null);
+  const dragOrigin = useRef<{ x: number; y: number } | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const onBusyRef = useRef(onRequiredBusyChange);
   onBusyRef.current = onRequiredBusyChange;
 
@@ -293,6 +296,7 @@ export function AdminPhotoStrip({
     .map((id) => byId.get(id))
     .filter((photo): photo is SavedPhotoRef => Boolean(photo));
   const cards = mergePhotoCards(orderedSaved, uploads);
+  const viewerUrls = orderedSaved.map((photo) => photo.url);
 
   return (
     <div data-admin-photo-strip>
@@ -376,13 +380,22 @@ export function AdminPhotoStrip({
               data-photo-card="saved"
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
+                if ((event.target as HTMLElement | null)?.closest("[data-photo-delete]")) {
+                  return;
+                }
                 dragId.current = photo.id;
+                dragOrigin.current = { x: event.clientX, y: event.clientY };
                 (event.currentTarget as HTMLElement).setPointerCapture(
                   event.pointerId,
                 );
               }}
               onPointerUp={(event) => {
                 if (!dragId.current) return;
+                const origin = dragOrigin.current;
+                const moved =
+                  origin &&
+                  (Math.abs(event.clientX - origin.x) > 8 ||
+                    Math.abs(event.clientY - origin.y) > 8);
                 const hit = document
                   .elementsFromPoint(event.clientX, event.clientY)
                   .find(
@@ -394,15 +407,20 @@ export function AdminPhotoStrip({
                 const from = order.indexOf(dragId.current);
                 const to = targetId ? order.indexOf(targetId) : -1;
                 dragId.current = null;
-                if (from >= 0 && to >= 0 && from !== to) {
+                dragOrigin.current = null;
+                if (moved && from >= 0 && to >= 0 && from !== to) {
                   moveIndex(from, to);
+                  return;
+                }
+                if (!moved && savedIndex >= 0) {
+                  setViewerIndex(savedIndex);
                 }
               }}
               style={{
                 display: "flex",
                 flexDirection: "column",
                 gap: 8,
-                cursor: "grab",
+                cursor: "zoom-in",
                 userSelect: "none",
                 width: 120,
               }}
@@ -414,6 +432,7 @@ export function AdminPhotoStrip({
                   width={120}
                   height={120}
                   draggable={false}
+                  data-admin-photo-thumb
                   style={{
                     display: "block",
                     objectFit: "cover",
@@ -503,7 +522,76 @@ export function AdminPhotoStrip({
           </s-button>
         )}
       </form>
+      {viewerIndex !== null && viewerUrls.length > 0 ? (
+        <AdminPhotoLightbox
+          urls={viewerUrls}
+          alt={alt}
+          startIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+export function AdminPhotoThumbs({
+  photos,
+  alt,
+}: {
+  photos: Array<{ url: string }>;
+  alt: string;
+}) {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const urls = photos.map((photo) => photo.url).filter(Boolean);
+  if (urls.length === 0) return null;
+  return (
+    <>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {urls.map((url, index) => (
+          <button
+            key={url}
+            type="button"
+            data-admin-photo-thumb
+            aria-label={
+              urls.length > 1
+                ? `View ${alt}, photo ${index + 1} of ${urls.length}`
+                : `View ${alt}`
+            }
+            onClick={() => setViewerIndex(index)}
+            style={{
+              padding: 0,
+              border: "none",
+              background: "none",
+              cursor: "zoom-in",
+            }}
+          >
+            <img
+              src={url}
+              alt={alt}
+              width={120}
+              height={120}
+              style={{
+                display: "block",
+                objectFit: "cover",
+                borderRadius: 8,
+                maxWidth: "100%",
+              }}
+            />
+            {index === 0 ? (
+              <s-badge tone="info">Customer sees first</s-badge>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      {viewerIndex !== null ? (
+        <AdminPhotoLightbox
+          urls={urls}
+          alt={alt}
+          startIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
+      ) : null}
+    </>
   );
 }
 
