@@ -7,7 +7,6 @@ import {
   EXACT_PLANT_DISMISSED_REASON,
   exactPlantEligibleAt,
   exactPlantIneligibilityReason,
-  exactPlantEligibleAt,
   exactPlantReleaseReason,
   type ExactPlantReleaseReason,
   parsePhotoUrlList,
