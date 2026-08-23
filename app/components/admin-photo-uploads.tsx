@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useParams, useRevalidator } from "react-router";
 
 import {
+  applyAdminPhotoUploadHeaders,
   cancelPhotoUpload,
   dropReconciledUploads,
   enqueuePhotoUploads,
@@ -12,9 +13,11 @@ import {
   parseUploadActionResponse,
   PHOTO_UPLOAD_WATCHDOG_MS,
   photoUploadProgressLabel,
+  readEmbeddedAdminSessionToken,
   retryPhotoUpload,
   sendOfferBlockedByRequiredPhotoUploads,
   transportProgressPercent,
+  type EmbeddedAdminBridge,
   type PhotoUploadEntry,
   type SavedPhotoRef,
 } from "../lib/admin-photo-upload";
@@ -147,10 +150,39 @@ export function AdminPhotoStrip({
   };
 
   const startUpload = (key: string) => {
+    void runUpload(key);
+  };
+
+  const runUpload = async (key: string) => {
     const file = filesByKey.current.get(key);
     if (!file || inFlight.current.has(key)) return;
     inFlight.current.add(key);
     setUploads((current) => markPhotoUploadProgress(current, key, 0));
+
+    const finalize = () => {
+      inFlight.current.delete(key);
+      xhrs.current.delete(key);
+      clearWatchdog(key);
+    };
+    watchdogs.current.set(
+      key,
+      window.setTimeout(() => {
+        if (!inFlight.current.has(key)) return;
+        xhrs.current.get(key)?.abort();
+        setUploads((current) =>
+          markPhotoUploadFailure(current, key, "Upload timed out"),
+        );
+      }, PHOTO_UPLOAD_WATCHDOG_MS),
+    );
+
+    // App Bridge patches `fetch` (so useFetcher works) but not XHR. Without
+    // Authorization, Shopify treats this as a document request and returns HTML.
+    const shopify =
+      typeof window === "undefined"
+        ? undefined
+        : (window as Window & { shopify?: EmbeddedAdminBridge }).shopify;
+    const token = await readEmbeddedAdminSessionToken(shopify);
+    if (!inFlight.current.has(key)) return;
 
     const body = new FormData();
     body.set("intent", "upload-photo");
@@ -166,6 +198,7 @@ export function AdminPhotoStrip({
     xhr.withCredentials = true;
     xhr.timeout = PHOTO_UPLOAD_WATCHDOG_MS;
     xhr.responseType = "text";
+    applyAdminPhotoUploadHeaders(xhr, token);
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
       setUploads((current) =>
@@ -175,11 +208,6 @@ export function AdminPhotoStrip({
           transportProgressPercent(event.loaded, event.total),
         ),
       );
-    };
-    const finalize = () => {
-      inFlight.current.delete(key);
-      xhrs.current.delete(key);
-      clearWatchdog(key);
     };
     xhr.onload = () => {
       const bodyText = xhr.responseText || "";
@@ -211,16 +239,6 @@ export function AdminPhotoStrip({
     xhr.onabort = () => {
       finalize();
     };
-    watchdogs.current.set(
-      key,
-      window.setTimeout(() => {
-        if (!inFlight.current.has(key)) return;
-        xhr.abort();
-        setUploads((current) =>
-          markPhotoUploadFailure(current, key, "Upload timed out"),
-        );
-      }, PHOTO_UPLOAD_WATCHDOG_MS),
-    );
     xhr.send(body);
   };
 

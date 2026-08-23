@@ -7,7 +7,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhotoUploadProgress } from "../components/admin-photo-uploads";
 import {
+  adminPhotoUploadHeaders,
+  applyAdminPhotoUploadHeaders,
   cancelPhotoUpload,
+  describeUnreadableUploadResponse,
   dropReconciledUploads,
   enqueuePhotoUploads,
   markPhotoUploadFailure,
@@ -15,8 +18,10 @@ import {
   markPhotoUploadSuccess,
   mergePhotoCards,
   parseUploadActionResponse,
+  photoUploadThrownErrorPayload,
   photoUploadKey,
   photoUploadProgressLabel,
+  readEmbeddedAdminSessionToken,
   retryPhotoUpload,
   sendOfferBlockedByRequiredPhotoUploads,
   transportProgressPercent,
@@ -165,6 +170,72 @@ describe("admin photo upload queue", () => {
     if (turbo.ok) assert.equal(turbo.photo.id, "p2");
   });
 
+  it("explains HTML bounce and Bad Request bodies instead of a generic parse error", () => {
+    const html = parseUploadActionResponse(
+      "<!DOCTYPE html><html><body>App Bridge bounce</body></html>",
+    );
+    assert.equal(html.ok, false);
+    if (!html.ok) {
+      assert.match(html.error, /Reload the page/);
+      assert.notEqual(html.error, "Could not read the upload response.");
+    }
+    assert.equal(
+      describeUnreadableUploadResponse("Bad Request"),
+      "Upload was rejected. Reload the page and try again.",
+    );
+  });
+
+  it("reads the embedded admin session token for the XHR Authorization header", async () => {
+    assert.equal(await readEmbeddedAdminSessionToken(undefined), undefined);
+    assert.equal(await readEmbeddedAdminSessionToken({}), undefined);
+    assert.equal(
+      await readEmbeddedAdminSessionToken({
+        idToken: async () => {
+          throw new Error("not ready");
+        },
+      }),
+      undefined,
+    );
+    assert.equal(
+      await readEmbeddedAdminSessionToken({
+        ready: Promise.resolve(),
+        idToken: async () => "  session.jwt  ",
+      }),
+      "session.jwt",
+    );
+
+    const headers = adminPhotoUploadHeaders("session.jwt");
+    assert.equal(headers.Accept, "application/json");
+    assert.equal(headers.Authorization, "Bearer session.jwt");
+    assert.equal(adminPhotoUploadHeaders().Authorization, undefined);
+
+    const recorded: Record<string, string> = {};
+    applyAdminPhotoUploadHeaders(
+      { setRequestHeader: (name, value) => { recorded[name] = value; } },
+      "session.jwt",
+    );
+    assert.equal(recorded.Authorization, "Bearer session.jwt");
+    assert.equal(recorded.Accept, "application/json");
+  });
+
+  it("turns an HTML bounce Response into a JSON-readable failure", () => {
+    const bounce = photoUploadThrownErrorPayload(
+      new Response("<!DOCTYPE html><html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    assert.ok(bounce);
+    assert.equal(bounce?.status, 401);
+    assert.match(bounce?.error ?? "", /Reload the page/);
+
+    const json = new Response(JSON.stringify({ ok: false, error: "nope" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(photoUploadThrownErrorPayload(json), null);
+  });
+
   it("merges one card per photo and drops a local success after refresh reconcile", () => {
     const queued = enqueuePhotoUploads([], [fileA]).next;
     const done = markPhotoUploadSuccess(queued, photoUploadKey(fileA), {
@@ -219,6 +290,10 @@ describe("admin photo upload UI wiring", () => {
       path.join(REPO_ROOT, "app", "routes", "app.requests.$id.tsx"),
       "utf8",
     );
+    const photosRoute = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "app.requests.$id.photos.ts"),
+      "utf8",
+    );
     assert.match(uploader, /onChange=\{jsReady \? handleSelect : undefined\}/);
     assert.match(uploader, /multiple/);
     assert.match(uploader, /Upload plant photo/);
@@ -226,9 +301,13 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /\/photos/);
     assert.match(uploader, /parseUploadActionResponse/);
     assert.match(uploader, /xhr\.responseText/);
+    assert.match(uploader, /readEmbeddedAdminSessionToken/);
+    assert.match(uploader, /applyAdminPhotoUploadHeaders/);
     assert.match(requestPage, /AdminPhotoStrip/);
     assert.match(requestPage, /photoUploadsInProgress/);
     assert.match(requestPage, /mergeAdminItemDraft/);
+    assert.match(photosRoute, /photoUploadThrownErrorPayload/);
+    assert.match(photosRoute, /Response\.json/);
   });
 
   it("puts an immediate X on each thumbnail without a confirm dialog", () => {
