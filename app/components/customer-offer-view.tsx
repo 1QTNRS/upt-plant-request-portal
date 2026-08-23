@@ -15,6 +15,7 @@ import {
   type SampleCustomerOffer,
 } from "../lib/portal";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
+import { CustomerPhotoGallery } from "./customer-photo-gallery";
 import { OfferExpiryBanner } from "./customer-request-portal";
 
 type ItemChoice = "accept" | "reject" | "unavailable";
@@ -38,25 +39,6 @@ const choiceLabelStyle: React.CSSProperties = {
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   cursor: "pointer",
-};
-
-const offerPhotoStyle: React.CSSProperties = {
-  display: "block",
-  objectFit: "cover",
-  borderRadius: "8px",
-  maxWidth: "100%",
-  width: "min(200px, 100%)",
-  height: "auto",
-};
-
-/**
- * The storefront loads none of the app's CSS or JavaScript, so the gallery is a
- * plain flex row of images with inline styles.
- */
-const photoRowStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "8px",
 };
 
 const supportNoteStyle: React.CSSProperties = {
@@ -719,34 +701,14 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
       <s-stack direction="block" gap="base">
         {growersChoice && item.linkedImageUrl ? (
-          <div style={photoRowStyle}>
-            <img
-              src={item.linkedImageUrl}
-              alt={`${item.plantName}, from our store listing`}
-              width={200}
-              height={200}
-              style={offerPhotoStyle}
-            />
-          </div>
+          <CustomerPhotoGallery
+            urls={[item.linkedImageUrl]}
+            alt={`${item.plantName}, from our store listing`}
+          />
         ) : null}
 
         {!growersChoice && item.photoUrls.length > 0 ? (
-          <div style={photoRowStyle}>
-            {item.photoUrls.map((url, index) => (
-              <img
-                key={url}
-                src={url}
-                alt={
-                  item.photoUrls.length > 1
-                    ? `${item.plantName}, photo ${index + 1} of ${item.photoUrls.length}`
-                    : item.plantName
-                }
-                width={200}
-                height={200}
-                style={offerPhotoStyle}
-              />
-            ))}
-          </div>
+          <CustomerPhotoGallery urls={item.photoUrls} alt={item.plantName} />
         ) : null}
 
         <s-stack direction="block" gap="base">
@@ -793,39 +755,14 @@ function OfferItemCard({
            * unlabelled picture here would read as the same promise — and the
            * plant that arrives would not be the one in it.
            */
-          <div style={photoRowStyle}>
-            <img
-              src={item.listingImageUrl}
-              alt={`${item.plantName}, from our store listing`}
-              width={200}
-              height={200}
-              style={offerPhotoStyle}
-            />
-          </div>
+          <CustomerPhotoGallery
+            urls={[item.listingImageUrl]}
+            alt={`${item.plantName}, from our store listing`}
+          />
         ) : null}
 
         {available && !growersChoice && item.photoUrls.length > 0 ? (
-          /*
-           * Every photo the offer froze, as plain images. The storefront never
-           * hydrates, so a gallery behind a click handler shows the customer
-           * exactly one photo of the plant they are buying.
-           */
-          <div style={photoRowStyle}>
-            {item.photoUrls.map((url, index) => (
-              <img
-                key={url}
-                src={url}
-                alt={
-                  item.photoUrls.length > 1
-                    ? `${item.plantName}, photo ${index + 1} of ${item.photoUrls.length}`
-                    : item.plantName
-                }
-                width={200}
-                height={200}
-                style={offerPhotoStyle}
-              />
-            ))}
-          </div>
+          <CustomerPhotoGallery urls={item.photoUrls} alt={item.plantName} />
         ) : null}
 
         <s-stack direction="block" gap="base">

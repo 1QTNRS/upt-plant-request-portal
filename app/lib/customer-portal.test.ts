@@ -584,7 +584,7 @@ describe("the offer response works without JavaScript", () => {
   it("renders every photo the offer froze, not just the first", () => {
     // The rest used to be reachable only through a lightbox opened by onClick,
     // so on the storefront the customer never saw them.
-    assert.match(source, /item\.photoUrls\.map\(/);
+    assert.match(source, /CustomerPhotoGallery urls=\{item\.photoUrls\}/);
     assert.ok(!/src=\{item\.photoUrl\}/.test(source));
   });
 });
