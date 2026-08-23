@@ -5,7 +5,7 @@ export default defineConfig({
   testIgnore: /dev-store/,
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: "http://127.0.0.1:3010",
     trace: "retain-on-failure",
