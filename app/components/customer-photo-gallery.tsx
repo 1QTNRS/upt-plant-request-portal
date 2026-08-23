@@ -71,6 +71,7 @@ const overlayStyle: CSSProperties = {
 };
 
 const stageStyle: CSSProperties = {
+  position: "relative",
   flex: 1,
   display: "flex",
   alignItems: "center",
@@ -80,9 +81,10 @@ const stageStyle: CSSProperties = {
 };
 
 const imageStyle: CSSProperties = {
-  maxWidth: "100%",
-  maxHeight: "100%",
+  maxWidth: "min(86vw, 900px)",
+  maxHeight: "78vh",
   objectFit: "contain",
+  pointerEvents: "auto",
 };
 
 const toolbarStyle: CSSProperties = {
@@ -103,6 +105,24 @@ const controlStyle: CSSProperties = {
   color: "#fff",
   font: "inherit",
   cursor: "pointer",
+};
+
+const prevStyle: CSSProperties = {
+  ...controlStyle,
+  position: "absolute",
+  top: "50%",
+  left: 8,
+  transform: "translateY(-50%)",
+  zIndex: 2,
+};
+
+const nextStyle: CSSProperties = {
+  ...controlStyle,
+  position: "absolute",
+  top: "50%",
+  right: 8,
+  transform: "translateY(-50%)",
+  zIndex: 2,
 };
 
 export function CustomerLightboxRoot() {
@@ -127,11 +147,11 @@ export function CustomerLightboxRoot() {
         <span data-lightbox-status style={{ fontSize: 14 }} />
       </div>
       <div data-lightbox-stage style={stageStyle}>
-        <button type="button" data-lightbox-prev style={controlStyle}>
+        <button type="button" data-lightbox-prev style={prevStyle}>
           Previous
         </button>
         <img data-lightbox-image alt="" style={imageStyle} />
-        <button type="button" data-lightbox-next style={controlStyle}>
+        <button type="button" data-lightbox-next style={nextStyle}>
           Next
         </button>
       </div>

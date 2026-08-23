@@ -70,6 +70,8 @@ describe("customer photo lightbox", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /root\.focus\(\)/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowLeft/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /Escape/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-image/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-customer-lightbox/);
     const offer = readFileSync(
       path.join(REPO_ROOT, "app", "components", "customer-offer-view.tsx"),
       "utf8",

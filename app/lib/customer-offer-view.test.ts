@@ -635,6 +635,8 @@ describe("the FedEx removal warning", () => {
     assert.match(html, /name="fedexUpgradeSelected"/);
     assert.match(html, /Carrier delays are not covered/);
     assert.match(html, /id="fedex-removal-dialog"/);
+    assert.match(html, /data-fedex-removal-dialog/);
+    assert.match(html, /position:fixed/);
     assert.match(html, /role="dialog"/);
     assert.match(html, /Keep FedEx Upgrade/);
     assert.match(html, /I Understand, Remove Upgrade/);

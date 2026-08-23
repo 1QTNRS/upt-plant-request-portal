@@ -29,5 +29,8 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-confirm-remove/);
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-ack/);
     assert.match(FEDEX_WARNING_SCRIPT, /Escape/);
+    assert.match(FEDEX_WARNING_SCRIPT, /form\.addEventListener\("submit"/);
+    assert.match(FEDEX_WARNING_SCRIPT, /preventDefault/);
+    assert.match(FEDEX_WARNING_SCRIPT, /document\.body\.appendChild/);
   });
 });

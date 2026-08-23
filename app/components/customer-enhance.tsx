@@ -83,7 +83,14 @@ export const FEDEX_WARNING_SCRIPT = `
     box.setAttribute("aria-disabled", enabled ? "false" : "true");
   }
 
+  function pinDialog() {
+    if (dialog.parentNode !== document.body) {
+      document.body.appendChild(dialog);
+    }
+  }
+
   function openDialog() {
+    pinDialog();
     dialog.hidden = false;
     dialog.setAttribute("aria-hidden", "false");
     if (keep instanceof HTMLButtonElement) keep.focus();
@@ -163,6 +170,18 @@ export const FEDEX_WARNING_SCRIPT = `
   });
 
   applyAcceptedChange();
+
+  var form = box.form;
+  if (form) {
+    form.addEventListener("submit", function (event) {
+      if (box.disabled) return;
+      if (box.checked) return;
+      if (ack instanceof HTMLInputElement && ack.value === "true") return;
+      if (acceptedCount() === 0) return;
+      event.preventDefault();
+      openDialog();
+    });
+  }
 })();
 `.trim();
 
@@ -283,6 +302,12 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     if (target.closest("[data-lightbox-next]")) {
       event.preventDefault();
       move(1);
+      return;
+    }
+    if (target.closest("[data-lightbox-image]")) return;
+    if (target.closest("[data-customer-lightbox]")) {
+      event.preventDefault();
+      close();
     }
   });
 
