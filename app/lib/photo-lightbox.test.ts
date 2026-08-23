@@ -30,6 +30,7 @@ describe("photo lightbox helpers", () => {
       }),
     );
     assert.match(html, /data-admin-photo-lightbox/);
+    assert.match(html, /data-lightbox-image/);
     assert.match(html, /× Close/);
     assert.match(html, /Previous/);
     assert.match(html, /Next/);

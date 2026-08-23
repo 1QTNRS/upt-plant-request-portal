@@ -52,13 +52,29 @@ export const CUSTOMER_TIME_SCRIPT = `
 
 export const FEDEX_WARNING_SCRIPT = `
 (function () {
-  var box = document.getElementById("fedex-upgrade");
-  var dialog = document.getElementById("fedex-removal-dialog");
-  var keep = document.getElementById("fedex-keep");
-  var remove = document.getElementById("fedex-confirm-remove");
-  var ack = document.getElementById("fedex-ack");
-  var label = document.getElementById("fedex-upgrade-label");
-  if (!(box instanceof HTMLInputElement) || !(dialog instanceof HTMLElement)) return;
+  if (window.__uptFedexWarning) return;
+  window.__uptFedexWarning = true;
+
+  function boxEl() {
+    var node = document.getElementById("fedex-upgrade");
+    return node instanceof HTMLInputElement ? node : null;
+  }
+  function dialogEl() {
+    var nodes = document.querySelectorAll("[data-fedex-removal-dialog]");
+    if (!nodes.length) return null;
+    var keepDialog = nodes[0];
+    for (var i = 1; i < nodes.length; i++) {
+      if (nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+    }
+    return keepDialog instanceof HTMLElement ? keepDialog : null;
+  }
+  function ackEl() {
+    var node = document.getElementById("fedex-ack");
+    return node instanceof HTMLInputElement ? node : null;
+  }
+  function labelEl() {
+    return document.getElementById("fedex-upgrade-label");
+  }
 
   function acceptedCount() {
     var names = {};
@@ -75,6 +91,9 @@ export const FEDEX_WARNING_SCRIPT = `
   }
 
   function setChrome(enabled) {
+    var box = boxEl();
+    var label = labelEl();
+    if (!box) return;
     box.disabled = !enabled;
     if (label) {
       label.style.opacity = enabled ? "1" : "0.55";
@@ -83,83 +102,131 @@ export const FEDEX_WARNING_SCRIPT = `
     box.setAttribute("aria-disabled", enabled ? "false" : "true");
   }
 
+  function pinDialog(dialog) {
+    if (dialog.parentNode !== document.body) {
+      document.body.appendChild(dialog);
+    }
+  }
+
   function openDialog() {
+    var dialog = dialogEl();
+    if (!dialog) return;
+    pinDialog(dialog);
     dialog.hidden = false;
     dialog.setAttribute("aria-hidden", "false");
+    var keep = document.getElementById("fedex-keep");
     if (keep instanceof HTMLButtonElement) keep.focus();
   }
 
   function closeDialog() {
+    var dialog = dialogEl();
+    if (!dialog) return;
     dialog.hidden = true;
     dialog.setAttribute("aria-hidden", "true");
+  }
+
+  function keepUpgrade() {
+    var box = boxEl();
+    var ack = ackEl();
+    if (box) box.checked = true;
+    if (ack) ack.value = "";
+    closeDialog();
+  }
+
+  function confirmRemove() {
+    var box = boxEl();
+    var ack = ackEl();
+    if (box) box.checked = false;
+    if (ack) ack.value = "true";
+    closeDialog();
   }
 
   var previousAccepted = acceptedCount();
 
   function applyAcceptedChange() {
+    var box = boxEl();
+    var ack = ackEl();
     var count = acceptedCount();
     var enabled = count > 0;
     setChrome(enabled);
+    if (!box) {
+      previousAccepted = count;
+      return;
+    }
     if (!enabled) {
       box.checked = false;
-      if (ack instanceof HTMLInputElement) ack.value = "";
+      if (ack) ack.value = "";
       closeDialog();
     } else if (previousAccepted === 0) {
       box.checked = true;
-      if (ack instanceof HTMLInputElement) ack.value = "";
+      if (ack) ack.value = "";
       closeDialog();
     }
     previousAccepted = count;
   }
 
-  box.addEventListener("change", function () {
-    if (box.checked) {
-      if (ack instanceof HTMLInputElement) ack.value = "";
-      closeDialog();
-      return;
-    }
-    if (acceptedCount() === 0) {
-      if (ack instanceof HTMLInputElement) ack.value = "";
-      closeDialog();
-      return;
-    }
-    box.checked = true;
-    openDialog();
-  });
-
-  if (keep) {
-    keep.addEventListener("click", function () {
-      box.checked = true;
-      if (ack instanceof HTMLInputElement) ack.value = "";
-      closeDialog();
-    });
+  function needsFedexAnswer(box) {
+    if (!box || box.disabled) return false;
+    if (box.checked) return false;
+    var ack = ackEl();
+    if (ack && ack.value === "true") return false;
+    return acceptedCount() > 0;
   }
-
-  if (remove) {
-    remove.addEventListener("click", function () {
-      box.checked = false;
-      if (ack instanceof HTMLInputElement) ack.value = "true";
-      closeDialog();
-    });
-  }
-
-  dialog.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") {
-      box.checked = true;
-      if (ack instanceof HTMLInputElement) ack.value = "";
-      closeDialog();
-    }
-  });
 
   document.addEventListener("change", function (event) {
     var target = event.target;
-    if (
-      target instanceof HTMLInputElement &&
-      target.type === "radio" &&
-      target.name.indexOf("choice-") === 0
-    ) {
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.id === "fedex-upgrade") {
+      if (target.checked) {
+        var ack = ackEl();
+        if (ack) ack.value = "";
+        closeDialog();
+        return;
+      }
+      if (acceptedCount() === 0) {
+        var emptyAck = ackEl();
+        if (emptyAck) emptyAck.value = "";
+        closeDialog();
+        return;
+      }
+      target.checked = true;
+      openDialog();
+      return;
+    }
+    if (target.type === "radio" && target.name.indexOf("choice-") === 0) {
       applyAcceptedChange();
     }
+  });
+
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest("#fedex-keep")) {
+      event.preventDefault();
+      keepUpgrade();
+      return;
+    }
+    if (target.closest("#fedex-confirm-remove")) {
+      event.preventDefault();
+      confirmRemove();
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    var dialog = dialogEl();
+    if (!dialog || dialog.hidden) return;
+    keepUpgrade();
+  });
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    var box = boxEl();
+    if (!box || box.form !== form) return;
+    if (!needsFedexAnswer(box)) return;
+    event.preventDefault();
+    openDialog();
   });
 
   applyAcceptedChange();
@@ -283,6 +350,12 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     if (target.closest("[data-lightbox-next]")) {
       event.preventDefault();
       move(1);
+      return;
+    }
+    if (target.closest("[data-lightbox-image]")) return;
+    if (target.closest("[data-customer-lightbox]")) {
+      event.preventDefault();
+      close();
     }
   });
 

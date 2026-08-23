@@ -87,7 +87,10 @@ import {
   type AdminItemDirty,
   type AdminItemDraft,
 } from "../lib/admin-item-draft";
-import { AdminPhotoStrip } from "../components/admin-photo-uploads";
+import {
+  AdminPhotoStrip,
+  AdminPhotoThumbs,
+} from "../components/admin-photo-uploads";
 import {
   CollapsibleSection,
   CollapsibleSectionStyles,
@@ -527,6 +530,7 @@ function ExistingStockPanel({
   const searchFetcher = useFetcher<typeof action>();
   const linkFetcher = useFetcher<typeof action>();
   const [term, setTerm] = useState("");
+  const searchTimer = useRef<number | null>(null);
 
   const searchData = searchFetcher.data;
   const search =
@@ -607,29 +611,124 @@ function ExistingStockPanel({
               {linked ? "Change the linked listing" : "Search existing website stock"}
             </s-text>
           </label>
-          <div style={wrapRowStyle}>
+          <div style={{ position: "relative", maxWidth: 480 }}>
             <input
               id={`stock-search-${item.id}`}
               value={term}
               placeholder="Product title, variant, or SKU"
-              onChange={(event) => setTerm(event.currentTarget.value)}
-              style={{ ...textInputStyle, flex: "1 1 200px", minWidth: 0, maxWidth: "100%" }}
-            />
-            <s-button
-              variant="secondary"
-              onClick={() => {
-                const data = new FormData();
-                data.set("intent", "search-stock");
-                data.set("itemId", item.id);
-                data.set("stockQuery", term);
-                searchFetcher.submit(data, { method: "post" });
+              autoComplete="off"
+              aria-autocomplete="list"
+              onChange={(event) => {
+                const next = event.currentTarget.value;
+                setTerm(next);
+                if (searchTimer.current) window.clearTimeout(searchTimer.current);
+                const query = next.trim();
+                if (query.length < MIN_STOCK_SEARCH_TERM) return;
+                searchTimer.current = window.setTimeout(() => {
+                  const data = new FormData();
+                  data.set("intent", "search-stock");
+                  data.set("itemId", item.id);
+                  data.set("stockQuery", query);
+                  searchFetcher.submit(data, { method: "post" });
+                }, 250);
               }}
-              {...(term.trim().length < MIN_STOCK_SEARCH_TERM
-                ? { disabled: true }
-                : {})}
-            >
-              Search Shopify
-            </s-button>
+              style={{ ...textInputStyle, width: "100%", minWidth: 0 }}
+            />
+            {term.trim().length >= MIN_STOCK_SEARCH_TERM ? (
+              <div
+                data-stock-search-dropdown
+                role="listbox"
+                aria-label="Matching website stock"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: "100%",
+                  zIndex: 20,
+                  marginTop: 4,
+                  maxHeight: 280,
+                  overflowY: "auto",
+                  background: "#fff",
+                  border: "1px solid #c9cccf",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 16px rgba(32, 34, 35, 0.16)",
+                }}
+              >
+                {searchFetcher.state !== "idle" && results.length === 0 ? (
+                  <div style={{ padding: 12, color: "#6d7175" }}>Searching…</div>
+                ) : search && results.length === 0 ? (
+                  <div style={{ padding: 12, color: "#6d7175" }}>
+                    No Shopify products match “{search.term}”.
+                  </div>
+                ) : (
+                  results.map((candidate) => {
+                    const label = [
+                      candidate.productTitle,
+                      candidate.variantTitle,
+                    ]
+                      .filter(Boolean)
+                      .join(" — ");
+                    const detail = [
+                      candidate.sku ? `SKU ${candidate.sku}` : null,
+                      formatCurrency(candidate.price),
+                      formatLinkedInventory(candidate),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    if (candidate.unlinkableReason) {
+                      return (
+                        <div
+                          key={candidate.variantGid}
+                          role="option"
+                          aria-selected="false"
+                          aria-disabled="true"
+                          style={{
+                            padding: 10,
+                            borderBottom: "1px solid #e1e3e5",
+                            color: "#6d7175",
+                          }}
+                        >
+                          <strong>{label}</strong>
+                          <div style={{ fontSize: 12 }}>{detail}</div>
+                          <div style={{ fontSize: 12 }}>{candidate.unlinkableReason}</div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <button
+                        key={candidate.variantGid}
+                        type="button"
+                        role="option"
+                        aria-selected="false"
+                        data-stock-search-option
+                        onClick={() => {
+                          const data = new FormData();
+                          data.set("intent", "link-stock");
+                          data.set("itemId", item.id);
+                          data.set("variantGid", candidate.variantGid);
+                          linkFetcher.submit(data, { method: "post" });
+                          setTerm("");
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: 10,
+                          border: "none",
+                          borderBottom: "1px solid #e1e3e5",
+                          background: "#fff",
+                          font: "inherit",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <strong>{label}</strong>
+                        <div style={{ fontSize: 12, color: "#6d7175" }}>{detail}</div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            ) : null}
           </div>
 
           {linkError ? (
@@ -637,69 +736,6 @@ function ExistingStockPanel({
               <s-text>{linkError}</s-text>
             </s-banner>
           ) : null}
-
-          {search && results.length === 0 ? (
-            <s-text color="subdued">
-              No Shopify products match “{search.term}”.
-            </s-text>
-          ) : null}
-
-          {results.map((candidate) => (
-            <s-box
-              key={candidate.variantGid}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="base"
-            >
-              <s-stack direction="inline" gap="base">
-                {candidate.imageUrl ? (
-                  <img
-                    src={candidate.imageUrl}
-                    alt={candidate.productTitle}
-                    width={64}
-                    height={64}
-                    style={{ display: "block", objectFit: "cover", borderRadius: "8px" }}
-                  />
-                ) : null}
-                <s-stack direction="block" gap="small">
-                  <s-text>
-                    <strong>{candidate.productTitle}</strong>
-                    {candidate.variantTitle ? ` — ${candidate.variantTitle}` : ""}
-                  </s-text>
-                  <s-text color="subdued">
-                    {[
-                      candidate.sku ? `SKU ${candidate.sku}` : null,
-                      formatCurrency(candidate.price),
-                      formatLinkedInventory(candidate),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </s-text>
-                  {/*
-                    Shown rather than hidden: "out of stock" and "no such plant"
-                    send whoever is sourcing this to completely different places.
-                  */}
-                  {candidate.unlinkableReason ? (
-                    <s-text color="subdued">{candidate.unlinkableReason}</s-text>
-                  ) : (
-                    <linkFetcher.Form method="post">
-                      <input type="hidden" name="intent" value="link-stock" />
-                      <input type="hidden" name="itemId" value={item.id} />
-                      <input
-                        type="hidden"
-                        name="variantGid"
-                        value={candidate.variantGid}
-                      />
-                      <s-button variant="secondary" type="submit">
-                        Link this variant
-                      </s-button>
-                    </linkFetcher.Form>
-                  )}
-                </s-stack>
-              </s-stack>
-            </s-box>
-          ))}
         </s-stack>
       ) : null}
     </s-stack>
@@ -957,27 +993,10 @@ function PlantItemCard({
                   }
                 />
               ) : (
-                <div style={wrapRowStyle}>
-                  {item.photoUrls.map((url, index) => (
-                    <s-stack key={url} direction="block" gap="small">
-                      <img
-                        src={url}
-                        alt={item.offeredName || item.plantName}
-                        width={120}
-                        height={120}
-                        style={{
-                          display: "block",
-                          objectFit: "cover",
-                          borderRadius: "8px",
-                          maxWidth: "100%",
-                        }}
-                      />
-                      {index === 0 ? (
-                        <s-badge tone="info">Customer sees first</s-badge>
-                      ) : null}
-                    </s-stack>
-                  ))}
-                </div>
+                <AdminPhotoThumbs
+                  photos={item.photos.length > 0 ? item.photos : item.photoUrls.map((url) => ({ url }))}
+                  alt={item.offeredName || item.plantName}
+                />
               )}
               {canEdit ? (
                 <photoFetcher.Form method="post">
@@ -1308,7 +1327,7 @@ function DeclinedExactPlantsSection({
       <CollapsibleSection
         title="EXACT PLANTS"
         badge={items.length}
-        defaultOpen={items.length > 0}
+        defaultOpen={false}
       >
       <s-stack direction="block" gap="base">
         <s-text color="subdued">

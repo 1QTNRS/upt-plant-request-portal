@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -268,5 +270,20 @@ describe("whether Shopify is still holding the stock", () => {
       inventoryHoldState({ reserveInventoryUntil: later, paidAt: now, now }),
       "purchased",
     );
+  });
+});
+
+describe("website stock typeahead", () => {
+  it("searches as the admin types and links from the dropdown", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "..", "routes", "app.requests.$id.tsx"),
+      "utf8",
+    );
+    assert.match(source, /data-stock-search-dropdown/);
+    assert.match(source, /data-stock-search-option/);
+    assert.match(source, /setTimeout/);
+    assert.match(source, /intent", "link-stock"/);
+    assert.equal(source.includes("Search Shopify"), false);
+    assert.equal(source.includes("Link this variant"), false);
   });
 });

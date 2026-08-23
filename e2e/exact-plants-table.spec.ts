@@ -8,6 +8,9 @@ test.describe("EXACT PLANTS table", () => {
     await expect(page.getByText("EXACT PLANTS queue")).toBeVisible({ timeout: 15_000 });
 
     const table = page.locator("[data-exact-plants-table]");
+    if (!(await table.isVisible())) {
+      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
+    }
     await expect(table).toBeVisible();
     await expect(page.getByText("Thai Constellation")).toBeVisible();
     await expect(page.locator("body")).not.toContainText("lisa.park@email.com");
@@ -41,6 +44,7 @@ test.describe("EXACT PLANTS table", () => {
 
     await page.getByRole("button", { name: /^All / }).click();
     await expect(page).toHaveURL(/sort=date/);
+    await expect(page.getByRole("button", { name: /Dismissed/ })).toBeVisible();
 
     await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
     await expect(table).toBeHidden();
@@ -52,7 +56,9 @@ test.describe("EXACT PLANTS table", () => {
     await photo.click();
     const lightbox = page.locator("[data-admin-photo-lightbox]");
     await expect(lightbox).toBeVisible();
-    await expect(lightbox.getByRole("button", { name: "Close" })).toBeVisible();
+    await expect(
+      lightbox.getByRole("button", { name: "Close", exact: true }),
+    ).toBeVisible();
     if (await page.locator("[data-lightbox-next]").count()) {
       const before = await page.locator("[data-lightbox-status]").textContent();
       await page.locator("[data-lightbox-next]").click();
@@ -73,8 +79,22 @@ test.describe("EXACT PLANTS table", () => {
 
   test("actions still offer listing and dismiss", async ({ page }) => {
     await page.goto("/app/exact-plants");
+    const table = page.locator("[data-exact-plants-table]");
+    if (!(await table.isVisible())) {
+      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
+    }
     await expect(page.getByRole("link", { name: "Create listing" }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
+    await expect(page.locator("[data-dismiss-exact-plant]").first()).toBeVisible();
+    await page.locator("[data-dismiss-exact-plant]").first().click();
+    await expect(page.locator("[data-admin-confirm-dialog]")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Confirm Dismiss from EXACT PLANTS" }),
+    ).toBeVisible();
+    await page
+      .locator("[data-admin-confirm-dialog]")
+      .getByText("Cancel", { exact: true })
+      .click();
+    await expect(page.locator("[data-admin-confirm-dialog]")).toHaveCount(0);
   });
 
   test("desktop shows the full row without horizontal scrolling", async ({
@@ -82,6 +102,9 @@ test.describe("EXACT PLANTS table", () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/app/exact-plants");
+    if (!(await page.locator("[data-exact-plants-table]").isVisible())) {
+      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
+    }
     const wrap = page.locator("[data-exact-plants-table-wrap]");
     await expect(wrap).toBeVisible();
     const overflow = await wrap.evaluate(

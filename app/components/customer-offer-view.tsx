@@ -613,38 +613,54 @@ export function CustomerOfferView({
                     aria-labelledby="fedex-warning-title"
                     hidden
                     aria-hidden="true"
+                    data-fedex-removal-dialog
                     style={{
-                      marginTop: 12,
-                      padding: 12,
-                      border: "1px solid #c9cccf",
-                      borderRadius: 8,
-                      background: "#fff",
+                      position: "fixed",
+                      inset: 0,
+                      zIndex: 50,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 16,
+                      background: "rgba(32, 34, 35, 0.72)",
                     }}
                   >
-                    <s-stack direction="block" gap="base">
-                      <s-heading id="fedex-warning-title">
-                        Remove the shipping upgrade?
-                      </s-heading>
-                      <s-text>
-                        {fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}
-                      </s-text>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        <button
-                          id="fedex-keep"
-                          type="button"
-                          style={{ ...buttonStyle, fontWeight: 600 }}
-                        >
-                          Keep FedEx Upgrade
-                        </button>
-                        <button
-                          id="fedex-confirm-remove"
-                          type="button"
-                          style={buttonStyle}
-                        >
-                          I Understand, Remove Upgrade
-                        </button>
-                      </div>
-                    </s-stack>
+                    <style>{`#fedex-removal-dialog[hidden]{display:none!important}`}</style>
+                    <div
+                      data-fedex-warning-card
+                      style={{
+                        width: "min(480px, 100%)",
+                        padding: 20,
+                        border: "1px solid #c9cccf",
+                        borderRadius: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <s-stack direction="block" gap="base">
+                        <s-heading id="fedex-warning-title">
+                          Remove the shipping upgrade?
+                        </s-heading>
+                        <s-text>
+                          {fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}
+                        </s-text>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          <button
+                            id="fedex-keep"
+                            type="button"
+                            style={{ ...buttonStyle, fontWeight: 600 }}
+                          >
+                            Keep FedEx Upgrade
+                          </button>
+                          <button
+                            id="fedex-confirm-remove"
+                            type="button"
+                            style={buttonStyle}
+                          >
+                            I Understand, Remove Upgrade
+                          </button>
+                        </div>
+                      </s-stack>
+                    </div>
                   </div>
                 </s-box>
               </s-section>

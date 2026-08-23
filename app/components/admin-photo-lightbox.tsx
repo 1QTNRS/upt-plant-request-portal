@@ -13,6 +13,14 @@ const overlayStyle: CSSProperties = {
   padding: 12,
 };
 
+function isOutsidePhoto(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[data-lightbox-image], [data-lightbox-prev], [data-lightbox-next], [data-lightbox-close]")) {
+    return false;
+  }
+  return Boolean(target.closest("[data-admin-photo-lightbox]"));
+}
+
 const toolbarStyle: CSSProperties = {
   display: "flex",
   flexWrap: "wrap",
@@ -22,6 +30,7 @@ const toolbarStyle: CSSProperties = {
 };
 
 const stageStyle: CSSProperties = {
+  position: "relative",
   flex: 1,
   display: "flex",
   alignItems: "center",
@@ -31,7 +40,7 @@ const stageStyle: CSSProperties = {
 };
 
 const imageStyle: CSSProperties = {
-  maxWidth: "min(92vw, 900px)",
+  maxWidth: "min(86vw, 900px)",
   maxHeight: "78vh",
   objectFit: "contain",
 };
@@ -88,9 +97,25 @@ export function AdminPhotoLightbox({
       aria-modal="true"
       aria-label={alt}
       data-admin-photo-lightbox
-      style={overlayStyle}
+      style={{ ...overlayStyle, position: "fixed" }}
     >
-      <div style={toolbarStyle}>
+      <button
+        type="button"
+        aria-label="Close photo"
+        data-lightbox-backdrop
+        onClick={(event) => {
+          if (isOutsidePhoto(event.target)) onClose();
+        }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          cursor: "default",
+        }}
+      />
+      <div style={{ ...toolbarStyle, position: "relative", zIndex: 1 }}>
         <button
           type="button"
           data-lightbox-close
@@ -104,9 +129,11 @@ export function AdminPhotoLightbox({
           {many ? `${index + 1} of ${urls.length}` : ""}
         </span>
       </div>
+      {/* Clicking the dark stage around the photo closes it. Keyboard: Escape / Close. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         data-lightbox-stage
-        style={stageStyle}
+        style={{ ...stageStyle, zIndex: 1 }}
         onPointerDown={(event) => {
           if (!event.isPrimary) return;
           start.current = { x: event.clientX, y: event.clientY };
@@ -123,6 +150,9 @@ export function AdminPhotoLightbox({
         onPointerCancel={() => {
           start.current = null;
         }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
       >
         {many ? (
           <button
@@ -131,12 +161,19 @@ export function AdminPhotoLightbox({
             onClick={() =>
               setIndex((current) => lightboxIndex(current, -1, urls.length))
             }
-            style={controlStyle}
+            style={{
+              ...controlStyle,
+              position: "absolute",
+              top: "50%",
+              left: 8,
+              transform: "translateY(-50%)",
+              zIndex: 2,
+            }}
           >
             Previous
           </button>
         ) : null}
-        <img src={src} alt={alt} style={imageStyle} />
+        <img data-lightbox-image src={src} alt={alt} style={imageStyle} />
         {many ? (
           <button
             type="button"
@@ -144,7 +181,14 @@ export function AdminPhotoLightbox({
             onClick={() =>
               setIndex((current) => lightboxIndex(current, 1, urls.length))
             }
-            style={controlStyle}
+            style={{
+              ...controlStyle,
+              position: "absolute",
+              top: "50%",
+              right: 8,
+              transform: "translateY(-50%)",
+              zIndex: 2,
+            }}
           >
             Next
           </button>

@@ -277,7 +277,13 @@ describe("exact plant listing filters", () => {
       not_yet_listed: 1,
       flagged: 1,
       listed: 1,
+      dismissed: 0,
     });
+    assert.equal(parseExactPlantListingFilter("dismissed"), "dismissed");
+    assert.equal(
+      items.filter((item) => matchesExactPlantListingFilter(item, "dismissed")).length,
+      0,
+    );
     assert.equal(items.filter((item) => matchesExactPlantListingFilter(item, "all")).length, 3);
     assert.equal(
       items.filter((item) => matchesExactPlantListingFilter(item, "not_yet_listed")).length,
@@ -535,6 +541,8 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(queue, /name="listing"/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTER_LABELS/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTERS/);
+    assert.match(queue, /listDismissedExactPlants/);
+    assert.match(queue, /mode=\{listingFilter === "dismissed"/);
   });
 
   it("renders a sortable table and keeps filter+sort in the URL", () => {

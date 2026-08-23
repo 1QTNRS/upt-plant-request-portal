@@ -47,6 +47,7 @@ export type ExactPlantCandidateRow = {
   price: number;
   weightLbs: number;
   photoUrls: string[];
+  dismissedAt?: string | null;
   listing: {
     status: ExactPlantListingStatus;
     shopifyProductGid?: string;
@@ -191,10 +192,118 @@ export async function listExactPlantCandidates(
         photoUrls: item.exactPlantListing
           ? parsePhotoUrlList(item.exactPlantListing.photoUrlsJson)
           : draft.photoUrls,
+        dismissedAt: null,
         listing: listingDto(shop, item.exactPlantListing),
       },
     ];
   });
+}
+
+function rowFromRequestItem(
+  shop: string,
+  item: {
+    id: string;
+    requestId: string;
+    exactPlantDismissedAt: Date | null;
+    offeredName: string | null;
+    plantName: string;
+    exactPlantListing: {
+      title: string;
+      price: number;
+      weightLbs: number;
+      photoUrlsJson: string;
+      status: string;
+      shopifyProductGid: string | null;
+      shopifyProductHandle: string | null;
+      lastError: string | null;
+    } | null;
+    photos: Array<{ url: string }>;
+    offerItems: Array<{
+      availability: string;
+      fulfillmentType: string | null;
+      plantName: string | null;
+      price: number;
+      weightLbs: number;
+      photoUrlsJson: string;
+      offer: { expiresAt: Date | null; sentAt: Date };
+    }>;
+    responseItems: Array<{ choice: string | null }>;
+    request: {
+      requestNumber: string;
+      status: string;
+      paidAt: Date | null;
+      closedAt: Date | null;
+      response: { respondedAt: Date | null } | null;
+    };
+  },
+): ExactPlantCandidateRow | null {
+  const offerItem = item.offerItems[0];
+  const responseItem = item.responseItems[0];
+  const reason = exactPlantReleaseReason({
+    hasOfferItem: Boolean(offerItem),
+    offerAvailability: offerItem?.availability,
+    offerFulfillmentType: offerItem?.fulfillmentType,
+    responseChoice: responseItem?.choice,
+    requestStatus: item.request.status,
+    paidAt: item.request.paidAt,
+  });
+  if (!reason || !offerItem) return null;
+
+  const offerPhotos = parsePhotoUrlList(offerItem.photoUrlsJson);
+  const draft = buildExactPlantListingDraft({
+    plantName: offerItem.plantName || item.offeredName || item.plantName,
+    offeredName: offerItem.plantName || item.offeredName,
+    price: offerItem.price,
+    weightLbs: offerItem.weightLbs,
+    photoUrls:
+      offerPhotos.length > 0 ? offerPhotos : item.photos.map((photo) => photo.url),
+  });
+
+  return {
+    requestItemId: item.id,
+    requestId: item.requestId,
+    requestNumber: item.request.requestNumber,
+    releaseReason: reason,
+    eligibleAt: exactPlantEligibleAt({
+      releaseReason: reason,
+      respondedAt: item.request.response?.respondedAt,
+      closedAt: item.request.closedAt,
+      expiresAt: offerItem.offer.expiresAt,
+      sentAt: offerItem.offer.sentAt,
+    }),
+    title: item.exactPlantListing?.title || draft.title,
+    price: item.exactPlantListing?.price ?? draft.price,
+    weightLbs: item.exactPlantListing?.weightLbs ?? draft.weightLbs,
+    photoUrls: item.exactPlantListing
+      ? parsePhotoUrlList(item.exactPlantListing.photoUrlsJson)
+      : draft.photoUrls,
+    dismissedAt: item.exactPlantDismissedAt?.toISOString() ?? null,
+    listing: listingDto(shop, item.exactPlantListing),
+  };
+}
+
+/** Plants an admin removed from the queue. History stays; listings cannot be created. */
+export async function listDismissedExactPlants(
+  shop: string,
+): Promise<ExactPlantCandidateRow[]> {
+  const items = await prisma.requestItem.findMany({
+    where: {
+      exactPlantDismissedAt: { not: null },
+      request: { shop },
+    },
+    include: {
+      exactPlantListing: true,
+      photos: { orderBy: { sortOrder: "asc" as const } },
+      offerItems: { include: { offer: true } },
+      responseItems: true,
+      request: { include: { response: true } },
+    },
+    orderBy: { exactPlantDismissedAt: "desc" },
+  });
+
+  return items
+    .map((item) => rowFromRequestItem(shop, item))
+    .filter((row): row is ExactPlantCandidateRow => Boolean(row));
 }
 
 export async function getExactPlantReview(

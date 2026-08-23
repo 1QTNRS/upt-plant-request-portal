@@ -23,6 +23,7 @@ import {
 } from "../lib/exact-plants";
 import {
   dismissExactPlantFromQueue,
+  listDismissedExactPlants,
   listExactPlantCandidates,
 } from "../lib/exact-plants.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
@@ -31,15 +32,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
   const items = await listExactPlantCandidates(shop);
+  const dismissed = await listDismissedExactPlants(shop);
   const search = new URL(request.url).searchParams;
   const listingFilter = parseExactPlantListingFilter(search.get("listing"));
   const sort = parseExactPlantTableSortState(search);
-  const counts = countExactPlantListingFilters(items);
+  const counts = {
+    ...countExactPlantListingFilters(items),
+    dismissed: dismissed.length,
+  };
   const visible = sortExactPlantTable(
-    items.filter((item) => matchesExactPlantListingFilter(item, listingFilter)),
+    listingFilter === "dismissed"
+      ? dismissed
+      : items.filter((item) => matchesExactPlantListingFilter(item, listingFilter)),
     sort,
   );
-  return { items: visible, listingFilter, sort, counts, total: items.length };
+  return {
+    items: visible,
+    listingFilter,
+    sort,
+    counts,
+    total: items.length,
+    dismissedCount: dismissed.length,
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -82,7 +96,8 @@ export default function ExactPlantsIndex() {
           unclaimed. Nothing is published to Shopify until you review and
           approve a listing. Not Available, never-offered, paid and FedEx items
           are excluded. Dismiss from EXACT PLANTS removes an item from this
-          queue without creating a product.
+          queue without creating a product. Dismissed plants stay on the
+          Dismissed tab and cannot be listed.
         </s-text>
       </s-section>
       {actionData?.error ? (
@@ -96,7 +111,7 @@ export default function ExactPlantsIndex() {
         <CollapsibleSection
           title="EXACT PLANTS queue"
           badge={total}
-          defaultOpen={total > 0}
+          defaultOpen={false}
         >
           <Form method="get" data-exact-plant-listing-filter>
             <input type="hidden" name="sort" value={sort.column} />
@@ -134,7 +149,7 @@ export default function ExactPlantsIndex() {
               items={items}
               listingFilter={listingFilter}
               sort={sort}
-              pendingDismissItemId={actionData?.pendingDismissItemId}
+              mode={listingFilter === "dismissed" ? "dismissed" : "queue"}
             />
           )}
         </CollapsibleSection>
