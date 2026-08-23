@@ -13,7 +13,9 @@ import {
 } from "./offer-response.server";
 import {
   ADMIN_OVERRIDE_CLOSE_REASON,
+  CUSTOMER_CLOSED_REQUEST_REASON,
   INVOICE_VOIDED_BY_ADMIN_REASON,
+  INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON,
   adminDraftOrderLinkState,
   formatCustomerStatusLabel,
 } from "./portal";
@@ -842,6 +844,148 @@ describe("closing a request the customer declined outright", () => {
     assert.equal(result.ok, false);
     assert.match("error" in result ? result.error : "", /has not answered/);
     assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+  });
+});
+
+describe("customer Close Request after decline-all", () => {
+  before(purge);
+  after(purge);
+
+  it("refuses to close before the customer has answered", async () => {
+    const { requestId } = await offeredRequest();
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({ intent: "close-request" }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: CUSTOMER_CLOSED_REQUEST_REASON },
+      }),
+      0,
+    );
+  });
+
+  it("closes a No Payment Needed decline-all request and keeps history", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const before = await getCustomerResponse(shop, requestId);
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({ intent: "close-request" }),
+    });
+    assert.equal(result.ok, true);
+
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Closed");
+    assert.ok(request?.closedAt);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: CUSTOMER_CLOSED_REQUEST_REASON },
+      }),
+      1,
+    );
+
+    const after = await getCustomerResponse(shop, requestId);
+    assert.equal(after?.items.length, before?.items.length);
+    assert.equal(
+      after?.items.find((item) => item.sourceItemId === first.id)?.choice,
+      "reject",
+    );
+    assert.equal(
+      exactPlantReleaseReason({
+        hasOfferItem: true,
+        offerAvailability: "available",
+        responseChoice: "reject",
+        requestStatus: "Closed",
+      }),
+      "customer_declined",
+    );
+    const candidates = await listExactPlantCandidates(shop, requestId);
+    assert.equal(candidates.some((row) => row.requestItemId === first.id), true);
+    assert.equal(candidates.some((row) => row.requestItemId === second.id), true);
+  });
+
+  it("refuses to self-close a payment-required request", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "accept",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({ intent: "close-request" }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal((await getRequest(shop, requestId))?.status, "Pending");
+  });
+
+  it("voids a leftover payable draft on a No Payment Needed close", async () => {
+    const { requestId, first, second } = await offeredRequest();
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({
+        intent: "submit-response",
+        [`choice-${first.id}`]: "reject",
+        [`choice-${second.id}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+    await prisma.draftOrderReference.create({
+      data: {
+        requestId,
+        invoiceUrl: "https://example.com/invoice/stale",
+        shopifyDraftOrderGid: "gid://shopify/DraftOrder/stale",
+      },
+    });
+
+    await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({ intent: "close-request" }),
+    });
+    const draft = await getDraftOrder(shop, requestId);
+    assert.ok(draft?.voidedAt);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON },
+      }),
+      1,
+    );
+
+    const again = await handleCustomerOfferAction({
+      shop,
+      requestId,
+      form: form({ intent: "close-request" }),
+    });
+    assert.equal(again.ok, true);
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: CUSTOMER_CLOSED_REQUEST_REASON },
+      }),
+      1,
+    );
   });
 });
 

@@ -84,20 +84,56 @@ export function PhotoReorderStrip({
             userSelect: "none",
           }}
         >
-          <img
-            src={photo.url}
-            alt={alt}
-            width={120}
-            height={120}
-            draggable={false}
-            style={{
-              display: "block",
-              objectFit: "cover",
-              borderRadius: 8,
-              maxWidth: "100%",
-              pointerEvents: "none",
-            }}
-          />
+          <div style={{ position: "relative", width: 120 }}>
+            <img
+              src={photo.url}
+              alt={alt}
+              width={120}
+              height={120}
+              draggable={false}
+              style={{
+                display: "block",
+                objectFit: "cover",
+                borderRadius: 8,
+                maxWidth: "100%",
+                pointerEvents: "none",
+              }}
+            />
+            <button
+              type="button"
+              data-photo-delete
+              aria-label="Remove photo"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const data = new FormData();
+                data.set("intent", "remove-photo");
+                data.set("itemId", itemId);
+                data.set("photoId", photo.id);
+                fetcher.submit(data, { method: "post" });
+                setOrder((current) => current.filter((id) => id !== photo.id));
+              }}
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 4,
+                width: 28,
+                height: 28,
+                border: "none",
+                borderRadius: 14,
+                background: "rgba(32, 34, 35, 0.85)",
+                color: "#fff",
+                font: "inherit",
+                fontWeight: 700,
+                lineHeight: "28px",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
           {index === 0 ? <s-badge tone="info">Customer sees first</s-badge> : null}
           <s-stack direction="inline" gap="small">
             <fetcher.Form method="post">

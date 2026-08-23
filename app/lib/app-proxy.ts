@@ -179,3 +179,5 @@ export function customerPortalRelativeLinks(viaAppProxy: boolean): CustomerPorta
     requestDetail: (requestId) => `${base}/requests/${requestId}`,
   };
 }
+
+export { storefrontHomeUrl } from "./customer-nav";

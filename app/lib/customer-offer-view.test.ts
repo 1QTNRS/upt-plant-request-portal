@@ -336,6 +336,41 @@ describe("a paid request acknowledges the payment", () => {
 });
 
 describe("a request with nothing to pay for still has a way out", () => {
+  it("does not offer Close Request before the customer submits a response", () => {
+    const reviewing = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+    assert.ok(!reviewing.includes('value="close-request"'));
+    assert.match(reviewing, /value="submit-response"/);
+  });
+
+  it("does not offer Close Request on an unanswered all-unavailable offer", () => {
+    const html = render({
+      offer: offer({
+        expiresAt: inThreeDays(),
+        items: [
+          plant({
+            plantName: "String of Pearls",
+            availability: "not_available",
+            unavailableReason: "not in our current inventory",
+            photoUrls: [],
+            photoUrl: "",
+          }),
+        ],
+      }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+    assert.ok(!html.includes('value="close-request"'));
+    assert.match(html, /value="submit-response"/);
+  });
+
   it("offers to close a request where nothing was available", () => {
     const html = render({
       offer: offer({
@@ -372,6 +407,10 @@ describe("a request with nothing to pay for still has a way out", () => {
 
     assert.match(html, /No checkout link was created/);
     assert.match(html, /value="close-request"/);
+    assert.ok(
+      !html.includes("Back to My Requests"),
+      "Close Request replaces the bottom Back link after decline-all",
+    );
   });
 
   it("stops offering to close a request that is already closed", () => {
@@ -381,8 +420,22 @@ describe("a request with nothing to pay for still has a way out", () => {
       fedexRemovalWarning: "",
       requestClosed: true,
       formAction: "/apps/plant-requests/requests/req-1",
+      backHref: "/apps/plant-requests",
     });
 
+    assert.ok(!html.includes('value="close-request"'));
+    assert.match(html, /Back to My Requests/);
+  });
+
+  it("does not offer Close Request when the customer accepted a plant", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([{ plantName: "Monstera Albo", choice: "accept" }]),
+      invoiceUrl: "https://upt.myshopify.com/invoice/abc",
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
     assert.ok(!html.includes('value="close-request"'));
   });
 });

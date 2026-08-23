@@ -4,11 +4,18 @@ import {
 } from "./draft-order-void.server";
 import {
   ADMIN_OVERRIDE_CLOSE_REASON,
+  CUSTOMER_CLOSED_REQUEST_REASON,
   INVOICE_VOIDED_BY_ADMIN_REASON,
+  INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON,
   payableInvoiceUrl,
   type RequestStatus,
 } from "./portal";
-import { fedexRemovalNeedsConfirmation, readOfferChoices } from "./customer-portal";
+import {
+  customerCanCloseRequest,
+  declinedAllPurchasableItems,
+  fedexRemovalNeedsConfirmation,
+  readOfferChoices,
+} from "./customer-portal";
 import { formatCustomerDateTime } from "./customer-time";
 import {
   acceptedOfferLines,
@@ -309,6 +316,68 @@ export async function adminOverrideCloseRequest(input: {
   return { ok: true, alreadyClosed };
 }
 
+/**
+ * Customer Close Request after a submitted decline-all (or all-unavailable)
+ * answer that reached No Payment Needed.
+ *
+ * History stays put. Unclaimed Exact Plants stay eligible under
+ * `exactPlantReleaseReason`; Grower's Choice stays excluded. A leftover
+ * payable Draft Order is voided so No Payment Needed cannot keep an invoice.
+ */
+export async function customerCloseRequest(input: {
+  shop: string;
+  requestId: string;
+  admin?: AdminContext["admin"];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const request = await getRequest(input.shop, input.requestId);
+  if (!request) {
+    return { ok: false, error: "This request could not be loaded." };
+  }
+
+  const response = await getCustomerResponse(input.shop, input.requestId);
+  const acceptedCount =
+    response?.items.filter((item) => item.choice === "accept").length ?? 0;
+  const canClose = customerCanCloseRequest({
+    requestClosed: request.status === "Closed",
+    hasResponded: Boolean(response) || request.hasResponded,
+    hasPayableItems: request.hasPayableItems,
+    acceptedCount,
+    declinedAllAvailable: declinedAllPurchasableItems({
+      offerItems: request.items,
+      responseItems: response?.items ?? null,
+    }),
+  });
+
+  if (!canClose) {
+    if (request.status === "Closed") {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error:
+        "Close Request is only available after you decline every available plant and no payment is needed.",
+    };
+  }
+
+  if (request.status !== "Closed") {
+    await closeRequest(
+      input.shop,
+      input.requestId,
+      CUSTOMER_CLOSED_REQUEST_REASON,
+    );
+  }
+
+  await voidUnpaidDraftOrder(
+    input.shop,
+    input.requestId,
+    input.admin,
+    new Date(),
+    { reason: INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON },
+  );
+
+  return { ok: true };
+}
+
 export async function handleCustomerOfferAction(input: {
   shop: string;
   requestId: string;
@@ -320,8 +389,11 @@ export async function handleCustomerOfferAction(input: {
   if (!offer) return { ok: false as const };
 
   if (intent === "close-request") {
-    await closeRequest(input.shop, input.requestId, "Customer closed request");
-    return { ok: true as const };
+    return customerCloseRequest({
+      shop: input.shop,
+      requestId: input.requestId,
+      admin: input.admin,
+    });
   }
 
   // An offer is answered once. Re-posting (double click, refresh, retry) must

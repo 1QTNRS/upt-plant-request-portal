@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
   buildExactPlantListingDraft,
   buildExactPlantProductCreateInput,
   canDismissExactPlantFromQueue,
+  countExactPlantListingFilters,
   declinedItemTag,
   EXACT_PLANT_DISMISSED_REASON,
   EXACT_PLANT_RELEASE_LABELS,
+  exactPlantListingBucket,
   exactPlantReleaseTone,
   EXACT_PLANTS_COLLECTION_TITLE,
   exactPlantIneligibilityReason,
@@ -15,6 +19,8 @@ import {
   isExactPlantEligible,
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
+  matchesExactPlantListingFilter,
+  parseExactPlantListingFilter,
   planExactPlantMedia,
 } from "./exact-plants";
 
@@ -106,7 +112,7 @@ describe("exact plant release eligibility", () => {
       exactPlantReleaseReason(
         offered({ responseChoice: "accept", requestStatus: "Closed" }),
       ),
-      null,
+      "unclaimed_after_close",
     );
     // A declined item on a request that was paid for other plants stays sold-safe.
     assert.equal(
@@ -158,13 +164,36 @@ describe("exact plant release eligibility", () => {
       "customer_declined",
       "accepted_unpaid_expired",
       "never_responded_expired",
+      "unclaimed_after_close",
     ] as const) {
       assert.ok(EXACT_PLANT_RELEASE_LABELS[reason].length > 0);
     }
     assert.equal(EXACT_PLANT_RELEASE_LABELS.customer_declined, "Customer Declined");
+    assert.equal(EXACT_PLANT_RELEASE_LABELS.unclaimed_after_close, "Unclaimed after request closed");
     assert.equal(exactPlantReleaseTone("customer_declined"), "warning");
     assert.equal(exactPlantReleaseTone("accepted_unpaid_expired"), "caution");
     assert.equal(exactPlantReleaseTone("never_responded_expired"), "info");
+    assert.equal(exactPlantReleaseTone("unclaimed_after_close"), "info");
+  });
+
+  it("releases an unclaimed Exact Plant after the request is closed unpaid", () => {
+    assert.equal(
+      exactPlantReleaseReason(offered({ requestStatus: "Closed" })),
+      "unclaimed_after_close",
+    );
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({ responseChoice: "accept", requestStatus: "Closed" }),
+      ),
+      "unclaimed_after_close",
+    );
+    assert.notEqual(
+      exactPlantReleaseReason(
+        offered({ responseChoice: "reject", requestStatus: "Closed" }),
+      ),
+      "unclaimed_after_close",
+      "a real decline keeps its own reason",
+    );
   });
 });
 
@@ -216,6 +245,46 @@ describe("exact plant ineligibility messages", () => {
     assert.match(
       exactPlantIneligibilityReason({ hasOfferItem: false }) ?? "",
       /never offered/,
+    );
+  });
+});
+
+describe("exact plant listing filters", () => {
+  const notYet = { listing: null };
+  const flagged = { listing: { status: "failed" as const } };
+  const listed = {
+    listing: { status: "listed" as const, shopifyProductGid: "gid://shopify/Product/1" },
+  };
+
+  it("maps stored listing state onto All / Not Yet Listed / Flagged / Listed", () => {
+    assert.equal(exactPlantListingBucket(notYet), "not_yet_listed");
+    assert.equal(exactPlantListingBucket(flagged), "flagged");
+    assert.equal(exactPlantListingBucket(listed), "listed");
+    assert.equal(parseExactPlantListingFilter("listed"), "listed");
+    assert.equal(parseExactPlantListingFilter("nope"), "all");
+  });
+
+  it("filters without changing the All count", () => {
+    const items = [notYet, flagged, listed];
+    const counts = countExactPlantListingFilters(items);
+    assert.deepEqual(counts, {
+      all: 3,
+      not_yet_listed: 1,
+      flagged: 1,
+      listed: 1,
+    });
+    assert.equal(items.filter((item) => matchesExactPlantListingFilter(item, "all")).length, 3);
+    assert.equal(
+      items.filter((item) => matchesExactPlantListingFilter(item, "not_yet_listed")).length,
+      1,
+    );
+    assert.equal(
+      items.filter((item) => matchesExactPlantListingFilter(item, "flagged")).length,
+      1,
+    );
+    assert.equal(
+      items.filter((item) => matchesExactPlantListingFilter(item, "listed")).length,
+      1,
     );
   });
 });
@@ -429,5 +498,42 @@ describe("reconciling product media with the approved photos", () => {
       photoUrls: ["data:image/png;base64,AAAA"],
     });
     assert.deepEqual(plan, { create: [], detachMediaIds: [] });
+  });
+});
+
+describe("the EXACT PLANTS queue page", () => {
+  const queue = readFileSync(
+    path.join(import.meta.dirname, "..", "..", "app", "routes", "app.exact-plants._index.tsx"),
+    "utf8",
+  );
+  const requestPage = readFileSync(
+    path.join(import.meta.dirname, "..", "..", "app", "routes", "app.requests.$id.tsx"),
+    "utf8",
+  );
+
+  it("links each plant to its originating admin request without customer PII", () => {
+    assert.match(queue, /Request \{item\.requestNumber\}/);
+    assert.match(queue, /href=\{`\/app\/requests\/\$\{item\.requestId\}`\}/);
+    assert.ok(!queue.includes("customerEmail"));
+    assert.ok(!queue.includes("customerName"));
+  });
+
+  it("filters All / Not Yet Listed / Flagged / Listed via the listing query", () => {
+    assert.match(queue, /parseExactPlantListingFilter/);
+    assert.match(queue, /name="listing"/);
+    assert.match(queue, /EXACT_PLANT_LISTING_FILTER_LABELS/);
+    assert.match(queue, /EXACT_PLANT_LISTING_FILTERS/);
+  });
+
+  it("collapses Emails and EXACT PLANTS without remounting children", () => {
+    const collapsible = readFileSync(
+      path.join(import.meta.dirname, "..", "..", "app", "components", "collapsible-section.tsx"),
+      "utf8",
+    );
+    assert.match(collapsible, /onToggle=/);
+    assert.match(collapsible, /useState\(defaultOpen\)/);
+    assert.match(requestPage, /title="Emails"/);
+    assert.match(requestPage, /title="EXACT PLANTS"/);
+    assert.match(queue, /title="EXACT PLANTS queue"/);
   });
 });

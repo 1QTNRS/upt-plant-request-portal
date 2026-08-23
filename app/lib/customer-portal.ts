@@ -118,3 +118,91 @@ export function fedexRemovalNeedsConfirmation(input: {
   if (input.fedexSelected || input.acknowledged) return false;
   return Object.values(input.choices).includes("accept");
 }
+
+/**
+ * How the FedEx checkbox should look as the customer toggles Accept / Reject.
+ *
+ * Zero accepted purchasable plants: unchecked, disabled, no removal warning.
+ * Crossing from zero to one or more: checked and enabled again. While at least
+ * one plant stays accepted, a manual uncheck is left alone so the Settings
+ * warning can still run.
+ */
+export function fedexUpgradeUiState(input: {
+  acceptedPurchasableCount: number;
+  previousAcceptedCount: number;
+  currentlyChecked: boolean;
+}): {
+  enabled: boolean;
+  checked: boolean;
+  showRemovalWarning: boolean;
+  autoChecked: boolean;
+} {
+  const enabled = input.acceptedPurchasableCount > 0;
+  if (!enabled) {
+    return {
+      enabled: false,
+      checked: false,
+      showRemovalWarning: false,
+      autoChecked: false,
+    };
+  }
+  const autoChecked =
+    input.previousAcceptedCount === 0 && input.acceptedPurchasableCount > 0;
+  return {
+    enabled: true,
+    checked: autoChecked ? true : input.currentlyChecked,
+    showRemovalWarning: false,
+    autoChecked,
+  };
+}
+
+export function countAcceptedPurchasableChoices(
+  choices: Record<string, "accept" | "reject">,
+): number {
+  return Object.values(choices).filter((choice) => choice === "accept").length;
+}
+
+/**
+ * Whether every purchasable plant on the offer was rejected (or there were
+ * none to accept). Used by the customer Close Request gate.
+ */
+export function declinedAllPurchasableItems(input: {
+  offerItems: Array<{ availability?: string; sourceItemId?: string; id?: string }>;
+  responseItems?: Array<{ sourceItemId: string; choice: string }> | null;
+}): boolean {
+  const purchasable = input.offerItems.filter(
+    (item) => (item.availability ?? "available") === "available",
+  );
+  if (purchasable.length === 0) return true;
+  if (!input.responseItems) return false;
+  return purchasable.every((item) => {
+    const id = item.sourceItemId ?? item.id;
+    const choice = input.responseItems!.find(
+      (entry) => entry.sourceItemId === id,
+    )?.choice;
+    return choice === "reject";
+  });
+}
+
+/**
+ * Customer Close Request is only for a submitted decline-all (or
+ * all-unavailable) answer that reached No Payment Needed.
+ *
+ * Reviewing the offer with nothing selected yet is not enough, and an accepted
+ * plant — or anything still payable — must stay open until paid, expired, or
+ * closed by admin override.
+ */
+export function customerCanCloseRequest(input: {
+  requestClosed: boolean;
+  hasResponded: boolean;
+  hasPayableItems?: boolean;
+  acceptedCount: number;
+  declinedAllAvailable: boolean;
+}): boolean {
+  if (input.requestClosed) return false;
+  if (!input.hasResponded) return false;
+  if (input.hasPayableItems !== false) return false;
+  if (input.acceptedCount > 0) return false;
+  if (!input.declinedAllAvailable) return false;
+  return true;
+}

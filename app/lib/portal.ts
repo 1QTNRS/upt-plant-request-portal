@@ -1278,6 +1278,13 @@ export const ADMIN_OVERRIDE_CLOSE_REASON = "Admin Override Close";
 export const INVOICE_VOIDED_BY_ADMIN_REASON =
   "Invoice voided after admin override close";
 
+/** The customer closed a No Payment Needed request after declining everything. */
+export const CUSTOMER_CLOSED_REQUEST_REASON = "Customer Closed Request";
+
+/** A leftover payable invoice was deleted because the customer closed the request. */
+export const INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON =
+  "Invoice voided after customer closed request";
+
 export const CUSTOMER_SUPPORT_EMAIL = "support@unsolicitedplanttalks.com";
 
 /** New and Pending are still waiting; Closed and Expired are historical. */

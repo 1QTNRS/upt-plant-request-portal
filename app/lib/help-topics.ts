@@ -82,7 +82,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     summary:
       "A released exact plant reaches a review queue, an admin approves it, and only then does one Shopify product appear in the EXACT PLANTS collection.",
     detail: [
-      "A plant reaches the queue when `exactPlantReleaseReason` says it is promised to nobody: the customer declined it, they accepted it and the hold ended unpaid, or they never answered and the hold ended. The three reasons are kept apart in the queue and in analytics.",
+      "A plant reaches the queue when `exactPlantReleaseReason` says it is promised to nobody: the customer declined it, they accepted it and the hold ended unpaid, they never answered and the hold ended, or the request closed with the Exact Plant still unclaimed. The reasons are kept apart in the queue and in analytics.",
       "Candidates are read from offer items rather than from customer responses, because an offer that simply expired has no response rows and starting from the response would silently miss every unanswered expired offer.",
       "Nothing is created until an admin approves it. The review form prefills the title, price, weight and the exact-plant photos, and nothing else — no customer-facing notes, no customer identity, no request or response information. Cancel creates nothing.",
       "On approve, one Shopify product is created per item, added to the existing EXACT PLANTS collection, given a variant that tracks inventory and denies oversell, stocked with one unit at the shop's primary location, and only then published — to Online Store and Point of Sale only. Publishing before stocking would show the plant as sold out.",

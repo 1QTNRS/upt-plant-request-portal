@@ -55,15 +55,30 @@ export const FEDEX_WARNING_SCRIPT = `
   var keep = document.getElementById("fedex-keep");
   var remove = document.getElementById("fedex-confirm-remove");
   var ack = document.getElementById("fedex-ack");
+  var label = document.getElementById("fedex-upgrade-label");
   if (!(box instanceof HTMLInputElement) || !(dialog instanceof HTMLElement)) return;
 
-  function acceptedAnything() {
-    return Array.prototype.some.call(
+  function acceptedCount() {
+    var names = {};
+    var count = 0;
+    Array.prototype.forEach.call(
       document.querySelectorAll('input[type="radio"][name^="choice-"]'),
       function (radio) {
-        return radio instanceof HTMLInputElement && radio.checked && radio.value === "accept";
+        if (!(radio instanceof HTMLInputElement)) return;
+        if (radio.checked && radio.value === "accept") names[radio.name] = true;
       },
     );
+    Object.keys(names).forEach(function () { count += 1; });
+    return count;
+  }
+
+  function setChrome(enabled) {
+    box.disabled = !enabled;
+    if (label) {
+      label.style.opacity = enabled ? "1" : "0.55";
+      label.style.cursor = enabled ? "pointer" : "not-allowed";
+    }
+    box.setAttribute("aria-disabled", enabled ? "false" : "true");
   }
 
   function openDialog() {
@@ -77,13 +92,31 @@ export const FEDEX_WARNING_SCRIPT = `
     dialog.setAttribute("aria-hidden", "true");
   }
 
+  var previousAccepted = acceptedCount();
+
+  function applyAcceptedChange() {
+    var count = acceptedCount();
+    var enabled = count > 0;
+    setChrome(enabled);
+    if (!enabled) {
+      box.checked = false;
+      if (ack instanceof HTMLInputElement) ack.value = "";
+      closeDialog();
+    } else if (previousAccepted === 0) {
+      box.checked = true;
+      if (ack instanceof HTMLInputElement) ack.value = "";
+      closeDialog();
+    }
+    previousAccepted = count;
+  }
+
   box.addEventListener("change", function () {
     if (box.checked) {
       if (ack instanceof HTMLInputElement) ack.value = "";
       closeDialog();
       return;
     }
-    if (!acceptedAnything()) {
+    if (acceptedCount() === 0) {
       if (ack instanceof HTMLInputElement) ack.value = "";
       closeDialog();
       return;
@@ -115,6 +148,19 @@ export const FEDEX_WARNING_SCRIPT = `
       closeDialog();
     }
   });
+
+  document.addEventListener("change", function (event) {
+    var target = event.target;
+    if (
+      target instanceof HTMLInputElement &&
+      target.type === "radio" &&
+      target.name.indexOf("choice-") === 0
+    ) {
+      applyAcceptedChange();
+    }
+  });
+
+  applyAcceptedChange();
 })();
 `.trim();
 
