@@ -56,7 +56,9 @@ test.describe("EXACT PLANTS table", () => {
     await photo.click();
     const lightbox = page.locator("[data-admin-photo-lightbox]");
     await expect(lightbox).toBeVisible();
-    await expect(lightbox.getByRole("button", { name: "Close" })).toBeVisible();
+    await expect(
+      lightbox.getByRole("button", { name: "Close", exact: true }),
+    ).toBeVisible();
     if (await page.locator("[data-lightbox-next]").count()) {
       const before = await page.locator("[data-lightbox-status]").textContent();
       await page.locator("[data-lightbox-next]").click();
@@ -82,13 +84,16 @@ test.describe("EXACT PLANTS table", () => {
       await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
     }
     await expect(page.getByRole("link", { name: "Create listing" }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
-    await page.getByRole("button", { name: "Dismiss" }).first().click();
+    await expect(page.locator("[data-dismiss-exact-plant]").first()).toBeVisible();
+    await page.locator("[data-dismiss-exact-plant]").first().click();
     await expect(page.locator("[data-admin-confirm-dialog]")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Confirm Dismiss from EXACT PLANTS" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Cancel" }).click();
+    await page
+      .locator("[data-admin-confirm-dialog]")
+      .getByText("Cancel", { exact: true })
+      .click();
     await expect(page.locator("[data-admin-confirm-dialog]")).toHaveCount(0);
   });
 

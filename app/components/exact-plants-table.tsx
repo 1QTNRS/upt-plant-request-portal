@@ -252,13 +252,22 @@ export function ExactPlantsTable({
                         </s-link>
                       ) : null}
                       {canDismiss && !dismissed ? (
-                        <s-button
-                          variant="secondary"
+                        <button
                           type="button"
+                          data-dismiss-exact-plant
                           onClick={() => setDismissItemId(item.requestItemId)}
+                          style={{
+                            minHeight: 44,
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #c9cccf",
+                            background: "#fff",
+                            font: "inherit",
+                            cursor: "pointer",
+                          }}
                         >
                           Dismiss
-                        </s-button>
+                        </button>
                       ) : null}
                     </s-stack>
                   </td>
