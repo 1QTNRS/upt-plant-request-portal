@@ -78,10 +78,18 @@ describe("admin photo upload queue", () => {
     const retried = retryPhotoUpload(failed, photoUploadKey(fileA));
     assert.equal(retried[0]?.status, "queued");
     const succeeded = markPhotoUploadSuccess(retried, photoUploadKey(fileB));
-    assert.equal(succeeded.length, 1);
-    assert.equal(succeeded[0]?.key, photoUploadKey(fileA));
+    assert.equal(succeeded.length, 2);
+    assert.equal(succeeded[1]?.status, "success");
+    assert.equal(succeeded[1]?.progress, 100);
+    const successHtml = renderToStaticMarkup(
+      createElement(PhotoUploadProgress, {
+        percent: 100,
+        status: "success",
+      }),
+    );
+    assert.match(successHtml, /Uploaded/);
     const again = enqueuePhotoUploads(succeeded, [fileB]);
-    assert.deepEqual(again.started, [photoUploadKey(fileB)]);
+    assert.deepEqual(again.started, []);
   });
 
   it("blocks Send Offer while a required exact-plant upload is in progress", () => {
@@ -107,6 +115,8 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /multiple/);
     assert.match(uploader, /Upload plant photo/);
     assert.match(uploader, /startUpload/);
+    assert.match(uploader, /\.data/);
+    assert.match(uploader, /xhr\.timeout/);
     assert.match(requestPage, /AdminPhotoUploader/);
     assert.match(requestPage, /photoUploadsInProgress/);
     assert.match(requestPage, /mergeAdminItemDraft/);

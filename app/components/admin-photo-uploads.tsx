@@ -70,6 +70,10 @@ export function AdminPhotoUploader({
     );
   }, [uploads, required]);
 
+  useEffect(() => {
+    return () => onBusyRef.current?.(false);
+  }, []);
+
   const startUpload = (key: string) => {
     const file = filesByKey.current.get(key);
     if (!file || inFlight.current.has(key)) return;
@@ -81,9 +85,13 @@ export function AdminPhotoUploader({
     body.set("itemId", itemId);
     body.set("photo", file);
 
+    // Post the React Router data request, not the document URL. A document
+    // POST streams the whole admin page and can sit behind a focus-triggered
+    // revalidate, which left the thumbnail stuck at 0%.
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${window.location.pathname}${window.location.search}`);
+    xhr.open("POST", `${window.location.pathname}.data${window.location.search}`);
     xhr.withCredentials = true;
+    xhr.timeout = 30_000;
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
       const percent = (event.loaded / event.total) * 100;
@@ -93,7 +101,6 @@ export function AdminPhotoUploader({
       inFlight.current.delete(key);
       if (xhr.status >= 200 && xhr.status < 400) {
         setUploads((current) => markPhotoUploadSuccess(current, key));
-        filesByKey.current.delete(key);
         revalidator.revalidate();
         return;
       }
@@ -109,6 +116,12 @@ export function AdminPhotoUploader({
       inFlight.current.delete(key);
       setUploads((current) =>
         markPhotoUploadFailure(current, key, "Upload failed"),
+      );
+    };
+    xhr.ontimeout = () => {
+      inFlight.current.delete(key);
+      setUploads((current) =>
+        markPhotoUploadFailure(current, key, "Upload timed out"),
       );
     };
     xhr.send(body);

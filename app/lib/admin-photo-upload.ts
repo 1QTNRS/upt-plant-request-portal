@@ -68,7 +68,11 @@ export function markPhotoUploadSuccess(
   entries: PhotoUploadEntry[],
   key: string,
 ): PhotoUploadEntry[] {
-  return entries.filter((entry) => entry.key !== key);
+  return entries.map((entry) =>
+    entry.key === key
+      ? { ...entry, status: "success", progress: 100, error: undefined }
+      : entry,
+  );
 }
 
 export function markPhotoUploadFailure(

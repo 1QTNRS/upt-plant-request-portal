@@ -1793,10 +1793,13 @@ export default function RequestDetail() {
   const photoUploadsInProgress = requiredPhotoBusyIds.size > 0;
 
   useEffect(() => {
-    const onFocus = () => revalidator.revalidate();
+    const onFocus = () => {
+      if (requiredPhotoBusyIds.size > 0) return;
+      revalidator.revalidate();
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [revalidator]);
+  }, [revalidator, requiredPhotoBusyIds]);
 
   if (!plantRequest) {
     return (
