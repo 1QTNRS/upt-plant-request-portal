@@ -29,8 +29,10 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-confirm-remove/);
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-ack/);
     assert.match(FEDEX_WARNING_SCRIPT, /Escape/);
-    assert.match(FEDEX_WARNING_SCRIPT, /form\.addEventListener\("submit"/);
+    assert.match(FEDEX_WARNING_SCRIPT, /document\.addEventListener\("submit"/);
+    assert.match(FEDEX_WARNING_SCRIPT, /document\.addEventListener\("change"/);
     assert.match(FEDEX_WARNING_SCRIPT, /preventDefault/);
     assert.match(FEDEX_WARNING_SCRIPT, /document\.body\.appendChild/);
+    assert.match(FEDEX_WARNING_SCRIPT, /__uptFedexWarning/);
   });
 });
