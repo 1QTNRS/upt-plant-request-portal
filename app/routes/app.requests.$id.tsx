@@ -15,7 +15,6 @@ import {
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
-import { canStubShopifyWrites } from "../lib/environment.server";
 import {
   listEmailsForRequest,
   notifyOfferReady,
@@ -81,21 +80,19 @@ import {
   getExistingStockVariant,
   refreshFedexUpgradePrice,
   searchExistingStock,
-  uploadPlantPhoto,
 } from "../lib/shopify-ops.server";
-import { saveLocalUpload } from "../lib/uploads.server";
 import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
 import {
   mergeAdminItemDraft,
   type AdminItemDirty,
   type AdminItemDraft,
 } from "../lib/admin-item-draft";
-import { AdminPhotoUploader } from "../components/admin-photo-uploads";
+import { AdminPhotoStrip } from "../components/admin-photo-uploads";
 import {
   CollapsibleSection,
   CollapsibleSectionStyles,
 } from "../components/collapsible-section";
-import { PhotoReorderStrip } from "../components/photo-reorder";
+import { saveUploadedPlantPhoto } from "../lib/photo-upload.server";
 import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
 import { wrapRowStyle } from "../components/admin-layout";
 
@@ -406,37 +403,21 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const itemId = String(form.get("itemId") || "");
       const upload = form.get("photo");
       if (upload instanceof File && upload.size > 0) {
-        const data = Buffer.from(await upload.arrayBuffer());
-        let stored: { url: string; shopifyFileId?: string };
-        try {
-          stored = await uploadPlantPhoto(admin, shop, {
+        const result = await saveUploadedPlantPhoto({
+          shop,
+          admin,
+          requestId,
+          itemId,
+          clientKey: String(form.get("uploadKey") || ""),
+          file: {
             filename: upload.name,
             mimeType: upload.type || "image/jpeg",
-            data,
-          });
-        } catch (error) {
-          // Local disk is ephemeral on a hosted deploy and is not served by
-          // the Shopify CDN, so a failed upload must surface rather than appear
-          // to succeed with a URL that dies at the next deploy.
-          if (!canStubShopifyWrites(shop)) {
-            console.error(
-              `Shopify Files upload failed for request ${requestId}.`,
-              error,
-            );
-            throw new Error(
-              `Could not upload ${upload.name} to Shopify Files: ${
-                error instanceof Error ? error.message : "unknown error"
-              }. The photo was not attached — please try again.`,
-            );
-          }
-          stored = {
-            url: await saveLocalUpload(shop, itemId, {
-              filename: upload.name,
-              data,
-            }),
-          };
+            data: Buffer.from(await upload.arrayBuffer()),
+          },
+        });
+        if (!result.ok) {
+          throw new Error(result.error);
         }
-        await addItemPhotos(shop, requestId, itemId, [stored]);
       }
       return { ok: true };
     }
@@ -965,11 +946,15 @@ function PlantItemCard({
             {growersChoice ? null : (
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Exact plant photos</s-text>
-              {canEdit && item.photos.length > 0 ? (
-                <PhotoReorderStrip
+              {canEdit ? (
+                <AdminPhotoStrip
                   itemId={item.id}
                   photos={item.photos}
                   alt={item.offeredName || item.plantName}
+                  required={fulfillment === "exact_plant"}
+                  onRequiredBusyChange={(busy) =>
+                    onRequiredPhotoBusyChange?.(item.id, busy)
+                  }
                 />
               ) : (
                 <div style={wrapRowStyle}>
@@ -995,35 +980,22 @@ function PlantItemCard({
                 </div>
               )}
               {canEdit ? (
-                <s-stack direction="block" gap="small">
-                  <photoFetcher.Form method="post" encType="multipart/form-data">
-                    <input type="hidden" name="intent" value="upload-photo" />
-                    <input type="hidden" name="itemId" value={item.id} />
-                    <AdminPhotoUploader
-                      itemId={item.id}
-                      required={fulfillment === "exact_plant"}
-                      onRequiredBusyChange={(busy) =>
-                        onRequiredPhotoBusyChange?.(item.id, busy)
-                      }
+                <photoFetcher.Form method="post">
+                  <input type="hidden" name="intent" value="add-photo-url" />
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <s-stack direction="inline" gap="small">
+                    <input
+                      name="photoUrl"
+                      value={photoUrl}
+                      placeholder="https://..."
+                      onChange={(event) => setPhotoUrl(event.currentTarget.value)}
+                      style={textInputStyle}
                     />
-                  </photoFetcher.Form>
-                  <photoFetcher.Form method="post">
-                    <input type="hidden" name="intent" value="add-photo-url" />
-                    <input type="hidden" name="itemId" value={item.id} />
-                    <s-stack direction="inline" gap="small">
-                      <input
-                        name="photoUrl"
-                        value={photoUrl}
-                        placeholder="https://..."
-                        onChange={(event) => setPhotoUrl(event.currentTarget.value)}
-                        style={textInputStyle}
-                      />
-                      <s-button variant="secondary" type="submit">
-                        Add photo URL
-                      </s-button>
-                    </s-stack>
-                  </photoFetcher.Form>
-                </s-stack>
+                    <s-button variant="secondary" type="submit">
+                      Add photo URL
+                    </s-button>
+                  </s-stack>
+                </photoFetcher.Form>
               ) : null}
             </s-stack>
             )}

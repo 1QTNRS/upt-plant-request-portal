@@ -7,14 +7,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhotoUploadProgress } from "../components/admin-photo-uploads";
 import {
+  cancelPhotoUpload,
+  dropReconciledUploads,
   enqueuePhotoUploads,
   markPhotoUploadFailure,
   markPhotoUploadProgress,
   markPhotoUploadSuccess,
+  mergePhotoCards,
+  parseUploadActionResponse,
   photoUploadKey,
   photoUploadProgressLabel,
   retryPhotoUpload,
   sendOfferBlockedByRequiredPhotoUploads,
+  transportProgressPercent,
 } from "./admin-photo-upload";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
@@ -61,7 +66,61 @@ describe("admin photo upload queue", () => {
     assert.match(html, /data-photo-upload-progress="uploading"/);
   });
 
-  it("shows Retry on failure and retry does not duplicate a successful file", () => {
+  it("does not treat 100% transport progress as Uploaded", () => {
+    const queued = enqueuePhotoUploads([], [fileA]).next;
+    const wireDone = markPhotoUploadProgress(
+      queued,
+      photoUploadKey(fileA),
+      transportProgressPercent(100, 100),
+    );
+    assert.equal(wireDone[0]?.status, "uploading");
+    assert.equal(wireDone[0]?.progress, 99);
+    assert.equal(transportProgressPercent(100, 100), 99);
+
+    const html = renderToStaticMarkup(
+      createElement(PhotoUploadProgress, {
+        percent: 99,
+        status: "uploading",
+      }),
+    );
+    assert.match(html, /99%/);
+    assert.doesNotMatch(html, /Uploaded/);
+  });
+
+  it("moves from transport-complete to Uploaded only after a finalized photo", () => {
+    const queued = enqueuePhotoUploads([], [fileA]).next;
+    const waiting = markPhotoUploadProgress(queued, photoUploadKey(fileA), 100);
+    assert.equal(waiting[0]?.status, "uploading");
+    const done = markPhotoUploadSuccess(waiting, photoUploadKey(fileA), {
+      id: "photo-1",
+      url: "https://cdn.example.com/front.jpg",
+    });
+    assert.equal(done[0]?.status, "success");
+    assert.equal(done[0]?.photoId, "photo-1");
+    const html = renderToStaticMarkup(
+      createElement(PhotoUploadProgress, {
+        percent: 100,
+        status: "success",
+      }),
+    );
+    assert.match(html, /Uploaded/);
+  });
+
+  it("a delayed finalize still leaves the card uploading, not permanently at 100% success", () => {
+    const queued = enqueuePhotoUploads([], [fileA, fileB]).next;
+    const delayed = markPhotoUploadProgress(queued, photoUploadKey(fileA), 100);
+    const other = markPhotoUploadProgress(delayed, photoUploadKey(fileB), 40);
+    assert.equal(other[0]?.status, "uploading");
+    assert.equal(other[1]?.status, "uploading");
+    const firstDone = markPhotoUploadSuccess(other, photoUploadKey(fileA), {
+      id: "a",
+      url: "/a.jpg",
+    });
+    assert.equal(firstDone[0]?.status, "success");
+    assert.equal(firstDone[1]?.status, "uploading");
+  });
+
+  it("failed finalize shows Failed / Retry and retry does not touch successes", () => {
     const queued = enqueuePhotoUploads([], [fileA, fileB]).next;
     const failed = markPhotoUploadFailure(queued, photoUploadKey(fileA), "network");
     const html = renderToStaticMarkup(
@@ -75,34 +134,83 @@ describe("admin photo upload queue", () => {
     assert.match(html, /Retry/);
     assert.match(html, /network/);
 
-    const retried = retryPhotoUpload(failed, photoUploadKey(fileA));
+    const succeeded = markPhotoUploadSuccess(failed, photoUploadKey(fileB), {
+      id: "b",
+      url: "/b.jpg",
+    });
+    const retried = retryPhotoUpload(succeeded, photoUploadKey(fileA));
     assert.equal(retried[0]?.status, "queued");
-    const succeeded = markPhotoUploadSuccess(retried, photoUploadKey(fileB));
-    assert.equal(succeeded.length, 2);
-    assert.equal(succeeded[1]?.status, "success");
-    assert.equal(succeeded[1]?.progress, 100);
-    const successHtml = renderToStaticMarkup(
-      createElement(PhotoUploadProgress, {
-        percent: 100,
-        status: "success",
-      }),
-    );
-    assert.match(successHtml, /Uploaded/);
-    const again = enqueuePhotoUploads(succeeded, [fileB]);
+    assert.equal(retried[1]?.status, "success");
+    const again = enqueuePhotoUploads(retried, [fileB]);
     assert.deepEqual(again.started, []);
+  });
+
+  it("parses a JSON finalize body and rejects an empty or failed body", () => {
+    assert.deepEqual(
+      parseUploadActionResponse(
+        JSON.stringify({ ok: true, photo: { id: "p1", url: "https://cdn/x.jpg" } }),
+      ),
+      { ok: true, photo: { id: "p1", url: "https://cdn/x.jpg" }, uploadKey: undefined },
+    );
+    assert.equal(parseUploadActionResponse("").ok, false);
+    assert.equal(
+      parseUploadActionResponse(JSON.stringify({ ok: false, error: "Shopify timed out" }))
+        .ok,
+      false,
+    );
+    const turbo = parseUploadActionResponse(
+      '[{"_1":2},"data",{"ok":true,"photo":{"id":"p2","url":"https://cdn/y.jpg"}}]',
+    );
+    assert.equal(turbo.ok, true);
+    if (turbo.ok) assert.equal(turbo.photo.id, "p2");
+  });
+
+  it("merges one card per photo and drops a local success after refresh reconcile", () => {
+    const queued = enqueuePhotoUploads([], [fileA]).next;
+    const done = markPhotoUploadSuccess(queued, photoUploadKey(fileA), {
+      id: "photo-1",
+      url: "https://cdn.example.com/front.jpg",
+    });
+    const server = [
+      { id: "existing", url: "https://cdn.example.com/old.jpg" },
+      { id: "photo-1", url: "https://cdn.example.com/front.jpg" },
+    ];
+    const cards = mergePhotoCards(server, done);
+    assert.equal(cards.length, 2);
+    assert.equal(cards.filter((card) => card.kind === "saved").length, 2);
+    assert.equal(
+      cards.filter(
+        (card) => card.kind === "saved" && card.photo.id === "photo-1",
+      ).length,
+      1,
+    );
+
+    const afterRefresh = dropReconciledUploads(done, server);
+    assert.equal(afterRefresh.length, 0);
+    assert.equal(mergePhotoCards(server, afterRefresh).length, 2);
+  });
+
+  it("cancels a queued file without removing saved photos", () => {
+    const queued = enqueuePhotoUploads([], [fileA, fileB]).next;
+    const cancelled = cancelPhotoUpload(queued, photoUploadKey(fileA));
+    assert.equal(cancelled.length, 1);
+    assert.equal(cancelled[0]?.key, photoUploadKey(fileB));
   });
 
   it("blocks Send Offer while a required exact-plant upload is in progress", () => {
     const queued = enqueuePhotoUploads([], [fileA]).next;
     assert.equal(sendOfferBlockedByRequiredPhotoUploads(queued, true), true);
     assert.equal(sendOfferBlockedByRequiredPhotoUploads(queued, false), false);
-    const done = markPhotoUploadSuccess(queued, photoUploadKey(fileA));
+    const done = markPhotoUploadSuccess(queued, photoUploadKey(fileA), {
+      id: "p",
+      url: "/p.jpg",
+    });
     assert.equal(sendOfferBlockedByRequiredPhotoUploads(done, true), false);
   });
 });
 
 describe("admin photo upload UI wiring", () => {
-  it("auto-starts upload on selection and keeps a no-JS Upload fallback", () => {
+  it("auto-starts upload on selection against the JSON photos route", () => {
     const uploader = readFileSync(
       path.join(REPO_ROOT, "app", "components", "admin-photo-uploads.tsx"),
       "utf8",
@@ -115,25 +223,24 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /multiple/);
     assert.match(uploader, /Upload plant photo/);
     assert.match(uploader, /startUpload/);
-    assert.match(uploader, /\.data/);
-    assert.match(uploader, /xhr\.timeout/);
-    assert.match(requestPage, /AdminPhotoUploader/);
+    assert.match(uploader, /\/photos/);
+    assert.match(uploader, /parseUploadActionResponse/);
+    assert.match(uploader, /xhr\.responseText/);
+    assert.match(requestPage, /AdminPhotoStrip/);
     assert.match(requestPage, /photoUploadsInProgress/);
     assert.match(requestPage, /mergeAdminItemDraft/);
   });
 
-  it("puts an immediate X on each uploaded thumbnail without a confirm dialog", () => {
+  it("puts an immediate X on each thumbnail without a confirm dialog", () => {
     const source = readFileSync(
-      path.join(REPO_ROOT, "app", "components", "photo-reorder.tsx"),
+      path.join(REPO_ROOT, "app", "components", "admin-photo-uploads.tsx"),
       "utf8",
     );
     assert.match(source, /data-photo-delete/);
     assert.match(source, /aria-label="Remove photo"/);
-    assert.match(source, /top: 4/);
-    assert.match(source, /right: 4/);
     assert.ok(!source.includes("confirm("));
     assert.ok(!source.includes("window.confirm"));
-    assert.match(source, /intent/, "remove-photo");
-    assert.match(source, /remove-photo/);
+    assert.match(source, /cancelPending/);
+    assert.match(source, /removeSaved/);
   });
 });
