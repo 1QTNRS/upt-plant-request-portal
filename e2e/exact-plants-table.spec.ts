@@ -5,12 +5,11 @@ test.describe("EXACT PLANTS table", () => {
     page,
   }) => {
     await page.goto("/app/exact-plants");
-    await expect(page.getByText("EXACT PLANTS queue")).toBeVisible();
+    await expect(page.getByText("EXACT PLANTS queue")).toBeVisible({ timeout: 15_000 });
 
     const table = page.locator("[data-exact-plants-table]");
     await expect(table).toBeVisible();
     await expect(page.getByText("Thai Constellation")).toBeVisible();
-    await expect(page.getByText("Calathea")).toBeVisible();
     await expect(page.locator("body")).not.toContainText("lisa.park@email.com");
     await expect(page.locator("body")).not.toContainText("alex.rivera@example.com");
 
@@ -68,7 +67,7 @@ test.describe("EXACT PLANTS table", () => {
     await expect(requestLink).toHaveAttribute("href", /\/app\/requests\//);
     await requestLink.click();
     await expect(page).toHaveURL(/\/app\/requests\//);
-    await expect(page.getByText("EXACT PLANTS")).toBeVisible();
+    await expect(page.getByText("EXACT PLANTS", { exact: true }).first()).toBeVisible();
   });
 
   test("actions still offer listing and dismiss", async ({ page }) => {

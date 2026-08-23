@@ -27,7 +27,7 @@ export function signSmokeToken(
   nowSec = Math.floor(Date.now() / 1000),
   secret = smokeSecret(),
 ): string | null {
-  if (!secret) return null;
+  if (!secret || secret.length < 16) return null;
   const exp = nowSec + MAX_AGE_SEC;
   const body = `admin:${APPROVED_SMOKE_SHOP}:${exp}`;
   const mac = createHmac("sha256", secret).update(body).digest("hex");
@@ -39,7 +39,7 @@ export function smokeTokenIsValid(
   nowSec = Math.floor(Date.now() / 1000),
   secret = smokeSecret(),
 ): boolean {
-  if (!secret || !token) return false;
+  if (!secret || secret.length < 16 || !token) return false;
   const [mac, expRaw] = token.split(".");
   const exp = Number(expRaw);
   if (!mac || !Number.isFinite(exp) || exp < nowSec) return false;

@@ -29,9 +29,10 @@ describe("smoke admin token", () => {
   });
 
   it("accepts a fresh token and only yields the approved shop", () => {
-    const token = signSmokeToken(1_700_000_000, SECRET);
+    const now = Math.floor(Date.now() / 1000);
+    const token = signSmokeToken(now, SECRET);
     assert.ok(token);
-    assert.equal(smokeTokenIsValid(token, 1_700_000_000, SECRET), true);
+    assert.equal(smokeTokenIsValid(token, now, SECRET), true);
     const request = new Request("https://example.test/app", {
       headers: { [SMOKE_HEADER]: token! },
     });

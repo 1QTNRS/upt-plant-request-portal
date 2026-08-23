@@ -522,7 +522,7 @@ describe("the EXACT PLANTS queue page", () => {
 
   it("links each plant to its originating admin request without customer PII", () => {
     assert.match(table, /Request \{item\.requestNumber\}/);
-    assert.match(table, /href=\{\`\/app\/requests\/\$\{item\.requestId\}\`\}/);
+    assert.ok(table.includes("href={`/app/requests/${item.requestId}`}"));
     assert.ok(!queue.includes("customerEmail"));
     assert.ok(!queue.includes("customerName"));
     assert.ok(!table.includes("customerEmail"));
@@ -623,7 +623,8 @@ describe("EXACT PLANTS table sorting", () => {
   });
 
   it("sorts request numbers naturally, not as raw strings", () => {
-    assert.equal(compareRequestNumbers("REQ2", "REQ10"), -1);
+    assert.ok(compareRequestNumbers("REQ2", "REQ10") < 0);
+    assert.ok(compareRequestNumbers("REQ10", "REQ2") > 0);
     assert.deepEqual(
       sortExactPlantTable(rows, { column: "request", direction: "asc" }).map(
         (row) => row.requestNumber,

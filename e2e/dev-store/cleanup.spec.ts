@@ -22,7 +22,10 @@ test.describe("Test-data cleanup", () => {
     const denied = await request.post("/smoke/cleanup");
     expect(denied.status()).toBe(401);
     const cookie = smokeAdminCookie();
-    test.skip(!cookie, "ALLOW_SMOKE_ADMIN and SMOKE_TEST_SECRET are required");
+    if (!cookie) {
+      test.skip(true, "ALLOW_SMOKE_ADMIN and SMOKE_TEST_SECRET are required");
+      return;
+    }
     const allowed = await request.post("/smoke/cleanup", {
       headers: { cookie },
     });
