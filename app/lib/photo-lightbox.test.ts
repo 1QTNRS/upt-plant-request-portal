@@ -32,8 +32,11 @@ describe("photo lightbox helpers", () => {
     assert.match(html, /data-admin-photo-lightbox/);
     assert.match(html, /data-lightbox-image/);
     assert.match(html, /× Close/);
-    assert.match(html, /Previous/);
-    assert.match(html, /Next/);
+    assert.match(html, /aria-label="Previous"/);
+    assert.match(html, /aria-label="Next"/);
+    assert.match(html, /lightbox-nav/);
+    assert.doesNotMatch(html, />Previous</);
+    assert.doesNotMatch(html, />Next</);
     assert.match(html, /1 of 2/);
     assert.equal(html.includes("Dismiss"), false);
     assert.equal(html.includes("customerEmail"), false);

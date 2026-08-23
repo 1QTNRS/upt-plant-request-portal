@@ -372,7 +372,7 @@ export default function ExactPlantListingReview() {
           confirmLabel="Confirm Dismiss from EXACT PLANTS"
           onCancel={() => setDismissOpen(false)}
           confirm={
-            <Form method="post">
+            <Form method="post" onSubmit={() => setDismissOpen(false)}>
               <input type="hidden" name="intent" value="dismiss-exact-plant" />
               <input type="hidden" name="returnTo" value={returnTo} />
               <input type="hidden" name="confirmed" value="true" />

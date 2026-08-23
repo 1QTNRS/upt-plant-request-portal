@@ -111,7 +111,7 @@ export default function ExactPlantsIndex() {
         <CollapsibleSection
           title="EXACT PLANTS queue"
           badge={total}
-          defaultOpen={false}
+          defaultOpen={true}
         >
           <Form method="get" data-exact-plant-listing-filter>
             <input type="hidden" name="sort" value={sort.column} />

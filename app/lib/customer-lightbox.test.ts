@@ -63,7 +63,8 @@ describe("customer photo lightbox", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-next/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-close/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerdown/);
-    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /setPointerCapture/);
+    assert.doesNotMatch(CUSTOMER_LIGHTBOX_SCRIPT, /setPointerCapture/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /lightbox-nav/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pinToBody/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /__uptCustomerLightbox/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /document\.body\.appendChild/);

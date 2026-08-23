@@ -283,6 +283,9 @@ describe("website stock typeahead", () => {
     assert.match(source, /data-stock-search-option/);
     assert.match(source, /setTimeout/);
     assert.match(source, /intent", "link-stock"/);
+    assert.match(source, /candidate.imageUrl/);
+    assert.match(source, /ArrowDown/);
+    assert.match(source, /ArrowUp/);
     assert.equal(source.includes("Search Shopify"), false);
     assert.equal(source.includes("Link this variant"), false);
   });
