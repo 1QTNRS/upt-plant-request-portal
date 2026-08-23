@@ -5,6 +5,7 @@ import {
   buildExactPlantListingDraft,
   canDismissExactPlantFromQueue,
   EXACT_PLANT_DISMISSED_REASON,
+  exactPlantEligibleAt,
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
   type ExactPlantReleaseReason,
@@ -41,6 +42,7 @@ export type ExactPlantCandidateRow = {
   requestId: string;
   requestNumber: string;
   releaseReason: ExactPlantReleaseReason;
+  eligibleAt: string;
   title: string;
   price: number;
   weightLbs: number;
@@ -133,12 +135,13 @@ export async function listExactPlantCandidates(
       },
     },
     include: {
+      offer: true,
       requestItem: {
         include: {
           exactPlantListing: true,
           photos: { orderBy: { sortOrder: "asc" as const } },
           responseItems: true,
-          request: true,
+          request: { include: { response: true } },
         },
       },
     },
@@ -175,6 +178,13 @@ export async function listExactPlantCandidates(
         requestId: item.requestId,
         requestNumber: item.request.requestNumber,
         releaseReason: reason,
+        eligibleAt: exactPlantEligibleAt({
+          releaseReason: reason,
+          respondedAt: item.request.response?.respondedAt,
+          closedAt: item.request.closedAt,
+          expiresAt: offerItem.offer.expiresAt,
+          sentAt: offerItem.offer.sentAt,
+        }),
         title: item.exactPlantListing?.title || draft.title,
         price: item.exactPlantListing?.price ?? draft.price,
         weightLbs: item.exactPlantListing?.weightLbs ?? draft.weightLbs,

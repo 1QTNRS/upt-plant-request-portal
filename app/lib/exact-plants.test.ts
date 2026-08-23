@@ -20,8 +20,13 @@ import {
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
   matchesExactPlantListingFilter,
+  nextExactPlantColumnSort,
   parseExactPlantListingFilter,
+  parseExactPlantTableSortState,
   planExactPlantMedia,
+  compareRequestNumbers,
+  exactPlantEligibleAt,
+  sortExactPlantTable,
 } from "./exact-plants";
 
 /** An available plant offered on a request that has not been paid. */
@@ -506,16 +511,22 @@ describe("the EXACT PLANTS queue page", () => {
     path.join(import.meta.dirname, "..", "..", "app", "routes", "app.exact-plants._index.tsx"),
     "utf8",
   );
+  const table = readFileSync(
+    path.join(import.meta.dirname, "..", "..", "app", "components", "exact-plants-table.tsx"),
+    "utf8",
+  );
   const requestPage = readFileSync(
     path.join(import.meta.dirname, "..", "..", "app", "routes", "app.requests.$id.tsx"),
     "utf8",
   );
 
   it("links each plant to its originating admin request without customer PII", () => {
-    assert.match(queue, /Request \{item\.requestNumber\}/);
-    assert.match(queue, /href=\{`\/app\/requests\/\$\{item\.requestId\}`\}/);
+    assert.match(table, /Request \{item\.requestNumber\}/);
+    assert.match(table, /href=\{\`\/app\/requests\/\$\{item\.requestId\}\`\}/);
     assert.ok(!queue.includes("customerEmail"));
     assert.ok(!queue.includes("customerName"));
+    assert.ok(!table.includes("customerEmail"));
+    assert.ok(!table.includes("customerName"));
   });
 
   it("filters All / Not Yet Listed / Flagged / Listed via the listing query", () => {
@@ -523,6 +534,16 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(queue, /name="listing"/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTER_LABELS/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTERS/);
+  });
+
+  it("renders a sortable table and keeps filter+sort in the URL", () => {
+    assert.match(queue, /ExactPlantsTable/);
+    assert.match(queue, /parseExactPlantTableSortState/);
+    assert.match(table, /data-exact-plants-table/);
+    assert.match(table, /data-exact-plant-sort/);
+    assert.match(table, /Create EXACT PLANTS Listing/);
+    assert.match(table, /Dismiss from EXACT PLANTS/);
+    assert.match(table, /AdminPhotoLightbox/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {
@@ -535,5 +556,143 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /title="Emails"/);
     assert.match(requestPage, /title="EXACT PLANTS"/);
     assert.match(queue, /title="EXACT PLANTS queue"/);
+  });
+});
+
+describe("EXACT PLANTS table sorting", () => {
+  const rows = [
+    {
+      requestItemId: "a",
+      title: "zz plant",
+      requestNumber: "REQ10",
+      releaseReason: "unclaimed_after_close" as const,
+      eligibleAt: "2026-01-01T00:00:00.000Z",
+      price: 90,
+      listing: { status: "listed" as const, shopifyProductGid: "gid://shopify/Product/1" },
+    },
+    {
+      requestItemId: "b",
+      title: "Albo",
+      requestNumber: "REQ2",
+      releaseReason: "customer_declined" as const,
+      eligibleAt: "2026-08-01T00:00:00.000Z",
+      price: 20,
+      listing: { status: "failed" as const },
+    },
+    {
+      requestItemId: "c",
+      title: "Monstera",
+      requestNumber: "REQ3",
+      releaseReason: "accepted_unpaid_expired" as const,
+      eligibleAt: "2026-04-01T00:00:00.000Z",
+      price: 50,
+      listing: null,
+    },
+  ];
+
+  it("defaults to date oldest-first and toggles a column on repeated clicks", () => {
+    const search = new URLSearchParams();
+    assert.deepEqual(parseExactPlantTableSortState(search), {
+      column: "date",
+      direction: "asc",
+    });
+    const first = nextExactPlantColumnSort(
+      { column: "date", direction: "asc" },
+      "name",
+    );
+    assert.deepEqual(first, { column: "name", direction: "asc" });
+    assert.deepEqual(nextExactPlantColumnSort(first, "name"), {
+      column: "name",
+      direction: "desc",
+    });
+  });
+
+  it("sorts plant name case-insensitively", () => {
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "name", direction: "asc" }).map(
+        (row) => row.title,
+      ),
+      ["Albo", "Monstera", "zz plant"],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "name", direction: "desc" }).map(
+        (row) => row.title,
+      ),
+      ["zz plant", "Monstera", "Albo"],
+    );
+  });
+
+  it("sorts request numbers naturally, not as raw strings", () => {
+    assert.equal(compareRequestNumbers("REQ2", "REQ10"), -1);
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "request", direction: "asc" }).map(
+        (row) => row.requestNumber,
+      ),
+      ["REQ2", "REQ3", "REQ10"],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "request", direction: "desc" }).map(
+        (row) => row.requestNumber,
+      ),
+      ["REQ10", "REQ3", "REQ2"],
+    );
+  });
+
+  it("sorts eligibility, listing status, price, and date by the right type", () => {
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "reason", direction: "asc" }).map(
+        (row) => row.releaseReason,
+      ),
+      ["accepted_unpaid_expired", "customer_declined", "unclaimed_after_close"],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "listing", direction: "asc" }).map(
+        (row) => row.requestItemId,
+      ),
+      ["b", "a", "c"],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "price", direction: "asc" }).map(
+        (row) => row.price,
+      ),
+      [20, 50, 90],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "price", direction: "desc" }).map(
+        (row) => row.price,
+      ),
+      [90, 50, 20],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "date", direction: "asc" }).map(
+        (row) => row.requestItemId,
+      ),
+      ["a", "c", "b"],
+    );
+    assert.deepEqual(
+      sortExactPlantTable(rows, { column: "date", direction: "desc" }).map(
+        (row) => row.requestItemId,
+      ),
+      ["b", "c", "a"],
+    );
+    assert.equal(
+      exactPlantEligibleAt({
+        releaseReason: "customer_declined",
+        respondedAt: "2026-04-01T00:00:00.000Z",
+      }),
+      "2026-04-01T00:00:00.000Z",
+    );
+  });
+
+  it("keeps listing filter and sort independent", () => {
+    const flagged = rows.filter((row) =>
+      matchesExactPlantListingFilter(row, "flagged"),
+    );
+    assert.deepEqual(
+      sortExactPlantTable(flagged, { column: "price", direction: "asc" }).map(
+        (row) => row.requestItemId,
+      ),
+      ["b"],
+    );
   });
 });
