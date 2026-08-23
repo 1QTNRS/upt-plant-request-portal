@@ -570,7 +570,9 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(collapsible, /useState\(defaultOpen\)/);
     assert.match(requestPage, /title="Emails"/);
     assert.match(requestPage, /title="EXACT PLANTS"/);
+    assert.match(requestPage, /defaultOpen=\{false\}/);
     assert.match(queue, /title="EXACT PLANTS queue"/);
+    assert.match(queue, /defaultOpen=\{true\}/);
   });
 });
 

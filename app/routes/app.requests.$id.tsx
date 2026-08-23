@@ -530,6 +530,7 @@ function ExistingStockPanel({
   const searchFetcher = useFetcher<typeof action>();
   const linkFetcher = useFetcher<typeof action>();
   const [term, setTerm] = useState("");
+  const [highlight, setHighlight] = useState(0);
   const searchTimer = useRef<number | null>(null);
 
   const searchData = searchFetcher.data;
@@ -538,12 +539,33 @@ function ExistingStockPanel({
       ? searchData.stockSearch
       : null;
   const results = search?.itemId === item.id ? search.results : [];
+  const linkableResults = results.filter((candidate) => !candidate.unlinkableReason);
   const linkError =
     linkFetcher.data && !linkFetcher.data.ok ? linkFetcher.data.error : null;
   const linked = item.linkedStock;
   const productAdminUrl = linked
     ? shopifyAdminProductUrl(shop, linked.productGid)
     : undefined;
+
+  const linkCandidate = (variantGid: string) => {
+    const data = new FormData();
+    data.set("intent", "link-stock");
+    data.set("itemId", item.id);
+    data.set("variantGid", variantGid);
+    linkFetcher.submit(data, { method: "post" });
+    setTerm("");
+    setHighlight(0);
+  };
+
+  useEffect(() => {
+    if (highlight >= linkableResults.length) setHighlight(0);
+  }, [highlight, linkableResults.length]);
+
+  useEffect(() => {
+    document
+      .getElementById(`stock-option-${item.id}-${highlight}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [highlight, item.id]);
 
   return (
     <s-stack direction="block" gap="base">
@@ -618,9 +640,16 @@ function ExistingStockPanel({
               placeholder="Product title, variant, or SKU"
               autoComplete="off"
               aria-autocomplete="list"
+              aria-controls={`stock-search-list-${item.id}`}
+              aria-activedescendant={
+                linkableResults[highlight]
+                  ? `stock-option-${item.id}-${highlight}`
+                  : undefined
+              }
               onChange={(event) => {
                 const next = event.currentTarget.value;
                 setTerm(next);
+                setHighlight(0);
                 if (searchTimer.current) window.clearTimeout(searchTimer.current);
                 const query = next.trim();
                 if (query.length < MIN_STOCK_SEARCH_TERM) return;
@@ -632,10 +661,40 @@ function ExistingStockPanel({
                   searchFetcher.submit(data, { method: "post" });
                 }, 250);
               }}
+              onKeyDown={(event) => {
+                if (term.trim().length < MIN_STOCK_SEARCH_TERM) return;
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  if (linkableResults.length === 0) return;
+                  setHighlight((current) => (current + 1) % linkableResults.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  if (linkableResults.length === 0) return;
+                  setHighlight((current) =>
+                    (current - 1 + linkableResults.length) % linkableResults.length,
+                  );
+                  return;
+                }
+                if (event.key === "Enter") {
+                  const chosen = linkableResults[highlight];
+                  if (!chosen) return;
+                  event.preventDefault();
+                  linkCandidate(chosen.variantGid);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setTerm("");
+                  setHighlight(0);
+                }
+              }}
               style={{ ...textInputStyle, width: "100%", minWidth: 0 }}
             />
             {term.trim().length >= MIN_STOCK_SEARCH_TERM ? (
               <div
+                id={`stock-search-list-${item.id}`}
                 data-stock-search-dropdown
                 role="listbox"
                 aria-label="Matching website stock"
@@ -675,6 +734,38 @@ function ExistingStockPanel({
                     ]
                       .filter(Boolean)
                       .join(" · ");
+                    const linkableIndex = linkableResults.findIndex(
+                      (row) => row.variantGid === candidate.variantGid,
+                    );
+                    const selected = linkableIndex === highlight;
+                    const thumb = candidate.imageUrl ? (
+                      <img
+                        src={candidate.imageUrl}
+                        alt=""
+                        width={40}
+                        height={40}
+                        style={{
+                          display: "block",
+                          width: 40,
+                          height: 40,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          display: "block",
+                          width: 40,
+                          height: 40,
+                          borderRadius: 6,
+                          background: "#e1e3e5",
+                          flexShrink: 0,
+                        }}
+                      />
+                    );
                     if (candidate.unlinkableReason) {
                       return (
                         <div
@@ -683,46 +774,52 @@ function ExistingStockPanel({
                           aria-selected="false"
                           aria-disabled="true"
                           style={{
+                            display: "flex",
+                            gap: 10,
+                            alignItems: "center",
                             padding: 10,
                             borderBottom: "1px solid #e1e3e5",
                             color: "#6d7175",
                           }}
                         >
-                          <strong>{label}</strong>
-                          <div style={{ fontSize: 12 }}>{detail}</div>
-                          <div style={{ fontSize: 12 }}>{candidate.unlinkableReason}</div>
+                          {thumb}
+                          <div>
+                            <strong>{label}</strong>
+                            <div style={{ fontSize: 12 }}>{detail}</div>
+                            <div style={{ fontSize: 12 }}>{candidate.unlinkableReason}</div>
+                          </div>
                         </div>
                       );
                     }
                     return (
                       <button
                         key={candidate.variantGid}
+                        id={`stock-option-${item.id}-${linkableIndex}`}
                         type="button"
                         role="option"
-                        aria-selected="false"
+                        aria-selected={selected}
                         data-stock-search-option
-                        onClick={() => {
-                          const data = new FormData();
-                          data.set("intent", "link-stock");
-                          data.set("itemId", item.id);
-                          data.set("variantGid", candidate.variantGid);
-                          linkFetcher.submit(data, { method: "post" });
-                          setTerm("");
-                        }}
+                        onMouseEnter={() => setHighlight(linkableIndex)}
+                        onClick={() => linkCandidate(candidate.variantGid)}
                         style={{
-                          display: "block",
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "center",
                           width: "100%",
                           textAlign: "left",
                           padding: 10,
                           border: "none",
                           borderBottom: "1px solid #e1e3e5",
-                          background: "#fff",
+                          background: selected ? "#e6f2ff" : "#fff",
                           font: "inherit",
                           cursor: "pointer",
                         }}
                       >
-                        <strong>{label}</strong>
-                        <div style={{ fontSize: 12, color: "#6d7175" }}>{detail}</div>
+                        {thumb}
+                        <div>
+                          <strong>{label}</strong>
+                          <div style={{ fontSize: 12, color: "#6d7175" }}>{detail}</div>
+                        </div>
                       </button>
                     );
                   })
@@ -1088,7 +1185,7 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
       <CollapsibleSection
         title="Emails"
         badge={emails.length}
-        defaultOpen={undelivered.length > 0}
+        defaultOpen={false}
       >
       <s-stack direction="block" gap="base">
         {undelivered.length > 0 ? (

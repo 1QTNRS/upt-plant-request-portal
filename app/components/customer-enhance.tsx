@@ -353,6 +353,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
       return;
     }
     if (target.closest("[data-lightbox-image]")) return;
+    if (target.closest(".lightbox-nav")) return;
     if (target.closest("[data-customer-lightbox]")) {
       event.preventDefault();
       close();
@@ -368,12 +369,17 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
 
   function onPointerDown(event) {
     if (!event.isPrimary) return;
+    var origin = event.target;
+    if (
+      origin instanceof Element &&
+      origin.closest("[data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav")
+    ) {
+      tracking = false;
+      return;
+    }
     tracking = true;
     startX = event.clientX;
     startY = event.clientY;
-    if (stage instanceof HTMLElement && event.pointerId != null) {
-      try { stage.setPointerCapture(event.pointerId); } catch (err) {}
-    }
   }
   function onPointerUp(event) {
     if (!tracking) return;

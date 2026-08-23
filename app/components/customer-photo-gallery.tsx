@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { LIGHTBOX_NAV_CSS } from "../lib/photo-lightbox";
+
 const thumbStyle: CSSProperties = {
   display: "block",
   objectFit: "cover",
@@ -81,9 +83,6 @@ const stageStyle: CSSProperties = {
 };
 
 const imageStyle: CSSProperties = {
-  maxWidth: "min(86vw, 900px)",
-  maxHeight: "78vh",
-  objectFit: "contain",
   pointerEvents: "auto",
 };
 
@@ -107,29 +106,11 @@ const controlStyle: CSSProperties = {
   cursor: "pointer",
 };
 
-const prevStyle: CSSProperties = {
-  ...controlStyle,
-  position: "absolute",
-  top: "50%",
-  left: 8,
-  transform: "translateY(-50%)",
-  zIndex: 2,
-};
-
-const nextStyle: CSSProperties = {
-  ...controlStyle,
-  position: "absolute",
-  top: "50%",
-  right: 8,
-  transform: "translateY(-50%)",
-  zIndex: 2,
-};
-
 export function CustomerLightboxRoot() {
   return (
     <>
       {/* Inline display:flex beats the HTML hidden attribute unless we force it. */}
-      <style>{`#customer-lightbox[hidden]{display:none!important}`}</style>
+      <style>{`#customer-lightbox[hidden]{display:none!important}${LIGHTBOX_NAV_CSS}`}</style>
       <div
         id="customer-lightbox"
         hidden
@@ -146,13 +127,23 @@ export function CustomerLightboxRoot() {
         </button>
         <span data-lightbox-status style={{ fontSize: 14 }} />
       </div>
-      <div data-lightbox-stage style={stageStyle}>
-        <button type="button" data-lightbox-prev style={prevStyle}>
-          Previous
+      <div data-lightbox-stage style={{ ...stageStyle, gap: 10 }}>
+        <button
+          type="button"
+          className="lightbox-nav"
+          data-lightbox-prev
+          aria-label="Previous"
+        >
+          ‹
         </button>
         <img data-lightbox-image alt="" style={imageStyle} />
-        <button type="button" data-lightbox-next style={nextStyle}>
-          Next
+        <button
+          type="button"
+          className="lightbox-nav"
+          data-lightbox-next
+          aria-label="Next"
+        >
+          ›
         </button>
       </div>
     </div>

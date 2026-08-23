@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { lightboxIndex, swipeNavigates } from "../lib/photo-lightbox";
+import { LIGHTBOX_NAV_CSS, lightboxIndex, swipeNavigates } from "../lib/photo-lightbox";
 
 const overlayStyle: CSSProperties = {
   position: "fixed",
@@ -15,10 +15,25 @@ const overlayStyle: CSSProperties = {
 
 function isOutsidePhoto(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  if (target.closest("[data-lightbox-image], [data-lightbox-prev], [data-lightbox-next], [data-lightbox-close]")) {
+  if (
+    target.closest(
+      "[data-lightbox-image], [data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav",
+    )
+  ) {
     return false;
   }
   return Boolean(target.closest("[data-admin-photo-lightbox]"));
+}
+
+function isLightboxControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        "[data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav",
+      ),
+    )
+  );
 }
 
 const toolbarStyle: CSSProperties = {
@@ -35,14 +50,9 @@ const stageStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  gap: 10,
   minHeight: 0,
   touchAction: "pan-y",
-};
-
-const imageStyle: CSSProperties = {
-  maxWidth: "min(86vw, 900px)",
-  maxHeight: "78vh",
-  objectFit: "contain",
 };
 
 const controlStyle: CSSProperties = {
@@ -99,6 +109,7 @@ export function AdminPhotoLightbox({
       data-admin-photo-lightbox
       style={{ ...overlayStyle, position: "fixed" }}
     >
+      <style>{LIGHTBOX_NAV_CSS}</style>
       <button
         type="button"
         aria-label="Close photo"
@@ -135,7 +146,7 @@ export function AdminPhotoLightbox({
         data-lightbox-stage
         style={{ ...stageStyle, zIndex: 1 }}
         onPointerDown={(event) => {
-          if (!event.isPrimary) return;
+          if (!event.isPrimary || isLightboxControl(event.target)) return;
           start.current = { x: event.clientX, y: event.clientY };
         }}
         onPointerUp={(event) => {
@@ -157,40 +168,28 @@ export function AdminPhotoLightbox({
         {many ? (
           <button
             type="button"
+            className="lightbox-nav"
             data-lightbox-prev
+            aria-label="Previous"
             onClick={() =>
               setIndex((current) => lightboxIndex(current, -1, urls.length))
             }
-            style={{
-              ...controlStyle,
-              position: "absolute",
-              top: "50%",
-              left: 8,
-              transform: "translateY(-50%)",
-              zIndex: 2,
-            }}
           >
-            Previous
+            ‹
           </button>
         ) : null}
-        <img data-lightbox-image src={src} alt={alt} style={imageStyle} />
+        <img data-lightbox-image src={src} alt={alt} />
         {many ? (
           <button
             type="button"
+            className="lightbox-nav"
             data-lightbox-next
+            aria-label="Next"
             onClick={() =>
               setIndex((current) => lightboxIndex(current, 1, urls.length))
             }
-            style={{
-              ...controlStyle,
-              position: "absolute",
-              top: "50%",
-              right: 8,
-              transform: "translateY(-50%)",
-              zIndex: 2,
-            }}
           >
-            Next
+            ›
           </button>
         ) : null}
       </div>

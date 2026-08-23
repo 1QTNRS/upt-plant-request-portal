@@ -291,7 +291,10 @@ export function ExactPlantsTable({
           confirmLabel="Confirm Dismiss from EXACT PLANTS"
           onCancel={() => setDismissItemId(null)}
           confirm={
-            <Form method="post">
+            <Form
+              method="post"
+              onSubmit={() => setDismissItemId(null)}
+            >
               <input type="hidden" name="intent" value="dismiss-exact-plant" />
               <input type="hidden" name="requestItemId" value={dismissItemId} />
               <input type="hidden" name="confirmed" value="true" />
