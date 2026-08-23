@@ -4,6 +4,8 @@ Read **[docs/CLOUD_AGENT_HANDOFF.md](docs/CLOUD_AGENT_HANDOFF.md)** before chang
 
 Then read **[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**. Production hosting is **Render** (Docker web service, managed PostgreSQL, cron job), declared in `render.yaml`. Do not reimplement anything listed there, and edit `render.yaml` rather than configuring Render by hand.
 
+Read **[docs/AUTOMATED_DELIVERY.md](docs/AUTOMATED_DELIVERY.md)** for PR risk classification, routine squash auto-merge, Render auto-deploy from `main`, `/versionz` SHA checks, and the Playwright smoke suite. Do not deploy to the real UPT store. Do not point destructive automation at any shop except `upt-plant-request-dev.myshopify.com`.
+
 Owner decision 2 is **implemented**: an expired unpaid hold deletes its Shopify draft order so the invoice 404s. Grower's Choice reservation has been observed on `upt-plant-request-dev` (Shopify reports **reserved**, not committed). Do not offer Grower's Choice on the real UPT store until that shop has approved `write_inventory` and the remaining account actions in the runbook.
 
 Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed React Router app on the existing working branch. Do not resurrect `app/lib/sample-*.ts` or other localStorage prototype modules as the source of truth.
@@ -20,12 +22,14 @@ There is a single web service. Standard commands live in `package.json` scripts;
 - Typecheck: `npm run typecheck` — `react-router typegen && tsc --noEmit`.
 - Build: `npm run build` — React Router (Vite) production build.
 - Tests: `npm test` — `tsx --test --test-concurrency=1 app/lib/*.test.ts`. Some suites hit the database, so run `npm run setup` first. Keep the runner serial: the DB-backed suites share one database, and running their files in parallel caused SQLite lock timeouts on CI runners.
+- Local Playwright: `npm run test:e2e` — demo shop via `SHOPIFY_API_KEY=devkey`. Safe in Cloud VMs.
+- Live dev-store Playwright: `npm run test:e2e:dev-store` — **hard-fails** unless `SMOKE_SHOP` is exactly `upt-plant-request-dev.myshopify.com`. Needs GitHub/Render secrets; never point it at the real UPT store.
 - DB setup: `npm run setup` — generates the client and applies migrations for whichever provider `DATABASE_URL` names (creates `prisma/dev.sqlite` when unset).
 - Seed: `node scripts/prisma.mjs db seed` (also runs via `ensureShopSeeded` under the dev bypass only).
 - Shopify call validation: `npm run validate-graphql` — fetches the live Admin schema and checks every `#graphql` document plus the variable payloads. **Needs network.** Run after touching any Shopify call.
 - Prisma schema sync: `npm run prisma:sync-schema` after editing `prisma/schema.prisma`; `npm run prisma:check-schema` (in CI) fails when the generated PostgreSQL schema is stale.
 
-The GitHub CI (`.github/workflows/ci.yml`) is: install → `tsc --noEmit` → `npm run lint` → validate both Prisma schemas → schema-sync check → **`npm test` on SQLite** → **`npm test` on PostgreSQL** → `npm run build`.
+The GitHub CI (`.github/workflows/ci.yml`) is: install → `tsc --noEmit` → `npm run lint` → validate both Prisma schemas → schema-sync check → **`npm test` on SQLite** → **`npm test` on PostgreSQL** → `npm run build`, plus a sibling **Local Playwright smoke** job. After merge, `post-deploy-smoke.yml` waits for the exact SHA on `/versionz` before any live suite.
 
 ### Verifying deployment changes
 
@@ -64,7 +68,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Similarly, `customer-identity.ts` is pure request-ownership authorization and `customer-identity.server.ts` resolves a name/email from the Admin API. Different concerns, similar names.
 - **Never hand a live database to a Prisma command as a shadow database.** `prisma migrate diff --shadow-database-url "$DATABASE_URL"` reads like inspection and is not: Prisma empties the shadow database. Run against the dev store's database it destroyed every row including the Shopify offline session. `migrate dev`, `migrate reset` and `db push` are the same hazard.
 - Shopify folds `read_x` into the `write_x` that implies it, so a correctly installed store's granted list omits the read scopes. Compare through `coveredScopes` (`env.server.ts`), never as raw strings.
-- Both Render services deploy from `cursor/production-readiness-blockers-7617` with auto-deploy on. Deploying another branch's commit by id works but is replaced by the next push to that branch.
+- Both Render services **must** auto-deploy `main` (`render.yaml` `branch: main`, `autoDeployTrigger: checksPass`). If the dashboard still tracks a leftover working branch, that is a Render Blueprint sync — not a reason to build a second deploy system. See `docs/AUTOMATED_DELIVERY.md`.
 - The dev store contradicts Shopify's own docs in several places (null `Publication.catalog`, POS handle `pos`, missing `Shop.domainsPaginated`). The handoff has the table; check it before trusting a deprecation notice.
 - The Help glossary (`help-glossary.ts`, `help-topics.ts`) is content in code, and every entry quotes the file it is grounded in. `help-content.test.ts` reads those files and fails when a quote has moved, so **changing a business rule breaks the entry that describes it** — update the entry rather than the quote. Answers must come from that content; the assistant refuses what is not in it.
 
