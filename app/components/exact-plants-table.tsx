@@ -12,7 +12,7 @@ import {
   type ExactPlantTableSort,
   type ExactPlantTableSortState,
 } from "../lib/exact-plants";
-import { formatCurrency, formatDateTime } from "../lib/portal";
+import { formatCurrency, formatDate } from "../lib/portal";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
 
 const SORTABLE: Array<{
@@ -27,6 +27,15 @@ const SORTABLE: Array<{
   { column: "price", label: "Price", align: "right" },
   { column: "date", label: "Date" },
 ];
+
+const ELIGIBILITY_TONE: Record<
+  ReturnType<typeof exactPlantReleaseTone>,
+  { background: string; color: string }
+> = {
+  warning: { background: "#fff1e3", color: "#7a4d00" },
+  caution: { background: "#fff5d6", color: "#6b4f00" },
+  info: { background: "#e6f2ff", color: "#1f4e79" },
+};
 
 export function ExactPlantsTable({
   items,
@@ -47,22 +56,12 @@ export function ExactPlantsTable({
 
   return (
     <>
-      <div
-        data-exact-plants-table-wrap
-        style={{ overflowX: "auto", marginTop: 12 }}
-      >
-        <table
-          data-exact-plants-table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            minWidth: 820,
-            font: "inherit",
-          }}
-        >
+      <style>{tableLayoutCss}</style>
+      <div data-exact-plants-table-wrap className="exact-plants-table-wrap">
+        <table data-exact-plants-table className="exact-plants-table">
           <thead>
             <tr>
-              <th scope="col" style={thStyle}>
+              <th scope="col" className="exact-plants-col-photo" style={thStyle}>
                 Photo
               </th>
               {SORTABLE.map((column) => {
@@ -73,6 +72,7 @@ export function ExactPlantsTable({
                   <th
                     key={column.column}
                     scope="col"
+                    className={`exact-plants-col-${column.column}`}
                     style={{
                       ...thStyle,
                       textAlign: column.align === "right" ? "right" : "left",
@@ -109,13 +109,13 @@ export function ExactPlantsTable({
                   </th>
                 );
               })}
-              <th scope="col" style={thStyle}>
+              <th scope="col" className="exact-plants-col-actions" style={thStyle}>
                 Actions
               </th>
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => {
+            {items.map((item, index) => {
               const listed =
                 item.listing?.status === "listed" && item.listing.shopifyProductGid;
               const bucket = exactPlantListingBucket(item);
@@ -125,9 +125,14 @@ export function ExactPlantsTable({
               });
               const confirming = pendingDismissItemId === item.requestItemId;
               const photos = item.photoUrls.filter(Boolean);
+              const eligibilityTone = ELIGIBILITY_TONE[exactPlantReleaseTone(item.releaseReason)];
               return (
-                <tr key={item.requestItemId} data-exact-plant-row={item.requestItemId}>
-                  <td style={tdStyle}>
+                <tr
+                  key={item.requestItemId}
+                  data-exact-plant-row={item.requestItemId}
+                  className={index % 2 === 1 ? "exact-plants-row-alt" : undefined}
+                >
+                  <td className="exact-plants-col-photo" style={tdStyle}>
                     {photos[0] ? (
                       <button
                         type="button"
@@ -150,12 +155,12 @@ export function ExactPlantsTable({
                         <img
                           src={photos[0]}
                           alt={item.title}
-                          width={56}
-                          height={56}
+                          width={44}
+                          height={44}
                           style={{
                             display: "block",
-                            width: 56,
-                            height: 56,
+                            width: 44,
+                            height: 44,
                             objectFit: "cover",
                             borderRadius: 6,
                           }}
@@ -165,22 +170,39 @@ export function ExactPlantsTable({
                       <span style={{ color: "#6d7175" }}>—</span>
                     )}
                   </td>
-                  <td style={tdStyle}>
+                  <td className="exact-plants-col-name" style={tdStyle}>
                     <strong>{item.title}</strong>
                   </td>
-                  <td style={tdStyle}>
+                  <td className="exact-plants-col-request" style={tdStyle}>
                     <s-link href={`/app/requests/${item.requestId}`}>
-                      Request {item.requestNumber}
+                      {item.requestNumber}
                     </s-link>
                   </td>
-                  <td style={tdStyle}>
-                    <s-badge tone={exactPlantReleaseTone(item.releaseReason)}>
+                  <td className="exact-plants-col-reason" style={tdStyle}>
+                    <span
+                      data-exact-plant-eligibility
+                      style={{
+                        display: "inline-block",
+                        maxWidth: "100%",
+                        whiteSpace: "normal",
+                        overflowWrap: "break-word",
+                        lineHeight: 1.25,
+                        padding: "3px 6px",
+                        borderRadius: 6,
+                        background: eligibilityTone.background,
+                        color: eligibilityTone.color,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
                       {EXACT_PLANT_RELEASE_LABELS[item.releaseReason]}
-                    </s-badge>
+                    </span>
                   </td>
-                  <td style={tdStyle}>
+                  <td className="exact-plants-col-listing" style={tdStyle}>
                     {listed ? (
-                      <s-badge tone="success">Listed in EXACT PLANTS</s-badge>
+                      <s-badge tone="success">
+                        {EXACT_PLANT_LISTING_FILTER_LABELS.listed}
+                      </s-badge>
                     ) : (
                       EXACT_PLANT_LISTING_FILTER_LABELS[bucket]
                     )}
@@ -190,14 +212,22 @@ export function ExactPlantsTable({
                       </div>
                     ) : null}
                   </td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                  <td
+                    className="exact-plants-col-price"
+                    style={{ ...tdStyle, textAlign: "right" }}
+                  >
                     {formatCurrency(item.price)}
                   </td>
-                  <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
-                    {formatDateTime(new Date(item.eligibleAt))}
+                  <td className="exact-plants-col-date" style={tdStyle}>
+                    <time
+                      data-exact-plant-date
+                      dateTime={item.eligibleAt}
+                    >
+                      {formatDate(new Date(item.eligibleAt))}
+                    </time>
                   </td>
-                  <td style={tdStyle}>
-                    <s-stack direction="inline" gap="small">
+                  <td className="exact-plants-col-actions" style={tdStyle}>
+                    <s-stack direction="block" gap="small">
                       {listed ? (
                         item.listing?.productAdminUrl ? (
                           <s-link href={item.listing.productAdminUrl} target="_blank">
@@ -205,7 +235,7 @@ export function ExactPlantsTable({
                           </s-link>
                         ) : null
                       ) : (
-                        <s-link href={reviewHref}>Create EXACT PLANTS Listing</s-link>
+                        <s-link href={reviewHref}>Create listing</s-link>
                       )}
                       {item.listing?.status === "failed" &&
                       item.listing.productAdminUrl ? (
@@ -283,22 +313,66 @@ export function ExactPlantsTable({
   );
 }
 
+const tableLayoutCss = `
+  .exact-plants-table-wrap {
+    margin-top: 12px;
+    width: 100%;
+  }
+  .exact-plants-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    font: inherit;
+  }
+  .exact-plants-col-photo { width: 52px; }
+  .exact-plants-col-name { width: auto; }
+  .exact-plants-col-request { width: 4.6rem; }
+  .exact-plants-col-reason { width: 7.4rem; }
+  .exact-plants-col-listing { width: 5.8rem; }
+  .exact-plants-col-price { width: 4.6rem; }
+  .exact-plants-col-date { width: 6.4rem; }
+  .exact-plants-col-actions { width: 7.4rem; }
+  .exact-plants-table th,
+  .exact-plants-table td {
+    overflow-wrap: anywhere;
+  }
+  .exact-plants-col-request,
+  .exact-plants-col-price,
+  .exact-plants-col-date {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  .exact-plants-row-alt td {
+    background: #f6f6f7;
+  }
+  @media (max-width: 720px) {
+    .exact-plants-table-wrap {
+      overflow-x: auto;
+    }
+    .exact-plants-table {
+      min-width: 680px;
+    }
+  }
+`;
+
 const thStyle: CSSProperties = {
   textAlign: "left",
-  padding: "10px 8px",
-  borderBottom: "1px solid #c9cccf",
-  background: "#f6f6f7",
+  padding: "8px 6px",
+  borderBottom: "2px solid #8c9196",
+  background: "#f1f2f3",
   whiteSpace: "nowrap",
+  verticalAlign: "bottom",
 };
 
 const tdStyle: CSSProperties = {
-  padding: "10px 8px",
-  borderBottom: "1px solid #e1e3e5",
+  padding: "10px 6px",
+  borderBottom: "2px solid #c9cccf",
   verticalAlign: "top",
 };
 
 const sortButtonStyle: CSSProperties = {
-  padding: "6px 4px",
+  padding: "4px 0",
   minHeight: 44,
   border: "none",
   background: "transparent",

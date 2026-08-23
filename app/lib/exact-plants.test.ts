@@ -521,7 +521,8 @@ describe("the EXACT PLANTS queue page", () => {
   );
 
   it("links each plant to its originating admin request without customer PII", () => {
-    assert.match(table, /Request \{item\.requestNumber\}/);
+    assert.match(table, /\{item\.requestNumber\}/);
+    assert.ok(!table.includes("Request {item.requestNumber}"));
     assert.ok(table.includes("href={`/app/requests/${item.requestId}`}"));
     assert.ok(!queue.includes("customerEmail"));
     assert.ok(!queue.includes("customerName"));
@@ -541,9 +542,14 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(queue, /parseExactPlantTableSortState/);
     assert.match(table, /data-exact-plants-table/);
     assert.match(table, /data-exact-plant-sort/);
-    assert.match(table, /Create EXACT PLANTS Listing/);
+    assert.match(table, />Create listing</);
+    assert.ok(!table.includes("Create EXACT PLANTS Listing"));
     assert.match(table, /Dismiss from EXACT PLANTS/);
     assert.match(table, /AdminPhotoLightbox/);
+    assert.match(table, /formatDate\(/);
+    assert.ok(!table.includes("formatDateTime"));
+    assert.match(table, /exact-plants-row-alt/);
+    assert.match(table, /overflow-wrap: break-word/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {

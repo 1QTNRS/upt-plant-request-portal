@@ -63,8 +63,9 @@ test.describe("EXACT PLANTS table", () => {
     await page.keyboard.press("Escape");
     await expect(lightbox).toHaveCount(0);
 
-    const requestLink = page.getByRole("link", { name: /Request REQ/ }).first();
+    const requestLink = page.getByRole("link", { name: /^REQ\d+$/ }).first();
     await expect(requestLink).toHaveAttribute("href", /\/app\/requests\//);
+    await expect(requestLink).not.toHaveText(/Request /);
     await requestLink.click();
     await expect(page).toHaveURL(/\/app\/requests\//);
     await expect(page.getByText("EXACT PLANTS", { exact: true }).first()).toBeVisible();
@@ -72,11 +73,27 @@ test.describe("EXACT PLANTS table", () => {
 
   test("actions still offer listing and dismiss", async ({ page }) => {
     await page.goto("/app/exact-plants");
-    await expect(
-      page.getByRole("link", { name: "Create EXACT PLANTS Listing" }).first(),
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Create listing" }).first()).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Dismiss from EXACT PLANTS" }).first(),
     ).toBeVisible();
+  });
+
+  test("desktop shows the full row without horizontal scrolling", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/app/exact-plants");
+    const wrap = page.locator("[data-exact-plants-table-wrap]");
+    await expect(wrap).toBeVisible();
+    const overflow = await wrap.evaluate(
+      (element) => element.scrollWidth > element.clientWidth + 1,
+    );
+    expect(overflow).toBe(false);
+    await expect(page.locator("[data-exact-plant-date]").first()).not.toHaveText(
+      /AM|PM|UTC|GMT|:|\d{1,2}:\d{2}/,
+    );
+    await expect(page.getByRole("link", { name: "Request REQ8" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "REQ8" })).toBeVisible();
   });
 });
