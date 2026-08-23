@@ -154,6 +154,52 @@ export function matchesExactPlantListingFilter(
   return exactPlantListingBucket(item) === filter;
 }
 
+export const EXACT_PLANT_DATE_SORTS = ["oldest", "newest"] as const;
+
+export type ExactPlantDateSort = (typeof EXACT_PLANT_DATE_SORTS)[number];
+
+/** Current queue order is oldest-first (`offerItem.id` ascending). */
+export function parseExactPlantDateSort(
+  value: string | null | undefined,
+): ExactPlantDateSort {
+  return value === "newest" ? "newest" : "oldest";
+}
+
+export function nextExactPlantDateSort(
+  current: ExactPlantDateSort,
+): ExactPlantDateSort {
+  return current === "oldest" ? "newest" : "oldest";
+}
+
+export function sortExactPlantCandidates<
+  T extends { eligibleAt: string; requestItemId: string },
+>(items: T[], sort: ExactPlantDateSort): T[] {
+  const direction = sort === "newest" ? -1 : 1;
+  return [...items].sort((left, right) => {
+    const delta =
+      new Date(left.eligibleAt).getTime() - new Date(right.eligibleAt).getTime();
+    if (delta !== 0) return delta * direction;
+    return left.requestItemId.localeCompare(right.requestItemId) * direction;
+  });
+}
+
+export function exactPlantEligibleAt(input: {
+  releaseReason: ExactPlantReleaseReason;
+  respondedAt?: Date | string | null;
+  closedAt?: Date | string | null;
+  expiresAt?: Date | string | null;
+  sentAt?: Date | string | null;
+}): string {
+  const pick =
+    input.releaseReason === "customer_declined"
+      ? input.respondedAt || input.closedAt || input.expiresAt || input.sentAt
+      : input.releaseReason === "unclaimed_after_close"
+        ? input.closedAt || input.respondedAt || input.expiresAt || input.sentAt
+        : input.expiresAt || input.closedAt || input.sentAt;
+  const date = pick ? new Date(pick) : new Date(0);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
+
 export function countExactPlantListingFilters<
   T extends {
     listing?: {

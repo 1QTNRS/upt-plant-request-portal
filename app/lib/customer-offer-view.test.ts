@@ -158,8 +158,13 @@ describe("the customer sees every photo of each plant", () => {
     for (const url of PHOTOS) {
       assert.ok(html.includes(url), `${url} is missing from the offer page`);
     }
-    assert.equal([...html.matchAll(/<img/g)].length, PHOTOS.length);
-    // A lightbox opened by onClick is unreachable on the storefront.
+    assert.equal([...html.matchAll(/<img/g)].length, PHOTOS.length + 1);
+    assert.match(html, /data-customer-photo/);
+    assert.match(html, /data-customer-lightbox/);
+    assert.match(html, /data-lightbox-prev/);
+    assert.match(html, /data-lightbox-next/);
+    assert.match(html, /data-lightbox-close/);
+    // React onClick never reaches the storefront; the enhance script does.
     assert.ok(!html.includes("onclick"));
   });
 
@@ -182,7 +187,7 @@ describe("the customer sees every photo of each plant", () => {
       requestClosed: false,
     });
 
-    assert.equal([...html.matchAll(/<img/g)].length, 0);
+    assert.equal([...html.matchAll(/<img/g)].length, 1);
     assert.match(html, /Not Available/);
   });
 });
@@ -230,7 +235,7 @@ describe("a Grower's Choice plant on the customer's offer", () => {
   });
 
   it("neither shows nor implies an exact plant photo", () => {
-    assert.equal([...html.matchAll(/<img/g)].length, 1);
+    assert.equal([...html.matchAll(/<img/g)].length, 2);
     for (const url of PHOTOS) {
       assert.ok(!html.includes(url), "an exact plant's photos are of one plant");
     }

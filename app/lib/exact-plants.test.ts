@@ -20,7 +20,11 @@ import {
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
   matchesExactPlantListingFilter,
+  nextExactPlantDateSort,
+  parseExactPlantDateSort,
   parseExactPlantListingFilter,
+  sortExactPlantCandidates,
+  exactPlantEligibleAt,
   planExactPlantMedia,
 } from "./exact-plants";
 
@@ -523,6 +527,40 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(queue, /name="listing"/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTER_LABELS/);
     assert.match(queue, /EXACT_PLANT_LISTING_FILTERS/);
+  });
+
+  it("sorts oldest and newest and toggles with each listing filter", () => {
+    const older = {
+      requestItemId: "a",
+      eligibleAt: "2026-01-01T00:00:00.000Z",
+    };
+    const newer = {
+      requestItemId: "b",
+      eligibleAt: "2026-08-01T00:00:00.000Z",
+    };
+    assert.equal(parseExactPlantDateSort(null), "oldest");
+    assert.equal(parseExactPlantDateSort("newest"), "newest");
+    assert.equal(nextExactPlantDateSort("oldest"), "newest");
+    assert.equal(nextExactPlantDateSort("newest"), "oldest");
+    assert.deepEqual(
+      sortExactPlantCandidates([newer, older], "oldest").map((row) => row.requestItemId),
+      ["a", "b"],
+    );
+    assert.deepEqual(
+      sortExactPlantCandidates([older, newer], "newest").map((row) => row.requestItemId),
+      ["b", "a"],
+    );
+    assert.equal(
+      exactPlantEligibleAt({
+        releaseReason: "customer_declined",
+        respondedAt: "2026-04-01T00:00:00.000Z",
+      }),
+      "2026-04-01T00:00:00.000Z",
+    );
+    assert.match(queue, /parseExactPlantDateSort/);
+    assert.match(queue, /data-exact-plant-date-sort/);
+    assert.match(queue, /name="date"/);
+    assert.match(queue, /Date \{dateSort === "newest" \? "↓" : "↑"\}/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {

@@ -19,27 +19,31 @@ import {
   EXACT_PLANT_RELEASE_LABELS,
   exactPlantReleaseTone,
   matchesExactPlantListingFilter,
+  nextExactPlantDateSort,
+  parseExactPlantDateSort,
   parseExactPlantListingFilter,
+  sortExactPlantCandidates,
 } from "../lib/exact-plants";
 import {
   dismissExactPlantFromQueue,
   listExactPlantCandidates,
 } from "../lib/exact-plants.server";
-import { formatCurrency } from "../lib/portal";
+import { formatCurrency, formatDateTime } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
   const items = await listExactPlantCandidates(shop);
-  const listingFilter = parseExactPlantListingFilter(
-    new URL(request.url).searchParams.get("listing"),
-  );
+  const search = new URL(request.url).searchParams;
+  const listingFilter = parseExactPlantListingFilter(search.get("listing"));
+  const dateSort = parseExactPlantDateSort(search.get("date"));
   const counts = countExactPlantListingFilters(items);
-  const visible = items.filter((item) =>
-    matchesExactPlantListingFilter(item, listingFilter),
+  const visible = sortExactPlantCandidates(
+    items.filter((item) => matchesExactPlantListingFilter(item, listingFilter)),
+    dateSort,
   );
-  return { items: visible, listingFilter, counts, total: items.length };
+  return { items: visible, listingFilter, dateSort, counts, total: items.length };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -65,7 +69,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function ExactPlantsIndex() {
-  const { items, listingFilter, counts, total } = useLoaderData<typeof loader>();
+  const { items, listingFilter, dateSort, counts, total } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -98,6 +103,7 @@ export default function ExactPlantsIndex() {
           defaultOpen={total > 0}
         >
           <Form method="get" data-exact-plant-listing-filter>
+            <input type="hidden" name="date" value={dateSort} />
             <s-stack direction="inline" gap="small">
               {EXACT_PLANT_LISTING_FILTERS.map((filter) => (
                 <button
@@ -121,6 +127,31 @@ export default function ExactPlantsIndex() {
                 </button>
               ))}
             </s-stack>
+          </Form>
+          <Form method="get" data-exact-plant-date-sort style={{ margin: "12px 0" }}>
+            <input type="hidden" name="listing" value={listingFilter} />
+            <button
+              type="submit"
+              name="date"
+              value={nextExactPlantDateSort(dateSort)}
+              aria-pressed={dateSort === "newest"}
+              aria-label={
+                dateSort === "newest"
+                  ? "Date, newest first. Activate for oldest first."
+                  : "Date, oldest first. Activate for newest first."
+              }
+              style={{
+                padding: "8px 12px",
+                minHeight: 44,
+                borderRadius: 8,
+                border: "1px solid #c9cccf",
+                background: "#fff",
+                font: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              Date {dateSort === "newest" ? "↓" : "↑"}
+            </button>
           </Form>
           {items.length === 0 ? (
             <s-text color="subdued">
@@ -156,6 +187,9 @@ export default function ExactPlantsIndex() {
                       </s-stack>
                       <s-text>
                         {formatCurrency(item.price)} · {item.weightLbs} lb
+                      </s-text>
+                      <s-text color="subdued">
+                        {formatDateTime(new Date(item.eligibleAt))}
                       </s-text>
                       {item.listing?.status === "failed" && item.listing.lastError ? (
                         <s-banner tone="critical">
