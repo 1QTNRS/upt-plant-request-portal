@@ -64,7 +64,9 @@ describe("customer photo lightbox", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-close/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerdown/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /setPointerCapture/);
-    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /document.body.appendChild\(root\)/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pinToBody/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /__uptCustomerLightbox/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /document\.body\.appendChild/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /root\.focus\(\)/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowLeft/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /Escape/);
@@ -72,6 +74,11 @@ describe("customer photo lightbox", () => {
       path.join(REPO_ROOT, "app", "components", "customer-offer-view.tsx"),
       "utf8",
     );
+    const layout = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "customer.tsx"),
+      "utf8",
+    );
     assert.match(offer, /CustomerPhotoGallery/);
+    assert.match(layout, /CustomerLightboxRoot/);
   });
 });

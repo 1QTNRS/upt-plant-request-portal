@@ -168,20 +168,41 @@ export const FEDEX_WARNING_SCRIPT = `
 
 export const CUSTOMER_LIGHTBOX_SCRIPT = `
 (function () {
-  var root = document.getElementById("customer-lightbox");
-  if (!(root instanceof HTMLElement)) return;
-  // s-page (and other Polaris hosts) can make position:fixed stick to the
-  // scrolled document instead of the viewport. Pin the overlay to body.
-  if (root.parentNode !== document.body) {
-    document.body.appendChild(root);
+  if (window.__uptCustomerLightbox) return;
+  window.__uptCustomerLightbox = true;
+
+  var root;
+  var image;
+  var status;
+  var prev;
+  var next;
+  var stage;
+
+  function pinToBody() {
+    var nodes = document.querySelectorAll("[data-customer-lightbox]");
+    if (!nodes.length) return null;
+    var keep = nodes[0];
+    for (var i = 1; i < nodes.length; i++) {
+      if (nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
+    }
+    if (keep.parentNode !== document.body) {
+      document.body.appendChild(keep);
+    }
+    return keep;
   }
-  var image = root.querySelector("[data-lightbox-image]");
-  var status = root.querySelector("[data-lightbox-status]");
-  var prev = root.querySelector("[data-lightbox-prev]");
-  var next = root.querySelector("[data-lightbox-next]");
-  var closeBtn = root.querySelector("[data-lightbox-close]");
-  var stage = root.querySelector("[data-lightbox-stage]");
-  if (!(image instanceof HTMLImageElement)) return;
+
+  function bind() {
+    root = pinToBody();
+    if (!(root instanceof HTMLElement)) return false;
+    image = root.querySelector("[data-lightbox-image]");
+    status = root.querySelector("[data-lightbox-status]");
+    prev = root.querySelector("[data-lightbox-prev]");
+    next = root.querySelector("[data-lightbox-next]");
+    stage = root.querySelector("[data-lightbox-stage]");
+    return image instanceof HTMLImageElement;
+  }
+
+  if (!bind()) return;
 
   var urls = [];
   var alts = [];
@@ -191,7 +212,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   var tracking = false;
 
   function render() {
-    if (!urls.length) return;
+    if (!urls.length || !(image instanceof HTMLImageElement)) return;
     image.src = urls[index];
     image.alt = alts[index] || "";
     if (status) {
@@ -205,6 +226,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   }
 
   function openFrom(link) {
+    bind();
     var gallery = link.getAttribute("data-gallery") || "";
     var nodes = document.querySelectorAll("a[data-customer-photo]");
     urls = [];
@@ -219,19 +241,18 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
       urls = [link.href];
       alts = [link.getAttribute("data-alt") || ""];
     }
-    index = parseInt(link.getAttribute("data-index") || "0", 10) || 0;
-    if (index < 0 || index >= urls.length) index = 0;
+    index = parseInt(link.getAttribute("data-index") || "0", 10);
+    if (Number.isNaN(index) || index < 0 || index >= urls.length) index = 0;
     root.hidden = false;
-    if (typeof root.tabIndex !== "number" || root.tabIndex < 0) {
-      root.tabIndex = -1;
-    }
+    root.tabIndex = -1;
     root.focus();
     render();
   }
 
   function close() {
+    if (!root) return;
     root.hidden = true;
-    image.removeAttribute("src");
+    if (image instanceof HTMLImageElement) image.removeAttribute("src");
   }
 
   function move(delta) {

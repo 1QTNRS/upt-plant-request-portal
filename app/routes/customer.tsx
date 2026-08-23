@@ -3,6 +3,7 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+import { CustomerLightboxRoot } from "../components/customer-photo-gallery";
 import { CustomerPortalNav } from "../components/customer-portal-nav";
 import { customerMyRequestsHref, storefrontHomeUrl } from "../lib/customer-nav";
 import { readCustomerContext } from "../lib/customer-session.server";
@@ -22,13 +23,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function CustomerLayout() {
   const data = useLoaderData<typeof loader>();
   return (
-    <AppProvider>
-      <CustomerPortalNav
-        homeHref={data.storefrontHomeUrl}
-        myRequestsHref={data.myRequestsHref}
-      />
-      <Outlet />
-    </AppProvider>
+    <>
+      <AppProvider>
+        <CustomerPortalNav
+          homeHref={data.storefrontHomeUrl}
+          myRequestsHref={data.myRequestsHref}
+        />
+        <Outlet />
+      </AppProvider>
+      <CustomerLightboxRoot />
+    </>
   );
 }
 
