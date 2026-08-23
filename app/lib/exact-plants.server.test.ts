@@ -10,6 +10,7 @@ import {
   getExactPlantReview,
   listExactPlantCandidates,
 } from "./exact-plants.server";
+import { adminOverrideCloseRequest } from "./offer-response.server";
 import {
   getCustomerResponse,
   saveCustomerResponse,
@@ -935,5 +936,74 @@ describe("admin dismiss from EXACT PLANTS", () => {
       })).exactPlantDismissedAt,
       null,
     );
+  });
+});
+
+describe("unclaimed Exact Plants after close", () => {
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  it("keeps an unanswered Exact Plant eligible after admin override close", async () => {
+    const { request, availableId } = await createOfferedRequest({
+      respond: false,
+    });
+    await adminOverrideCloseRequest({
+      shop,
+      requestId: request.id,
+      confirmed: true,
+    });
+
+    const candidates = await listExactPlantCandidates(shop, request.id);
+    const row = candidates.find((entry) => entry.requestItemId === availableId);
+    assert.ok(row);
+    assert.equal(row?.releaseReason, "unclaimed_after_close");
+    assert.equal(await getCustomerResponse(shop, request.id), null);
+  });
+
+  it("releases every unclaimed Exact Plant on the same request", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Plant A" }, { plantName: "Plant B" }],
+    });
+    for (const item of created.items) {
+      await updateRequestItem(shop, {
+        requestId: created.id,
+        itemId: item.id,
+        availability: "available",
+        price: 50,
+        weightLbs: 1,
+        photoUrls: [`https://cdn.example.com/${item.id}.jpg`],
+      });
+    }
+    await sendOffer(shop, created.id, 3);
+    await saveCustomerResponse(shop, {
+      requestId: created.id,
+      fedexUpgradeSelected: false,
+      fedexUpgradePrice: 15,
+      items: created.items.map((item, index) => ({
+        offerItemId: `off-${index}`,
+        sourceItemId: item.id,
+        plantName: item.plantName,
+        choice: "reject" as const,
+        fulfillmentType: "exact_plant" as const,
+        price: 50,
+        quantity: 1,
+        lineRevenue: 0,
+        customerNotes: "",
+        photoUrls: [`https://cdn.example.com/${item.id}.jpg`],
+      })),
+    });
+
+    const candidates = await listExactPlantCandidates(shop, created.id);
+    assert.equal(candidates.length, 2);
+    assert.ok(candidates.every((row) => row.releaseReason === "customer_declined"));
   });
 });

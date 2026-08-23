@@ -63,12 +63,14 @@ export function declinedItemTag(requestItemId: string): string {
 export type ExactPlantReleaseReason =
   | "customer_declined"
   | "accepted_unpaid_expired"
-  | "never_responded_expired";
+  | "never_responded_expired"
+  | "unclaimed_after_close";
 
 export const EXACT_PLANT_RELEASE_LABELS: Record<ExactPlantReleaseReason, string> = {
   customer_declined: "Customer Declined",
   accepted_unpaid_expired: "Customer Accepted but Unpaid/Expired",
   never_responded_expired: "Customer Never Responded/Expired",
+  unclaimed_after_close: "Unclaimed after request closed",
 };
 
 export function exactPlantReleaseTone(
@@ -81,7 +83,95 @@ export function exactPlantReleaseTone(
       return "caution";
     case "never_responded_expired":
       return "info";
+    case "unclaimed_after_close":
+      return "info";
   }
+}
+
+export const EXACT_PLANT_LISTING_FILTERS = [
+  "all",
+  "not_yet_listed",
+  "flagged",
+  "listed",
+] as const;
+
+export type ExactPlantListingFilter =
+  (typeof EXACT_PLANT_LISTING_FILTERS)[number];
+
+export const EXACT_PLANT_LISTING_FILTER_LABELS: Record<
+  ExactPlantListingFilter,
+  string
+> = {
+  all: "All",
+  not_yet_listed: "Not Yet Listed",
+  flagged: "Flagged",
+  listed: "Listed",
+};
+
+export function parseExactPlantListingFilter(
+  value: string | null | undefined,
+): ExactPlantListingFilter {
+  if (
+    value &&
+    (EXACT_PLANT_LISTING_FILTERS as readonly string[]).includes(value)
+  ) {
+    return value as ExactPlantListingFilter;
+  }
+  return "all";
+}
+
+/**
+ * Queue presentation bucket from stored listing state, not from a label.
+ *
+ * Listed: a successful Shopify Exact Plant product exists.
+ * Flagged: a listing/creation problem that needs admin attention.
+ * Not Yet Listed: eligible and not yet a successful product (including a
+ * failed attempt that never produced a product GID — that is still flagged).
+ */
+export function exactPlantListingBucket(item: {
+  listing?: {
+    status?: string | null;
+    shopifyProductGid?: string | null;
+  } | null;
+}): Exclude<ExactPlantListingFilter, "all"> {
+  if (item.listing?.status === "listed" && item.listing.shopifyProductGid) {
+    return "listed";
+  }
+  if (item.listing?.status === "failed") return "flagged";
+  return "not_yet_listed";
+}
+
+export function matchesExactPlantListingFilter(
+  item: {
+    listing?: {
+      status?: string | null;
+      shopifyProductGid?: string | null;
+    } | null;
+  },
+  filter: ExactPlantListingFilter,
+): boolean {
+  if (filter === "all") return true;
+  return exactPlantListingBucket(item) === filter;
+}
+
+export function countExactPlantListingFilters<
+  T extends {
+    listing?: {
+      status?: string | null;
+      shopifyProductGid?: string | null;
+    } | null;
+  },
+>(items: T[]): Record<ExactPlantListingFilter, number> {
+  const counts: Record<ExactPlantListingFilter, number> = {
+    all: items.length,
+    not_yet_listed: 0,
+    flagged: 0,
+    listed: 0,
+  };
+  for (const item of items) {
+    counts[exactPlantListingBucket(item)] += 1;
+  }
+  return counts;
 }
 
 export type ExactPlantEligibilityInput = {
@@ -100,9 +190,12 @@ export type ExactPlantEligibilityInput = {
  * The reason this item may be listed, or null when it is not eligible.
  *
  * An item is only ever released while it is not promised to anyone: the
- * customer declined it, or their hold lapsed unpaid. A plant UPT marked Not
- * Available is never eligible — there is no exact plant to sell — and a paid or
- * closed request is never touched.
+ * customer declined it, their hold lapsed unpaid, or the request reached a
+ * legitimate final Closed state with the Exact Plant still unclaimed. A plant
+ * UPT marked Not Available is never eligible — there is no exact plant to sell
+ * — and a paid request is never touched. Eligibility is separate from the
+ * historical reason: admin override and customer Close Request do not rewrite
+ * a decline that never happened.
  */
 export function exactPlantReleaseReason(
   input: ExactPlantEligibilityInput,
@@ -124,7 +217,11 @@ export function exactPlantReleaseReason(
   // dropped them the moment an admin tidied the request away.
   if (input.responseChoice === "reject") return "customer_declined";
 
-  if (input.requestStatus === "Closed") return null;
+  // An unpaid Closed request with an unclaimed Exact Plant is eligible. This
+  // is not rewritten as a customer decline: admin override before a response,
+  // or a customer Close Request after decline-all of *other* plants, keeps
+  // the real historical answer.
+  if (input.requestStatus === "Closed") return "unclaimed_after_close";
 
   if (input.requestStatus === "Expired") {
     if (input.responseChoice === "accept") return "accepted_unpaid_expired";
@@ -155,9 +252,6 @@ export function exactPlantIneligibilityReason(
   }
   if (input.paidAt) {
     return "This request has been paid and closed, so the plant is sold.";
-  }
-  if (input.requestStatus === "Closed") {
-    return "This request is closed and the customer did not decline this plant.";
   }
   if (input.responseChoice === "accept") {
     return "The customer accepted this plant and their hold has not expired yet.";

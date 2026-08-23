@@ -218,6 +218,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     customerDeclined: 0,
     acceptedUnpaidExpired: 0,
     neverRespondedExpired: 0,
+    unclaimedAfterClose: 0,
   };
 
   /**
@@ -395,6 +396,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       }
       if (reason === "never_responded_expired") {
         releasedItems.neverRespondedExpired += 1;
+      }
+      if (reason === "unclaimed_after_close") {
+        releasedItems.unclaimedAfterClose += 1;
       }
     }
   }
@@ -595,7 +599,8 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       total:
         releasedItems.customerDeclined +
         releasedItems.acceptedUnpaidExpired +
-        releasedItems.neverRespondedExpired,
+        releasedItems.neverRespondedExpired +
+        releasedItems.unclaimedAfterClose,
     },
     fulfillment: {
       exactPlant: fulfillment.exact_plant,

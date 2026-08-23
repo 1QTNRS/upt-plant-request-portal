@@ -5,7 +5,11 @@ import { describe, it } from "node:test";
 
 import { APP_PROXY_BASE_PATH, CUSTOMER_PORTAL_PATH } from "./app-proxy";
 import {
+  countAcceptedPurchasableChoices,
+  customerCanCloseRequest,
+  declinedAllPurchasableItems,
   fedexRemovalNeedsConfirmation,
+  fedexUpgradeUiState,
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
@@ -292,6 +296,158 @@ describe("confirming the FedEx removal", () => {
   });
 });
 
+describe("FedEx checkbox state from accepted plant count", () => {
+  it("checks and enables FedEx when one plant is accepted", () => {
+    assert.deepEqual(
+      fedexUpgradeUiState({
+        acceptedPurchasableCount: 1,
+        previousAcceptedCount: 0,
+        currentlyChecked: false,
+      }),
+      { enabled: true, checked: true, showRemovalWarning: false, autoChecked: true },
+    );
+  });
+
+  it("unchecks and disables FedEx when the last accepted plant is rejected", () => {
+    assert.deepEqual(
+      fedexUpgradeUiState({
+        acceptedPurchasableCount: 0,
+        previousAcceptedCount: 1,
+        currentlyChecked: true,
+      }),
+      { enabled: false, checked: false, showRemovalWarning: false, autoChecked: false },
+    );
+  });
+
+  it("re-checks and re-enables FedEx when a plant is accepted again", () => {
+    assert.deepEqual(
+      fedexUpgradeUiState({
+        acceptedPurchasableCount: 1,
+        previousAcceptedCount: 0,
+        currentlyChecked: false,
+      }),
+      { enabled: true, checked: true, showRemovalWarning: false, autoChecked: true },
+    );
+  });
+
+  it("does not disable FedEx while another accepted plant remains", () => {
+    assert.deepEqual(
+      fedexUpgradeUiState({
+        acceptedPurchasableCount: 1,
+        previousAcceptedCount: 2,
+        currentlyChecked: true,
+      }),
+      { enabled: true, checked: true, showRemovalWarning: false, autoChecked: false },
+    );
+    assert.deepEqual(
+      fedexUpgradeUiState({
+        acceptedPurchasableCount: 1,
+        previousAcceptedCount: 2,
+        currentlyChecked: false,
+      }),
+      { enabled: true, checked: false, showRemovalWarning: false, autoChecked: false },
+    );
+  });
+
+  it("counts accepted radios only", () => {
+    assert.equal(
+      countAcceptedPurchasableChoices({ a: "accept", b: "reject", c: "accept" }),
+      2,
+    );
+    assert.equal(countAcceptedPurchasableChoices({ a: "reject" }), 0);
+  });
+});
+
+describe("customer Close Request eligibility", () => {
+  it("is refused before the offer response is submitted", () => {
+    assert.equal(
+      customerCanCloseRequest({
+        requestClosed: false,
+        hasResponded: false,
+        hasPayableItems: false,
+        acceptedCount: 0,
+        declinedAllAvailable: true,
+      }),
+      false,
+    );
+  });
+
+  it("is refused while the customer is only reviewing with zero selections", () => {
+    assert.equal(
+      customerCanCloseRequest({
+        requestClosed: false,
+        hasResponded: false,
+        hasPayableItems: true,
+        acceptedCount: 0,
+        declinedAllAvailable: false,
+      }),
+      false,
+    );
+  });
+
+  it("is allowed after a decline-all No Payment Needed response", () => {
+    assert.equal(
+      customerCanCloseRequest({
+        requestClosed: false,
+        hasResponded: true,
+        hasPayableItems: false,
+        acceptedCount: 0,
+        declinedAllAvailable: true,
+      }),
+      true,
+    );
+  });
+
+  it("is refused when payment is required or anything was accepted", () => {
+    assert.equal(
+      customerCanCloseRequest({
+        requestClosed: false,
+        hasResponded: true,
+        hasPayableItems: true,
+        acceptedCount: 1,
+        declinedAllAvailable: false,
+      }),
+      false,
+    );
+  });
+
+  it("is refused once the request is already Closed", () => {
+    assert.equal(
+      customerCanCloseRequest({
+        requestClosed: true,
+        hasResponded: true,
+        hasPayableItems: false,
+        acceptedCount: 0,
+        declinedAllAvailable: true,
+      }),
+      false,
+    );
+  });
+
+  it("treats every purchasable item rejected as decline-all", () => {
+    assert.equal(
+      declinedAllPurchasableItems({
+        offerItems: [
+          { availability: "available", id: "a" },
+          { availability: "available", id: "b" },
+        ],
+        responseItems: [
+          { sourceItemId: "a", choice: "reject" },
+          { sourceItemId: "b", choice: "reject" },
+        ],
+      }),
+      true,
+    );
+    assert.equal(
+      declinedAllPurchasableItems({
+        offerItems: [{ availability: "available", id: "a" }],
+        responseItems: [{ sourceItemId: "a", choice: "accept" }],
+      }),
+      false,
+    );
+  });
+});
+
 describe("customers never see the admin Draft Order link", () => {
   it("is absent from every customer-facing request surface", () => {
     const files = [
@@ -343,6 +499,7 @@ describe("the offer response works without JavaScript", () => {
     // An unchecked checkbox submits nothing, which is exactly "upgrade removed".
     assert.match(source, /type="checkbox"\s*\n\s*name="fedexUpgradeSelected"/);
     assert.match(source, /defaultChecked=\{fedexSelected\}/);
+    assert.match(source, /id="fedex-upgrade-label"/);
   });
 
   it("keeps the removal warning as an explicit confirmation", () => {
@@ -412,11 +569,44 @@ describe("the offer response works without JavaScript", () => {
     );
   });
 
+  it("ties FedEx enablement to accepted plant count in the enhance script", () => {
+    const script = readFileSync(
+      path.join(REPO_ROOT, "app", "components", "customer-enhance.tsx"),
+      "utf8",
+    );
+    assert.match(script, /function acceptedCount\(\)/);
+    assert.match(script, /box\.disabled = !enabled/);
+    assert.match(script, /box\.checked = false/);
+    assert.match(script, /previousAccepted === 0/);
+    assert.match(script, /acceptedCount\(\) === 0/);
+  });
+
   it("renders every photo the offer froze, not just the first", () => {
     // The rest used to be reachable only through a lightbox opened by onClick,
     // so on the storefront the customer never saw them.
     assert.match(source, /item\.photoUrls\.map\(/);
     assert.ok(!/src=\{item\.photoUrl\}/.test(source));
+  });
+});
+
+describe("customer portal navigation", () => {
+  it("puts Home and My Requests on the customer layout, not admin links", () => {
+    const layout = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "customer.tsx"),
+      "utf8",
+    );
+    const nav = readFileSync(
+      path.join(REPO_ROOT, "app", "components", "customer-portal-nav.tsx"),
+      "utf8",
+    );
+    assert.match(layout, /CustomerPortalNav/);
+    assert.match(layout, /storefrontHomeUrl/);
+    assert.match(nav, /data-customer-nav="home"/);
+    assert.match(nav, /data-customer-nav="my-requests"/);
+    assert.match(nav, />Home</);
+    assert.match(nav, />My Requests</);
+    assert.ok(!nav.includes("/app"), "customer nav must not expose admin routes");
+    assert.ok(!layout.includes('href="/app"'));
   });
 });
 

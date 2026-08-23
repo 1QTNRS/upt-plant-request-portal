@@ -14,6 +14,7 @@ import {
   type RequestStatus,
   type SampleCustomerOffer,
 } from "../lib/portal";
+import { customerCanCloseRequest } from "../lib/customer-portal";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { OfferExpiryBanner } from "./customer-request-portal";
 
@@ -76,10 +77,27 @@ export function CustomerSupportNote() {
   );
 }
 
-function CloseRequestButton({ formAction }: { formAction?: string }) {
+function CloseRequestButton({
+  formAction,
+  prominent = false,
+}: {
+  formAction?: string;
+  prominent?: boolean;
+}) {
   return (
     <form method="post" action={formAction}>
-      <button type="submit" name="intent" value="close-request" style={buttonStyle}>
+      <button
+        type="submit"
+        name="intent"
+        value="close-request"
+        style={{
+          ...buttonStyle,
+          fontWeight: prominent ? 600 : 400,
+          background: prominent ? "#008060" : "#ffffff",
+          color: prominent ? "#ffffff" : "inherit",
+          borderColor: prominent ? "#008060" : "#c9cccf",
+        }}
+      >
         Close Request
       </button>
     </form>
@@ -176,6 +194,15 @@ export function CustomerOfferView({
   const acceptedItems = (response?.items ?? []).filter((item) => item.choice === "accept");
   const rejectedItems = (response?.items ?? []).filter((item) => item.choice === "reject");
   const hasAccepted = acceptedItems.length > 0;
+  const canCloseRequest = customerCanCloseRequest({
+    requestClosed,
+    hasResponded: submitted,
+    hasPayableItems: hasAccepted ? true : false,
+    acceptedCount: acceptedItems.length,
+    declinedAllAvailable:
+      purchasable.length === 0 ||
+      (rejectedItems.length >= purchasable.length && acceptedItems.length === 0),
+  });
   // A closed request has nothing left to collect: paid through `orders/paid`,
   // or closed by the customer once they had rejected everything.
   const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;
@@ -305,12 +332,9 @@ export function CustomerOfferView({
                 information.
               </s-text>
               {requestClosed ? null : (
-                /*
-                 * Without this the request has no action at all and sits open
-                 * until the hold lapses, even though there was never anything
-                 * to answer.
-                 */
-                <CloseRequestButton formAction={formAction} />
+                <s-text color="subdued">
+                  Close this request when you are finished.
+                </s-text>
               )}
             </s-stack>
           </s-section>
@@ -325,12 +349,9 @@ export function CustomerOfferView({
                 Priority Overnight upgrade was not applied.
               </s-text>
               {requestClosed ? null : (
-                <>
-                  <s-text color="subdued">
-                    Close this request when you are finished.
-                  </s-text>
-                  <CloseRequestButton formAction={formAction} />
-                </>
+                <s-text color="subdued">
+                  Close this request when you are finished.
+                </s-text>
               )}
             </s-stack>
           </s-section>
@@ -398,7 +419,11 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {backHref ? (
+        {canCloseRequest ? (
+          <s-section>
+            <CloseRequestButton formAction={formAction} prominent />
+          </s-section>
+        ) : backHref ? (
           <s-section>
             <s-link href={backHref}>Back to My Requests</s-link>
           </s-section>
@@ -563,10 +588,10 @@ export function CustomerOfferView({
                 <button
                   type="submit"
                   name="intent"
-                  value="close-request"
+                  value="submit-response"
                   style={{ ...buttonStyle, fontWeight: 600 }}
                 >
-                  Close Request
+                  Submit
                 </button>
               </s-stack>
             </s-section>
@@ -579,10 +604,16 @@ export function CustomerOfferView({
                   borderRadius="base"
                   background="base"
                 >
-                  <label htmlFor="fedex-upgrade" style={choiceLabelStyle}>
+                  <label
+                    htmlFor="fedex-upgrade"
+                    id="fedex-upgrade-label"
+                    style={choiceLabelStyle}
+                  >
                     {/*
                       A real checkbox: unchecked submits nothing, which is
-                      exactly "upgrade removed".
+                      exactly "upgrade removed". JavaScript disables and greys
+                      this out while no plant is accepted; the server also
+                      strips FedEx when nothing was accepted.
                     */}
                     <input
                       id="fedex-upgrade"

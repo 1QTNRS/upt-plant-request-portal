@@ -90,6 +90,11 @@ import {
   type AdminItemDirty,
   type AdminItemDraft,
 } from "../lib/admin-item-draft";
+import { AdminPhotoUploader } from "../components/admin-photo-uploads";
+import {
+  CollapsibleSection,
+  CollapsibleSectionStyles,
+} from "../components/collapsible-section";
 import { PhotoReorderStrip } from "../components/photo-reorder";
 import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
 import { wrapRowStyle } from "../components/admin-layout";
@@ -724,10 +729,12 @@ function PlantItemCard({
   item,
   shop,
   canEdit,
+  onRequiredPhotoBusyChange,
 }: {
   item: PlantItem;
   shop: string;
   canEdit: boolean;
+  onRequiredPhotoBusyChange?: (itemId: string, busy: boolean) => void;
 }) {
   const fetcher = useFetcher<typeof action>();
   const photoFetcher = useFetcher<typeof action>();
@@ -992,10 +999,13 @@ function PlantItemCard({
                   <photoFetcher.Form method="post" encType="multipart/form-data">
                     <input type="hidden" name="intent" value="upload-photo" />
                     <input type="hidden" name="itemId" value={item.id} />
-                    <input type="file" name="photo" accept="image/*" />
-                    <s-button variant="secondary" type="submit">
-                      Upload plant photo
-                    </s-button>
+                    <AdminPhotoUploader
+                      itemId={item.id}
+                      required={fulfillment === "exact_plant"}
+                      onRequiredBusyChange={(busy) =>
+                        onRequiredPhotoBusyChange?.(item.id, busy)
+                      }
+                    />
                   </photoFetcher.Form>
                   <photoFetcher.Form method="post">
                     <input type="hidden" name="intent" value="add-photo-url" />
@@ -1083,7 +1093,12 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
   const undelivered = emails.filter((email) => email.status !== "sent");
 
   return (
-    <s-section heading="Emails">
+    <s-section>
+      <CollapsibleSection
+        title="Emails"
+        badge={emails.length}
+        defaultOpen={undelivered.length > 0}
+      >
       <s-stack direction="block" gap="base">
         {undelivered.length > 0 ? (
           <s-banner tone="critical">
@@ -1146,6 +1161,7 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
           ))
         )}
       </s-stack>
+      </CollapsibleSection>
     </s-section>
   );
 }
@@ -1161,12 +1177,14 @@ function SendOfferSection({
   sentOffer,
   offerEmail,
   items,
+  photoUploadsInProgress = false,
 }: {
   status: RequestStatus;
   sentOffer?: SentOffer;
   /** The outbox row, which is the only evidence the customer was told. */
   offerEmail?: OutboxMessage;
   items: PlantItem[];
+  photoUploadsInProgress?: boolean;
 }) {
   const [expirationDays, setExpirationDays] = useState<OfferExpirationDays>(3);
   const navigation = useNavigation();
@@ -1247,6 +1265,14 @@ function SendOfferSection({
       <s-stack direction="block" gap="base">
         <input type="hidden" name="intent" value="send-offer" />
         <input type="hidden" name="expirationDays" value={expirationDays} />
+        {photoUploadsInProgress ? (
+          <s-banner tone="warning">
+            <s-text>
+              Photos are still uploading. Send Offer stays disabled until they
+              finish.
+            </s-text>
+          </s-banner>
+        ) : null}
         {problems.length > 0 ? (
           <s-banner tone="critical">
             <s-stack direction="block" gap="small">
@@ -1286,7 +1312,9 @@ function SendOfferSection({
           variant="primary"
           type="submit"
           {...(sending ? { loading: true } : {})}
-          {...(problems.length > 0 ? { disabled: true } : {})}
+          {...(problems.length > 0 || photoUploadsInProgress
+            ? { disabled: true }
+            : {})}
         >
           Send Offer
         </s-button>
@@ -1304,13 +1332,17 @@ function DeclinedExactPlantsSection({
 }) {
   const returnTo = `/app/requests/${requestId}`;
   return (
-    <s-section heading="Declined exact plants">
+    <s-section>
+      <CollapsibleSection
+        title="EXACT PLANTS"
+        badge={items.length}
+        defaultOpen={items.length > 0}
+      >
       <s-stack direction="block" gap="base">
         <s-text color="subdued">
-          These plants were marked Available, offered as exact plants, and
-          rejected by the customer. Review a listing before any Shopify product
-          is created. Not Available items are not included, and neither are
-          Grower&rsquo;s Choice items — those already have a Shopify product.
+          Unclaimed exact plants from this request. Review a listing before any
+          Shopify product is created. Grower&rsquo;s Choice items are not
+          included — those already have a Shopify product.
         </s-text>
         {items.length === 0 ? (
           <s-text color="subdued">No declined exact plants on this request.</s-text>
@@ -1358,6 +1390,7 @@ function DeclinedExactPlantsSection({
           })
         )}
       </s-stack>
+      </CollapsibleSection>
     </s-section>
   );
 }
@@ -1754,6 +1787,11 @@ export default function RequestDetail() {
       ? actionData.error
       : null;
 
+  const [requiredPhotoBusyIds, setRequiredPhotoBusyIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const photoUploadsInProgress = requiredPhotoBusyIds.size > 0;
+
   useEffect(() => {
     const onFocus = () => revalidator.revalidate();
     window.addEventListener("focus", onFocus);
@@ -1773,10 +1811,22 @@ export default function RequestDetail() {
     );
   }
 
+  const setRequiredPhotoBusy = (itemId: string, busy: boolean) => {
+    setRequiredPhotoBusyIds((current) => {
+      const has = current.has(itemId);
+      if (busy === has) return current;
+      const next = new Set(current);
+      if (busy) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  };
+
   const canEditItems = plantRequest.status === "New";
 
   return (
     <s-page heading={`Request ${getDisplayRequestNumber(plantRequest)}`}>
+      <CollapsibleSectionStyles />
       <s-link slot="breadcrumb-actions" href="/app">
         Dashboard
       </s-link>
@@ -1869,6 +1919,7 @@ export default function RequestDetail() {
               item={item}
               shop={shop}
               canEdit={canEditItems}
+              onRequiredPhotoBusyChange={setRequiredPhotoBusy}
             />
           ))}
         </s-stack>
@@ -1880,6 +1931,7 @@ export default function RequestDetail() {
           sentOffer={plantRequest.sentOffer}
           offerEmail={emails.find((email) => email.templateKey === "offer_ready")}
           items={plantRequest.items}
+          photoUploadsInProgress={photoUploadsInProgress}
         />
       </s-section>
 

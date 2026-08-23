@@ -14,6 +14,7 @@ import {
   CUSTOMER_PORTAL_PATH,
   customerPortalLinks,
   customerPortalRelativeLinks,
+  storefrontHomeUrl,
 } from "./app-proxy";
 
 const SECRET = "shpss_test_secret";
@@ -176,6 +177,17 @@ describe("customer portal links", () => {
       `${APP_PROXY_BASE_PATH}/requests/abc`,
     );
     assert.equal(customerPortalRelativeLinks(false).home, CUSTOMER_PORTAL_PATH);
+  });
+
+  it("points Home at the shop storefront under the proxy", () => {
+    assert.equal(
+      storefrontHomeUrl({ shop: "upt.myshopify.com", viaAppProxy: true }),
+      "https://upt.myshopify.com",
+    );
+    assert.equal(
+      storefrontHomeUrl({ shop: "demo-shop.myshopify.com", viaAppProxy: false }),
+      "/",
+    );
   });
 });
 
