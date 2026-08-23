@@ -4,8 +4,8 @@ Durable status for the next Cloud Agent. Do **not** rebuild this app. Continue f
 
 - Repo: `https://github.com/1qtnrs/upt-plant-request-portal`
 - PR #22 (Prisma persistence + declined EXACT PLANTS listings) is **merged to `main`**.
-- Working branch: `cursor/expired-invoice-void-5eef` (base: `main`) — remaining admin refinements after the #31 squash.
-- Pull request: https://github.com/1QTNRS/upt-plant-request-portal/pull/32
+- Working branch: `cursor/auto-merge-exact-plants-table-5eef` (base: `main`) — automated delivery + EXACT PLANTS table.
+- Read [AUTOMATED_DELIVERY.md](AUTOMATED_DELIVERY.md) before merging routine work or running smoke tests.
 
 **Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) first.** Every remaining
 blocker is an account action, a hosting decision, or a live-store verification.
@@ -32,7 +32,7 @@ Implemented end-to-end in app code:
 - Draft-order creation for **accepted plants only** (GraphQL when an Admin API client exists; demo fallback invoice URL otherwise)
 - `orders/paid` webhook → request **Closed**, accepted items **Sold**
 - Unpaid offer expiry → **Expired** (checked when loading requests / analytics), then `draftOrderDelete` so the issued invoice 404s
-- Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created. **Dismiss from EXACT PLANTS** (confirmation required) removes an eligible, not-yet-listed queue item without creating a product or deleting history; `exactPlantDismissedAt` plus `Admin Dismissed from EXACT PLANTS` keep it out of later queue refreshes. Already-listed products cannot be dismissed or deleted this way.
+- Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created. **Dismiss from EXACT PLANTS** (confirmation required) removes an eligible, not-yet-listed queue item without creating a product or deleting history; `exactPlantDismissedAt` plus `Admin Dismissed from EXACT PLANTS` keep it out of later queue refreshes. Already-listed products cannot be dismissed or deleted this way. The admin queue is a collapsible **sortable table** (photo lightbox, Request # link, eligibility, listing status, price, date, actions). Eligibility rules are unchanged.
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
 - Settings: FedEx warning text and admin notification email
@@ -808,10 +808,12 @@ above. What that has confirmed so far: the granted scope list, the publication
 handles, the shop's currency and weight unit, and that the app proxy, customer
 identity resolution and offline token refresh all work end to end.
 
-**Both Render services deploy from `cursor/production-readiness-blockers-7617`**
-with `autoDeploy: yes`. Work on any other branch reaches the dev service only by
-deploying a specific commit id through the API, and the next push to the tracked
-branch replaces it. Merge before relying on anything being live.
+**Both Render services should auto-deploy `main`** (`render.yaml` now sets
+`branch: main` and `autoDeployTrigger: checksPass`). If the dashboard still
+tracks `cursor/production-readiness-blockers-7617`, sync the Blueprint —
+"Deploy latest commit" is not the intended steady state. See
+[AUTOMATED_DELIVERY.md](AUTOMATED_DELIVERY.md). Do not build a second deploy
+system. Never deploy smoke or destructive tests at the live UPT store.
 
 ---
 
@@ -888,11 +890,10 @@ now includes `write_inventory`), Shopify Files uploads at scale, and a real
 ## Unfinished work
 
 Owner decision 2 (void the expired unpaid invoice) is on `main` via PR #31.
-The remaining admin refinements on this branch (dashboard status filter,
-EXACT PLANTS dismiss, admin override close, Draft Order admin link, customer
-timezone display, FedEx removal warning, item-draft persistence, price
-zero-replace) are in code. Everything else left needs an account action,
-a hosting decision, or a live store —
+Routine delivery (auto-merge, Render `main`, `/versionz`, Playwright) and the
+EXACT PLANTS sortable table live on `cursor/auto-merge-exact-plants-table-5eef`.
+That PR is **high-risk** and must not auto-merge. Everything else left needs
+an account action, a hosting decision, or a live store —
 enumerated with exact screens in
 [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) and in the verification
 list above.

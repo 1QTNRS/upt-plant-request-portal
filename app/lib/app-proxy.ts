@@ -65,13 +65,7 @@ export function storefrontOriginIsAllowed(
  * Without this check anyone could impersonate a customer by appending
  * `?logged_in_customer_id=…`.
  */
-export function appProxySignatureIsValid(
-  search: URLSearchParams,
-  apiSecret: string,
-): boolean {
-  const signature = search.get("signature");
-  if (!signature || !apiSecret) return false;
-
+export function appProxySignatureMessage(search: URLSearchParams): string {
   const grouped = new Map<string, string[]>();
   for (const [key, value] of search) {
     if (key === "signature") continue;
@@ -80,13 +74,37 @@ export function appProxySignatureIsValid(
     else grouped.set(key, [value]);
   }
 
-  const message = [...grouped.keys()]
+  return [...grouped.keys()]
     .sort()
     .map((key) => `${key}=${grouped.get(key)!.join(",")}`)
     .join("");
+}
+
+/**
+ * Build a signed app-proxy query. Used by smoke tests; never accept a shop
+ * other than the one already in `params.shop`.
+ */
+export function signAppProxySearch(
+  params: Record<string, string>,
+  apiSecret: string,
+): URLSearchParams {
+  const search = new URLSearchParams(params);
+  const signature = createHmac("sha256", apiSecret)
+    .update(appProxySignatureMessage(search), "utf8")
+    .digest("hex");
+  search.set("signature", signature);
+  return search;
+}
+
+export function appProxySignatureIsValid(
+  search: URLSearchParams,
+  apiSecret: string,
+): boolean {
+  const signature = search.get("signature");
+  if (!signature || !apiSecret) return false;
 
   const expected = createHmac("sha256", apiSecret)
-    .update(message, "utf8")
+    .update(appProxySignatureMessage(search), "utf8")
     .digest("hex");
 
   const expectedBytes = Buffer.from(expected, "utf8");

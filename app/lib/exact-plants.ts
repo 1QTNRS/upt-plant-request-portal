@@ -1,4 +1,4 @@
-import { normalizePrice, normalizeWeight } from "./portal";
+import { normalizePrice, normalizeWeight, parseRequestNumber } from "./portal";
 
 export const EXACT_PLANTS_COLLECTION_TITLE = "EXACT PLANTS";
 export const EXACT_PLANT_PRODUCT_TYPE = "Exact Plant";
@@ -152,6 +152,160 @@ export function matchesExactPlantListingFilter(
 ): boolean {
   if (filter === "all") return true;
   return exactPlantListingBucket(item) === filter;
+}
+
+export const EXACT_PLANT_TABLE_SORTS = [
+  "name",
+  "request",
+  "reason",
+  "listing",
+  "price",
+  "date",
+] as const;
+
+export type ExactPlantTableSort = (typeof EXACT_PLANT_TABLE_SORTS)[number];
+export type ExactPlantSortDirection = "asc" | "desc";
+
+export type ExactPlantTableSortState = {
+  column: ExactPlantTableSort;
+  direction: ExactPlantSortDirection;
+};
+
+/** Default remains oldest-first by eligibility date. */
+export function parseExactPlantTableSort(
+  value: string | null | undefined,
+): ExactPlantTableSort {
+  if (
+    value &&
+    (EXACT_PLANT_TABLE_SORTS as readonly string[]).includes(value)
+  ) {
+    return value as ExactPlantTableSort;
+  }
+  return "date";
+}
+
+export function parseExactPlantSortDirection(
+  value: string | null | undefined,
+): ExactPlantSortDirection {
+  return value === "desc" ? "desc" : "asc";
+}
+
+export function parseExactPlantTableSortState(search: {
+  get(name: string): string | null;
+}): ExactPlantTableSortState {
+  return {
+    column: parseExactPlantTableSort(search.get("sort")),
+    direction: parseExactPlantSortDirection(search.get("dir")),
+  };
+}
+
+export function nextExactPlantColumnSort(
+  current: ExactPlantTableSortState,
+  column: ExactPlantTableSort,
+): ExactPlantTableSortState {
+  if (current.column === column) {
+    return { column, direction: current.direction === "asc" ? "desc" : "asc" };
+  }
+  return { column, direction: "asc" };
+}
+
+export function compareRequestNumbers(left: string, right: string): number {
+  const leftN = parseRequestNumber(left);
+  const rightN = parseRequestNumber(right);
+  if (leftN != null && rightN != null && leftN !== rightN) return leftN - rightN;
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function listingSortLabel(item: {
+  listing?: {
+    status?: string | null;
+    shopifyProductGid?: string | null;
+  } | null;
+}): string {
+  return EXACT_PLANT_LISTING_FILTER_LABELS[exactPlantListingBucket(item)];
+}
+
+export function sortExactPlantTable<
+  T extends {
+    eligibleAt: string;
+    requestItemId: string;
+    title?: string;
+    requestNumber?: string;
+    releaseReason?: ExactPlantReleaseReason;
+    price?: number;
+    listing?: {
+      status?: string | null;
+      shopifyProductGid?: string | null;
+    } | null;
+  },
+>(items: T[], state: ExactPlantTableSortState): T[] {
+  const direction = state.direction === "desc" ? -1 : 1;
+  return [...items].sort((left, right) => {
+    let delta = 0;
+    switch (state.column) {
+      case "name":
+        delta = (left.title ?? "").localeCompare(right.title ?? "", undefined, {
+          sensitivity: "base",
+        });
+        break;
+      case "request":
+        delta = compareRequestNumbers(
+          left.requestNumber ?? "",
+          right.requestNumber ?? "",
+        );
+        break;
+      case "reason":
+        delta = (
+          left.releaseReason ? EXACT_PLANT_RELEASE_LABELS[left.releaseReason] : ""
+        ).localeCompare(
+          right.releaseReason
+            ? EXACT_PLANT_RELEASE_LABELS[right.releaseReason]
+            : "",
+          undefined,
+          { sensitivity: "base" },
+        );
+        break;
+      case "listing":
+        delta = listingSortLabel(left).localeCompare(
+          listingSortLabel(right),
+          undefined,
+          { sensitivity: "base" },
+        );
+        break;
+      case "price":
+        delta = (left.price ?? 0) - (right.price ?? 0);
+        break;
+      case "date":
+        delta =
+          new Date(left.eligibleAt).getTime() -
+          new Date(right.eligibleAt).getTime();
+        break;
+    }
+    if (delta !== 0) return delta * direction;
+    return left.requestItemId.localeCompare(right.requestItemId) * direction;
+  });
+}
+
+export function exactPlantEligibleAt(input: {
+  releaseReason: ExactPlantReleaseReason;
+  respondedAt?: Date | string | null;
+  closedAt?: Date | string | null;
+  expiresAt?: Date | string | null;
+  sentAt?: Date | string | null;
+}): string {
+  const pick =
+    input.releaseReason === "customer_declined"
+      ? input.respondedAt || input.closedAt || input.expiresAt || input.sentAt
+      : input.releaseReason === "unclaimed_after_close"
+        ? input.closedAt || input.respondedAt || input.expiresAt || input.sentAt
+        : input.expiresAt || input.closedAt || input.sentAt;
+  const date = pick ? new Date(pick) : new Date(0);
+  return Number.isNaN(date.getTime())
+    ? new Date(0).toISOString()
+    : date.toISOString();
 }
 
 export function countExactPlantListingFilters<

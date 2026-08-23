@@ -31,6 +31,9 @@ services:
     dockerfilePath: ./Dockerfile
     region: oregon
     plan: starter
+    # The dashboard historically tracked a working branch. Auto-deploy must
+    # follow main after squash-merge or "Deploy latest commit" stays a habit.
+    branch: main
     healthCheckPath: /healthz
     # Shopify OAuth sessions live in PostgreSQL, so more than one instance is
     # safe; start at one and scale if the storefront portal needs it.
@@ -86,6 +89,7 @@ services:
     # Hourly. Safe to run this often: an expiration reminder is only ever sent
     # once per request, and expiring an already-expired offer is a no-op.
     schedule: "0 * * * *"
+    branch: main
     buildCommand: "true"
     startCommand: node scripts/run-offer-maintenance.mjs
     autoDeployTrigger: checksPass

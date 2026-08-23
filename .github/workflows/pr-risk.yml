@@ -1,0 +1,57 @@
+name: PR risk
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+      - unlabeled
+
+permissions:
+  pull-requests: write
+  contents: read
+  issues: write
+
+jobs:
+  classify:
+    name: Classify PR risk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: Classify, label, and comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          gh label create "high-risk" --color B60205 --description "Owner approval required before merge" --force
+          gh label create "needs-approval" --color B60205 --description "Owner approval required before merge" --force
+          gh label create "routine" --color 0E8A16 --description "Eligible for squash auto-merge after CI" --force
+          FILES="$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')"
+          export PR_FILES="$FILES"
+          RESULT="$(npx tsx scripts/classify-pr.mjs)"
+          echo "$RESULT"
+          RISK="$(node -e "console.log(JSON.parse(process.argv[1]).risk)" "$RESULT")"
+          if [ "$RISK" = "high-risk" ]; then
+            gh pr edit "${{ github.event.pull_request.number }}" --add-label "high-risk" --remove-label "routine" || true
+            if ! gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --jq '.[].body' | grep -q "will not auto-merge"; then
+              gh pr comment "${{ github.event.pull_request.number }}" --body "$(cat <<'EOF'
+          **USER ACTION REQUIRED:** this PR is classified **high-risk** and will not auto-merge.
+
+          High-risk includes auth, payments, draft orders, inventory, destructive migrations, webhooks, privacy, production store mappings, and infrastructure.
+
+          After you review, squash-merge yourself. Render still auto-deploys `main` once CI is green. See `docs/AUTOMATED_DELIVERY.md`.
+          EOF
+          )"
+            fi
+          else
+            gh pr edit "${{ github.event.pull_request.number }}" --add-label "routine" --remove-label "high-risk" || true
+          fi

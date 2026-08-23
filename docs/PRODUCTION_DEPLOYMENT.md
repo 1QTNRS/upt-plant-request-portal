@@ -145,7 +145,13 @@ and an incomplete `SCOPES` list are all rejected the same way.
    lag after a push, and no deploy at all from a red build.
 
    The commit is deliberately not exposed on `/healthz`; that endpoint is public
-   and unauthenticated.
+   and unauthenticated. Post-deploy smoke uses `GET /versionz`, which returns
+   only `{ status, commit, migrations }` — no env, tokens, or customer data.
+   `scripts/wait-for-deploy.mjs` polls that until the exact merged SHA is live.
+
+   `render.yaml` pins both services to `branch: main`. If a service still tracks
+   a leftover working branch, sync the Blueprint; do not click
+   "Deploy latest commit" as a permanent step.
 
 ---
 

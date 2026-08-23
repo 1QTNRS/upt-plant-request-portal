@@ -36,6 +36,7 @@ type Service = {
   dockerCommand?: string;
   dockerfilePath?: string;
   healthCheckPath?: string;
+  branch?: string;
   autoDeployTrigger?: string;
   envVars?: EnvVar[];
 };
@@ -99,6 +100,10 @@ describe("Render blueprint: web service", () => {
     assert.ok(
       existsSync(path.join(REPO_ROOT, "app", "routes", "healthz.tsx")),
       "healthCheckPath points at a route that does not exist",
+    );
+    assert.ok(
+      existsSync(path.join(REPO_ROOT, "app", "routes", "versionz.ts")),
+      "post-deploy smoke needs /versionz",
     );
   });
 
@@ -173,6 +178,11 @@ describe("Render blueprint: auto-deploys", () => {
       // field would default a new service to `commit`, which puts unverified
       // code in front of the store.
       assert.equal(service.autoDeployTrigger, "checksPass");
+      assert.equal(
+        service.branch,
+        "main",
+        `${service.name} must auto-deploy main, not a leftover working branch`,
+      );
     });
   }
 });

@@ -11,35 +11,35 @@ import {
   CollapsibleSectionStyles,
 } from "../components/collapsible-section";
 import { requireAdmin } from "../lib/admin-auth.server";
+import { ExactPlantsTable } from "../components/exact-plants-table";
 import {
-  canDismissExactPlantFromQueue,
   countExactPlantListingFilters,
   EXACT_PLANT_LISTING_FILTER_LABELS,
   EXACT_PLANT_LISTING_FILTERS,
-  EXACT_PLANT_RELEASE_LABELS,
-  exactPlantReleaseTone,
   matchesExactPlantListingFilter,
   parseExactPlantListingFilter,
+  parseExactPlantTableSortState,
+  sortExactPlantTable,
 } from "../lib/exact-plants";
 import {
   dismissExactPlantFromQueue,
   listExactPlantCandidates,
 } from "../lib/exact-plants.server";
-import { formatCurrency } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
   await ensureShopSeeded(shop);
   const items = await listExactPlantCandidates(shop);
-  const listingFilter = parseExactPlantListingFilter(
-    new URL(request.url).searchParams.get("listing"),
-  );
+  const search = new URL(request.url).searchParams;
+  const listingFilter = parseExactPlantListingFilter(search.get("listing"));
+  const sort = parseExactPlantTableSortState(search);
   const counts = countExactPlantListingFilters(items);
-  const visible = items.filter((item) =>
-    matchesExactPlantListingFilter(item, listingFilter),
+  const visible = sortExactPlantTable(
+    items.filter((item) => matchesExactPlantListingFilter(item, listingFilter)),
+    sort,
   );
-  return { items: visible, listingFilter, counts, total: items.length };
+  return { items: visible, listingFilter, sort, counts, total: items.length };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -65,7 +65,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function ExactPlantsIndex() {
-  const { items, listingFilter, counts, total } = useLoaderData<typeof loader>();
+  const { items, listingFilter, sort, counts, total } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -98,6 +99,8 @@ export default function ExactPlantsIndex() {
           defaultOpen={total > 0}
         >
           <Form method="get" data-exact-plant-listing-filter>
+            <input type="hidden" name="sort" value={sort.column} />
+            <input type="hidden" name="dir" value={sort.direction} />
             <s-stack direction="inline" gap="small">
               {EXACT_PLANT_LISTING_FILTERS.map((filter) => (
                 <button
@@ -127,112 +130,12 @@ export default function ExactPlantsIndex() {
               No exact plants match this filter.
             </s-text>
           ) : (
-            <s-stack direction="block" gap="base">
-              {items.map((item) => {
-                const listed =
-                  item.listing?.status === "listed" && item.listing.shopifyProductGid;
-                const reviewHref = `/app/exact-plants/${item.requestItemId}?returnTo=/app/exact-plants`;
-                const canDismiss = canDismissExactPlantFromQueue({
-                  listing: item.listing,
-                });
-                const confirming = actionData?.pendingDismissItemId === item.requestItemId;
-                return (
-                  <s-box
-                    key={item.requestItemId}
-                    padding="base"
-                    borderWidth="base"
-                    borderRadius="base"
-                    background="subdued"
-                  >
-                    <s-stack direction="block" gap="small">
-                      <s-heading>{item.title}</s-heading>
-                      <s-stack direction="inline" gap="small">
-                        <s-badge tone={exactPlantReleaseTone(item.releaseReason)}>
-                          {EXACT_PLANT_RELEASE_LABELS[item.releaseReason]}
-                        </s-badge>
-                        <s-link href={`/app/requests/${item.requestId}`}>
-                          Request {item.requestNumber}
-                        </s-link>
-                      </s-stack>
-                      <s-text>
-                        {formatCurrency(item.price)} · {item.weightLbs} lb
-                      </s-text>
-                      {item.listing?.status === "failed" && item.listing.lastError ? (
-                        <s-banner tone="critical">
-                          <s-text>{item.listing.lastError}</s-text>
-                        </s-banner>
-                      ) : null}
-                      {item.listing?.status === "failed" &&
-                      item.listing.productAdminUrl ? (
-                        <s-link href={item.listing.productAdminUrl} target="_blank">
-                          Open the unpublished Shopify product this attempt created
-                        </s-link>
-                      ) : null}
-                      {listed ? (
-                        <s-stack direction="inline" gap="base">
-                          <s-badge tone="success">Listed in EXACT PLANTS</s-badge>
-                          {item.listing?.productAdminUrl ? (
-                            <s-link href={item.listing.productAdminUrl} target="_blank">
-                              Open Shopify product
-                            </s-link>
-                          ) : null}
-                        </s-stack>
-                      ) : (
-                        <s-stack direction="inline" gap="base">
-                          <s-link href={reviewHref}>Create EXACT PLANTS Listing</s-link>
-                          {canDismiss ? (
-                            confirming ? (
-                              <Form method="post">
-                                <input
-                                  type="hidden"
-                                  name="intent"
-                                  value="dismiss-exact-plant"
-                                />
-                                <input
-                                  type="hidden"
-                                  name="requestItemId"
-                                  value={item.requestItemId}
-                                />
-                                <input type="hidden" name="confirmed" value="true" />
-                                <s-button variant="primary" tone="critical" type="submit">
-                                  Confirm Dismiss from EXACT PLANTS
-                                </s-button>
-                              </Form>
-                            ) : (
-                              <Form method="post">
-                                <input
-                                  type="hidden"
-                                  name="intent"
-                                  value="dismiss-exact-plant"
-                                />
-                                <input
-                                  type="hidden"
-                                  name="requestItemId"
-                                  value={item.requestItemId}
-                                />
-                                <s-button variant="secondary" type="submit">
-                                  Dismiss from EXACT PLANTS
-                                </s-button>
-                              </Form>
-                            )
-                          ) : null}
-                        </s-stack>
-                      )}
-                      {confirming ? (
-                        <s-banner tone="warning">
-                          <s-text>
-                            This removes the plant from the EXACT PLANTS queue. No
-                            Shopify product is created. The original request,
-                            customer response, offer snapshot, photos, and history
-                            stay.
-                          </s-text>
-                        </s-banner>
-                      ) : null}
-                    </s-stack>
-                  </s-box>
-                );
-              })}
-            </s-stack>
+            <ExactPlantsTable
+              items={items}
+              listingFilter={listingFilter}
+              sort={sort}
+              pendingDismissItemId={actionData?.pendingDismissItemId}
+            />
           )}
         </CollapsibleSection>
       </s-section>

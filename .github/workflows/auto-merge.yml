@@ -1,0 +1,58 @@
+name: Auto-merge routine PRs
+
+# Runs after the unit CI workflow, not as a check that waits on itself.
+# This workflow file must live on the default branch before it can fire.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: Classify the PR for this CI run and squash-merge if routine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          PR="$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number')"
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            echo "No PR for $SHA"
+            exit 0
+          fi
+          STATE="$(gh pr view "$PR" --json state --jq .state)"
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR $PR is $STATE; nothing to merge."
+            exit 0
+          fi
+          export PR_TITLE="$(gh pr view "$PR" --json title --jq .title)"
+          export PR_BODY="$(gh pr view "$PR" --json body --jq .body)"
+          export PR_LABELS="$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')"
+          export PR_FILES="$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename')"
+          RESULT="$(npx tsx scripts/classify-pr.mjs)"
+          echo "$RESULT"
+          RISK="$(node -e "console.log(JSON.parse(process.argv[1]).risk)" "$RESULT")"
+          if [ "$RISK" != "routine" ]; then
+            echo "PR $PR is $RISK; not auto-merging."
+            exit 0
+          fi
+          # Cursor Cloud opens drafts. Routine work should not need a ready click.
+          gh pr ready "$PR" || true
+          MERGEABLE="$(gh pr view "$PR" --json mergeable --jq .mergeable)"
+          if [ "$MERGEABLE" != "MERGEABLE" ]; then
+            echo "PR $PR is not mergeable ($MERGEABLE); not auto-merging."
+            exit 0
+          fi
+          gh pr merge "$PR" --squash --delete-branch

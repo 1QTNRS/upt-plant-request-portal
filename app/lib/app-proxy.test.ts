@@ -11,6 +11,7 @@ import {
   APP_PROXY_SUBPATH,
   appProxyRequestIsFresh,
   appProxySignatureIsValid,
+  signAppProxySearch,
   CUSTOMER_PORTAL_PATH,
   customerPortalLinks,
   customerPortalRelativeLinks,
@@ -49,6 +50,18 @@ describe("app proxy signature verification", () => {
       timestamp: "1780000000",
       logged_in_customer_id: "7654321",
     });
+    assert.equal(appProxySignatureIsValid(search, SECRET), true);
+  });
+
+  it("signAppProxySearch produces a valid Shopify-style signature", () => {
+    const search = signAppProxySearch(
+      {
+        shop: "upt-plant-request-dev.myshopify.com",
+        timestamp: "1780000000",
+        logged_in_customer_id: "1",
+      },
+      SECRET,
+    );
     assert.equal(appProxySignatureIsValid(search, SECRET), true);
   });
 
