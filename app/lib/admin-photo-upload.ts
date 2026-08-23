@@ -158,6 +158,81 @@ export type ParsedUploadActionResponse =
   | { ok: false; error: string };
 
 /**
+ * App Bridge on the embedded admin. `fetch` (React Router / useFetcher) gets a
+ * session token automatically; raw XHR does not.
+ */
+export type EmbeddedAdminBridge = {
+  ready?: Promise<void>;
+  idToken?: () => Promise<string>;
+};
+
+export async function readEmbeddedAdminSessionToken(
+  shopify?: EmbeddedAdminBridge | null,
+): Promise<string | undefined> {
+  if (!shopify || typeof shopify.idToken !== "function") return undefined;
+  if (shopify.ready) {
+    try {
+      await shopify.ready;
+    } catch {
+      // idToken may still work after ready rejects.
+    }
+  }
+  try {
+    const token = (await shopify.idToken()).trim();
+    return token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function adminPhotoUploadHeaders(
+  token?: string,
+): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+export function applyAdminPhotoUploadHeaders(
+  xhr: { setRequestHeader: (name: string, value: string) => void },
+  token?: string,
+): void {
+  for (const [name, value] of Object.entries(adminPhotoUploadHeaders(token))) {
+    xhr.setRequestHeader(name, value);
+  }
+}
+
+export function describeUnreadableUploadResponse(body: string): string {
+  const text = body.trim();
+  if (!text) return "Empty upload response.";
+  if (text === "Bad Request") {
+    return "Upload was rejected. Reload the page and try again.";
+  }
+  if (/<!doctype html/i.test(text) || /<html[\s>]/i.test(text)) {
+    return "Could not complete the upload. Reload the page and try again.";
+  }
+  return "Could not read the upload response.";
+}
+
+/** Maps a thrown bounce/redirect Response into a JSON body the XHR client can read. */
+export function photoUploadThrownErrorPayload(
+  error: unknown,
+): { error: string; status: number } | null {
+  if (error instanceof Response) {
+    const contentType = error.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) return null;
+    return {
+      error: "Could not complete the upload. Reload the page and try again.",
+      status: error.status >= 400 ? error.status : 401,
+    };
+  }
+  return {
+    error: error instanceof Error ? error.message : "Upload failed.",
+    status: 500,
+  };
+}
+
+/**
  * Accepts the JSON resource-route body, or a React Router single-fetch
  * turbo-stream leftover. The body must be fully read before this is called.
  */
@@ -206,7 +281,7 @@ export function parseUploadActionResponse(
     return { ok: false, error: error || "Upload failed." };
   }
 
-  return { ok: false, error: "Could not read the upload response." };
+  return { ok: false, error: describeUnreadableUploadResponse(text) };
 }
 
 /**
