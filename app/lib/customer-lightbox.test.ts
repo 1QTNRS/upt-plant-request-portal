@@ -64,6 +64,7 @@ describe("customer photo lightbox", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-close/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerdown/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /setPointerCapture/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /document.body.appendChild\(root\)/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /root\.focus\(\)/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowLeft/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /Escape/);

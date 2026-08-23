@@ -170,6 +170,11 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
 (function () {
   var root = document.getElementById("customer-lightbox");
   if (!(root instanceof HTMLElement)) return;
+  // s-page (and other Polaris hosts) can make position:fixed stick to the
+  // scrolled document instead of the viewport. Pin the overlay to body.
+  if (root.parentNode !== document.body) {
+    document.body.appendChild(root);
+  }
   var image = root.querySelector("[data-lightbox-image]");
   var status = root.querySelector("[data-lightbox-status]");
   var prev = root.querySelector("[data-lightbox-prev]");
