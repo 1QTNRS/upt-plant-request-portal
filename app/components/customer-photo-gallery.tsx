@@ -107,15 +107,18 @@ const controlStyle: CSSProperties = {
 
 export function CustomerLightboxRoot() {
   return (
-    <div
-      id="customer-lightbox"
-      hidden
-      role="dialog"
-      aria-modal="true"
-      aria-label="Plant photo"
-      data-customer-lightbox
-      style={overlayStyle}
-    >
+    <>
+      {/* Inline display:flex beats the HTML hidden attribute unless we force it. */}
+      <style>{`#customer-lightbox[hidden]{display:none!important}`}</style>
+      <div
+        id="customer-lightbox"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-label="Plant photo"
+        data-customer-lightbox
+        style={overlayStyle}
+      >
       <div style={toolbarStyle}>
         <button type="button" data-lightbox-close style={controlStyle}>
           Close
@@ -132,5 +135,6 @@ export function CustomerLightboxRoot() {
         </button>
       </div>
     </div>
+    </>
   );
 }

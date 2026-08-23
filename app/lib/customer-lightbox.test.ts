@@ -6,7 +6,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CUSTOMER_LIGHTBOX_SCRIPT } from "../components/customer-enhance";
-import { CustomerPhotoGallery } from "../components/customer-photo-gallery";
+import {
+  CustomerLightboxRoot,
+  CustomerPhotoGallery,
+} from "../components/customer-photo-gallery";
 import {
   lightboxIndex,
   swipeNavigates,
@@ -46,6 +49,13 @@ describe("customer photo lightbox", () => {
     assert.equal(html.includes("Move left"), false);
     assert.equal(html.includes("remove-photo"), false);
     assert.equal(html.includes("onclick"), false);
+  });
+
+  it("keeps the overlay hidden until opened, even with an inline flex style", () => {
+    const html = renderToStaticMarkup(createElement(CustomerLightboxRoot));
+    assert.match(html, /id="customer-lightbox"/);
+    assert.match(html, /hidden/);
+    assert.match(html, /#customer-lightbox\[hidden\]\{display:none!important\}/);
   });
 
   it("wires swipe, previous/next, and close in the enhance script", () => {
