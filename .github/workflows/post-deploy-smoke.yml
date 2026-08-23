@@ -1,0 +1,56 @@
+name: Post-deploy smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Commit SHA that must be live before smoke tests run"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  wait-and-smoke:
+    name: Wait for live SHA and smoke the dev store
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ vars.APP_BASE_URL || 'https://upt-plant-request-portal.onrender.com' }}
+      EXPECTED_SHA: ${{ inputs.expected_sha || github.sha }}
+      SMOKE_SHOP: upt-plant-request-dev.myshopify.com
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: Wait until /versionz serves this commit
+        run: npx tsx scripts/wait-for-deploy.mjs
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Run local UI smoke against this checkout
+        run: npm run test:e2e
+      - name: Run guarded dev-store smoke
+        if: ${{ secrets.SMOKE_TEST_SECRET != '' && secrets.SHOPIFY_API_SECRET != '' }}
+        env:
+          ALLOW_SMOKE_ADMIN: "true"
+          SMOKE_TEST_SECRET: ${{ secrets.SMOKE_TEST_SECRET }}
+          SHOPIFY_API_SECRET: ${{ secrets.SHOPIFY_API_SECRET }}
+          SHOPIFY_API_KEY: ${{ secrets.SHOPIFY_API_KEY }}
+          APP_BASE_URL: ${{ env.APP_BASE_URL }}
+          SMOKE_SHOP: upt-plant-request-dev.myshopify.com
+        run: npm run test:e2e:dev-store
+      - name: Skip notice when secrets are missing
+        if: ${{ secrets.SMOKE_TEST_SECRET == '' || secrets.SHOPIFY_API_SECRET == '' }}
+        run: |
+          echo "USER ACTION REQUIRED: set GitHub secrets SMOKE_TEST_SECRET and SHOPIFY_API_SECRET, and set ALLOW_SMOKE_ADMIN=true plus SMOKE_TEST_SECRET on the Render web service, to enable live dev-store smoke."
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore

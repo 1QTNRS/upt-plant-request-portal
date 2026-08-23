@@ -35,3 +35,8 @@ pnpm-lock.yaml
 
 # Cached Admin API introspection used by scripts/validate-admin-graphql.mjs
 schema/
+
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

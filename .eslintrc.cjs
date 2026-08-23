@@ -19,7 +19,15 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  ignorePatterns: ["!**/.server", "!**/.client"],
+  ignorePatterns: [
+    "!**/.server",
+    "!**/.client",
+    "e2e/**",
+    "playwright.config.ts",
+    "playwright.dev-store.config.ts",
+    "playwright-report/**",
+    "test-results/**",
+  ],
 
   // Base config
   extends: ["eslint:recommended"],
