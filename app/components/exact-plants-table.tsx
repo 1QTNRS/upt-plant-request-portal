@@ -278,7 +278,7 @@ export function ExactPlantsTable({
                               value={item.requestItemId}
                             />
                             <s-button variant="secondary" type="submit">
-                              Dismiss from EXACT PLANTS
+                              Dismiss
                             </s-button>
                           </Form>
                         )
@@ -332,7 +332,17 @@ const tableLayoutCss = `
   .exact-plants-col-listing { width: 5.8rem; }
   .exact-plants-col-price { width: 4.6rem; }
   .exact-plants-col-date { width: 6.4rem; }
-  .exact-plants-col-actions { width: 7.4rem; }
+  .exact-plants-col-actions { width: 7.2rem; }
+  .exact-plants-table tbody td {
+    border-top: 1px solid #c9cccf;
+    border-bottom: 1px solid #8c9196;
+  }
+  .exact-plants-table tbody td:first-child {
+    border-left: 3px solid #8c9196;
+  }
+  .exact-plants-table tbody td:last-child {
+    border-right: 1px solid #c9cccf;
+  }
   .exact-plants-table th,
   .exact-plants-table td {
     overflow-wrap: anywhere;

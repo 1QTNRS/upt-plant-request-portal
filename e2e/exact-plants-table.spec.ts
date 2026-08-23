@@ -74,9 +74,7 @@ test.describe("EXACT PLANTS table", () => {
   test("actions still offer listing and dismiss", async ({ page }) => {
     await page.goto("/app/exact-plants");
     await expect(page.getByRole("link", { name: "Create listing" }).first()).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Dismiss from EXACT PLANTS" }).first(),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dismiss" }).first()).toBeVisible();
   });
 
   test("desktop shows the full row without horizontal scrolling", async ({

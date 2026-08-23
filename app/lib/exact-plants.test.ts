@@ -544,12 +544,13 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(table, /data-exact-plant-sort/);
     assert.match(table, />Create listing</);
     assert.ok(!table.includes("Create EXACT PLANTS Listing"));
-    assert.match(table, /Dismiss from EXACT PLANTS/);
+    assert.match(table, />\s*Dismiss\s*</);
+    assert.match(table, /Confirm Dismiss from EXACT PLANTS/);
     assert.match(table, /AdminPhotoLightbox/);
     assert.match(table, /formatDate\(/);
     assert.ok(!table.includes("formatDateTime"));
     assert.match(table, /exact-plants-row-alt/);
-    assert.match(table, /overflow-wrap: break-word/);
+    assert.match(table, /overflowWrap: "break-word"/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {
