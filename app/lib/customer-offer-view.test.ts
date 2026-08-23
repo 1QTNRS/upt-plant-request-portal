@@ -420,6 +420,7 @@ describe("a request with nothing to pay for still has a way out", () => {
       fedexRemovalWarning: "",
       requestClosed: true,
       formAction: "/apps/plant-requests/requests/req-1",
+      backHref: "/apps/plant-requests",
     });
 
     assert.ok(!html.includes('value="close-request"'));

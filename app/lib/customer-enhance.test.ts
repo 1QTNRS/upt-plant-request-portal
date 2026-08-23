@@ -12,7 +12,8 @@ describe("customer progressive-enhancement scripts", () => {
   });
 
   it("opens the FedEx warning only when an accepted plant would lose the upgrade", () => {
-    assert.match(FEDEX_WARNING_SCRIPT, /acceptedAnything/);
+    assert.match(FEDEX_WARNING_SCRIPT, /acceptedCount/);
+    assert.match(FEDEX_WARNING_SCRIPT, /box\.disabled = !enabled/);
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-keep/);
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-confirm-remove/);
     assert.match(FEDEX_WARNING_SCRIPT, /fedex-ack/);

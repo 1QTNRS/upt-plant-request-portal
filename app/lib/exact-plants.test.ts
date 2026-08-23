@@ -521,9 +521,8 @@ describe("the EXACT PLANTS queue page", () => {
   it("filters All / Not Yet Listed / Flagged / Listed via the listing query", () => {
     assert.match(queue, /parseExactPlantListingFilter/);
     assert.match(queue, /name="listing"/);
-    assert.match(queue, /Not Yet Listed/);
-    assert.match(queue, /Flagged/);
-    assert.match(queue, /Listed/);
+    assert.match(queue, /EXACT_PLANT_LISTING_FILTER_LABELS/);
+    assert.match(queue, /EXACT_PLANT_LISTING_FILTERS/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {
@@ -531,7 +530,8 @@ describe("the EXACT PLANTS queue page", () => {
       path.join(import.meta.dirname, "..", "..", "app", "components", "collapsible-section.tsx"),
       "utf8",
     );
-    assert.match(collapsible, /defaultOpen=\{defaultOpen\}/);
+    assert.match(collapsible, /onToggle=/);
+    assert.match(collapsible, /useState\(defaultOpen\)/);
     assert.match(requestPage, /title="Emails"/);
     assert.match(requestPage, /title="EXACT PLANTS"/);
     assert.match(queue, /title="EXACT PLANTS queue"/);

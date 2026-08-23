@@ -601,10 +601,11 @@ describe("customer portal navigation", () => {
     );
     assert.match(layout, /CustomerPortalNav/);
     assert.match(layout, /storefrontHomeUrl/);
+    assert.match(layout, /customerMyRequestsHref/);
     assert.match(nav, /data-customer-nav="home"/);
     assert.match(nav, /data-customer-nav="my-requests"/);
-    assert.match(nav, />Home</);
-    assert.match(nav, />My Requests</);
+    assert.match(nav, /Home/);
+    assert.match(nav, /My Requests/);
     assert.ok(!nav.includes("/app"), "customer nav must not expose admin routes");
     assert.ok(!layout.includes('href="/app"'));
   });

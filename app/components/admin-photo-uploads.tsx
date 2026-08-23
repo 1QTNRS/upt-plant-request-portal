@@ -202,14 +202,11 @@ export function AdminPhotoUploader({
         multiple
         onChange={jsReady ? handleSelect : undefined}
       />
-      <s-button
-        variant="secondary"
-        type="submit"
-        className={jsReady ? "admin-photo-upload-fallback" : undefined}
-        {...(jsReady ? { hidden: true } : {})}
-      >
-        Upload plant photo
-      </s-button>
+      {jsReady ? null : (
+        <s-button variant="secondary" type="submit">
+          Upload plant photo
+        </s-button>
+      )}
     </div>
   );
 }

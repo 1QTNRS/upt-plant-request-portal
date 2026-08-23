@@ -180,20 +180,4 @@ export function customerPortalRelativeLinks(viaAppProxy: boolean): CustomerPorta
   };
 }
 
-/**
- * The shop's public storefront homepage — not the app origin and not admin.
- *
- * Under the app proxy the customer is already on the shop domain, so the
- * storefront root is `https://<shop>`. The local demo has no storefront, so it
- * uses the app landing page.
- */
-export function storefrontHomeUrl(input: {
-  shop?: string | null;
-  viaAppProxy: boolean;
-}): string {
-  if (input.viaAppProxy && input.shop) {
-    const host = input.shop.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-    return `https://${host}`;
-  }
-  return "/";
-}
+export { storefrontHomeUrl } from "./customer-nav";

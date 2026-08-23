@@ -14,7 +14,6 @@ import {
   type RequestStatus,
   type SampleCustomerOffer,
 } from "../lib/portal";
-import { customerCanCloseRequest } from "../lib/customer-portal";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { OfferExpiryBanner } from "./customer-request-portal";
 
@@ -194,15 +193,13 @@ export function CustomerOfferView({
   const acceptedItems = (response?.items ?? []).filter((item) => item.choice === "accept");
   const rejectedItems = (response?.items ?? []).filter((item) => item.choice === "reject");
   const hasAccepted = acceptedItems.length > 0;
-  const canCloseRequest = customerCanCloseRequest({
-    requestClosed,
-    hasResponded: submitted,
-    hasPayableItems: hasAccepted ? true : false,
-    acceptedCount: acceptedItems.length,
-    declinedAllAvailable:
-      purchasable.length === 0 ||
-      (rejectedItems.length >= purchasable.length && acceptedItems.length === 0),
-  });
+  const canCloseRequest =
+    !requestClosed &&
+    submitted &&
+    !hasAccepted &&
+    (purchasable.length === 0 ||
+      (rejectedItems.length >= purchasable.length &&
+        acceptedItems.length === 0));
   // A closed request has nothing left to collect: paid through `orders/paid`,
   // or closed by the customer once they had rejected everything.
   const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;

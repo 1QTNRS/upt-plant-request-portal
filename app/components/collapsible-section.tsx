@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 /**
- * Uncontrolled details/summary so collapsing does not remount children and
- * cannot wipe filters, search, or loaded rows.
+ * Local open state so collapsing does not remount children and cannot wipe
+ * filters, search, or loaded rows on a parent re-render.
  */
 export function CollapsibleSection({
   title,
@@ -15,8 +15,13 @@ export function CollapsibleSection({
   defaultOpen: boolean;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className="admin-collapsible" defaultOpen={defaultOpen}>
+    <details
+      className="admin-collapsible"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className="admin-collapsible__summary">
         <span className="admin-collapsible__title">{title}</span>
         {badge != null && badge !== "" ? (
