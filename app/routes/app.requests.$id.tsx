@@ -1491,14 +1491,14 @@ function SendOfferSection({
             type="text"
             inputMode="decimal"
             autoComplete="off"
-            placeholder="Leave blank for Shopify's rate"
+            placeholder="Leave blank so they choose at checkout"
             style={shippingOverrideInputStyle}
           />
         </s-stack>
         <s-text color="subdued">
           Optional. Sets a custom shipping amount on the draft-order invoice,
-          including 0 to charge no shipping. Leave blank to let Shopify quote
-          the rate.
+          including 0 to charge no shipping. Leave blank so the customer can
+          choose a store shipping rate at checkout.
         </s-text>
         <s-button
           variant="primary"

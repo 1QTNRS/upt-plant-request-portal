@@ -527,7 +527,7 @@ describe("how long Shopify holds the stock", () => {
     assert.equal("reserveInventoryUntil" in input, false);
   });
 
-  it("omits shippingLine when the admin left the override blank", () => {
+  it("omits shippingLine when the override is blank so checkout can choose a rate", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",
       requestNumber: "REQ2178",

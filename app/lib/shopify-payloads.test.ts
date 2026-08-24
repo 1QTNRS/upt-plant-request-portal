@@ -151,7 +151,7 @@ describe("draft order input", () => {
     );
   });
 
-  it("omits shippingLine when the admin left the override blank", () => {
+  it("omits shippingLine when the override is blank so checkout can choose a rate", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",
       requestNumber: "REQ2178",
