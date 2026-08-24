@@ -258,8 +258,9 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
         var hide = index < start || index >= start + size;
         el.setAttribute("data-paged-hidden", hide ? "true" : "false");
         if (el instanceof HTMLElement) {
+          // Use the hidden attribute only. Assigning style.display wipes the
+          // row's inline grid and packs the status against the request number.
           el.hidden = hide;
-          el.style.display = hide ? "none" : "";
         }
       });
       var status = root.querySelector("[data-paged-status]");
