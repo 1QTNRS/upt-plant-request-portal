@@ -737,7 +737,7 @@ describe("analytics export spacing", () => {
       "utf8",
     );
     assert.match(source, /data-export-excel-wrap/);
-    assert.match(source, /margin:\s*"0 0 32px"/);
+    assert.match(source, /padding:\s*"0 0 32px"/);
   });
 });
 
