@@ -153,7 +153,11 @@ export function ThemeStyles() {
       }
       .upt-banner-gap {
         display: block;
-        padding-bottom: 24px;
+        padding-bottom: 32px;
+      }
+      .upt-customer-surface s-banner {
+        display: block;
+        margin: 0;
       }
       .upt-card-title {
         display: flex;

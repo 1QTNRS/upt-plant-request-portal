@@ -141,8 +141,8 @@ const numberInputStyle = {
 const shippingOverrideInputStyle = {
   ...numberInputStyle,
   maxWidth: "min(280px, 100%)",
-  height: 40,
-  lineHeight: "20px",
+  height: 48,
+  lineHeight: "24px",
   overflow: "hidden" as const,
   resize: "none" as const,
   appearance: "textfield" as const,
