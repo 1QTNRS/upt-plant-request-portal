@@ -132,12 +132,7 @@ export default function Dashboard() {
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
               <input type="hidden" name="q" value={query} />
-              <s-button
-                variant="primary"
-                type="submit"
-                name="status"
-                value={data.statusFilter}
-              >
+              <s-button variant="primary" type="submit">
                 Search
               </s-button>
             </WrappingRow>
@@ -164,6 +159,7 @@ export default function Dashboard() {
                 </button>
               ))}
             </s-stack>
+            <input type="hidden" name="status" value={data.statusFilter} />
           </s-stack>
         </Form>
         <s-text color="subdued">

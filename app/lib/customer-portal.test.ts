@@ -655,7 +655,7 @@ describe("the request form works without JavaScript", () => {
       source,
       /Your name and email are pulled from your customer account/,
     );
-    assert.match(source, /Feel free to request multiple plants at once/);
+    assert.match(source, /Feel free\s+to request multiple plants at once/);
     assert.ok(
       !source.includes("There is no quantity field"),
       "quantity explanation was replaced with offer-review wording",
