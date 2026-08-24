@@ -29,7 +29,8 @@ describe("brand theme", () => {
     assert.match(themeSource, /\.upt-nested-box \{[\s\S]*THEME\.mint/);
     assert.match(themeSource, /\.upt-card \{[\s\S]*THEME\.white/);
     assert.match(themeSource, /paintDocument/);
-    assert.match(layout, /CustomerSurface paintDocument/);
+    assert.match(layout, /paintDocument=\{!data\.viaAppProxy\}/);
+    assert.match(layout, /inShopTheme=\{data\.viaAppProxy\}/);
     assert.ok(
       !admin.includes("CustomerSurface"),
       "admin chrome must not sit on the customer mint page",

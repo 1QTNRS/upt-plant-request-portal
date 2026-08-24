@@ -96,7 +96,7 @@ export function CustomerRequestPortal({
             </form>
           ) : (
             <p className="upt-muted">
-              Open this page from your Shopify account while logged in.
+              Come back to this page when you log in.
             </p>
           )}
         </section>

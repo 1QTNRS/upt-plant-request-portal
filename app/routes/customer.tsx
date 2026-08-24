@@ -29,7 +29,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function CustomerLayout() {
   const data = useLoaderData<typeof loader>();
   return (
-    <CustomerSurface paintDocument>
+    <CustomerSurface
+      paintDocument={!data.viaAppProxy}
+      inShopTheme={data.viaAppProxy}
+    >
       <ThemeStyles />
       <AppProvider>
         {shouldRenderCustomerPortalNav(data.viaAppProxy) ? (

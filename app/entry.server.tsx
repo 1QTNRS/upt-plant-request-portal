@@ -4,6 +4,7 @@ import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { type EntryContext } from "react-router";
 import { isbot } from "isbot";
+import { requestLooksLikeAppProxy } from "./lib/customer-nav";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
 export const streamTimeout = 5000;
@@ -31,7 +32,12 @@ export default async function handleRequest(
           const body = new PassThrough();
           const stream = createReadableStreamFromReadable(body);
 
-          responseHeaders.set("Content-Type", "text/html");
+          responseHeaders.set(
+            "Content-Type",
+            requestLooksLikeAppProxy(request.url)
+              ? "application/liquid"
+              : "text/html",
+          );
           resolve(
             new Response(stream, {
               headers: responseHeaders,

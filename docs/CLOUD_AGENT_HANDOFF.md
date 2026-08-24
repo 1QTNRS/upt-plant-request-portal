@@ -440,8 +440,10 @@ the payment is still recorded and the request is Closed, with a
 
 A page served through the app proxy is fetched by Shopify and rendered on the
 storefront, so its `/assets/...` URLs resolve against the **shop's** domain and
-the client bundle never loads. The shop theme already supplies the site header
-and menu, so the portal does **not** render its own Home / My Requests bar on
+the client bundle never loads. App-proxy customer responses use
+`Content-Type: application/liquid` and a document fragment (not a full HTML
+page) so Shopify injects the shop theme — header, menu, footer — around the
+portal. The portal does **not** render its own Home / My Requests bar on
 proxy pages. That chrome exists only on the local `/customer` demo, which has
 no theme. Anything that depends on React state is dead there, and the client
 router is worse than useless: it rewrites form actions and links to the app's

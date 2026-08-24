@@ -1,6 +1,36 @@
-import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+import {
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  useLoaderData,
+} from "react-router";
+
+import { requestLooksLikeAppProxy } from "./lib/customer-nav";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  return { embedInShopTheme: requestLooksLikeAppProxy(request.url) };
+}
 
 export default function App() {
+  const { embedInShopTheme } = useLoaderData<typeof loader>();
+
+  // Shopify only injects the shop theme around an app-proxy response when the
+  // body is a fragment with Content-Type application/liquid. A full HTML
+  // document is shown as a standalone page with no store header or menu.
+  // {% raw %} keeps customer-typed {{ / {% from being evaluated as Liquid.
+  if (embedInShopTheme) {
+    return (
+      <>
+        {"{% raw %}"}
+        <Outlet />
+        {"{% endraw %}"}
+      </>
+    );
+  }
+
   return (
     <html lang="en">
       <head>

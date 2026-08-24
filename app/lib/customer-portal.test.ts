@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { CustomerRequestPortal } from "../components/customer-request-portal";
 
 import { APP_PROXY_BASE_PATH, CUSTOMER_PORTAL_PATH } from "./app-proxy";
 import {
@@ -18,7 +22,10 @@ import {
   withExtraRow,
   withoutRow,
 } from "./customer-portal";
-import { shouldRenderCustomerPortalNav } from "./customer-nav";
+import {
+  requestLooksLikeAppProxy,
+  shouldRenderCustomerPortalNav,
+} from "./customer-nav";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
 
@@ -612,6 +619,71 @@ describe("customer portal navigation", () => {
     assert.ok(!layout.includes('href="/app"'));
     assert.equal(shouldRenderCustomerPortalNav(true), false);
     assert.equal(shouldRenderCustomerPortalNav(false), true);
+  });
+
+  it("tells a signed-out storefront visitor to come back after they log in", () => {
+    const portal = readFileSync(
+      path.join(REPO_ROOT, "app", "components", "customer-request-portal.tsx"),
+      "utf8",
+    );
+    assert.match(portal, /Come back to this page when you log in\./);
+    assert.doesNotMatch(
+      portal,
+      /Open this page from your Shopify account while logged in/,
+    );
+  });
+
+  it("recognizes app-proxy customer URLs so the shop theme can wrap them", () => {
+    assert.equal(
+      requestLooksLikeAppProxy(
+        "https://app.example/customer?shop=upt.myshopify.com&signature=abc",
+      ),
+      true,
+    );
+    assert.equal(
+      requestLooksLikeAppProxy(
+        "https://app.example/customer/requests/1?shop=upt.myshopify.com&signature=abc",
+      ),
+      true,
+    );
+    assert.equal(requestLooksLikeAppProxy("https://app.example/customer"), false);
+    assert.equal(
+      requestLooksLikeAppProxy(
+        "https://app.example/app?shop=upt.myshopify.com&signature=abc",
+      ),
+      false,
+    );
+  });
+
+  it("renders the signed-out storefront sentence", () => {
+    const html = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: false,
+        name: "",
+        email: "",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+      }),
+    );
+    assert.match(html, /Come back to this page when you log in\./);
+    assert.match(
+      html,
+      /Please log in to your Shopify customer account to submit a plant/,
+    );
+  });
+
+  it("serves app-proxy customer pages as Liquid fragments so the shop theme wraps them", () => {
+    const entry = readFileSync(
+      path.join(REPO_ROOT, "app", "entry.server.tsx"),
+      "utf8",
+    );
+    const root = readFileSync(path.join(REPO_ROOT, "app", "root.tsx"), "utf8");
+    assert.match(entry, /application\/liquid/);
+    assert.match(entry, /requestLooksLikeAppProxy\(request\.url\)/);
+    assert.match(root, /embedInShopTheme/);
+    assert.match(root, /\{% raw %\}/);
+    assert.match(root, /\{% endraw %\}/);
   });
 });
 
