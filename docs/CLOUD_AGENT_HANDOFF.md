@@ -914,8 +914,8 @@ list above.
 Phase 4 UI polish is presentational only: admin photo reorder posts a whole
 id list (`intent=reorder-photos`) with Move left/right as the no-JS fallback;
 metric cards, fulfilment buttons, price/weight, stock search and the dashboard
-table wrap below 720px; customer offer images and Accept/Reject/FedEx hit areas
-fit a 375px viewport without hydration. Stored statuses, eligibility rules and
+table wrap below 720px; customer offer images sit in a horizontal row (three
+across) and Accept/Reject/FedEx hit areas fit a 375px viewport without hydration. Stored statuses, eligibility rules and
 computed numbers did not change.
 
 One analytics correctness bug is **reported, not silently "fixed"**: the
