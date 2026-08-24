@@ -657,6 +657,7 @@ describe("the EXACT PLANTS queue page", () => {
     assert.ok(!exactFn.includes("<s-section>"));
     assert.match(emailFn, /<CollapsibleSection/);
     assert.match(exactFn, /<CollapsibleSection/);
+    assert.match(requestPage, /admin-request-collapsibles/);
   });
 });
 

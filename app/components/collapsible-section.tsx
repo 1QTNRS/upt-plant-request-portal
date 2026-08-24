@@ -36,6 +36,16 @@ export function CollapsibleSection({
 export function CollapsibleSectionStyles() {
   return (
     <style>{`
+      .admin-request-collapsibles {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+      }
+      .admin-request-collapsibles > .admin-collapsible {
+        width: 100%;
+        box-sizing: border-box;
+      }
       .admin-collapsible {
         border: 1px solid #c9cccf;
         border-radius: 8px;
