@@ -471,8 +471,14 @@ Rules for `app/routes/customer*`:
    page re-renders with one more (or one fewer) row. This is a readability
    choice, not a workaround: those round-trips carry no side effects, so a URL
    the customer can reload is the right shape for them.
+7. Signed-out storefront pages use a real `<a href>` to
+   `/customer_authentication/login?return_to=` with a **relative**
+   `/apps/plant-requests` path (or `/apps/plant-requests/requests/:id` on a
+   request they opened while logged out). Shopify rejects a full URL. Never
+   point this at the app origin. The local `/customer` demo keeps the
+   demo-login form and does not render this button.
 
-`app/lib/customer-portal.test.ts` enforces 1–6 for the request form.
+`app/lib/customer-portal.test.ts` enforces 1–7 for the request form.
 
 #### Why proxied POSTs used to return "Bad Request"
 

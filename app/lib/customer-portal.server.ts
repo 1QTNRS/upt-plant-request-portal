@@ -3,6 +3,7 @@ import { data } from "react-router";
 import type { PlantLine } from "../components/customer-request-portal";
 
 import { customerPortalRelativeLinks } from "./app-proxy";
+import { shopifyCustomerLoginHref } from "./customer-nav";
 import {
   plantLinesFromQuery,
   portalFormAction,
@@ -46,6 +47,11 @@ export type CustomerPortalData = {
   email: string;
   myRequests: CustomerMyRequestRow[];
   showDemoLogin: boolean;
+  /**
+   * Storefront Shopify login that returns to this portal page. Null on the
+   * local `/customer` demo, which has no shop login.
+   */
+  loginHref: string | null;
   requestDetailBase: string;
   canSubmitRequests: boolean;
   identityError: string | null;
@@ -87,6 +93,7 @@ export async function loadCustomerPortal(
   const submittedNumber = search.get("submitted");
   const shared = {
     showDemoLogin: canUseDemoCustomerLogin(),
+    loginHref: context.viaAppProxy ? shopifyCustomerLoginHref(links.home) : null,
     requestDetailBase: links.home,
     formAction: portalFormAction(context),
     browseAction: portalHome(context),

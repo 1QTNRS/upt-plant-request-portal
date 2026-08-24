@@ -34,6 +34,22 @@ const secondaryButtonStyle: React.CSSProperties = {
   WebkitTextFillColor: THEME.darkGreen,
 };
 
+const loginLinkStyle: React.CSSProperties = {
+  ...themePrimaryButtonStyle,
+  textDecoration: "none",
+};
+
+/** Real storefront anchor — app-proxy pages never hydrate. */
+export function CustomerLoginLink({ href }: { href: string }) {
+  return (
+    <p style={{ margin: "16px 0 0" }}>
+      <a href={href} style={loginLinkStyle}>
+        Log in
+      </a>
+    </p>
+  );
+}
+
 export function CustomerRequestPortal({
   loggedIn,
   name,
@@ -43,6 +59,7 @@ export function CustomerRequestPortal({
   errors,
   requestDetailHref,
   showDemoLogin,
+  loginHref = null,
   formAction,
   browseAction,
   plantLines = [EMPTY_PLANT_LINE],
@@ -57,6 +74,7 @@ export function CustomerRequestPortal({
   errors?: string[];
   requestDetailHref: (requestId: string) => string;
   showDemoLogin: boolean;
+  loginHref?: string | null;
   formAction?: string;
   /**
    * Where the add and remove buttons navigate to with GET. The storefront page
@@ -81,6 +99,7 @@ export function CustomerRequestPortal({
             Please log in to your Shopify customer account to submit a plant
             request.
           </p>
+          {loginHref ? <CustomerLoginLink href={loginHref} /> : null}
           {showDemoLogin ? (
             <form method="post" action={formAction}>
               <input type="hidden" name="intent" value="demo-login" />
