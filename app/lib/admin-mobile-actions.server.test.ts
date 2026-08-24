@@ -15,7 +15,7 @@ import { DEMO_SHOP } from "./shop";
 const shop = `${DEMO_SHOP}-mobile-actions`;
 
 function actionArgs(request: Request, id: string): ActionFunctionArgs {
-  return { request, params: { id }, context: {} } as ActionFunctionArgs;
+  return { request, params: { id }, context: {} } as unknown as ActionFunctionArgs;
 }
 
 async function jsonAction(
