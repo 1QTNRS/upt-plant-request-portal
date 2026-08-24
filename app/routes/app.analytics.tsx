@@ -1,10 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type {
-  ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, useActionData, useLoaderData, useSearchParams } from "react-router";
+import { Form, useLoaderData, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
@@ -15,15 +14,10 @@ import {
 } from "../lib/analytics.server";
 
 type AnalyticsData = Awaited<ReturnType<typeof getAnalytics>>;
-import { plantIdentityAiStatus } from "../lib/plant-identity-ai.server";
-import {
-  confirmPlantIdentitySuggestion,
-  listPlantIdentitySuggestions,
-  rejectPlantIdentitySuggestion,
-} from "../lib/plant-identity.server";
 import {
   behaviorFlagTone,
   formatCurrency,
+  matchesAnalyticsCustomerSearch,
   type BehaviorFlag,
 } from "../lib/portal";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
@@ -32,6 +26,10 @@ import {
   statCardStyle,
   WrappingRow,
 } from "../components/admin-layout";
+import {
+  CollapsibleSection,
+  CollapsibleSectionStyles,
+} from "../components/collapsible-section";
 import { ExportExcelButton, ListPager, PagedFrame, usePagedItems } from "../components/paged-list";
 import { ViewerLocalTime } from "../components/viewer-local-time";
 import { ANALYTICS_LIST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
@@ -87,24 +85,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     customStart,
     customEnd,
     data,
-    plantIdentitySuggestions: await listPlantIdentitySuggestions(shop),
-    aiStatus: plantIdentityAiStatus(),
   };
-};
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop } = await requireAdmin(request);
-  const form = await request.formData();
-  const intent = String(form.get("intent") || "");
-  const suggestionId = String(form.get("suggestionId") || "");
-
-  if (intent === "same-plant") {
-    return confirmPlantIdentitySuggestion(shop, suggestionId);
-  }
-  if (intent === "keep-separate") {
-    return rejectPlantIdentitySuggestion(shop, suggestionId);
-  }
-  return { ok: false, error: "Unknown action" };
 };
 
 function MetricCard({ label, value }: { label: string; value: string }) {
@@ -253,99 +234,6 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
   );
 }
 
-type PlantIdentitySuggestion = Awaited<
-  ReturnType<typeof loader>
->["plantIdentitySuggestions"][number];
-
-/**
- * Medium-confidence matches, which merge nothing until they are answered.
- *
- * Both spellings keep their own row in every figure above while a suggestion sits
- * here, so the queue being ignored costs the owner nothing but detail. Answering
- * Same Plant is permanent: the mapping is stored and reused, so the next time a
- * customer types that spelling it never reaches this list.
- */
-function PlantIdentitySuggestions({
-  suggestions,
-  aiStatus,
-}: {
-  suggestions: PlantIdentitySuggestion[];
-  aiStatus: Awaited<ReturnType<typeof loader>>["aiStatus"];
-}) {
-  return (
-    <s-section heading="Plant Name Review">
-      <s-stack direction="block" gap="base">
-        <s-text color="subdued">{aiStatus.detail}</s-text>
-        {suggestions.length === 0 ? (
-          <s-text color="subdued">
-            No plant names are waiting on a decision. Names that differ only in
-            capitalisation, spacing, punctuation, an abbreviated genus or a single
-            mistyped character are grouped automatically; anything carrying a
-            different cultivar, accession, clone, collection number or locality is
-            always kept separate.
-          </s-text>
-        ) : (
-          suggestions.map((suggestion) => (
-            <s-box
-              key={suggestion.id}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-            >
-              <s-stack direction="block" gap="small">
-                <s-heading>
-                  {suggestion.originalName} → {suggestion.suggestedDisplayName}
-                </s-heading>
-                <s-text color="subdued">{suggestion.reason}</s-text>
-                <s-text color="subdued">
-                  Customer typed: {suggestion.originalName}
-                </s-text>
-                <s-text color="subdued">
-                  Already counted under {suggestion.suggestedDisplayName}:{" "}
-                  {suggestion.suggestedVariants.join(", ") || "—"}
-                </s-text>
-                <s-text color="subdued">
-                  {suggestion.affectedItems === 1
-                    ? "1 request line would move."
-                    : `${suggestion.affectedItems} request lines would move.`}
-                  {suggestion.source === "deterministic"
-                    ? ""
-                    : ` Suggested by ${suggestion.source}.`}
-                </s-text>
-                <s-stack direction="inline" gap="small">
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="same-plant" />
-                    <input
-                      type="hidden"
-                      name="suggestionId"
-                      value={suggestion.id}
-                    />
-                    <s-button variant="primary" type="submit">
-                      Same Plant
-                    </s-button>
-                  </Form>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="keep-separate" />
-                    <input
-                      type="hidden"
-                      name="suggestionId"
-                      value={suggestion.id}
-                    />
-                    <s-button variant="secondary" type="submit">
-                      Keep Separate
-                    </s-button>
-                  </Form>
-                </s-stack>
-              </s-stack>
-            </s-box>
-          ))
-        )}
-      </s-stack>
-    </s-section>
-  );
-}
-
 /**
  * The funnel split by how the plant was to be supplied.
  *
@@ -416,10 +304,18 @@ function RepeatedRequestDeclinePatterns({
   const flagged = customers.filter((customer) => customer.plantPatterns.length > 0);
   if (flagged.length === 0) return null;
 
+  const patternCount = flagged.reduce(
+    (total, customer) => total + customer.plantPatterns.length,
+    0,
+  );
+
   return (
-    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+    <CollapsibleSection
+      title="Repeated Request / Decline Pattern"
+      badge={patternCount}
+      defaultOpen={false}
+    >
       <s-stack direction="block" gap="base">
-        <s-heading>Repeated Request / Decline Pattern</s-heading>
         <s-text color="subdued">
           Internal only. Counted per plant identity, so the same plant asked for
           under several spellings counts once per request rather than as several
@@ -459,15 +355,31 @@ function RepeatedRequestDeclinePatterns({
           )),
         )}
       </s-stack>
-    </s-box>
+    </CollapsibleSection>
   );
 }
 
+const customerSearchFieldStyle: CSSProperties = {
+  boxSizing: "border-box",
+  width: "min(100%, 360px)",
+  minHeight: 36,
+  padding: "8px 12px",
+  border: "1px solid #c9cccf",
+  borderRadius: 8,
+  font: "inherit",
+};
+
 export default function Analytics() {
-  const { range, customStart, customEnd, data, plantIdentitySuggestions, aiStatus } =
-    useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
+  const { range, customStart, customEnd, data } = useLoaderData<typeof loader>();
   const [, setSearchParams] = useSearchParams();
+  const [customerQuery, setCustomerQuery] = useState("");
+  const visibleCustomers = useMemo(
+    () =>
+      data.customers.filter((customer) =>
+        matchesAnalyticsCustomerSearch(customerQuery, customer),
+      ),
+    [customerQuery, data.customers],
+  );
 
   const setRange = (next: DateRangeId) => {
     const params = new URLSearchParams();
@@ -482,13 +394,7 @@ export default function Analytics() {
   return (
     <s-page heading="Analytics">
       <AdminResponsiveStyles />
-      {actionData && !actionData.ok ? (
-        <s-section>
-          <s-banner tone="critical">
-            <s-text>{actionData.error}</s-text>
-          </s-banner>
-        </s-section>
-      ) : null}
+      <CollapsibleSectionStyles />
 
       <s-section heading="Date Range">
         <WrappingRow>
@@ -600,15 +506,26 @@ export default function Analytics() {
 
       <s-section heading="Customer Behavior">
         <s-stack direction="block" gap="base">
+          <label htmlFor="analytics-customer-search">
+            <s-text color="subdued">Search name or email</s-text>
+          </label>
+          <input
+            id="analytics-customer-search"
+            type="search"
+            value={customerQuery}
+            placeholder="Customer name or email"
+            onChange={(event) => setCustomerQuery(event.currentTarget.value)}
+            style={customerSearchFieldStyle}
+          />
           <WrappingRow>
             <MetricCard label="Repeat Request Customers" value={String(data.customerSummary.repeatRequestCustomers)} />
             <MetricCard label="Customers With Expired Offers" value={String(data.customerSummary.customersWithExpiredOffers)} />
             <MetricCard label="Customers With Closed/Paid Requests" value={String(data.customerSummary.customersWithClosedPaidRequests)} />
             <MetricCard label="High Request / Low Purchase Customers" value={String(data.customerSummary.highRequestLowPurchaseCustomers)} />
           </WrappingRow>
-          <RepeatedRequestDeclinePatterns customers={data.customers} />
+          <RepeatedRequestDeclinePatterns customers={visibleCustomers} />
           <div className="upt-narrow-only">
-            {data.customers.map((customer) => (
+            {visibleCustomers.map((customer) => (
               <article key={customer.email} className="upt-request-card">
                 <dl>
                   <dt>Customer</dt>
@@ -662,7 +579,7 @@ export default function Analytics() {
               <s-table-header>Behavior Flag</s-table-header>
             </s-table-header-row>
             <s-table-body>
-              {data.customers.map((customer) => (
+              {visibleCustomers.map((customer) => (
                 <s-table-row key={customer.email}>
                   <s-table-cell>{customer.customerName}</s-table-cell>
                   <s-table-cell>{customer.email}</s-table-cell>
@@ -694,14 +611,15 @@ export default function Analytics() {
             </s-table-body>
           </s-table>
           </div>
+          {visibleCustomers.length === 0 ? (
+            <s-text color="subdued">No customers match that name or email.</s-text>
+          ) : null}
         </s-stack>
       </s-section>
 
-      <ItemConversionAnalytics rows={data.itemPurchaseRows} />
-
-      <PlantIdentitySuggestions
-        suggestions={plantIdentitySuggestions}
-        aiStatus={aiStatus}
+      <ItemConversionAnalytics
+        rows={data.itemPurchaseRows}
+        query={customerQuery}
       />
 
       <PlantTable heading="Most Requested Plants" plants={data.plants.mostRequested} />
@@ -715,19 +633,25 @@ type ItemConversionRow = AnalyticsData["itemPurchaseRows"][number];
 
 function ItemConversionAnalytics({
   rows,
+  query,
 }: {
   rows: AnalyticsData["itemPurchaseRows"];
+  query: string;
 }) {
   const [sortKey, setSortKey] = useState<keyof ItemConversionRow>("customerName");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const filtered = useMemo(
+    () => rows.filter((row) => matchesAnalyticsCustomerSearch(query, row)),
+    [query, rows],
+  );
   const sorted = useMemo(
-    () => sortByKey(rows, sortKey, sortDirection),
-    [rows, sortKey, sortDirection],
+    () => sortByKey(filtered, sortKey, sortDirection),
+    [filtered, sortKey, sortDirection],
   );
   const paged = usePagedItems(
     sorted,
     ANALYTICS_LIST_PAGE_SIZE,
-    `item-conversion:${sortKey}:${sortDirection}:${rows.length}`,
+    `item-conversion:${query}:${sortKey}:${sortDirection}:${filtered.length}`,
   );
 
   const handleSort = (key: keyof ItemConversionRow) => {
@@ -894,6 +818,9 @@ function ItemConversionAnalytics({
           </tbody>
         </table>
         </div>
+        {filtered.length === 0 && query.trim() ? (
+          <s-text color="subdued">No requests match that name or email.</s-text>
+        ) : null}
         <ListPager
           page={paged.page}
           pageCount={paged.pageCount}

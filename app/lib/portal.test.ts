@@ -34,6 +34,7 @@ import {
   countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   matchesAdminSearch,
+  matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
@@ -209,6 +210,21 @@ describe("admin search", () => {
     assert.equal(matchesAdminSearch(request, "41"), true);
     assert.equal(matchesAdminSearch(request, "exact"), true);
     assert.equal(matchesAdminSearch(request, "calathea"), false);
+  });
+});
+
+describe("analytics customer search", () => {
+  const customer = {
+    customerName: "Alex Rivera",
+    email: "alex.rivera@example.com",
+  };
+
+  it("matches name or email and ignores surrounding space", () => {
+    assert.equal(matchesAnalyticsCustomerSearch("", customer), true);
+    assert.equal(matchesAnalyticsCustomerSearch("  alex  ", customer), true);
+    assert.equal(matchesAnalyticsCustomerSearch("RIVERA", customer), true);
+    assert.equal(matchesAnalyticsCustomerSearch("example.com", customer), true);
+    assert.equal(matchesAnalyticsCustomerSearch("sarah", customer), false);
   });
 });
 

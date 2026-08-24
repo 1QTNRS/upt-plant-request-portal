@@ -439,10 +439,13 @@ the payment is still recorded and the request is Closed, with a
 
 A page served through the app proxy is fetched by Shopify and rendered on the
 storefront, so its `/assets/...` URLs resolve against the **shop's** domain and
-the client bundle never loads. Anything that depends on React state is dead
-there, and the client router is worse than useless: it rewrites form actions and
-links to the app's own paths (`/customer/...`), which do not exist on the shop
-domain and return a Shopify 404.
+the client bundle never loads. The shop theme already supplies the site header
+and menu, so the portal does **not** render its own Home / My Requests bar on
+proxy pages. That chrome exists only on the local `/customer` demo, which has
+no theme. Anything that depends on React state is dead there, and the client
+router is worse than useless: it rewrites form actions and links to the app's
+own paths (`/customer/...`), which do not exist on the shop domain and return a
+Shopify 404.
 
 Rules for `app/routes/customer*`:
 
@@ -646,11 +649,9 @@ numbers, collector codes and locality words. `parsePlantName` treats these as
 qualifiers that are part of the identity, so `Hoya carnosa` and
 `Hoya carnosa 'Krimson Queen'` stay separate no matter how similar the rest is.
 
-Suggestions are resolved from the Plant Name Review card on the analytics page.
-**Same Plant** merges the two identities, moves the aliases and request items onto
-the survivor, and writes an `admin_confirmed` alias, so the answer is reused
-without asking again and survives the suggestion row. **Keep Separate** marks the
-suggestion `rejected` forever, and the same pair is never proposed again.
+The analytics page no longer shows a Plant Name Review card. High-confidence
+matches still group automatically. Medium-confidence suggestions stay stored
+and do not merge on their own.
 
 Backfill: `backfillCanonicalPlants` resolves every `RequestItem` whose
 `canonicalPlantId` is null, oldest request first so the earliest spelling becomes

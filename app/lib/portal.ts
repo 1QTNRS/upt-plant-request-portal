@@ -528,6 +528,18 @@ export function matchesAdminSearch(
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
+export function matchesAnalyticsCustomerSearch(
+  query: string,
+  customer: { customerName: string; email: string },
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    customer.customerName.toLowerCase().includes(needle) ||
+    customer.email.toLowerCase().includes(needle)
+  );
+}
+
 export const ADMIN_DASHBOARD_STATUS_FILTERS = [
   "All",
   "New",

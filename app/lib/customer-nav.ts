@@ -17,3 +17,12 @@ export function storefrontHomeUrl(input: {
 export function customerMyRequestsHref(viaAppProxy: boolean): string {
   return viaAppProxy ? "/apps/plant-requests" : "/customer";
 }
+
+/**
+ * The live storefront already wraps app-proxy pages in the shop theme, so
+ * Home / My Requests would sit under UPT's real menu. Keep that chrome only
+ * on the local `/customer` demo, which has no theme header.
+ */
+export function shouldRenderCustomerPortalNav(viaAppProxy: boolean): boolean {
+  return !viaAppProxy;
+}
