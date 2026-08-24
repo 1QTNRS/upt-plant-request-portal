@@ -103,6 +103,7 @@ SQLite migrations (`prisma/migrations/`):
    `DraftOrderReference.reserveInventoryUntil`. Purely additive: `fulfillmentType`
    carries a non-null default of `exact_plant`, so every existing row reads as the
    route it was created under, and every other column is nullable
+9. `20260824190000_admin_mobile_tokens` — `AdminMobileToken` for the iOS admin app
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -125,6 +126,7 @@ Shop-scoped models (multi-tenant by `shop` string):
 - `CanonicalPlant` — unique `(shop, canonicalKey)`; the identity analytics group on. `displayName` is the first spelling the shop saw
 - `PlantNameAlias` — unique `(shop, aliasKey)`; one customer spelling → one `CanonicalPlant`. `source` is `deterministic` or `admin_confirmed`
 - `PlantIdentitySuggestion` — unique `(shop, aliasKey, suggestedCanonicalPlantId)`; a medium-confidence match awaiting Same Plant / Keep Separate. `status` is `open` \| `confirmed` \| `rejected`
+- `AdminMobileToken` — hashed device tokens for the iOS admin app. Plaintext is shown once on create; revoke sets `revokedAt`
 
 Item statuses: `Requested` | `Sourced` | `Offered` | `Sold` | `Unavailable` | `Listed`.
 
@@ -1039,6 +1041,26 @@ shows a critical banner, and one admin email is sent.
 
 ---
 
+## iOS admin app (first slice)
+
+The Shopify Admin iOS app can already open the embedded portal. The dedicated
+iPhone app is a separate client:
+
+- Tokens are created in **Settings → iOS admin app**. Only a SHA-256 hash is
+  stored (`AdminMobileToken`). Revoke cuts off a lost phone.
+- The phone sends `Authorization: Bearer upt_admin_…` to
+  `GET /api/mobile/admin/session`, `GET /api/mobile/admin/requests`, and
+  `GET /api/mobile/admin/requests/:id`.
+- The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
+  `tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
+- This slice is **read-only**: list + detail. Offer send, stock link, photos,
+  EXACT PLANTS and analytics stay in the web admin until later slices.
+
+Do not put a mobile token in `LOGGABLE_PARAMS`. A query-string token is
+redacted by default.
+
+---
+
 ## Exact next productionization steps
 
 See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md). It is ordered, states who
@@ -1066,6 +1088,9 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/plant-behavior.ts` / `plant-behavior.server.ts` | Per-canonical-plant behaviour patterns (admin-only) |
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
+| `app/lib/admin-mobile-auth.server.ts` | iOS device-token create / verify / revoke |
+| `app/lib/admin-mobile-api.ts` | iOS list/detail payloads |
+| `mobile/ios-admin/` | Expo iPhone admin app (first slice) |
 | `app/lib/customer-session.server.ts` | Customer cookie / proxy identity, including the storefront origin check |
 | `app/lib/shop-domains.server.ts` | Storefront hostnames a proxied submission may come from |
 | `server.js` | Production server. Replaces `react-router-serve` only to hand the app-proxy `Origin` to the app |

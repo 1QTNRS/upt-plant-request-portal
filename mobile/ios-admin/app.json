@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "UPT Admin",
+    "slug": "upt-admin-ios",
+    "scheme": "uptadmin",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.unsolicitedplanttalks.admin"
+    },
+    "android": {
+      "package": "com.unsolicitedplanttalks.admin"
+    }
+  }
+}
