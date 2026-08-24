@@ -136,7 +136,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 
 ## Shopify integrations implemented (in code)
 
-- Admin OAuth via `@shopify/shopify-app-react-router` (`app/shopify.server.ts`, API version October 2025 / `2025-10`)
+- Admin OAuth via `@shopify/shopify-app-react-router` (`app/shopify.server.ts`, API version April 2026 / `2026-04`)
 - App proxy `/apps/plant-requests` → `/customer`, **HMAC-verified** (`app/lib/app-proxy.ts`)
 - Offline Admin client for the app-proxy customer path (`app/lib/offline-admin.server.ts`). Goes through `unauthenticated.admin(shop)`, which calls `ensureValidOfflineSession` and therefore refreshes the token under the `expiringOfflineAccessTokens` future flag — the customer draft-order path does not break when the offline token expires.
 - Customer name/email resolved from the Admin API and cached in `CustomerProfile` (`app/lib/customer-identity.server.ts`)
@@ -174,7 +174,7 @@ Re-check them when bumping the API version.
 | The POS channel handle is `point_of_sale` | It is **`pos`**. Both are accepted in `POS_APP_HANDLES` |
 | `Shop.domains` is deprecated, "use `domainsPaginated`" | `domainsPaginated` does not exist on `Shop` in 2025-10; `validate-graphql` rejects it |
 | A granted scope list echoes what was requested | Shopify folds `read_x` into the `write_x` that implies it. A store that approved everything reports `write_products` and no `read_products` — see `coveredScopes` in `env.server.ts`. `currentAppInstallation.accessScopes` returns the *expanded* list, so the two sources disagree by design |
-| `inventorySetQuantities` takes quantities | On 2025-10 it also **requires** `ignoreCompareQuantity`, which is deprecated ahead of the 2026-01 redesign — and deprecated input fields are hidden from a default introspection, so the validator could not see it until it was told to ask |
+| `inventorySetQuantities` takes quantities | On `2026-04` each quantity must send `changeFromQuantity` (the observed available qty — never `null`) and the mutation must carry `@idempotent`. `ignoreCompareQuantity` was removed. |
 
 ### Verifying against the dev store without a browser
 
@@ -388,11 +388,12 @@ plant published before it is stocked shows as sold out.
 `inventoryQuantities` on `ProductVariantsBulkInput` is only honoured by
 `productVariantsBulkCreate`, so the quantity needs its own call:
 `inventorySetQuantities` when Shopify already stocks the item at that location,
-`inventoryActivate` when it does not. On `2025-10`, `inventorySetQuantities`
-still requires the deprecated `ignoreCompareQuantity` (or a `compareQuantity` on
-every entry); its replacement, `InventoryQuantityInput.changeFromQuantity`, only
-exists from `2026-01`. Revisit `buildExactPlantInventoryInput` when the API
-version is bumped.
+`inventoryActivate` when it does not. Both mutations send `@idempotent` with a
+deterministic key from the request item and operation. `inventorySetQuantities`
+passes the quantity we just read as `changeFromQuantity` so a concurrent retry
+cannot overwrite a different stock level. A stale compare re-reads and retries
+with a new key; a concurrent idempotency error retries the same payload and key.
+Do not pass `changeFromQuantity: null` to skip the check.
 
 ### Emails
 
@@ -791,7 +792,7 @@ Last verified on `cursor/post-dev-store-corrections-9639`, the branch carrying a
 | `npm run lint` | pass |
 | `npm run prisma:validate` | pass (both schemas) |
 | `npm run prisma:check-schema` | pass |
-| `npm run validate-graphql` | pass (29 documents + 12 variable payloads against live Admin `2025-10`, including a `DraftOrderInput` that sells a real `variantId` and carries `reserveInventoryUntil`) |
+| `npm run validate-graphql` | pass (documents + variable payloads against live Admin `2026-04`, including Exact Plant `inventorySetQuantities` with `changeFromQuantity` and a `DraftOrderInput` that sells a real `variantId` and carries `reserveInventoryUntil`) |
 | `npm run build` | pass |
 | `docker build` + boot on PostgreSQL | pass; migrations applied, `/healthz` 200, container reports `healthy` |
 | GitHub CI (`.github/workflows/ci.yml`) | typecheck → lint → both schemas validated → schema-sync check → **tests on SQLite** → **tests on PostgreSQL** → build |

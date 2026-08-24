@@ -9,6 +9,7 @@ import {
   exactPlantMediaError,
   hostedPhotoUrls,
 } from "./exact-plants";
+import { exactPlantInventoryIdempotencyKey } from "./inventory-concurrency";
 import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
@@ -205,27 +206,85 @@ describe("EXACT PLANTS variant stocking", () => {
     );
   });
 
-  it("sets the stock of one physical plant to one", () => {
+  it("sets the stock of one physical plant to one against the expected quantity", () => {
     assert.deepEqual(
       buildExactPlantInventoryInput({
         inventoryItemId: "gid://shopify/InventoryItem/1",
         locationId: "gid://shopify/Location/1",
+        changeFromQuantity: 0,
       }),
       {
         name: "available",
         reason: "correction",
-        ignoreCompareQuantity: true,
         quantities: [
           {
             inventoryItemId: "gid://shopify/InventoryItem/1",
             locationId: "gid://shopify/Location/1",
             quantity: 1,
+            changeFromQuantity: 0,
           },
         ],
       },
     );
   });
 
+  it("does not opt out of compare-and-set by passing a null expected quantity", () => {
+    const input = buildExactPlantInventoryInput({
+      inventoryItemId: "gid://shopify/InventoryItem/1",
+      locationId: "gid://shopify/Location/1",
+      changeFromQuantity: 1,
+    });
+    assert.equal("ignoreCompareQuantity" in input, false);
+    assert.equal(input.quantities[0].changeFromQuantity, 1);
+  });
+});
+
+describe("EXACT PLANTS inventory idempotency keys", () => {
+  it("reuses the same key for a retry of the same set", () => {
+    const first = exactPlantInventoryIdempotencyKey({
+      requestItemId: "item_1",
+      operation: "set",
+      changeFromQuantity: 0,
+    });
+    const retry = exactPlantInventoryIdempotencyKey({
+      requestItemId: "item_1",
+      operation: "set",
+      changeFromQuantity: 0,
+    });
+    assert.equal(first, retry);
+    assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it("issues a new key when the expected quantity or item changes", () => {
+    const original = exactPlantInventoryIdempotencyKey({
+      requestItemId: "item_1",
+      operation: "set",
+      changeFromQuantity: 0,
+    });
+    assert.notEqual(
+      original,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "set",
+        changeFromQuantity: 1,
+      }),
+    );
+    assert.notEqual(
+      original,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_2",
+        operation: "set",
+        changeFromQuantity: 0,
+      }),
+    );
+    assert.notEqual(
+      original,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "activate",
+      }),
+    );
+  });
 });
 
 describe("EXACT PLANTS product media", () => {

@@ -22,7 +22,7 @@ include_config_on_deploy = true
 [webhooks]
 # Must match ApiVersion in app/shopify.server.ts so webhook payload shapes match
 # the version the Admin API client uses. app/lib/env.server.test.ts asserts this.
-api_version = "2025-10"
+api_version = "2026-04"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"

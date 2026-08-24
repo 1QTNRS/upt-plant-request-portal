@@ -249,13 +249,10 @@ async function inputSamples() {
     {
       label: "inventorySetQuantities($input)",
       type: "InventorySetQuantitiesInput!",
-      // `ignoreCompareQuantity` is deprecated in 2025-10 and still mandatory
-      // there; its replacement does not exist until 2026-01. See
-      // buildExactPlantInventoryInput.
-      allowDeprecated: ["InventorySetQuantitiesInput.ignoreCompareQuantity"],
       value: buildExactPlantInventoryInput({
         inventoryItemId: "gid://shopify/InventoryItem/1",
         locationId: "gid://shopify/Location/1",
+        changeFromQuantity: 0,
       }),
     },
     {
