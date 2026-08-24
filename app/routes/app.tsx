@@ -5,6 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { requireAdmin, isDevAdminBypass } from "../lib/admin-auth.server";
 import { grantedScopeWarning } from "../lib/env.server";
+import { ThemeStyles } from "../components/theme";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await requireAdmin(request);
@@ -43,13 +44,15 @@ export default function App() {
   if (!embedded) {
     return (
       <AppProvider>
+        <ThemeStyles />
         <div
           style={{
             display: "flex",
             gap: "16px",
             flexWrap: "wrap",
             padding: "12px 16px",
-            borderBottom: "1px solid #e1e3e5",
+            borderBottom: "1px solid #d6ece2",
+            background: "#d6ece2",
           }}
         >
           <s-link href="/app">Dashboard</s-link>
@@ -68,6 +71,7 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
+      <ThemeStyles />
       {nav}
       {banner}
       <Outlet />

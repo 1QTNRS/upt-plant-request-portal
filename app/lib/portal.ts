@@ -57,6 +57,7 @@ export type CustomerResponseItemChoice = "accept" | "reject" | "unavailable";
 export type SentOffer = {
   offerLink: string;
   sentAt: string;
+  sentAtIso: string;
   expiresAt: string;
   expiresAtIso: string;
   expirationDays: OfferExpirationDays;

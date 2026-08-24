@@ -25,7 +25,10 @@ import {
   WrappingRow,
 } from "../components/admin-layout";
 import { ListPager, PagedFrame, usePagedItems } from "../components/paged-list";
+import { StatusBadge } from "../components/theme";
+import { ViewerLocalTime } from "../components/viewer-local-time";
 import { ADMIN_REQUEST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
+import { THEME } from "../lib/theme";
 
 type DashboardData = {
   stats: {
@@ -42,6 +45,7 @@ type DashboardData = {
     plantsRequested: string;
     status: RequestStatus;
     submittedDate: string;
+    submittedAtIso: string;
   }>;
   query: string;
   statusFilter: AdminDashboardStatusFilter;
@@ -70,6 +74,7 @@ function toDashboard(
       plantsRequested: formatPlantsSummary(request.items),
       status: request.status,
       submittedDate: request.submittedDate,
+      submittedAtIso: request.submittedAtIso,
     })),
   };
 }
@@ -157,8 +162,8 @@ export default function Dashboard() {
                     minHeight: 44,
                     borderRadius: 8,
                     border: "1px solid #c9cccf",
-                    background: data.statusFilter === status ? "#008060" : "#fff",
-                    color: data.statusFilter === status ? "#fff" : "inherit",
+                    background: data.statusFilter === status ? THEME.darkGreen : "#fff",
+                    color: data.statusFilter === status ? "#fff" : THEME.darkGreen,
                     font: "inherit",
                     cursor: "pointer",
                   }}
@@ -201,12 +206,17 @@ export default function Dashboard() {
                 <dd>{request.plantsRequested}</dd>
                 <dt>Status</dt>
                 <dd>
-                  <s-badge tone={requestStatusTone(request.status)}>
+                  <StatusBadge tone={requestStatusTone(request.status)}>
                     {request.status}
-                  </s-badge>
+                  </StatusBadge>
                 </dd>
                 <dt>Submitted Date</dt>
-                <dd>{request.submittedDate}</dd>
+                <dd>
+                  <ViewerLocalTime
+                    iso={request.submittedAtIso}
+                    fallback={request.submittedDate}
+                  />
+                </dd>
               </dl>
               <s-link href={`/app/requests/${request.id}`}>View items</s-link>
             </article>
@@ -221,7 +231,7 @@ export default function Dashboard() {
             <col style={{ width: "20%" }} />
             <col />
             <col style={{ width: "6.5rem" }} />
-            <col style={{ width: "9rem" }} />
+            <col style={{ width: "12.5rem" }} />
             <col style={{ width: "6.5rem" }} />
           </colgroup>
           <thead>
@@ -248,11 +258,16 @@ export default function Dashboard() {
                   <td title={request.email}>{request.email}</td>
                   <td title={request.plantsRequested}>{request.plantsRequested}</td>
                   <td>
-                    <s-badge tone={requestStatusTone(request.status)}>
+                    <StatusBadge tone={requestStatusTone(request.status)}>
                       {request.status}
-                    </s-badge>
+                    </StatusBadge>
                   </td>
-                  <td>{request.submittedDate}</td>
+                  <td className="upt-cell-wrap">
+                    <ViewerLocalTime
+                      iso={request.submittedAtIso}
+                      fallback={request.submittedDate}
+                    />
+                  </td>
                   <td>
                     <s-link href={`/app/requests/${request.id}`}>View items</s-link>
                   </td>

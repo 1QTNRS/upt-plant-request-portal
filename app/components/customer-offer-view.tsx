@@ -17,6 +17,7 @@ import {
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { CustomerPhotoGallery } from "./customer-photo-gallery";
 import { OfferExpiryBanner } from "./customer-request-portal";
+import { StatusBadge as ThemeStatusBadge, ThemeStyles } from "./theme";
 
 type ItemChoice = "accept" | "reject" | "unavailable";
 
@@ -38,10 +39,10 @@ const primaryButtonStyle: React.CSSProperties = {
   width: "auto",
   minWidth: 120,
   fontWeight: 600,
-  background: "#008060",
+  background: "#002910",
   color: "#ffffff",
   WebkitTextFillColor: "#ffffff",
-  borderColor: "#008060",
+  borderColor: "#002910",
   appearance: "none",
   WebkitAppearance: "none",
 };
@@ -90,9 +91,9 @@ function CloseRequestButton({
         style={{
           ...buttonStyle,
           fontWeight: prominent ? 600 : 400,
-          background: prominent ? "#008060" : "#ffffff",
+          background: prominent ? "#002910" : "#ffffff",
           color: prominent ? "#ffffff" : "inherit",
-          borderColor: prominent ? "#008060" : "#c9cccf",
+          borderColor: prominent ? "#002910" : "#c9cccf",
         }}
       >
         Close Request
@@ -172,6 +173,7 @@ export function CustomerOfferView({
   if (!offer) {
     return (
       <s-page heading="Customer Offer">
+        <ThemeStyles />
         <s-section>
           <s-stack direction="block" gap="base">
             <s-text>
@@ -219,6 +221,7 @@ export function CustomerOfferView({
           allUnavailable,
         })}
       >
+        <ThemeStyles />
         <StatusBadge label={statusLabel} tone={statusTone} />
         {showSupportNote ? (
           <s-section>
@@ -458,6 +461,7 @@ export function CustomerOfferView({
             : offer.title
       }
     >
+      <ThemeStyles />
       <StatusBadge label={statusLabel} tone={statusTone} />
       {showSupportNote ? (
         <s-section>
@@ -722,7 +726,7 @@ function StatusBadge({
   if (!label) return null;
   return (
     <s-section>
-      <s-badge tone={tone}>{label}</s-badge>
+      <ThemeStatusBadge tone={tone}>{label}</ThemeStatusBadge>
     </s-section>
   );
 }

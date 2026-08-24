@@ -8,8 +8,16 @@ import {
   type RequestStatus,
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
+import { THEME } from "../lib/theme";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { PagerChevron, pagerArrowStyle } from "./paged-list";
+import {
+  CustomerPageShell,
+  LeafIcon,
+  StatusBadge,
+  themeFieldStyle,
+  themePrimaryButtonStyle,
+} from "./theme";
 
 export type PlantLine = {
   plantName: string;
@@ -18,26 +26,12 @@ export type PlantLine = {
 
 export const EMPTY_PLANT_LINE: PlantLine = { plantName: "", notes: "" };
 
-const fieldStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  maxWidth: "100%",
-  boxSizing: "border-box",
-  marginTop: "8px",
-  padding: "12px",
-  minHeight: 44,
-  borderRadius: "8px",
-  border: "1px solid #c9cccf",
-  font: "inherit",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "12px 16px",
-  minHeight: 44,
-  borderRadius: "8px",
-  border: "1px solid #c9cccf",
-  font: "inherit",
-  cursor: "pointer",
+const secondaryButtonStyle: React.CSSProperties = {
+  ...themePrimaryButtonStyle,
+  width: "auto",
+  background: THEME.white,
+  color: THEME.darkGreen,
+  WebkitTextFillColor: THEME.darkGreen,
 };
 
 export function CustomerRequestPortal({
@@ -81,159 +75,165 @@ export function CustomerRequestPortal({
 
   if (!loggedIn) {
     return (
-      <s-page heading="Customer Request Form">
-        <s-section>
-          <s-stack direction="block" gap="base">
-            <s-text>
-              Please log in to your Shopify customer account to submit a plant
-              request.
-            </s-text>
-            {showDemoLogin ? (
-              <form method="post" action={formAction}>
-                <input type="hidden" name="intent" value="demo-login" />
-                <s-stack direction="block" gap="base">
-                  <s-button variant="primary" type="submit">
-                    Continue as logged in customer
-                  </s-button>
-                  <s-text color="subdued">
-                    Development login uses the demo customer account. Production
-                    uses the Shopify customer account from the app proxy or
-                    Customer Account authentication.
-                  </s-text>
-                </s-stack>
-              </form>
-            ) : (
-              <s-text color="subdued">
-                Open this page from your Shopify account while logged in.
-              </s-text>
-            )}
-          </s-stack>
-        </s-section>
-      </s-page>
+      <CustomerPageShell title="Customer Request Form">
+        <section className="upt-card">
+          <p className="upt-muted">
+            Please log in to your Shopify customer account to submit a plant
+            request.
+          </p>
+          {showDemoLogin ? (
+            <form method="post" action={formAction}>
+              <input type="hidden" name="intent" value="demo-login" />
+              <button type="submit" style={themePrimaryButtonStyle}>
+                <LeafIcon />
+                Continue as logged in customer
+              </button>
+              <p className="upt-muted" style={{ marginTop: 12 }}>
+                Development login uses the demo customer account. Production
+                uses the Shopify customer account from the app proxy or
+                Customer Account authentication.
+              </p>
+            </form>
+          ) : (
+            <p className="upt-muted">
+              Open this page from your Shopify account while logged in.
+            </p>
+          )}
+        </section>
+      </CustomerPageShell>
     );
   }
 
   return (
-    <s-page heading="Customer Request Form">
+    <CustomerPageShell title="Customer Request Form">
       {successMessage ? (
         <s-banner tone="success">
           <s-text>{successMessage}</s-text>
         </s-banner>
       ) : null}
 
-      <s-section heading="New request">
-        <s-stack direction="block" gap="base">
-          <s-text color="subdued">
-            Your name and email are pulled from your customer account. Feel free
-            to request multiple plants at once. Any plants we’re able to offer
-            will be shown individually with photos and details so you know
-            exactly what you’re reviewing.
-          </s-text>
-          <s-text-field label="Name" value={name} readOnly />
-          <s-text-field label="Email" value={email} readOnly />
-        </s-stack>
-      </s-section>
+      <section className="upt-card">
+        <h2 className="upt-card-title">
+          <LeafIcon /> New request
+        </h2>
+        <p className="upt-muted">
+          Your name and email are pulled from your customer account. Feel free
+          to request multiple plants at once. Any plants we’re able to offer
+          will be shown individually with photos and details so you know
+          exactly what you’re reviewing.
+        </p>
+        <label>
+          <span>Name</span>
+          <input type="text" value={name} readOnly style={themeFieldStyle} />
+        </label>
+        <label style={{ display: "block", marginTop: 12 }}>
+          <span>Email</span>
+          <input type="email" value={email} readOnly style={themeFieldStyle} />
+        </label>
+      </section>
 
       <form method="post" action={formAction}>
         <input type="hidden" name="customerTimeZone" defaultValue="" />
-        <s-section heading="Plants requested">
-          <s-stack direction="block" gap="large">
-            {plantLines.map((line, index) => (
-              <s-box
-                key={index}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <s-stack direction="block" gap="base">
-                  <s-heading>Plant {index + 1}</s-heading>
-                  <label>
-                    <s-text>Plant Name</s-text>
-                    <input
-                      type="text"
-                      name={`plantName-${index}`}
-                      defaultValue={line.plantName}
-                      required
-                      style={fieldStyle}
-                    />
-                  </label>
-                  <label>
-                    <s-text>Notes (optional)</s-text>
-                    <textarea
-                      name={`notes-${index}`}
-                      defaultValue={line.notes}
-                      rows={3}
-                      style={{ ...fieldStyle, resize: "vertical" }}
-                    />
-                  </label>
-                  {plantLines.length > 1 ? (
-                    <button
-                      type="submit"
-                      name="removePlant"
-                      value={String(index)}
-                      formMethod="get"
-                      formAction={browseAction}
-                      formNoValidate
-                      style={buttonStyle}
-                    >
-                      Remove plant
-                    </button>
-                  ) : null}
-                </s-stack>
-              </s-box>
-            ))}
-            <input type="hidden" name="itemCount" value={plantLines.length} />
-            {/*
-              formMethod="get" turns this into a navigation rather than a POST:
-              the browser puts the typed values in the query string, the page
-              re-renders with one more row, and the customer stays on the same
-              storefront URL.
-            */}
-            <button
-              type="submit"
-              name="addPlant"
-              value="1"
-              formMethod="get"
-              formAction={browseAction}
-              formNoValidate
-              style={buttonStyle}
-            >
-              Add another plant
-            </button>
-          </s-stack>
-        </s-section>
+        <section className="upt-card">
+          <h2 className="upt-card-title">
+            <LeafIcon /> Plants requested
+          </h2>
+          {plantLines.map((line, index) => (
+            <div key={index} className="upt-plant-card">
+              <h3 style={{ margin: "0 0 12px", color: THEME.darkGreen }}>
+                Plant {index + 1}
+              </h3>
+              <label>
+                <span>Plant Name</span>
+                <input
+                  type="text"
+                  name={`plantName-${index}`}
+                  defaultValue={line.plantName}
+                  required
+                  style={themeFieldStyle}
+                />
+              </label>
+              <label style={{ display: "block", marginTop: 12 }}>
+                <span>Notes (optional)</span>
+                <textarea
+                  name={`notes-${index}`}
+                  defaultValue={line.notes}
+                  rows={3}
+                  style={{ ...themeFieldStyle, resize: "vertical" }}
+                />
+              </label>
+              {plantLines.length > 1 ? (
+                <button
+                  type="submit"
+                  name="removePlant"
+                  value={String(index)}
+                  formMethod="get"
+                  formAction={browseAction}
+                  formNoValidate
+                  style={{ ...secondaryButtonStyle, marginTop: 12 }}
+                >
+                  Remove plant
+                </button>
+              ) : null}
+            </div>
+          ))}
+          <input type="hidden" name="itemCount" value={plantLines.length} />
+          {/*
+            formMethod="get" turns this into a navigation rather than a POST:
+            the browser puts the typed values in the query string, the page
+            re-renders with one more row, and the customer stays on the same
+            storefront URL.
+          */}
+          <button
+            type="submit"
+            name="addPlant"
+            value="1"
+            formMethod="get"
+            formAction={browseAction}
+            formNoValidate
+            style={themePrimaryButtonStyle}
+          >
+            <span aria-hidden="true">+</span>
+            Add another plant
+          </button>
+        </section>
 
         {(errors?.length ?? 0) > 0 && (
-          <s-section>
-            <s-banner tone="critical">
-              <s-stack direction="block" gap="small">
-                {errors?.map((error) => (
-                  <s-text key={error}>{error}</s-text>
-                ))}
-              </s-stack>
-            </s-banner>
-          </s-section>
+          <s-banner tone="critical">
+            <s-stack direction="block" gap="small">
+              {errors?.map((error) => (
+                <s-text key={error}>{error}</s-text>
+              ))}
+            </s-stack>
+          </s-banner>
         )}
 
-        <s-section>
+        <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>
           <button
             type="submit"
             name="intent"
             value="submit-request"
             disabled={!canSubmit}
-            style={{ ...buttonStyle, fontWeight: 600 }}
+            style={{
+              ...themePrimaryButtonStyle,
+              borderRadius: 14,
+              minHeight: 52,
+            }}
           >
+            <LeafIcon />
             Submit request
           </button>
-        </s-section>
+        </section>
       </form>
 
-      <s-section heading="My Requests">
+      <section className="upt-card">
+        <h2 className="upt-card-title">
+          <LeafIcon /> My Requests
+        </h2>
         {myRequests.length === 0 ? (
-          <s-text color="subdued">
+          <p className="upt-muted">
             You have not submitted any plant requests yet.
-          </s-text>
+          </p>
         ) : (
           <div
             data-paged-list
@@ -248,38 +248,41 @@ export function CustomerRequestPortal({
               [data-paged-status] { display: inline-block; min-width: 11ch; text-align: center; }
             `}</style>
             <div data-paged-items>
-              {myRequests.map((request) => (
-                <div
-                  key={request.id}
-                  data-paged-item
-                  style={{
-                    display: "flex",
-                    flexWrap: "nowrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    height: 45,
-                    boxSizing: "border-box",
-                    padding: "8px 0",
-                    borderBottom: "1px solid #e1e3e5",
-                  }}
-                >
-                  <s-link href={requestDetailHref(request.id)}>
-                    {request.requestNumber}
-                  </s-link>
-                  <s-badge
-                    tone={customerStatusTone(request.status as RequestStatus, {
-                      hasPayableItems: request.hasPayableItems,
-                      hasResponded: request.hasResponded,
-                    })}
+              {myRequests.map((request) => {
+                const label = formatCustomerStatusLabel(request.status, {
+                  hasPayableItems: request.hasPayableItems,
+                  hasResponded: request.hasResponded,
+                });
+                return (
+                  <div
+                    key={request.id}
+                    data-paged-item
+                    style={{
+                      display: "flex",
+                      flexWrap: "nowrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      height: 45,
+                      boxSizing: "border-box",
+                      padding: "8px 0",
+                      borderBottom: `1px solid ${THEME.line}`,
+                    }}
                   >
-                    {formatCustomerStatusLabel(request.status, {
-                      hasPayableItems: request.hasPayableItems,
-                      hasResponded: request.hasResponded,
-                    })}
-                  </s-badge>
-                </div>
-              ))}
+                    <s-link href={requestDetailHref(request.id)}>
+                      {request.requestNumber}
+                    </s-link>
+                    <StatusBadge
+                      tone={customerStatusTone(request.status as RequestStatus, {
+                        hasPayableItems: request.hasPayableItems,
+                        hasResponded: request.hasResponded,
+                      })}
+                    >
+                      {label}
+                    </StatusBadge>
+                  </div>
+                );
+              })}
             </div>
             <div
               style={{
@@ -295,25 +298,25 @@ export function CustomerRequestPortal({
                 type="button"
                 data-paged-prev
                 aria-label="Previous page"
-                style={pagerArrowStyle}
+                style={{ ...pagerArrowStyle, color: THEME.darkGreen }}
               >
                 <PagerChevron direction="prev" />
               </button>
-              <s-text color="subdued">
+              <span className="upt-muted">
                 <span data-paged-status></span>
-              </s-text>
+              </span>
               <button
                 type="button"
                 data-paged-next
                 aria-label="Next page"
-                style={pagerArrowStyle}
+                style={{ ...pagerArrowStyle, color: THEME.darkGreen }}
               >
                 <PagerChevron direction="next" />
               </button>
             </div>
           </div>
         )}
-      </s-section>
+      </section>
       <form
         method="post"
         action={formAction}
@@ -325,7 +328,7 @@ export function CustomerRequestPortal({
         <input type="hidden" name="customerTimeZone" defaultValue="" />
       </form>
       <CustomerEnhanceScripts />
-    </s-page>
+    </CustomerPageShell>
   );
 }
 

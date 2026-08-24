@@ -681,6 +681,9 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("Export to Excel"));
     assert.match(source, /type="button"/);
     assert.ok(!source.includes("?page="));
+    assert.match(source, /THEME\.darkGreen/);
+    assert.match(source, /upt-card/);
+    assert.match(source, /StatusBadge/);
   });
 });
 

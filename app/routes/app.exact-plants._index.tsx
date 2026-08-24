@@ -241,7 +241,7 @@ export default function ExactPlantsIndex() {
                     minHeight: 44,
                     borderRadius: 8,
                     border: "1px solid #c9cccf",
-                    background: listingFilter === filter ? "#008060" : "#fff",
+                    background: listingFilter === filter ? "#002910" : "#fff",
                     color: listingFilter === filter ? "#fff" : "inherit",
                     font: "inherit",
                     cursor: "pointer",

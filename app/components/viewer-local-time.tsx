@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type TimeHTMLAttributes } from "react";
 
 import { formatViewerDateTime } from "../lib/customer-time";
 
@@ -10,10 +10,11 @@ import { formatViewerDateTime } from "../lib/customer-time";
 export function ViewerLocalTime({
   iso,
   fallback,
+  ...rest
 }: {
   iso: string;
   fallback: string;
-}) {
+} & TimeHTMLAttributes<HTMLTimeElement>) {
   const [label, setLabel] = useState(fallback);
 
   useEffect(() => {
@@ -21,7 +22,7 @@ export function ViewerLocalTime({
   }, [iso]);
 
   return (
-    <time dateTime={iso} suppressHydrationWarning>
+    <time dateTime={iso} suppressHydrationWarning {...rest}>
       {label}
     </time>
   );

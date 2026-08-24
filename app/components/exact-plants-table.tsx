@@ -15,6 +15,7 @@ import {
 } from "../lib/exact-plants";
 import { EXACT_PLANTS_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 import { formatCurrency, formatDate } from "../lib/portal";
+import { ViewerLocalTime } from "./viewer-local-time";
 import {
   AdminConfirmDialog,
   adminDialogButtonStyle,
@@ -149,8 +150,8 @@ export function ExactPlantsTable({
             onClick={() => setBulkCreateOpen(true)}
             style={{
               ...adminDialogPrimaryButtonStyle,
-              background: selectedCreatable.length === 0 ? "#c9cccf" : "#008060",
-              borderColor: selectedCreatable.length === 0 ? "#c9cccf" : "#008060",
+              background: selectedCreatable.length === 0 ? "#c9cccf" : "#002910",
+              borderColor: selectedCreatable.length === 0 ? "#c9cccf" : "#002910",
               cursor: selectedCreatable.length === 0 ? "not-allowed" : "pointer",
             }}
           >
@@ -394,12 +395,11 @@ export function ExactPlantsTable({
                     {formatCurrency(item.price)}
                   </td>
                   <td className="exact-plants-col-date" style={tdStyle}>
-                    <time
+                    <ViewerLocalTime
                       data-exact-plant-date
-                      dateTime={dismissedAt || item.eligibleAt}
-                    >
-                      {formatDate(new Date(dismissedAt || item.eligibleAt))}
-                    </time>
+                      iso={dismissedAt || item.eligibleAt}
+                      fallback={formatDate(new Date(dismissedAt || item.eligibleAt))}
+                    />
                   </td>
                   <td className="exact-plants-col-actions" style={tdStyle}>
                     <s-stack direction="block" gap="small">
@@ -546,8 +546,8 @@ export function ExactPlantsTable({
                 data-confirm-bulk-create
                 style={{
                   ...adminDialogPrimaryButtonStyle,
-                  background: "#008060",
-                  borderColor: "#008060",
+                  background: "#002910",
+                  borderColor: "#002910",
                 }}
               >
                 Create {selectedCreatable.length} listing
@@ -599,7 +599,7 @@ const tableLayoutCss = `
   .exact-plants-col-reason { width: 7.4rem; }
   .exact-plants-col-listing { width: 5.8rem; }
   .exact-plants-col-price { width: 4.6rem; }
-  .exact-plants-col-date { width: 6.4rem; }
+  .exact-plants-col-date { width: 9.5rem; }
   .exact-plants-col-actions { width: 7.2rem; }
   .exact-plants-table th,
   .exact-plants-table td {
@@ -613,8 +613,7 @@ const tableLayoutCss = `
     height: 56px;
   }
   .exact-plants-col-request,
-  .exact-plants-col-price,
-  .exact-plants-col-date {
+  .exact-plants-col-price {
     white-space: nowrap;
     overflow-wrap: normal;
   }
