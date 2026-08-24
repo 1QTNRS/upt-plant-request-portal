@@ -613,8 +613,7 @@ const tableLayoutCss = `
     height: 56px;
   }
   .exact-plants-col-request,
-  .exact-plants-col-price,
-  .exact-plants-col-date {
+  .exact-plants-col-price {
     white-space: nowrap;
     overflow-wrap: normal;
   }
