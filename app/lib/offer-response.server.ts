@@ -129,6 +129,7 @@ async function createDraftOrderFromSnapshot(input: {
     fedexPrice: input.fedexPrice,
     holdEndsAt,
     shippingFeeOverride: request?.sentOffer?.shippingFeeOverride,
+    shopifyCustomerId: request?.shopifyCustomerId,
   });
 
   if (draft.inventoryReserved) {

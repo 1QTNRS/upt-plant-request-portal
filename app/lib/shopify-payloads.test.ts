@@ -151,7 +151,7 @@ describe("draft order input", () => {
     );
   });
 
-  it("omits shippingLine when the override is blank so checkout can choose a rate", () => {
+  it("omits shippingLine when the admin left the override blank and no shop rate was quoted", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",
       requestNumber: "REQ2178",
@@ -160,6 +160,27 @@ describe("draft order input", () => {
       lineItems: lineItems(false),
     });
     assert.equal("shippingLine" in input, false);
+  });
+
+  it("applies a quoted shop shipping rate by handle", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+      quotedShippingRate: {
+        handle: "usps-priority",
+        title: "USPS Priority Mail",
+        amount: "12.00",
+        currencyCode: "USD",
+      },
+    });
+    assert.deepEqual(input.shippingLine, {
+      title: "USPS Priority Mail",
+      shippingRateHandle: "usps-priority",
+      priceWithCurrency: { amount: "12.00", currencyCode: "USD" },
+    });
   });
 
   it("sets a custom shipping line, including a $0 override", () => {

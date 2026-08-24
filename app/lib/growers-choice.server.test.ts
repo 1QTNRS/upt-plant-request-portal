@@ -768,6 +768,37 @@ function liveVariant(overrides: { inventoryQuantity?: number | null; status?: st
 function shopifyResponses(overrides: Record<string, unknown> = {}) {
   return {
     PortalShopCurrency: { shop: { currencyCode: "USD" } },
+    DraftOrderCustomerShipping: {
+      customer: {
+        id: "gid://shopify/Customer/123456",
+        defaultAddress: {
+          address1: "1 Main St",
+          address2: null,
+          city: "Seattle",
+          zip: "98101",
+          provinceCode: "WA",
+          countryCodeV2: "US",
+          firstName: "Alex",
+          lastName: "Rivera",
+          phone: null,
+        },
+      },
+    },
+    PortalShopShipsFrom: { shop: { billingAddress: { countryCodeV2: "US" } } },
+    QuotePlantRequestDraftShipping: {
+      draftOrderCalculate: {
+        calculatedDraftOrder: {
+          availableShippingRates: [
+            {
+              handle: "usps-priority",
+              title: "USPS Priority Mail",
+              price: { amount: "12.00", currencyCode: "USD" },
+            },
+          ],
+        },
+        userErrors: [],
+      },
+    },
     PlantRequestDraftOrderByTag: { draftOrders: { nodes: [] } },
     PortalStockVariantsById: liveVariant({}),
     CreatePlantRequestDraftOrder: {
@@ -830,6 +861,7 @@ describe("asking Shopify to hold the stock", () => {
     const input = sent?.variables.input as {
       reserveInventoryUntil?: string;
       lineItems: Array<Record<string, unknown>>;
+      shippingLine?: Record<string, unknown>;
     };
     assert.equal(input.reserveInventoryUntil, expiresAt.toISOString());
     assert.deepEqual(input.lineItems, [
@@ -841,6 +873,15 @@ describe("asking Shopify to hold the stock", () => {
         weight: { value: 4.5, unit: "POUNDS" },
       },
     ]);
+    assert.deepEqual(input.shippingLine, {
+      title: "USPS Priority Mail",
+      shippingRateHandle: "usps-priority",
+      priceWithCurrency: { amount: "12.00", currencyCode: "USD" },
+    });
+    assert.equal(
+      calls.some((call) => call.operation === "QuotePlantRequestDraftShipping"),
+      true,
+    );
 
     const draft = await getDraftOrder(merchantShop, requestId);
     assert.deepEqual(draft?.reserveInventoryUntil, reservedUntil);
@@ -1048,6 +1089,91 @@ describe("asking Shopify to hold the stock", () => {
       await prisma.draftOrderReference.count({ where: { requestId } }),
       1,
     );
+  });
+
+  it("uses a custom shipping line when the admin set an override, and does not quote", async () => {
+    const { requestId, itemId } = await newRequest(merchantShop);
+    await updateRequestItem(merchantShop, {
+      requestId,
+      itemId,
+      availability: "available",
+      fulfillmentType: "growers_choice",
+    });
+    await linkExistingStock(merchantShop, {
+      requestId,
+      itemId,
+      variant: variant(),
+    });
+    await sendOffer(merchantShop, requestId, 3, { shippingFeeOverride: 0 });
+    await answerFromStock(requestId, itemId, "accept", merchantShop);
+
+    const calls: Call[] = [];
+    const created = await createPaymentLinkForRequest({
+      shop: merchantShop,
+      requestId,
+      admin: fakeAdmin(shopifyResponses(), calls),
+    });
+
+    assert.equal(created.ok, true);
+    const sent = calls.find(
+      (call) => call.operation === "CreatePlantRequestDraftOrder",
+    );
+    const input = sent?.variables.input as { shippingLine?: Record<string, unknown> };
+    assert.deepEqual(input.shippingLine, {
+      title: "Shipping",
+      priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
+    });
+    assert.equal(
+      calls.some((call) => call.operation === "QuotePlantRequestDraftShipping"),
+      false,
+    );
+  });
+
+  it("quotes against the customer's default address when the request is linked", async () => {
+    const { requestId, itemId } = await offeredFromStock({ target: merchantShop });
+    await prisma.plantRequest.update({
+      where: { id: requestId },
+      data: { shopifyCustomerId: "123456" },
+    });
+    await answerFromStock(requestId, itemId, "accept", merchantShop);
+
+    const calls: Call[] = [];
+    const created = await createPaymentLinkForRequest({
+      shop: merchantShop,
+      requestId,
+      admin: fakeAdmin(shopifyResponses(), calls),
+    });
+
+    assert.equal(created.ok, true);
+    assert.equal(
+      calls.some((call) => call.operation === "DraftOrderCustomerShipping"),
+      true,
+    );
+    const sent = calls.find(
+      (call) => call.operation === "CreatePlantRequestDraftOrder",
+    );
+    const input = sent?.variables.input as {
+      purchasingEntity?: { customerId?: string };
+      shippingAddress?: Record<string, unknown>;
+      shippingLine?: Record<string, unknown>;
+    };
+    assert.deepEqual(input.purchasingEntity, {
+      customerId: "gid://shopify/Customer/123456",
+    });
+    assert.deepEqual(input.shippingAddress, {
+      address1: "1 Main St",
+      city: "Seattle",
+      zip: "98101",
+      provinceCode: "WA",
+      countryCode: "US",
+      firstName: "Alex",
+      lastName: "Rivera",
+    });
+    assert.deepEqual(input.shippingLine, {
+      title: "USPS Priority Mail",
+      shippingRateHandle: "usps-priority",
+      priceWithCurrency: { amount: "12.00", currencyCode: "USD" },
+    });
   });
 });
 

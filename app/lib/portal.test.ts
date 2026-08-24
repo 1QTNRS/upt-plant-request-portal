@@ -38,6 +38,9 @@ import {
   matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
   parseShippingFeeOverride,
+  pickStoreShippingRate,
+  compactMailingAddress,
+  shopifyCustomerGid,
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
@@ -527,7 +530,7 @@ describe("how long Shopify holds the stock", () => {
     assert.equal("reserveInventoryUntil" in input, false);
   });
 
-  it("omits shippingLine when the override is blank so checkout can choose a rate", () => {
+  it("omits shippingLine when the admin left the override blank and no shop rate was quoted", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",
       requestNumber: "REQ2178",
@@ -536,6 +539,27 @@ describe("how long Shopify holds the stock", () => {
       lineItems: [exactPlantLine],
     });
     assert.equal("shippingLine" in input, false);
+  });
+
+  it("applies the shop's quoted weight-based rate when the override is blank", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [exactPlantLine],
+      quotedShippingRate: {
+        handle: "usps-priority",
+        title: "USPS Priority Mail",
+        amount: "12.00",
+        currencyCode: "USD",
+      },
+    });
+    assert.deepEqual(input.shippingLine, {
+      title: "USPS Priority Mail",
+      shippingRateHandle: "usps-priority",
+      priceWithCurrency: { amount: "12.00", currencyCode: "USD" },
+    });
   });
 
   it("puts a custom shipping line on the draft order, including 0", () => {
@@ -552,9 +576,66 @@ describe("how long Shopify holds the stock", () => {
       priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
     });
   });
+
+  it("attaches the Shopify customer and destination used to quote the shop rate", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [exactPlantLine],
+      customerGid: "gid://shopify/Customer/1",
+      shippingAddress: { countryCode: "US", zip: "98101" },
+      quotedShippingRate: {
+        handle: "usps-priority",
+        title: "USPS Priority Mail",
+        amount: "12.00",
+        currencyCode: "USD",
+      },
+    });
+    assert.deepEqual(input.purchasingEntity, {
+      customerId: "gid://shopify/Customer/1",
+    });
+    assert.deepEqual(input.shippingAddress, { countryCode: "US", zip: "98101" });
+    assert.equal("useCustomerDefaultAddress" in input, false);
+  });
 });
 
 describe("shipping fee override", () => {
+  it("picks the cheapest shop rate Shopify quoted", () => {
+    assert.deepEqual(
+      pickStoreShippingRate([
+        { handle: "express", title: "Express", amount: "28.00", currencyCode: "USD" },
+        { handle: "priority", title: "Priority", amount: "12.00", currencyCode: "USD" },
+        { handle: "ground", title: "Ground", amount: "15.50", currencyCode: "USD" },
+      ]),
+      { handle: "priority", title: "Priority", amount: "12.00", currencyCode: "USD" },
+    );
+    assert.equal(pickStoreShippingRate([]), undefined);
+  });
+
+  it("compacts a mailing address and drops empty fields", () => {
+    assert.deepEqual(
+      compactMailingAddress({
+        address1: "1 Main St",
+        address2: "  ",
+        city: "Seattle",
+        zip: "98101",
+        countryCode: "US",
+      }),
+      { address1: "1 Main St", city: "Seattle", zip: "98101", countryCode: "US" },
+    );
+    assert.equal(compactMailingAddress({ address1: "", city: "  " }), undefined);
+  });
+
+  it("normalizes a Shopify customer id to a GID", () => {
+    assert.equal(shopifyCustomerGid("123456"), "gid://shopify/Customer/123456");
+    assert.equal(
+      shopifyCustomerGid("gid://shopify/Customer/123456"),
+      "gid://shopify/Customer/123456",
+    );
+  });
+
   it("treats a blank field as no override", () => {
     assert.deepEqual(parseShippingFeeOverride(""), { ok: true });
     assert.deepEqual(parseShippingFeeOverride("  "), { ok: true });

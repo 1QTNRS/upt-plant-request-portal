@@ -37,15 +37,20 @@ import {
 import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
+  compactMailingAddress,
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
   FEDEX_PRODUCT_SKU,
   fedexVariantSkuQuery,
+  pickStoreShippingRate,
   plantRevenueFromLines,
   reserveInventoryUntilFor,
+  shopifyCustomerGid,
   tagSearchQuery,
   type AcceptedDraftOrderItem,
   type DraftOrderLineItem,
+  type DraftOrderShippingAddress,
+  type QuotedShippingRate,
 } from "./portal";
 import {
   claimDraftOrderCreation,
@@ -652,6 +657,157 @@ function isInventoryUserError(message: string): boolean {
   return /\b(inventor|stock|out of stock|unavailable quantity)/i.test(message);
 }
 
+const DRAFT_ORDER_CUSTOMER_SHIPPING_QUERY = `#graphql
+  query DraftOrderCustomerShipping($id: ID!) {
+    customer(id: $id) {
+      id
+      defaultAddress {
+        address1
+        address2
+        city
+        zip
+        provinceCode
+        countryCodeV2
+        firstName
+        lastName
+        phone
+      }
+    }
+  }
+`;
+
+const SHOP_SHIPS_FROM_QUERY = `#graphql
+  query PortalShopShipsFrom {
+    shop {
+      billingAddress { countryCodeV2 }
+    }
+  }
+`;
+
+const QUOTE_DRAFT_SHIPPING_MUTATION = `#graphql
+  mutation QuotePlantRequestDraftShipping($input: DraftOrderInput!) {
+    draftOrderCalculate(input: $input) {
+      calculatedDraftOrder {
+        availableShippingRates {
+          handle
+          title
+          price { amount currencyCode }
+        }
+      }
+      userErrors { field message }
+    }
+  }
+`;
+
+async function resolveDraftOrderShippingAddress(
+  admin: GraphqlClient,
+  shopifyCustomerId?: string,
+): Promise<{
+  customerGid?: string;
+  shippingAddress?: DraftOrderShippingAddress;
+  useCustomerDefaultAddress: boolean;
+}> {
+  const customerGid = shopifyCustomerId
+    ? shopifyCustomerGid(shopifyCustomerId)
+    : undefined;
+
+  if (customerGid) {
+    try {
+      const data = await adminGraphql<{
+        customer: {
+          defaultAddress: {
+            address1: string | null;
+            address2: string | null;
+            city: string | null;
+            zip: string | null;
+            provinceCode: string | null;
+            countryCodeV2: string | null;
+            firstName: string | null;
+            lastName: string | null;
+            phone: string | null;
+          } | null;
+        } | null;
+      }>(admin, DRAFT_ORDER_CUSTOMER_SHIPPING_QUERY, { id: customerGid });
+      const address = compactMailingAddress({
+        address1: data.customer?.defaultAddress?.address1 ?? undefined,
+        address2: data.customer?.defaultAddress?.address2 ?? undefined,
+        city: data.customer?.defaultAddress?.city ?? undefined,
+        zip: data.customer?.defaultAddress?.zip ?? undefined,
+        provinceCode: data.customer?.defaultAddress?.provinceCode ?? undefined,
+        countryCode: data.customer?.defaultAddress?.countryCodeV2 ?? undefined,
+        firstName: data.customer?.defaultAddress?.firstName ?? undefined,
+        lastName: data.customer?.defaultAddress?.lastName ?? undefined,
+        phone: data.customer?.defaultAddress?.phone ?? undefined,
+      });
+      if (address) {
+        return { customerGid, shippingAddress: address, useCustomerDefaultAddress: false };
+      }
+      return { customerGid, useCustomerDefaultAddress: true };
+    } catch (error) {
+      console.warn(
+        `Could not read the Shopify customer's shipping address for ${customerGid}:`,
+        error,
+      );
+      return { customerGid, useCustomerDefaultAddress: true };
+    }
+  }
+
+  try {
+    const data = await adminGraphql<{
+      shop: { billingAddress: { countryCodeV2: string | null } | null };
+    }>(admin, SHOP_SHIPS_FROM_QUERY);
+    const shippingAddress = compactMailingAddress({
+      countryCode: data.shop.billingAddress?.countryCodeV2 ?? undefined,
+    });
+    return { shippingAddress, useCustomerDefaultAddress: false };
+  } catch (error) {
+    console.warn("Could not read the shop billing country for a shipping quote:", error);
+    return { useCustomerDefaultAddress: false };
+  }
+}
+
+async function quoteStoreShippingRate(
+  admin: GraphqlClient,
+  draftInput: ReturnType<typeof buildDraftOrderInput>,
+): Promise<QuotedShippingRate | undefined> {
+  try {
+    const data = await adminGraphql<{
+      draftOrderCalculate: {
+        calculatedDraftOrder: {
+          availableShippingRates: Array<{
+            handle: string;
+            title: string;
+            price: { amount: string; currencyCode: string };
+          }>;
+        } | null;
+        userErrors: Array<{ field: string[] | null; message: string }>;
+      };
+    }>(admin, QUOTE_DRAFT_SHIPPING_MUTATION, { input: draftInput });
+
+    const errors = data.draftOrderCalculate.userErrors;
+    if (errors.length > 0) {
+      console.warn(
+        "Shopify could not quote shipping for this draft order:",
+        errors.map((error) => error.message).join("; "),
+      );
+      return undefined;
+    }
+
+    const rates = (data.draftOrderCalculate.calculatedDraftOrder?.availableShippingRates ?? []).map(
+      (rate) => ({
+        handle: rate.handle,
+        title: rate.title,
+        amount: rate.price.amount,
+        currencyCode: rate.price.currencyCode,
+      }),
+    );
+    return pickStoreShippingRate(rates);
+  } catch (error) {
+    console.warn("Shopify shipping quote failed; the draft will be created without a rate:", error);
+    return undefined;
+  }
+}
+
 export async function createDraftOrderForRequest(
   admin: GraphqlClient | undefined,
   shop: string,
@@ -669,8 +825,9 @@ export async function createDraftOrderForRequest(
      * it, so it must be the offer's own expiry and not a window of its own.
      */
     holdEndsAt?: Date | string | null;
-    /** Custom shipping line on the invoice. Undefined leaves Shopify's rate. */
+    /** Custom shipping line on the invoice. Undefined quotes the shop's rate. */
     shippingFeeOverride?: number;
+    shopifyCustomerId?: string | null;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -752,6 +909,7 @@ async function createClaimedDraftOrder(
     lineItems: DraftOrderLineItem[];
     reserveInventoryUntil?: string;
     shippingFeeOverride?: number;
+    shopifyCustomerId?: string | null;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -777,14 +935,40 @@ async function createClaimedDraftOrder(
     } else {
       await assertLinkedStockStillAvailable(admin, input.acceptedItems);
 
+      const shipping = await resolveDraftOrderShippingAddress(
+        admin,
+        input.shopifyCustomerId ?? undefined,
+      );
+      const currencyCode = await resolveShopCurrency(admin, shop);
+      const quotedShippingRate =
+        input.shippingFeeOverride === undefined
+          ? await quoteStoreShippingRate(
+              admin,
+              buildDraftOrderInput({
+                requestId: input.requestId,
+                requestNumber: input.requestNumber,
+                customerEmail: input.customerEmail,
+                currencyCode,
+                lineItems,
+                customerGid: shipping.customerGid,
+                shippingAddress: shipping.shippingAddress,
+                useCustomerDefaultAddress: shipping.useCustomerDefaultAddress,
+              }),
+            )
+          : undefined;
+
       const draftInput = buildDraftOrderInput({
         requestId: input.requestId,
         requestNumber: input.requestNumber,
         customerEmail: input.customerEmail,
-        currencyCode: await resolveShopCurrency(admin, shop),
+        currencyCode,
         lineItems,
         reserveInventoryUntil,
         shippingFeeOverride: input.shippingFeeOverride,
+        quotedShippingRate,
+        customerGid: shipping.customerGid,
+        shippingAddress: shipping.shippingAddress,
+        useCustomerDefaultAddress: shipping.useCustomerDefaultAddress,
       });
 
       const created = await adminGraphql<{
