@@ -20,5 +20,9 @@ export function ViewerLocalTime({
     setLabel(formatViewerDateTime(iso));
   }, [iso]);
 
-  return <time dateTime={iso}>{label}</time>;
+  return (
+    <time dateTime={iso} suppressHydrationWarning>
+      {label}
+    </time>
+  );
 }

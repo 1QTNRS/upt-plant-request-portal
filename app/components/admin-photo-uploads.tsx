@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useParams, useRevalidator } from "react-router";
 
+import { adminDialogButtonStyle } from "./admin-confirm-dialog";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
 import {
   applyAdminPhotoUploadHeaders,
@@ -545,18 +546,26 @@ export function AdminPhotoStrip({
               maxWidth: "100%",
             }}
           >
-            <s-button
-              variant="secondary"
+            <button
               type="button"
+              data-admin-photo-choose-files
               onClick={() => fileInputRef.current?.click()}
+              style={adminDialogButtonStyle}
             >
               Choose files
-            </s-button>
-            <s-text data-admin-photo-file-label>
+            </button>
+            <span
+              data-admin-photo-file-label
+              style={{
+                font: "inherit",
+                lineHeight: "44px",
+                minHeight: 44,
+              }}
+            >
               {selectedFileNames.length > 0
                 ? selectedFileNames.join(", ")
                 : "No file selected"}
-            </s-text>
+            </span>
           </div>
         ) : (
           <s-button variant="secondary" type="submit">
