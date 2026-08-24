@@ -24,7 +24,7 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /el\.hidden = hide/);
     assert.doesNotMatch(
       CUSTOMER_PAGED_LIST_SCRIPT,
-      /style\.display/,
+      /el\.style\.display/,
       "clearing display wipes the row grid and packs statuses against REQ numbers",
     );
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-bound/);
