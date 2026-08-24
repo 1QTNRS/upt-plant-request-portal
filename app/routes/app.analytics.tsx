@@ -13,6 +13,8 @@ import {
   resolveAnalyticsRange,
   type DateRangeId,
 } from "../lib/analytics.server";
+
+type AnalyticsData = Awaited<ReturnType<typeof getAnalytics>>;
 import { plantIdentityAiStatus } from "../lib/plant-identity-ai.server";
 import {
   confirmPlantIdentitySuggestion,
@@ -30,6 +32,8 @@ import {
   statCardStyle,
   WrappingRow,
 } from "../components/admin-layout";
+import { ExportExcelButton, ListPager, usePagedItems } from "../components/paged-list";
+import { ANALYTICS_LIST_PAGE_SIZE } from "../lib/list-page";
 
 type SortDirection = "asc" | "desc";
 
@@ -138,6 +142,11 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
     () => sortByKey(plants, sortKey, sortDirection),
     [plants, sortKey, sortDirection],
   );
+  const paged = usePagedItems(
+    sorted,
+    ANALYTICS_LIST_PAGE_SIZE,
+    `${heading}:${sortKey}:${sortDirection}:${plants.length}`,
+  );
 
   const handleSort = (key: keyof PlantMetric) => {
     if (sortKey === key) {
@@ -168,6 +177,28 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
 
   return (
     <s-section heading={heading}>
+      <ExportExcelButton
+        filename={`${heading.toLowerCase().replaceAll(" ", "-")}.xls`}
+        sheetName={heading}
+        headers={[
+          "Plant Name",
+          "Customer Wordings",
+          "Offered As",
+          "Request Count",
+          "Purchase Count",
+          "Revenue",
+          "Conversion Rate",
+        ]}
+        rows={sorted.map((plant) => [
+          plant.plantName,
+          plant.variants,
+          plant.offeredName,
+          plant.requestCount,
+          plant.purchaseCount,
+          plant.revenue,
+          plant.conversionRate,
+        ])}
+      />
       <s-table>
         <s-table-header-row>
           <s-table-header listSlot="primary">
@@ -181,7 +212,7 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           <s-table-header>{headerLabel("conversionRate", "Conversion Rate")}</s-table-header>
         </s-table-header-row>
         <s-table-body>
-          {sorted.map((plant) => (
+          {paged.items.map((plant) => (
             <s-table-row key={plant.plantId}>
               <s-table-cell>{plant.plantName}</s-table-cell>
               <s-table-cell>{plant.variants || "—"}</s-table-cell>
@@ -194,6 +225,14 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           ))}
         </s-table-body>
       </s-table>
+      <ListPager
+        page={paged.page}
+        pageCount={paged.pageCount}
+        total={paged.total}
+        start={paged.start}
+        end={paged.end}
+        onPage={paged.setPage}
+      />
     </s-section>
   );
 }
@@ -633,9 +672,64 @@ export default function Analytics() {
         </s-stack>
       </s-section>
 
+      <ItemConversionAnalytics rows={data.itemPurchaseRows} />
+
+      <PlantIdentitySuggestions
+        suggestions={plantIdentitySuggestions}
+        aiStatus={aiStatus}
+      />
+
+      <PlantTable heading="Most Requested Plants" plants={data.plants.mostRequested} />
+      <PlantTable heading="Most Purchased Plants" plants={data.plants.mostPurchased} />
+      <PlantTable heading="Highest Revenue Plants" plants={data.plants.highestRevenue} />
+    </s-page>
+  );
+}
+
+function ItemConversionAnalytics({
+  rows,
+}: {
+  rows: AnalyticsData["itemPurchaseRows"];
+}) {
+  const paged = usePagedItems(
+    rows,
+    ANALYTICS_LIST_PAGE_SIZE,
+    `item-conversion:${rows.length}`,
+  );
+  return (
       <s-section heading="Item Conversion Analytics">
+        <ExportExcelButton
+          filename="item-conversion-analytics.xls"
+          sheetName="Item conversion"
+          headers={[
+            "Customer Name",
+            "Email",
+            "Request Number",
+            "Items Requested",
+            "Items Offered",
+            "Items Accepted",
+            "Items Purchased",
+            "Accepted vs Purchased %",
+            "Request-to-Purchase %",
+            "Item Revenue",
+            "Behavior Flag",
+          ]}
+          rows={rows.map((row) => [
+            row.customerName,
+            row.email,
+            row.requestId,
+            row.itemsRequested,
+            row.itemsOffered,
+            row.itemsAccepted,
+            row.itemsPurchased,
+            row.acceptedVsPurchasedPercent,
+            row.requestToPurchasePercent,
+            row.itemRevenue,
+            row.behaviorFlag,
+          ])}
+        />
         <div className="upt-narrow-only">
-          {data.itemPurchaseRows.map((row) => (
+          {paged.items.map((row) => (
             <article key={`${row.email}-${row.requestId}`} className="upt-request-card">
               <dl>
                 <dt>Customer</dt>
@@ -681,7 +775,7 @@ export default function Analytics() {
             <s-table-header>Behavior Flag</s-table-header>
           </s-table-header-row>
           <s-table-body>
-            {data.itemPurchaseRows.map((row) => (
+            {paged.items.map((row) => (
               <s-table-row key={`${row.email}-${row.requestId}`}>
                 <s-table-cell>{row.customerName}</s-table-cell>
                 <s-table-cell>{row.email}</s-table-cell>
@@ -703,17 +797,15 @@ export default function Analytics() {
           </s-table-body>
         </s-table>
         </div>
+        <ListPager
+          page={paged.page}
+          pageCount={paged.pageCount}
+          total={paged.total}
+          start={paged.start}
+          end={paged.end}
+          onPage={paged.setPage}
+        />
       </s-section>
-
-      <PlantIdentitySuggestions
-        suggestions={plantIdentitySuggestions}
-        aiStatus={aiStatus}
-      />
-
-      <PlantTable heading="Most Requested Plants" plants={data.plants.mostRequested} />
-      <PlantTable heading="Most Purchased Plants" plants={data.plants.mostPurchased} />
-      <PlantTable heading="Highest Revenue Plants" plants={data.plants.highestRevenue} />
-    </s-page>
   );
 }
 

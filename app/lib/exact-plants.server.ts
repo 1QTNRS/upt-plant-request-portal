@@ -656,6 +656,51 @@ export async function dismissExactPlantFromQueue(input: {
   return { ok: true, alreadyDismissed: false };
 }
 
+export type BulkExactPlantDismissResult = {
+  dismissed: number;
+  skipped: number;
+  errors: Array<{ requestItemId: string; error: string }>;
+};
+
+export async function dismissExactPlantsFromQueue(input: {
+  shop: string;
+  requestItemIds: string[];
+  confirmed: boolean;
+}): Promise<BulkExactPlantDismissResult> {
+  const uniqueIds = [
+    ...new Set(input.requestItemIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  const result: BulkExactPlantDismissResult = {
+    dismissed: 0,
+    skipped: 0,
+    errors: [],
+  };
+  if (!input.confirmed) {
+    result.errors.push({
+      requestItemId: "",
+      error: "Confirm Dismiss from EXACT PLANTS to proceed.",
+    });
+    return result;
+  }
+  for (const requestItemId of uniqueIds) {
+    const dismissed = await dismissExactPlantFromQueue({
+      shop: input.shop,
+      requestItemId,
+      confirmed: true,
+    });
+    if (!dismissed.ok) {
+      result.errors.push({ requestItemId, error: dismissed.error });
+      continue;
+    }
+    if (dismissed.alreadyDismissed) {
+      result.skipped += 1;
+      continue;
+    }
+    result.dismissed += 1;
+  }
+  return result;
+}
+
 export type BulkExactPlantListingResult = {
   created: number;
   skipped: number;

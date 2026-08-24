@@ -13,12 +13,15 @@ import {
   type ExactPlantTableSort,
   type ExactPlantTableSortState,
 } from "../lib/exact-plants";
+import { EXACT_PLANTS_PAGE_SIZE } from "../lib/list-page";
 import { formatCurrency, formatDate } from "../lib/portal";
 import {
   AdminConfirmDialog,
+  adminDialogButtonStyle,
   adminDialogPrimaryButtonStyle,
 } from "./admin-confirm-dialog";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
+import { ExportExcelButton, ListPager, usePagedItems } from "./paged-list";
 
 const SORTABLE: Array<{
   column: ExactPlantTableSort;
@@ -61,7 +64,13 @@ export function ExactPlantsTable({
   const [dismissItemId, setDismissItemId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
+  const [bulkDismissOpen, setBulkDismissOpen] = useState(false);
   const dismissed = mode === "dismissed";
+  const paged = usePagedItems(
+    items,
+    EXACT_PLANTS_PAGE_SIZE,
+    `${listingFilter}:${sort.column}:${sort.direction}:${items.length}`,
+  );
   const creatableIds = useMemo(
     () =>
       dismissed
@@ -76,10 +85,37 @@ export function ExactPlantsTable({
             .map((item) => item.requestItemId),
     [dismissed, items],
   );
+  const dismissableIds = useMemo(
+    () =>
+      dismissed
+        ? []
+        : items
+            .filter((item) =>
+              canDismissExactPlantFromQueue({
+                dismissedAt: item.dismissedAt,
+                listing: item.listing,
+              }),
+            )
+            .map((item) => item.requestItemId),
+    [dismissed, items],
+  );
   const selectedCreatable = selectedIds.filter((id) => creatableIds.includes(id));
-  const allCreatableSelected =
-    creatableIds.length > 0 &&
-    creatableIds.every((id) => selectedIds.includes(id));
+  const selectedDismissable = selectedIds.filter((id) =>
+    dismissableIds.includes(id),
+  );
+  const pageSelectableIds = paged.items
+    .filter((item) => {
+      const listing = { dismissedAt: item.dismissedAt, listing: item.listing };
+      return (
+        !dismissed &&
+        (canCreateExactPlantListing(listing) ||
+          canDismissExactPlantFromQueue(listing))
+      );
+    })
+    .map((item) => item.requestItemId);
+  const allPageSelected =
+    pageSelectableIds.length > 0 &&
+    pageSelectableIds.every((id) => selectedIds.includes(id));
 
   const toggleSelected = (requestItemId: string, checked: boolean) => {
     setSelectedIds((current) => {
@@ -120,12 +156,74 @@ export function ExactPlantsTable({
           >
             Create listings ({selectedCreatable.length})
           </button>
+          <button
+            type="button"
+            data-bulk-dismiss-exact-plants
+            disabled={selectedDismissable.length === 0}
+            onClick={() => setBulkDismissOpen(true)}
+            style={{
+              ...adminDialogButtonStyle,
+              cursor:
+                selectedDismissable.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            Dismiss selected ({selectedDismissable.length})
+          </button>
+          <ExportExcelButton
+            filename="exact-plants.xls"
+            sheetName="EXACT PLANTS"
+            headers={[
+              "Plant name",
+              "Request #",
+              "Eligibility",
+              "Listing status",
+              "Price",
+              "Date",
+            ]}
+            rows={items.map((item) => [
+              item.title,
+              item.requestNumber,
+              EXACT_PLANT_RELEASE_LABELS[item.releaseReason],
+              dismissed
+                ? "Dismissed"
+                : item.listing?.status === "listed"
+                  ? "Listed"
+                  : EXACT_PLANT_LISTING_FILTER_LABELS[
+                      exactPlantListingBucket(item)
+                    ],
+              item.price,
+              formatDate(new Date(item.dismissedAt || item.eligibleAt)),
+            ])}
+          />
           <s-text color="subdued">
-            Select plants in the table, then create listings from each offered
-            title, price, weight, and photos.
+            Select plants in the table, then create listings or dismiss them
+            from the queue.
           </s-text>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          <ExportExcelButton
+            filename="exact-plants-dismissed.xls"
+            sheetName="Dismissed"
+            headers={[
+              "Plant name",
+              "Request #",
+              "Eligibility",
+              "Listing status",
+              "Price",
+              "Date",
+            ]}
+            rows={items.map((item) => [
+              item.title,
+              item.requestNumber,
+              EXACT_PLANT_RELEASE_LABELS[item.releaseReason],
+              "Dismissed",
+              item.price,
+              formatDate(new Date(item.dismissedAt || item.eligibleAt)),
+            ])}
+          />
+        </div>
+      )}
       <div data-exact-plants-table-wrap className="exact-plants-table-wrap">
         <table data-exact-plants-table className="exact-plants-table">
           <thead>
@@ -135,13 +233,21 @@ export function ExactPlantsTable({
                   <input
                     type="checkbox"
                     data-exact-plant-select-all
-                    aria-label="Select all plants that can be listed"
-                    checked={allCreatableSelected}
-                    disabled={creatableIds.length === 0}
+                    aria-label="Select all plants on this page"
+                    checked={allPageSelected}
+                    disabled={pageSelectableIds.length === 0}
                     onChange={(event) => {
-                      setSelectedIds(
-                        event.currentTarget.checked ? creatableIds : [],
-                      );
+                      const checked = event.currentTarget.checked;
+                      setSelectedIds((current) => {
+                        if (checked) {
+                          return [
+                            ...new Set([...current, ...pageSelectableIds]),
+                          ];
+                        }
+                        return current.filter(
+                          (id) => !pageSelectableIds.includes(id),
+                        );
+                      });
                     }}
                   />
                 </th>
@@ -200,7 +306,7 @@ export function ExactPlantsTable({
             </tr>
           </thead>
           <tbody>
-            {items.map((item, index) => {
+            {paged.items.map((item, index) => {
               const listed =
                 item.listing?.status === "listed" && item.listing.shopifyProductGid;
               const bucket = exactPlantListingBucket(item);
@@ -223,11 +329,11 @@ export function ExactPlantsTable({
                 >
                   {!dismissed ? (
                     <td className="exact-plants-col-select" style={selectTdStyle}>
-                      {canCreate ? (
+                      {canCreate || canDismiss ? (
                         <input
                           type="checkbox"
                           data-exact-plant-select
-                          aria-label={`Select ${item.title} for listing`}
+                          aria-label={`Select ${item.title}`}
                           checked={selectedIds.includes(item.requestItemId)}
                           onChange={(event) =>
                             toggleSelected(
@@ -383,6 +489,14 @@ export function ExactPlantsTable({
           </tbody>
         </table>
       </div>
+      <ListPager
+        page={paged.page}
+        pageCount={paged.pageCount}
+        total={paged.total}
+        start={paged.start}
+        end={paged.end}
+        onPage={paged.setPage}
+      />
       {viewer ? (
         <AdminPhotoLightbox
           urls={viewer.urls}
@@ -415,6 +529,41 @@ export function ExactPlantsTable({
             product is created. The original request, customer response, offer
             snapshot, photos, and history stay. You can still find it on the
             Dismissed tab.
+          </s-text>
+        </AdminConfirmDialog>
+      ) : null}
+      {bulkDismissOpen ? (
+        <AdminConfirmDialog
+          title="Dismiss selected plants from EXACT PLANTS?"
+          onCancel={() => setBulkDismissOpen(false)}
+          confirm={
+            <Form
+              method="post"
+              onSubmit={() => {
+                setBulkDismissOpen(false);
+                setSelectedIds([]);
+              }}
+            >
+              <input type="hidden" name="intent" value="bulk-dismiss-exact-plants" />
+              <input type="hidden" name="confirmed" value="true" />
+              {selectedDismissable.map((id) => (
+                <input key={id} type="hidden" name="requestItemId" value={id} />
+              ))}
+              <button
+                type="submit"
+                data-confirm-bulk-dismiss
+                style={adminDialogPrimaryButtonStyle}
+              >
+                Dismiss {selectedDismissable.length} plant
+                {selectedDismissable.length === 1 ? "" : "s"}
+              </button>
+            </Form>
+          }
+        >
+          <s-text>
+            This removes each selected plant from the EXACT PLANTS queue. No
+            Shopify product is created. Already-listed plants are skipped.
+            History stays on the Dismissed tab.
           </s-text>
         </AdminConfirmDialog>
       ) : null}

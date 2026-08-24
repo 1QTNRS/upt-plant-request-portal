@@ -233,6 +233,63 @@ export const FEDEX_WARNING_SCRIPT = `
 })();
 `.trim();
 
+export const CUSTOMER_PAGED_LIST_SCRIPT = `
+(function () {
+  if (window.__uptPagedList) return;
+  window.__uptPagedList = true;
+
+  function bind(root) {
+    if (!(root instanceof HTMLElement)) return;
+    var size = parseInt(root.getAttribute("data-page-size") || "10", 10);
+    if (!size || size < 1) size = 10;
+    var items = root.querySelectorAll("[data-paged-item]");
+    var page = 1;
+
+    function render() {
+      var total = items.length;
+      var pages = Math.max(1, Math.ceil(total / size));
+      if (page > pages) page = pages;
+      if (page < 1) page = 1;
+      var start = (page - 1) * size;
+      Array.prototype.forEach.call(items, function (el, index) {
+        var hide = index < start || index >= start + size;
+        el.setAttribute("data-paged-hidden", hide ? "true" : "false");
+        if (el instanceof HTMLElement) el.hidden = hide;
+      });
+      var status = root.querySelector("[data-paged-status]");
+      if (status) {
+        status.textContent = total === 0
+          ? ""
+          : "Showing " + (start + 1) + "–" + Math.min(start + size, total) + " of " + total;
+      }
+      var prev = root.querySelector("[data-paged-prev]");
+      var next = root.querySelector("[data-paged-next]");
+      if (prev instanceof HTMLButtonElement) prev.disabled = page <= 1;
+      if (next instanceof HTMLButtonElement) next.disabled = page >= pages;
+    }
+
+    root.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-paged-prev]")) {
+        event.preventDefault();
+        page -= 1;
+        render();
+        return;
+      }
+      if (target.closest("[data-paged-next]")) {
+        event.preventDefault();
+        page += 1;
+        render();
+      }
+    });
+    render();
+  }
+
+  document.querySelectorAll("[data-paged-list]").forEach(bind);
+})();
+`.trim();
+
 export const CUSTOMER_LIGHTBOX_SCRIPT = `
 (function () {
   if (window.__uptCustomerLightbox) return;
@@ -405,6 +462,7 @@ export function CustomerEnhanceScripts({
   const source = [
     CUSTOMER_TIME_SCRIPT,
     CUSTOMER_LIGHTBOX_SCRIPT,
+    CUSTOMER_PAGED_LIST_SCRIPT,
     includeFedexWarning ? FEDEX_WARNING_SCRIPT : "",
   ]
     .filter(Boolean)

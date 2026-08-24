@@ -24,6 +24,7 @@ import {
 import {
   createExactPlantListingsFromDrafts,
   dismissExactPlantFromQueue,
+  dismissExactPlantsFromQueue,
   listDismissedExactPlants,
   listExactPlantCandidates,
 } from "../lib/exact-plants.server";
@@ -96,6 +97,52 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         result.skipped === 1
           ? "Skipped 1 already-listed plant."
           : `Skipped ${result.skipped} already-listed plants.`,
+      );
+    }
+    if (result.errors.length > 0) {
+      parts.push(result.errors.map((entry) => entry.error).join(" "));
+    }
+    return {
+      error: result.errors.length > 0 ? parts.join(" ") : null,
+      pendingDismissItemId: null,
+      bulkMessage: result.errors.length > 0 ? null : parts.join(" "),
+    };
+  }
+
+  if (intent === "bulk-dismiss-exact-plants") {
+    const requestItemIds = form
+      .getAll("requestItemId")
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+    if (requestItemIds.length === 0) {
+      return {
+        error: "Select at least one plant to dismiss.",
+        pendingDismissItemId: null as string | null,
+        bulkMessage: null as string | null,
+      };
+    }
+    const result = await dismissExactPlantsFromQueue({
+      shop,
+      requestItemIds,
+      confirmed: String(form.get("confirmed")) === "true",
+    });
+    if (result.dismissed === 0 && result.errors.length > 0) {
+      return {
+        error: result.errors.map((entry) => entry.error).join(" "),
+        pendingDismissItemId: null,
+        bulkMessage: null,
+      };
+    }
+    const parts = [
+      result.dismissed === 1
+        ? "Dismissed 1 plant."
+        : `Dismissed ${result.dismissed} plants.`,
+    ];
+    if (result.skipped > 0) {
+      parts.push(
+        result.skipped === 1
+          ? "Skipped 1 already-dismissed plant."
+          : `Skipped ${result.skipped} already-dismissed plants.`,
       );
     }
     if (result.errors.length > 0) {

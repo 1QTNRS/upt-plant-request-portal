@@ -7,6 +7,8 @@ import {
   type CustomerMyRequestRow,
   type RequestStatus,
 } from "../lib/portal";
+import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
+import { spreadsheetHref } from "../lib/spreadsheet";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 
 export type PlantLine = {
@@ -233,36 +235,93 @@ export function CustomerRequestPortal({
             You have not submitted any plant requests yet.
           </s-text>
         ) : (
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Request Number</s-table-header>
-              <s-table-header>Status</s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {myRequests.map((request) => (
-                <s-table-row key={request.id}>
-                  <s-table-cell>
-                    <s-link href={requestDetailHref(request.id)}>
-                      {request.requestNumber}
-                    </s-link>
-                  </s-table-cell>
-                  <s-table-cell>
-                    <s-badge
-                      tone={customerStatusTone(request.status as RequestStatus, {
-                        hasPayableItems: request.hasPayableItems,
-                        hasResponded: request.hasResponded,
-                      })}
-                    >
-                      {formatCustomerStatusLabel(request.status, {
-                        hasPayableItems: request.hasPayableItems,
-                        hasResponded: request.hasResponded,
-                      })}
-                    </s-badge>
-                  </s-table-cell>
-                </s-table-row>
-              ))}
-            </s-table-body>
-          </s-table>
+          <div
+            data-paged-list
+            data-page-size={CUSTOMER_REQUEST_PAGE_SIZE}
+          >
+            <style>{`
+              [data-paged-item][data-paged-hidden="true"] { display: none !important; }
+            `}</style>
+            <a
+              href={spreadsheetHref(
+                "My Requests",
+                ["Request Number", "Status", "Submitted", "Plants"],
+                myRequests.map((request) => [
+                  request.requestNumber,
+                  formatCustomerStatusLabel(request.status, {
+                    hasPayableItems: request.hasPayableItems,
+                    hasResponded: request.hasResponded,
+                  }),
+                  request.submittedDate,
+                  request.plantsRequested,
+                ]),
+              )}
+              download="my-requests.xls"
+              data-export-excel
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                minHeight: 44,
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid #c9cccf",
+                background: "#fff",
+                color: "inherit",
+                textDecoration: "none",
+                font: "inherit",
+                marginBottom: 12,
+              }}
+            >
+              Export to Excel
+            </a>
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">Request Number</s-table-header>
+                <s-table-header>Status</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {myRequests.map((request) => (
+                  <s-table-row key={request.id} data-paged-item>
+                    <s-table-cell>
+                      <s-link href={requestDetailHref(request.id)}>
+                        {request.requestNumber}
+                      </s-link>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-badge
+                        tone={customerStatusTone(request.status as RequestStatus, {
+                          hasPayableItems: request.hasPayableItems,
+                          hasResponded: request.hasResponded,
+                        })}
+                      >
+                        {formatCustomerStatusLabel(request.status, {
+                          hasPayableItems: request.hasPayableItems,
+                          hasResponded: request.hasResponded,
+                        })}
+                      </s-badge>
+                    </s-table-cell>
+                  </s-table-row>
+                ))}
+              </s-table-body>
+            </s-table>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              <button type="button" data-paged-prev style={buttonStyle}>
+                Previous
+              </button>
+              <s-text color="subdued" data-paged-status></s-text>
+              <button type="button" data-paged-next style={buttonStyle}>
+                Next
+              </button>
+            </div>
+          </div>
         )}
       </s-section>
       <form
