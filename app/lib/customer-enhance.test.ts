@@ -24,6 +24,7 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /style\.display/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-bound/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /setTimeout\(scan/);
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /scrollTo/);
     assert.doesNotMatch(CUSTOMER_PAGED_LIST_SCRIPT, /\?page=/);
   });
 

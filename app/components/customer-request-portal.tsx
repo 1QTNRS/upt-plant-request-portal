@@ -8,8 +8,8 @@ import {
   type RequestStatus,
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
-import { spreadsheetHref } from "../lib/spreadsheet";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
+import { PagerChevron, pagerArrowStyle } from "./paged-list";
 
 export type PlantLine = {
   plantName: string;
@@ -241,51 +241,26 @@ export function CustomerRequestPortal({
           >
             <style>{`
               [data-paged-item][hidden] { display: none !important; }
+              [data-paged-items] { min-height: calc(${CUSTOMER_REQUEST_PAGE_SIZE} * 45px); }
+              [data-paged-list] { overflow-anchor: none; }
+              [data-paged-prev]:disabled,
+              [data-paged-next]:disabled { opacity: 0.35; cursor: default; }
+              [data-paged-status] { display: inline-block; min-width: 11ch; text-align: center; }
             `}</style>
-            <a
-              href={spreadsheetHref(
-                "My Requests",
-                ["Request Number", "Status", "Submitted", "Plants"],
-                myRequests.map((request) => [
-                  request.requestNumber,
-                  formatCustomerStatusLabel(request.status, {
-                    hasPayableItems: request.hasPayableItems,
-                    hasResponded: request.hasResponded,
-                  }),
-                  request.submittedDate,
-                  request.plantsRequested,
-                ]),
-              )}
-              download="my-requests.xls"
-              data-export-excel
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                minHeight: 44,
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: "1px solid #c9cccf",
-                background: "#fff",
-                color: "inherit",
-                textDecoration: "none",
-                font: "inherit",
-                marginBottom: 12,
-              }}
-            >
-              Export to Excel
-            </a>
-            <div>
+            <div data-paged-items>
               {myRequests.map((request) => (
                 <div
                   key={request.id}
                   data-paged-item
                   style={{
                     display: "flex",
-                    flexWrap: "wrap",
+                    flexWrap: "nowrap",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: 8,
-                    padding: "10px 0",
+                    height: 45,
+                    boxSizing: "border-box",
+                    padding: "8px 0",
                     borderBottom: "1px solid #e1e3e5",
                   }}
                 >
@@ -311,16 +286,29 @@ export function CustomerRequestPortal({
                 display: "flex",
                 flexWrap: "wrap",
                 alignItems: "center",
-                gap: 8,
+                gap: 4,
                 marginTop: 12,
+                minHeight: 36,
               }}
             >
-              <button type="button" data-paged-prev style={buttonStyle}>
-                Previous
+              <button
+                type="button"
+                data-paged-prev
+                aria-label="Previous page"
+                style={pagerArrowStyle}
+              >
+                <PagerChevron direction="prev" />
               </button>
-              <s-text color="subdued" data-paged-status></s-text>
-              <button type="button" data-paged-next style={buttonStyle}>
-                Next
+              <s-text color="subdued">
+                <span data-paged-status></span>
+              </s-text>
+              <button
+                type="button"
+                data-paged-next
+                aria-label="Next page"
+                style={pagerArrowStyle}
+              >
+                <PagerChevron direction="next" />
               </button>
             </div>
           </div>

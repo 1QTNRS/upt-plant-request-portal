@@ -266,7 +266,7 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
       if (status) {
         status.textContent = total === 0
           ? ""
-          : "Showing " + (start + 1) + "–" + Math.min(start + size, total) + " of " + total;
+          : (start + 1) + "–" + Math.min(start + size, total) + " of " + total;
       }
       var prev = root.querySelector("[data-paged-prev]");
       var next = root.querySelector("[data-paged-next]");
@@ -281,14 +281,18 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
         if (!(target instanceof Element)) return;
         if (target.closest("[data-paged-prev]")) {
           event.preventDefault();
+          var prevY = window.scrollY;
           page -= 1;
           render();
+          window.scrollTo(0, prevY);
           return;
         }
         if (target.closest("[data-paged-next]")) {
           event.preventDefault();
+          var nextY = window.scrollY;
           page += 1;
           render();
+          window.scrollTo(0, nextY);
         }
       });
     }

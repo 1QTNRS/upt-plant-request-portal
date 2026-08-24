@@ -13,7 +13,7 @@ import {
   type ExactPlantTableSort,
   type ExactPlantTableSortState,
 } from "../lib/exact-plants";
-import { EXACT_PLANTS_PAGE_SIZE } from "../lib/list-page";
+import { EXACT_PLANTS_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 import { formatCurrency, formatDate } from "../lib/portal";
 import {
   AdminConfirmDialog,
@@ -21,7 +21,7 @@ import {
   adminDialogPrimaryButtonStyle,
 } from "./admin-confirm-dialog";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
-import { ExportExcelButton, ListPager, usePagedItems } from "./paged-list";
+import { ListPager, usePagedItems } from "./paged-list";
 
 const SORTABLE: Array<{
   column: ExactPlantTableSort;
@@ -169,61 +169,12 @@ export function ExactPlantsTable({
           >
             Dismiss selected ({selectedDismissable.length})
           </button>
-          <ExportExcelButton
-            filename="exact-plants.xls"
-            sheetName="EXACT PLANTS"
-            headers={[
-              "Plant name",
-              "Request #",
-              "Eligibility",
-              "Listing status",
-              "Price",
-              "Date",
-            ]}
-            rows={items.map((item) => [
-              item.title,
-              item.requestNumber,
-              EXACT_PLANT_RELEASE_LABELS[item.releaseReason],
-              dismissed
-                ? "Dismissed"
-                : item.listing?.status === "listed"
-                  ? "Listed"
-                  : EXACT_PLANT_LISTING_FILTER_LABELS[
-                      exactPlantListingBucket(item)
-                    ],
-              item.price,
-              formatDate(new Date(item.dismissedAt || item.eligibleAt)),
-            ])}
-          />
           <s-text color="subdued">
             Select plants in the table, then create listings or dismiss them
             from the queue.
           </s-text>
         </div>
-      ) : (
-        <div style={{ marginTop: 12 }}>
-          <ExportExcelButton
-            filename="exact-plants-dismissed.xls"
-            sheetName="Dismissed"
-            headers={[
-              "Plant name",
-              "Request #",
-              "Eligibility",
-              "Listing status",
-              "Price",
-              "Date",
-            ]}
-            rows={items.map((item) => [
-              item.title,
-              item.requestNumber,
-              EXACT_PLANT_RELEASE_LABELS[item.releaseReason],
-              "Dismissed",
-              item.price,
-              formatDate(new Date(item.dismissedAt || item.eligibleAt)),
-            ])}
-          />
-        </div>
-      )}
+      ) : null}
       <div data-exact-plants-table-wrap className="exact-plants-table-wrap">
         <table data-exact-plants-table className="exact-plants-table">
           <thead>
@@ -306,7 +257,14 @@ export function ExactPlantsTable({
             </tr>
           </thead>
           <tbody>
-            {paged.items.map((item, index) => {
+            {padPageSlots(paged.items, EXACT_PLANTS_PAGE_SIZE).map((item, index) => {
+              if (!item) {
+                return (
+                  <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
+                    <td colSpan={dismissed ? 8 : 9} style={{ height: 56 }}>&nbsp;</td>
+                  </tr>
+                );
+              }
               const listed =
                 item.listing?.status === "listed" && item.listing.shopifyProductGid;
               const bucket = exactPlantListingBucket(item);
@@ -614,6 +572,7 @@ const tableLayoutCss = `
   .exact-plants-table-wrap {
     margin-top: 12px;
     width: 100%;
+    overflow-anchor: none;
   }
   .exact-plants-table {
     width: 100%;
@@ -649,6 +608,9 @@ const tableLayoutCss = `
   .exact-plants-table th,
   .exact-plants-table td {
     overflow-wrap: anywhere;
+  }
+  .exact-plants-table tbody tr {
+    height: 56px;
   }
   .exact-plants-col-request,
   .exact-plants-col-price,

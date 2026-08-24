@@ -667,7 +667,7 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("useEffect"));
   });
 
-  it("pages My Requests in place and exports the full list", () => {
+  it("pages My Requests in place without an Excel export", () => {
     assert.match(source, /data-paged-list/);
     assert.match(source, /data-page-size=\{CUSTOMER_REQUEST_PAGE_SIZE\}/);
     assert.match(source, /data-paged-item/);
@@ -675,8 +675,10 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("<s-table"));
     assert.match(source, /data-paged-prev/);
     assert.match(source, /data-paged-next/);
-    assert.match(source, /data-export-excel/);
-    assert.match(source, /spreadsheetHref/);
+    assert.match(source, /aria-label="Previous page"/);
+    assert.ok(!source.includes("data-export-excel"));
+    assert.ok(!source.includes("spreadsheetHref"));
+    assert.ok(!source.includes("Export to Excel"));
     assert.match(source, /type="button"/);
     assert.ok(!source.includes("?page="));
   });

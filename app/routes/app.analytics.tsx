@@ -32,8 +32,8 @@ import {
   statCardStyle,
   WrappingRow,
 } from "../components/admin-layout";
-import { ExportExcelButton, ListPager, usePagedItems } from "../components/paged-list";
-import { ANALYTICS_LIST_PAGE_SIZE } from "../lib/list-page";
+import { ExportExcelButton, ListPager, PagedFrame, usePagedItems } from "../components/paged-list";
+import { ANALYTICS_LIST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 
 type SortDirection = "asc" | "desc";
 
@@ -199,32 +199,47 @@ function PlantTable({ heading, plants }: { heading: string; plants: PlantMetric[
           plant.conversionRate,
         ])}
       />
-      <s-table>
-        <s-table-header-row>
-          <s-table-header listSlot="primary">
-            {headerLabel("plantName", "Plant Name")}
-          </s-table-header>
-          <s-table-header>{headerLabel("variants", "Customer Wordings")}</s-table-header>
-          <s-table-header>{headerLabel("offeredName", "Offered As")}</s-table-header>
-          <s-table-header>{headerLabel("requestCount", "Request Count")}</s-table-header>
-          <s-table-header>{headerLabel("purchaseCount", "Purchase Count")}</s-table-header>
-          <s-table-header>{headerLabel("revenue", "Revenue")}</s-table-header>
-          <s-table-header>{headerLabel("conversionRate", "Conversion Rate")}</s-table-header>
-        </s-table-header-row>
-        <s-table-body>
-          {paged.items.map((plant) => (
-            <s-table-row key={plant.plantId}>
-              <s-table-cell>{plant.plantName}</s-table-cell>
-              <s-table-cell>{plant.variants || "—"}</s-table-cell>
-              <s-table-cell>{plant.offeredName || "—"}</s-table-cell>
-              <s-table-cell>{plant.requestCount}</s-table-cell>
-              <s-table-cell>{plant.purchaseCount}</s-table-cell>
-              <s-table-cell>{formatCurrency(plant.revenue)}</s-table-cell>
-              <s-table-cell>{plant.conversionRate}%</s-table-cell>
-            </s-table-row>
-          ))}
-        </s-table-body>
-      </s-table>
+      <table className="upt-fixed-table">
+        <colgroup>
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "7rem" }} />
+          <col style={{ width: "8rem" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>{headerLabel("plantName", "Plant Name")}</th>
+            <th>{headerLabel("variants", "Customer Wordings")}</th>
+            <th>{headerLabel("offeredName", "Offered As")}</th>
+            <th>{headerLabel("requestCount", "Request Count")}</th>
+            <th>{headerLabel("purchaseCount", "Purchase Count")}</th>
+            <th>{headerLabel("revenue", "Revenue")}</th>
+            <th>{headerLabel("conversionRate", "Conversion Rate")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {padPageSlots(paged.items, ANALYTICS_LIST_PAGE_SIZE).map((plant, index) =>
+            plant ? (
+              <tr key={plant.plantId}>
+                <td title={plant.plantName}>{plant.plantName}</td>
+                <td title={plant.variants || ""}>{plant.variants || "—"}</td>
+                <td title={plant.offeredName || ""}>{plant.offeredName || "—"}</td>
+                <td>{plant.requestCount}</td>
+                <td>{plant.purchaseCount}</td>
+                <td>{formatCurrency(plant.revenue)}</td>
+                <td>{plant.conversionRate}%</td>
+              </tr>
+            ) : (
+              <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
+                <td colSpan={7}>&nbsp;</td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
       <ListPager
         page={paged.page}
         pageCount={paged.pageCount}
@@ -729,6 +744,7 @@ function ItemConversionAnalytics({
           ])}
         />
         <div className="upt-narrow-only">
+          <PagedFrame pageSize={ANALYTICS_LIST_PAGE_SIZE} rowHeight={220}>
           {paged.items.map((row) => (
             <article key={`${row.email}-${row.requestId}`} className="upt-request-card">
               <dl>
@@ -758,44 +774,66 @@ function ItemConversionAnalytics({
               </dl>
             </article>
           ))}
+          </PagedFrame>
         </div>
         <div className="upt-wide-only">
-        <s-table>
-          <s-table-header-row>
-            <s-table-header listSlot="primary">Customer Name</s-table-header>
-            <s-table-header>Email</s-table-header>
-            <s-table-header>Request Number</s-table-header>
-            <s-table-header>Items Requested</s-table-header>
-            <s-table-header>Items Offered</s-table-header>
-            <s-table-header>Items Accepted</s-table-header>
-            <s-table-header>Items Purchased</s-table-header>
-            <s-table-header>Accepted vs Purchased %</s-table-header>
-            <s-table-header>Request-to-Purchase %</s-table-header>
-            <s-table-header>Item Revenue</s-table-header>
-            <s-table-header>Behavior Flag</s-table-header>
-          </s-table-header-row>
-          <s-table-body>
-            {paged.items.map((row) => (
-              <s-table-row key={`${row.email}-${row.requestId}`}>
-                <s-table-cell>{row.customerName}</s-table-cell>
-                <s-table-cell>{row.email}</s-table-cell>
-                <s-table-cell>{row.requestId}</s-table-cell>
-                <s-table-cell>{row.itemsRequested}</s-table-cell>
-                <s-table-cell>{row.itemsOffered}</s-table-cell>
-                <s-table-cell>{row.itemsAccepted}</s-table-cell>
-                <s-table-cell>{row.itemsPurchased}</s-table-cell>
-                <s-table-cell>{row.acceptedVsPurchasedPercent}%</s-table-cell>
-                <s-table-cell>{row.requestToPurchasePercent}%</s-table-cell>
-                <s-table-cell>{formatCurrency(row.itemRevenue)}</s-table-cell>
-                <s-table-cell>
-                  <s-badge tone={behaviorFlagTone(row.behaviorFlag)}>
-                    {row.behaviorFlag}
-                  </s-badge>
-                </s-table-cell>
-              </s-table-row>
-            ))}
-          </s-table-body>
-        </s-table>
+        <table className="upt-fixed-table">
+          <colgroup>
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "8rem" }} />
+            <col style={{ width: "6rem" }} />
+            <col style={{ width: "6rem" }} />
+            <col style={{ width: "6rem" }} />
+            <col style={{ width: "6rem" }} />
+            <col style={{ width: "7rem" }} />
+            <col style={{ width: "7rem" }} />
+            <col style={{ width: "7rem" }} />
+            <col style={{ width: "8rem" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Customer Name</th>
+              <th>Email</th>
+              <th>Request Number</th>
+              <th>Items Requested</th>
+              <th>Items Offered</th>
+              <th>Items Accepted</th>
+              <th>Items Purchased</th>
+              <th>Accepted vs Purchased %</th>
+              <th>Request-to-Purchase %</th>
+              <th>Item Revenue</th>
+              <th>Behavior Flag</th>
+            </tr>
+          </thead>
+          <tbody>
+            {padPageSlots(paged.items, ANALYTICS_LIST_PAGE_SIZE).map((row, index) =>
+              row ? (
+                <tr key={`${row.email}-${row.requestId}`}>
+                  <td title={row.customerName}>{row.customerName}</td>
+                  <td title={row.email}>{row.email}</td>
+                  <td>{row.requestId}</td>
+                  <td>{row.itemsRequested}</td>
+                  <td>{row.itemsOffered}</td>
+                  <td>{row.itemsAccepted}</td>
+                  <td>{row.itemsPurchased}</td>
+                  <td>{row.acceptedVsPurchasedPercent}%</td>
+                  <td>{row.requestToPurchasePercent}%</td>
+                  <td>{formatCurrency(row.itemRevenue)}</td>
+                  <td>
+                    <s-badge tone={behaviorFlagTone(row.behaviorFlag)}>
+                      {row.behaviorFlag}
+                    </s-badge>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
+                  <td colSpan={11}>&nbsp;</td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
         </div>
         <ListPager
           page={paged.page}

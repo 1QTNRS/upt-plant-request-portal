@@ -35,3 +35,10 @@ export function paginateItems<T>(
     end: Math.min(offset + size, total),
   };
 }
+
+/** Keep a page the same height by filling leftover slots. */
+export function padPageSlots<T>(items: T[], pageSize: number): Array<T | null> {
+  const size = Math.max(1, Math.floor(pageSize));
+  if (items.length >= size) return items;
+  return [...items, ...Array.from({ length: size - items.length }, () => null)];
+}

@@ -70,6 +70,40 @@ export function AdminResponsiveStyles() {
         color: #202223;
         cursor: pointer;
       }
+      .upt-fixed-table {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+      }
+      .upt-fixed-table th,
+      .upt-fixed-table td {
+        padding: 10px 8px;
+        text-align: left;
+        vertical-align: middle;
+        border-bottom: 1px solid #e1e3e5;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        height: 44px;
+        box-sizing: border-box;
+      }
+      .upt-fixed-table th {
+        font-weight: 600;
+        background: #f1f2f3;
+      }
+      .upt-fixed-table .upt-cell-wrap {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .upt-page-slot td {
+        border-bottom-color: transparent;
+      }
+      .upt-fixed-table,
+      [data-list-pager],
+      [data-paged-frame],
+      [data-paged-list] {
+        overflow-anchor: none;
+      }
     `}</style>
   );
 }

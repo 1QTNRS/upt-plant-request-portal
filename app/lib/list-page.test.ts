@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { paginateItems } from "./list-page";
+import { padPageSlots, paginateItems } from "./list-page";
 
 describe("paginateItems", () => {
   it("slices 10-at-a-time and clamps the page", () => {
@@ -27,6 +27,11 @@ describe("paginateItems", () => {
     assert.equal(first.items.length, 25);
     assert.equal(first.pageCount, 2);
     assert.deepEqual(paginateItems(items, 2, 25).items, [26, 27, 28, 29, 30]);
+  });
+
+  it("pads a short page to the page size", () => {
+    assert.deepEqual(padPageSlots([1, 2], 4), [1, 2, null, null]);
+    assert.deepEqual(padPageSlots([1, 2, 3, 4], 4), [1, 2, 3, 4]);
   });
 
   it("keeps an empty list on page 1", () => {

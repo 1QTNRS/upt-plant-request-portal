@@ -595,7 +595,7 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(table, /data-confirm-bulk-dismiss/);
     assert.match(table, /EXACT_PLANTS_PAGE_SIZE/);
     assert.match(table, /ListPager/);
-    assert.match(table, /ExportExcelButton/);
+    assert.ok(!table.includes("ExportExcelButton"));
     assert.match(table, /Select all plants on this page/);
     assert.match(table, /border-collapse: collapse/);
     assert.ok(!table.includes("border-left: 3px"));
@@ -674,12 +674,13 @@ describe("admin dashboard status filters", () => {
     assert.ok(!dashboard.includes("<select"));
   });
 
-  it("pages Recent Requests in place and exports the filtered list", () => {
+  it("pages Recent Requests in place without an Excel export", () => {
     assert.match(dashboard, /usePagedItems/);
     assert.match(dashboard, /ADMIN_REQUEST_PAGE_SIZE/);
     assert.match(dashboard, /ListPager/);
-    assert.match(dashboard, /ExportExcelButton/);
-    assert.match(dashboard, /admin-requests\.xls/);
+    assert.match(dashboard, /upt-fixed-table/);
+    assert.ok(!dashboard.includes("ExportExcelButton"));
+    assert.ok(!dashboard.includes("admin-requests.xls"));
     assert.ok(!dashboard.includes("searchParams.set(\"page\""));
   });
 });
@@ -694,6 +695,7 @@ describe("analytics list paging and export", () => {
     assert.match(analytics, /ANALYTICS_LIST_PAGE_SIZE/);
     assert.match(analytics, /usePagedItems/);
     assert.match(analytics, /ListPager/);
+    assert.match(analytics, /ExportExcelButton/);
     assert.match(analytics, /item-conversion-analytics\.xls/);
     assert.match(analytics, /heading.toLowerCase\(\)\.replaceAll/);
     assert.match(analytics, /ItemConversionAnalytics/);
