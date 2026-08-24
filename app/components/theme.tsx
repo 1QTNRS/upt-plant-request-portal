@@ -176,7 +176,7 @@ export function ThemeStyles() {
       .upt-choice-set {
         display: flex;
         gap: 10px;
-        margin: 16px 0 0;
+        margin: 0;
         padding: 0;
         border: 0;
       }

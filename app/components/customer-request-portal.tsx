@@ -153,9 +153,6 @@ export function CustomerRequestPortal({
           <h2 className="upt-card-title">Plants requested</h2>
           {plantLines.map((line, index) => (
             <div key={index} className="upt-plant-card">
-              <h3 style={{ margin: "0 0 12px", color: THEME.darkGreen }}>
-                Plant {index + 1}
-              </h3>
               <label>
                 <span>Plant Name</span>
                 <input
@@ -226,11 +223,6 @@ export function CustomerRequestPortal({
           style={{ borderColor: THEME.yellow, borderWidth: 2 }}
         >
           <h2 className="upt-card-title">Have an existing order?</h2>
-          <p className="upt-muted">
-            If you already have an order with us, we will combine this request
-            with it and refund any shipping overages. You do not have to worry
-            about overpaying for shipping.
-          </p>
           <fieldset className="upt-choice-set">
             <legend className="upt-sr-only">Have an existing order?</legend>
             <label className="upt-choice">

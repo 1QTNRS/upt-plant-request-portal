@@ -20,7 +20,7 @@ The plant-request workflow is persisted in Prisma (SQLite by default) and wired 
 
 Implemented end-to-end in app code:
 
-- Customer request submit (plant name required, notes optional, no quantity UI, quantity stored as 1, **no Budget field**). Required Yes/No **Have an existing order?** with the combine-shipping note; stored on `PlantRequest.hasExistingOrder`
+- Customer request submit (plant name required, notes optional, no quantity UI, quantity stored as 1, **no Budget field**). Required Yes/No **Have an existing order?** (header and buttons only); stored on `PlantRequest.hasExistingOrder`
 - Request numbers: sequential `REQ1`, `REQ2`, … `REQ2178` (no year prefix, no zero-padding)
 - Private customer request list (identity-scoped)
 - Admin dashboard with search (customer name, email, request number, plant/offered name) and a stored-status filter (All / New / Pending / Expired / Closed / **Existing order**). Existing order is New + customer said Yes. Search and status combine. Overview stat counts stay on the full dataset. Demo seed `REQ6` is the Existing-order example.

@@ -824,7 +824,7 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /<form method="post" action=\{formAction\}>/);
   });
 
-  it("tells a logged-in customer about combining shipping before submit", () => {
+  it("asks Yes or No about an existing order before submit", () => {
     const html = renderToStaticMarkup(
       createElement(CustomerRequestPortal, {
         loggedIn: true,
@@ -836,9 +836,11 @@ describe("the request form works without JavaScript", () => {
       }),
     );
     assert.match(html, /Have an existing order\?/);
-    assert.match(html, /refund any shipping overages/);
+    assert.ok(!html.includes("refund any shipping overages"));
+    assert.ok(!html.includes("Plant 1"));
     assert.match(html, /name="hasExistingOrder"[^>]*value="yes"/);
     assert.match(html, /name="hasExistingOrder"[^>]*value="no"/);
+    assert.match(html, /name="hasExistingOrder"[^>]*required/);
     assert.match(html, />Yes</);
     assert.match(html, />No</);
     assert.ok(
@@ -886,7 +888,8 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Have an existing order\?<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">My Requests<\/h2>/);
-    assert.match(source, /refund any shipping overages/);
+    assert.ok(!source.includes("refund any shipping overages"));
+    assert.ok(!source.includes("Plant {index + 1}"));
     assert.match(source, /type="radio"/);
     assert.match(source, /value="yes"/);
     assert.match(source, /value="no"/);
