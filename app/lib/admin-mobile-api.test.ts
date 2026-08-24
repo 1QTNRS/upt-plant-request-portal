@@ -5,8 +5,11 @@ import { describe, it } from "node:test";
 
 import {
   mobileAdminDashboardPayload,
+  mobileAdminExactPlantsPayload,
   toMobileAdminRequestDetail,
+  toMobileExactPlantRow,
 } from "./admin-mobile-api";
+import type { ExactPlantCandidateRow } from "./exact-plants.server";
 import type { PlantRequest } from "./portal";
 
 function request(overrides: Partial<PlantRequest> = {}): PlantRequest {
@@ -106,6 +109,60 @@ describe("iOS admin API payloads", () => {
     );
   });
 
+  it("filters the EXACT PLANTS queue the same way the website does", () => {
+    const eligible: ExactPlantCandidateRow = {
+      requestItemId: "item-1",
+      requestId: "req-1",
+      requestNumber: "REQ8",
+      releaseReason: "customer_declined",
+      eligibleAt: "2026-08-20T16:00:00.000Z",
+      title: "Thai Constellation",
+      price: 175,
+      weightLbs: 9.5,
+      photoUrls: ["https://cdn.shopify.com/thai.jpg"],
+      listing: null,
+    };
+    const listed: ExactPlantCandidateRow = {
+      ...eligible,
+      requestItemId: "item-2",
+      listing: {
+        status: "listed",
+        shopifyProductGid: "gid://shopify/Product/1",
+        productAdminUrl: "https://admin.shopify.com/store/demo/products/1",
+      },
+    };
+    const dismissed: ExactPlantCandidateRow = {
+      ...eligible,
+      requestItemId: "item-3",
+      dismissedAt: "2026-08-21T16:00:00.000Z",
+    };
+
+    const queue = mobileAdminExactPlantsPayload([eligible, listed], [dismissed], "not_yet_listed");
+    assert.equal(queue.listingFilter, "not_yet_listed");
+    assert.equal(queue.counts.all, 2);
+    assert.equal(queue.counts.not_yet_listed, 1);
+    assert.equal(queue.counts.listed, 1);
+    assert.equal(queue.counts.dismissed, 1);
+    assert.equal(queue.items.length, 1);
+    assert.equal(queue.items[0].title, "Thai Constellation");
+    assert.equal(queue.items[0].canDismiss, true);
+    assert.equal(queue.items[0].canList, true);
+    assert.equal(queue.items[0].releaseLabel, "Customer Declined");
+
+    const dismissedTab = mobileAdminExactPlantsPayload(
+      [eligible, listed],
+      [dismissed],
+      "dismissed",
+    );
+    assert.equal(dismissedTab.items.length, 1);
+    assert.equal(dismissedTab.items[0].canList, false);
+    assert.equal(dismissedTab.items[0].listingLabel, "Dismissed");
+
+    const row = toMobileExactPlantRow(listed);
+    assert.equal(row.canDismiss, false);
+    assert.equal(row.listingLabel, "Listed");
+  });
+
   it("wires token create and revoke onto Settings", () => {
     const settings = readFileSync(
       path.join(import.meta.dirname, "..", "routes", "app.settings.tsx"),
@@ -114,5 +171,15 @@ describe("iOS admin API payloads", () => {
     assert.match(settings, /create-mobile-token/);
     assert.match(settings, /revoke-mobile-token/);
     assert.match(settings, /iOS admin app/);
+  });
+
+  it("puts EXACT PLANTS and Settings on the iPhone app tabs", () => {
+    const app = readFileSync(
+      path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "App.tsx"),
+      "utf8",
+    );
+    assert.match(app, /exact-plants/);
+    assert.match(app, /ExactPlantsScreen/);
+    assert.match(app, /SettingsScreen/);
   });
 });

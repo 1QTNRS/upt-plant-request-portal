@@ -1065,17 +1065,19 @@ The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
 **Shipped:** `GET /api/mobile/admin/session`, request list, request
 detail, and `POST /api/mobile/admin/requests/:id` for the same intents
 the web request page uses (`update-item`, stock search/link, photos,
-send offer, internal notes, close declined, admin override close). All
-of those call existing `portal.server` / `shopify-ops.server` /
-`offer-response.server` functions. The phone uses the shop's offline
-Admin session for Shopify writes — never its own credentials.
+send offer, internal notes, close declined, admin override close).
+`GET/POST /api/mobile/admin/exact-plants` reviews, approves, and
+dismisses through `exact-plants.server`. `GET/POST /api/mobile/admin/settings`
+saves the FedEx warning and admin email through `updateShopSettings`.
+All of those call existing portal / Shopify helpers. The phone uses the
+shop's offline Admin session for Shopify writes — never its own
+credentials.
 
-**Still to port, same Shopify-backed backend:** EXACT PLANTS
-review/list, settings (FedEx warning) on the phone. **Analytics stays
-web-only** — do not add it to the iPhone app. Visual redesign of the
-iOS client is allowed and expected; it must not change stored statuses,
-Shopify writes, or business rules. Do not invent a parallel fulfilment
-path to get actions onto the phone faster.
+**Still web-only:** Analytics. Token create/revoke stays on website
+Settings. Visual redesign of the iOS client is allowed and expected; it
+must not change stored statuses, Shopify writes, or business rules. Do
+not invent a parallel fulfilment path to get actions onto the phone
+faster.
 
 ---
 
@@ -1107,8 +1109,9 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
 | `app/lib/admin-mobile-auth.server.ts` | iOS device-token create / verify / revoke |
-| `app/lib/admin-mobile-api.ts` | iOS list/detail payloads |
-| `mobile/ios-admin/` | Expo iPhone admin app (first slice) |
+| `app/lib/admin-mobile-api.ts` | iOS list/detail/EXACT PLANTS payloads |
+| `app/lib/admin-mobile-exact-plants.server.ts` | iOS EXACT PLANTS approve/dismiss |
+| `mobile/ios-admin/` | Expo iPhone admin app |
 | `app/lib/customer-session.server.ts` | Customer cookie / proxy identity, including the storefront origin check |
 | `app/lib/shop-domains.server.ts` | Storefront hostnames a proxied submission may come from |
 | `server.js` | Production server. Replaces `react-router-serve` only to hand the app-proxy `Origin` to the app |

@@ -15,6 +15,9 @@ import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 
 import { apiGet, apiPost, apiUploadPhoto } from "./src/api";
+import { ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
+import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { THEME } from "./src/theme";
 import type {
   ActionResult,
   FulfillmentRoute,
@@ -26,15 +29,7 @@ import type {
 } from "./src/types";
 import { UNAVAILABLE_REASONS } from "./src/types";
 
-const THEME = {
-  darkGreen: "#002910",
-  yellow: "#f1a638",
-  mint: "#d6ece2",
-  cream: "#f7faf7",
-  white: "#ffffff",
-  muted: "#4a5c52",
-  line: "#c9d9d0",
-};
+type Tab = "list" | "exact-plants" | "settings";
 
 const DEFAULT_API_URL = "https://upt-plant-request-portal.onrender.com";
 const TOKEN_KEY = "upt_admin_token";
@@ -71,6 +66,7 @@ export default function App() {
   const [expirationDays, setExpirationDays] = useState(3);
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
+  const [tab, setTab] = useState<Tab>("list");
 
   useEffect(() => {
     void (async () => {
@@ -185,6 +181,7 @@ export default function App() {
       );
       setDetail(payload);
       setItemDrafts(Object.fromEntries(payload.items.map((item) => [item.id, item])));
+      setTab("list");
       setScreen("detail");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load that request.");
@@ -198,6 +195,7 @@ export default function App() {
     setToken("");
     setRequests([]);
     setDetail(null);
+    setTab("list");
     setScreen("login");
   }
 
@@ -581,7 +579,7 @@ export default function App() {
         </ScrollView>
       ) : null}
 
-      {screen === "list" ? (
+      {screen === "list" && tab === "list" ? (
         <View style={styles.flex}>
           <View style={styles.header}>
             <Text style={styles.title}>Requests</Text>
@@ -645,6 +643,18 @@ export default function App() {
             ))}
           </ScrollView>
         </View>
+      ) : null}
+
+      {screen !== "boot" && screen !== "login" && tab === "exact-plants" ? (
+        <ExactPlantsScreen
+          apiUrl={apiUrl}
+          token={token}
+          onOpenRequest={(requestId) => void openRequest(requestId)}
+        />
+      ) : null}
+
+      {screen !== "boot" && screen !== "login" && tab === "settings" ? (
+        <SettingsScreen apiUrl={apiUrl} token={token} onSignOut={() => void signOut()} />
       ) : null}
 
       {screen === "detail" && detail ? (
@@ -772,6 +782,26 @@ export default function App() {
           ) : null}
         </ScrollView>
       ) : null}
+
+      {screen !== "boot" && screen !== "login" && screen !== "detail" ? (
+        <View style={styles.tabs}>
+          {(
+            [
+              ["list", "Requests"],
+              ["exact-plants", "EXACT PLANTS"],
+              ["settings", "Settings"],
+            ] as const
+          ).map(([value, label]) => (
+            <Pressable
+              key={value}
+              style={[styles.tab, tab === value && styles.tabOn]}
+              onPress={() => setTab(value)}
+            >
+              <Text style={[styles.tabLabel, tab === value && styles.tabLabelOn]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -886,4 +916,20 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     marginTop: 8,
   },
+  tabs: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: THEME.line,
+    backgroundColor: THEME.white,
+  },
+  tab: {
+    flex: 1,
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  tabOn: { borderTopWidth: 3, borderTopColor: THEME.darkGreen },
+  tabLabel: { color: THEME.muted, fontWeight: "600", fontSize: 12, textAlign: "center" },
+  tabLabelOn: { color: THEME.darkGreen },
 });

@@ -9,15 +9,13 @@ A lost phone is revoked from **Settings → iOS admin app**.
 
 ## Now
 
-Sign in with a device token, browse requests, and work a request on the phone:
+Sign in with a device token. Three tabs on the phone:
 
-- Offer Exact Plant / Link Existing Website Stock / Not Available
-- Price, weight, notes, photos (library or URL)
-- Search and link live website stock
-- Send offer (3 / 5 / 7 day hold)
-- Internal notes, close declined, Close Entire Request
+- **Requests** — work a request: Exact Plant / Link Stock / Not Available, photos, send offer, notes, close
+- **EXACT PLANTS** — review, approve, or dismiss declined / expired exact plants
+- **Settings** — FedEx warning and admin notification email
 
-Every write goes through the same Render functions as the website. The phone never talks to Shopify.
+Every write goes through the same Render functions as the website. The phone never talks to Shopify. Token create/revoke stays on the website. Analytics stays on the website.
 
 You do **not** need a Mac. Install [Expo Go](https://expo.dev/go) on the iPhone.
 
@@ -38,11 +36,6 @@ The iPhone UI is its own layer (colors, type, layout, navigation). You can
 redesign how the app looks without changing Shopify, inventory, or the
 website admin. Look-and-feel changes belong in `mobile/ios-admin/`; business
 rules stay in the Render app.
-
-## Next slices (same backend)
-
-- EXACT PLANTS review and listing
-- Settings (FedEx warning) on the phone
 
 Analytics stays on the website only. Token create/revoke stays in the
 website Settings page.

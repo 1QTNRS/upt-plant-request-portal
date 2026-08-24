@@ -99,3 +99,66 @@ export const UNAVAILABLE_REASONS = [
 ] as const;
 
 export type FulfillmentRoute = "exact_plant" | "growers_choice" | "not_available";
+
+export type ExactPlantFilter =
+  | "all"
+  | "not_yet_listed"
+  | "flagged"
+  | "listed"
+  | "dismissed";
+
+export type ExactPlantRow = {
+  requestItemId: string;
+  requestId: string;
+  requestNumber: string;
+  title: string;
+  price: number;
+  weightLbs: number;
+  photoUrl?: string;
+  releaseReason: string;
+  releaseLabel: string;
+  listingStatus: ExactPlantFilter;
+  listingLabel: string;
+  eligibleAt: string;
+  canDismiss: boolean;
+  canList: boolean;
+  productAdminUrl?: string;
+  lastError?: string;
+};
+
+export type ExactPlantReview = {
+  requestItemId: string;
+  requestId: string;
+  releaseReason: string;
+  releaseLabel: string;
+  draft: {
+    title: string;
+    price: number;
+    weightLbs: number;
+    photoUrls: string[];
+  };
+  listing: {
+    status: string;
+    shopifyProductGid?: string;
+    productAdminUrl?: string;
+    lastError?: string;
+  } | null;
+  canDismiss: boolean;
+  canList: boolean;
+  listed: boolean;
+};
+
+export type ExactPlantActionResult = {
+  ok: boolean;
+  error?: string;
+  pendingDismiss?: boolean;
+  listed?: boolean;
+  review?: ExactPlantReview;
+};
+
+export type ShopSettings = {
+  fedexRemovalWarning: string;
+  adminNotificationEmail: string;
+  fedexProductHandle: string;
+  fedexProductSku: string;
+};

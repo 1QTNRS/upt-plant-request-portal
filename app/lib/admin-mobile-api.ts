@@ -1,4 +1,17 @@
 import {
+  canCreateExactPlantListing,
+  canDismissExactPlantFromQueue,
+  countExactPlantListingFilters,
+  EXACT_PLANT_LISTING_FILTER_LABELS,
+  EXACT_PLANT_RELEASE_LABELS,
+  exactPlantListingBucket,
+  matchesExactPlantListingFilter,
+  parseExactPlantListingFilter,
+  type ExactPlantListingFilter,
+  type ExactPlantReleaseReason,
+} from "./exact-plants";
+import type { ExactPlantCandidateRow, ExactPlantReview } from "./exact-plants.server";
+import {
   filterAdminDashboardRequests,
   formatPlantsSummary,
   getDisplayRequestNumber,
@@ -168,4 +181,103 @@ export function mobileAdminDashboardPayload(
     stats: summarizeAdminDashboardStats(requests),
     requests: filtered.map(toMobileAdminRequestRow),
   };
+}
+
+export type MobileExactPlantRow = {
+  requestItemId: string;
+  requestId: string;
+  requestNumber: string;
+  title: string;
+  price: number;
+  weightLbs: number;
+  photoUrl?: string;
+  releaseReason: ExactPlantReleaseReason;
+  releaseLabel: string;
+  listingStatus: ExactPlantListingFilter;
+  listingLabel: string;
+  eligibleAt: string;
+  canDismiss: boolean;
+  canList: boolean;
+  productAdminUrl?: string;
+  lastError?: string;
+};
+
+export type MobileExactPlantReview = {
+  requestItemId: string;
+  requestId: string;
+  releaseReason: ExactPlantReleaseReason;
+  releaseLabel: string;
+  draft: ExactPlantReview["draft"];
+  listing: ExactPlantReview["listing"];
+  canDismiss: boolean;
+  canList: boolean;
+  listed: boolean;
+};
+
+export function toMobileExactPlantRow(
+  item: ExactPlantCandidateRow,
+  options: { dismissed?: boolean } = {},
+): MobileExactPlantRow {
+  const dismissed = Boolean(options.dismissed || item.dismissedAt);
+  const listingStatus: ExactPlantListingFilter = dismissed
+    ? "dismissed"
+    : exactPlantListingBucket(item);
+  return {
+    requestItemId: item.requestItemId,
+    requestId: item.requestId,
+    requestNumber: item.requestNumber,
+    title: item.title,
+    price: item.price,
+    weightLbs: item.weightLbs,
+    photoUrl: item.photoUrls[0],
+    releaseReason: item.releaseReason,
+    releaseLabel: EXACT_PLANT_RELEASE_LABELS[item.releaseReason],
+    listingStatus,
+    listingLabel: EXACT_PLANT_LISTING_FILTER_LABELS[listingStatus],
+    eligibleAt: item.eligibleAt,
+    canDismiss: !dismissed && canDismissExactPlantFromQueue({ listing: item.listing }),
+    canList: !dismissed && canCreateExactPlantListing({ listing: item.listing }),
+    productAdminUrl: item.listing?.productAdminUrl,
+    lastError: item.listing?.lastError,
+  };
+}
+
+export function toMobileExactPlantReview(review: ExactPlantReview): MobileExactPlantReview {
+  const listed = Boolean(
+    review.listing?.status === "listed" && review.listing.shopifyProductGid,
+  );
+  return {
+    requestItemId: review.requestItemId,
+    requestId: review.requestId,
+    releaseReason: review.releaseReason,
+    releaseLabel: EXACT_PLANT_RELEASE_LABELS[review.releaseReason],
+    draft: review.draft,
+    listing: review.listing,
+    canDismiss: canDismissExactPlantFromQueue({ listing: review.listing }),
+    canList: canCreateExactPlantListing({ listing: review.listing }),
+    listed,
+  };
+}
+
+export function mobileAdminExactPlantsPayload(
+  items: ExactPlantCandidateRow[],
+  dismissed: ExactPlantCandidateRow[],
+  listing: string | null,
+): {
+  listingFilter: ExactPlantListingFilter;
+  counts: Record<ExactPlantListingFilter, number>;
+  items: MobileExactPlantRow[];
+} {
+  const listingFilter = parseExactPlantListingFilter(listing);
+  const counts = {
+    ...countExactPlantListingFilters(items),
+    dismissed: dismissed.length,
+  };
+  const visible =
+    listingFilter === "dismissed"
+      ? dismissed.map((item) => toMobileExactPlantRow(item, { dismissed: true }))
+      : items
+          .filter((item) => matchesExactPlantListingFilter(item, listingFilter))
+          .map((item) => toMobileExactPlantRow(item));
+  return { listingFilter, counts, items: visible };
 }
