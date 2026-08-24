@@ -99,7 +99,11 @@ import {
 } from "../components/collapsible-section";
 import { saveUploadedPlantPhoto } from "../lib/photo-upload.server";
 import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
-import { wrapRowStyle } from "../components/admin-layout";
+import {
+  AdminResponsiveStyles,
+  wrapRowStyle,
+} from "../components/admin-layout";
+import { ViewerLocalTime } from "../components/viewer-local-time";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -122,8 +126,8 @@ function itemStatusTone(
 
 const numberInputStyle = {
   width: "100%",
-  maxWidth: "160px",
-  minWidth: "120px",
+  maxWidth: "min(160px, 100%)",
+  minWidth: 0,
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
@@ -140,11 +144,13 @@ const disabledNumberInputStyle = {
 
 const textInputStyle = {
   width: "100%",
-  maxWidth: "420px",
+  maxWidth: "min(420px, 100%)",
+  minWidth: 0,
   padding: "10px 12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
+  boxSizing: "border-box" as const,
 } as const;
 
 const selectStyle = {
@@ -154,24 +160,30 @@ const selectStyle = {
 
 const disabledTextareaStyle = {
   width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
   padding: "12px",
   borderRadius: "8px",
   border: "1px solid #e1e3e5",
   font: "inherit",
   lineHeight: 1.5,
   resize: "vertical" as const,
+  boxSizing: "border-box" as const,
   background: "#f6f6f7",
   color: "#6d7175",
 };
 
 const editableTextareaStyle = {
   width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
   padding: "12px",
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   font: "inherit",
   lineHeight: 1.5,
   resize: "vertical" as const,
+  boxSizing: "border-box" as const,
 };
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -961,6 +973,7 @@ function PlantItemCard({
 
   return (
     <s-box
+      className="admin-plant-card"
       padding="base"
       borderWidth="base"
       borderRadius="base"
@@ -1114,18 +1127,18 @@ function PlantItemCard({
                 <photoFetcher.Form method="post">
                   <input type="hidden" name="intent" value="add-photo-url" />
                   <input type="hidden" name="itemId" value={item.id} />
-                  <s-stack direction="inline" gap="small">
+                  <div style={{ ...wrapRowStyle, maxWidth: "100%" }}>
                     <input
                       name="photoUrl"
                       value={photoUrl}
                       placeholder="https://..."
                       onChange={(event) => setPhotoUrl(event.currentTarget.value)}
-                      style={textInputStyle}
+                      style={{ ...textInputStyle, flex: "1 1 200px" }}
                     />
                     <s-button variant="secondary" type="submit">
                       Add photo URL
                     </s-button>
-                  </s-stack>
+                  </div>
                 </photoFetcher.Form>
               ) : null}
             </s-stack>
@@ -1624,14 +1637,14 @@ function InternalNotesSection({
 }) {
   return (
     <CollapsibleSection
-      title="Internal notes"
+      title="Notes"
       badge={notes.length}
       defaultOpen={false}
     >
       <s-stack direction="block" gap="base">
         <s-text color="subdued">
           Admin only. These notes never reach the customer, the offer, or
-          emails. Each save is stamped with the date and time.
+          emails. Times are shown in your local time zone.
         </s-text>
         {notes.length === 0 ? (
           <s-text color="subdued">No internal notes yet.</s-text>
@@ -1647,7 +1660,10 @@ function InternalNotesSection({
             >
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">
-                  <time dateTime={note.createdAtIso}>{note.createdAt}</time>
+                  <ViewerLocalTime
+                    iso={note.createdAtIso}
+                    fallback={note.createdAt}
+                  />
                 </s-text>
                 <s-text>{note.body}</s-text>
               </s-stack>
@@ -1661,6 +1677,7 @@ function InternalNotesSection({
               <s-text color="subdued">Add a note</s-text>
             </label>
             <textarea
+              key={notes.at(-1)?.id ?? "empty"}
               id="internal-note-body"
               name="note"
               rows={4}
@@ -1993,6 +2010,7 @@ export default function RequestDetail() {
 
   return (
     <s-page heading={`Request ${getDisplayRequestNumber(plantRequest)}`}>
+      <AdminResponsiveStyles />
       <CollapsibleSectionStyles />
       <s-link slot="breadcrumb-actions" href="/app">
         Dashboard
@@ -2044,7 +2062,7 @@ export default function RequestDetail() {
         </s-section>
       ) : null}
 
-      <s-section heading="Request summary">
+      <s-section heading="Request summary" className="admin-request-summary">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="large">
             <s-stack direction="block" gap="small">
@@ -2066,17 +2084,6 @@ export default function RequestDetail() {
               <s-text>{plantRequest.submittedDate}</s-text>
             </s-stack>
           </s-stack>
-
-          <InternalNotesSection notes={internalNotes} />
-
-          <CustomerResponseSection
-            response={response}
-            status={plantRequest.status}
-            paymentLink={paymentLink}
-            inventoryHold={inventoryHold}
-            invoiceVoided={invoiceVoided}
-            requestPaid={Boolean(plantRequest.paidAt)}
-          />
         </s-stack>
       </s-section>
 
@@ -2122,6 +2129,17 @@ export default function RequestDetail() {
           pendingConfirmation={pendingAdminOverrideClose}
         />
       ) : null}
+
+      <CustomerResponseSection
+        response={response}
+        status={plantRequest.status}
+        paymentLink={paymentLink}
+        inventoryHold={inventoryHold}
+        invoiceVoided={invoiceVoided}
+        requestPaid={Boolean(plantRequest.paidAt)}
+      />
+
+      <InternalNotesSection notes={internalNotes} />
 
       <EmailSection emails={emails} />
 
