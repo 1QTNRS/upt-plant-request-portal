@@ -15,6 +15,7 @@ import {
   buildDraftOrderLineItems,
   draftOrderIdempotencyTag,
   DRAFT_ORDER_TAG,
+  OVERRIDDEN_SHIPPING_LINE_TITLE,
   tagSearchQuery,
 } from "./portal";
 
@@ -172,7 +173,7 @@ describe("draft order input", () => {
       shippingFeeOverride: 0,
     });
     assert.deepEqual(input.shippingLine, {
-      title: "Shipping",
+      title: OVERRIDDEN_SHIPPING_LINE_TITLE,
       priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
     });
   });

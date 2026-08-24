@@ -38,6 +38,7 @@ import {
   matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
   parseShippingFeeOverride,
+  OVERRIDDEN_SHIPPING_LINE_TITLE,
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
@@ -548,9 +549,10 @@ describe("how long Shopify holds the stock", () => {
       shippingFeeOverride: 0,
     });
     assert.deepEqual(input.shippingLine, {
-      title: "Shipping",
+      title: OVERRIDDEN_SHIPPING_LINE_TITLE,
       priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
     });
+    assert.equal(OVERRIDDEN_SHIPPING_LINE_TITLE, "ADD ON");
   });
 });
 
@@ -567,8 +569,11 @@ describe("shipping fee override", () => {
   });
 
   it("rejects a negative or non-numeric amount", () => {
-    assert.equal(parseShippingFeeOverride("-1").ok, false);
-    assert.equal(parseShippingFeeOverride("free").ok, false);
+    const negative = parseShippingFeeOverride("-1");
+    const text = parseShippingFeeOverride("free");
+    assert.equal(negative.ok, false);
+    assert.equal(text.ok, false);
+    if (!negative.ok) assert.match(negative.error, /ADD ON/);
   });
 });
 
