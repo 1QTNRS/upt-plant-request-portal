@@ -24,7 +24,9 @@ import {
 } from "./customer-portal";
 import {
   requestLooksLikeAppProxy,
+  shopifyCustomerLoginHref,
   shouldRenderCustomerPortalNav,
+  storefrontPortalReturnPath,
 } from "./customer-nav";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
@@ -675,6 +677,81 @@ describe("customer portal navigation", () => {
       html,
       /Please log in to your Shopify customer account to submit a plant/,
     );
+    assert.doesNotMatch(html, />Log in</);
+  });
+
+  it("renders a storefront Log in link that returns to the same portal page", () => {
+    const loginHref = shopifyCustomerLoginHref("/apps/plant-requests");
+    const html = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: false,
+        name: "",
+        email: "",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+        loginHref,
+      }),
+    );
+    assert.match(
+      html,
+      /Please log in to your Shopify customer account to submit a plant/,
+    );
+    assert.match(
+      html,
+      /href="\/customer_authentication\/login\?return_to=%2Fapps%2Fplant-requests"/,
+    );
+    assert.match(html, />Log in</);
+    assert.doesNotMatch(html, /onrender\.com/);
+    assert.doesNotMatch(html, /https?:\/\/[^"]*\/customer/);
+    assert.doesNotMatch(html, /Continue as logged in customer/);
+  });
+
+  it("builds a relative Shopify login that only returns to the portal", () => {
+    assert.equal(
+      shopifyCustomerLoginHref("/apps/plant-requests"),
+      "/customer_authentication/login?return_to=%2Fapps%2Fplant-requests",
+    );
+    assert.equal(
+      shopifyCustomerLoginHref("/apps/plant-requests/requests/abc"),
+      "/customer_authentication/login?return_to=%2Fapps%2Fplant-requests%2Frequests%2Fabc",
+    );
+    assert.equal(
+      storefrontPortalReturnPath("https://evil.example/apps/plant-requests"),
+      "/apps/plant-requests",
+    );
+    assert.equal(storefrontPortalReturnPath("//evil.example"), "/apps/plant-requests");
+    assert.equal(storefrontPortalReturnPath("/customer"), "/apps/plant-requests");
+    assert.equal(
+      storefrontPortalReturnPath("/apps/plant-requests/../account"),
+      "/apps/plant-requests",
+    );
+    assert.doesNotMatch(shopifyCustomerLoginHref("/apps/plant-requests"), /https?:/);
+  });
+
+  it("wires the storefront login onto the portal and request pages", () => {
+    const portalServer = readFileSync(
+      path.join(REPO_ROOT, "app", "lib", "customer-portal.server.ts"),
+      "utf8",
+    );
+    const home = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "customer._index.tsx"),
+      "utf8",
+    );
+    const submit = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "customer.submit.tsx"),
+      "utf8",
+    );
+    const detail = readFileSync(
+      path.join(REPO_ROOT, "app", "routes", "customer.requests.$id.tsx"),
+      "utf8",
+    );
+    assert.match(portalServer, /shopifyCustomerLoginHref\(links\.home\)/);
+    assert.match(portalServer, /loginHref: context\.viaAppProxy/);
+    assert.match(home, /loginHref=\{portal\.loginHref\}/);
+    assert.match(submit, /loginHref=\{portal\.loginHref\}/);
+    assert.match(detail, /shopifyCustomerLoginHref\(returnPath\)/);
+    assert.match(detail, /CustomerLoginLink href=\{data\.loginHref\}/);
   });
 
   it("serves app-proxy customer pages as Liquid fragments so the shop theme wraps them", () => {
@@ -709,6 +786,12 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("onClick"), "onClick does nothing without hydration");
     assert.match(source, /name="addPlant"/);
     assert.match(source, /name="removePlant"/);
+  });
+
+  it("uses a real storefront login anchor instead of a click handler", () => {
+    assert.match(source, /export function CustomerLoginLink/);
+    assert.match(source, /<a href=\{href\}/);
+    assert.match(source, /Log in/);
   });
 
   it("adds and removes rows with GET, not a proxied POST", () => {

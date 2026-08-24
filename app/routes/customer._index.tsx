@@ -24,6 +24,7 @@ export default function CustomerHome() {
       successMessage={portal.submittedMessage}
       errors={portal.identityError ? [portal.identityError] : undefined}
       showDemoLogin={portal.showDemoLogin}
+      loginHref={portal.loginHref}
       requestDetailHref={(requestId) =>
         `${portal.requestDetailBase}/requests/${requestId}`
       }

@@ -168,6 +168,7 @@ export default function CustomerRequestSubmit() {
             : undefined
       }
       showDemoLogin={portal.showDemoLogin}
+      loginHref={portal.loginHref}
       requestDetailHref={(requestId) =>
         `${portal.requestDetailBase}/requests/${requestId}`
       }

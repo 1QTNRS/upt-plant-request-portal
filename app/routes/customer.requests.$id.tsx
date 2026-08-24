@@ -7,7 +7,9 @@ import {
 } from "../components/customer-offer-view";
 import { CustomerEnhanceScripts } from "../components/customer-enhance";
 import { CustomerPageShell, StatusBadge } from "../components/theme";
+import { CustomerLoginLink } from "../components/customer-request-portal";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
+import { shopifyCustomerLoginHref } from "../lib/customer-nav";
 import {
   fedexRemovalNeedsConfirmation,
   readOfferChoices,
@@ -60,6 +62,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const authorized = await authorizeRequest(request, requestId);
 
   if (!authorized) {
+    const context = await readCustomerContext(request);
+    const viaAppProxy = context?.viaAppProxy ?? false;
+    const links = customerPortalRelativeLinks(viaAppProxy);
+    const returnPath = requestId ? links.requestDetail(requestId) : links.home;
     return {
       forbidden: true as const,
       request: null,
@@ -73,7 +79,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       paidAt: null,
       paidAtIso: null,
       customerTimeZone: null,
-      backHref: customerPortalRelativeLinks(false).home,
+      backHref: links.home,
+      loginHref: viaAppProxy ? shopifyCustomerLoginHref(returnPath) : null,
       formAction: "",
       statusLabel: "",
       submittedAt: "",
@@ -100,6 +107,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         })
       : "",
     backHref: links.home,
+    loginHref: null as string | null,
     // The storefront path for this page. React Router would otherwise render
     // the app's own /customer/requests/:id, which 404s on the shop's domain.
     formAction: links.requestDetail(requestId),
@@ -200,7 +208,10 @@ export default function CustomerRequestDetail() {
             You can only view your own plant requests. Please log in with the
             customer account that submitted this request.
           </p>
-          <s-link href={data.backHref}>Back to My Requests</s-link>
+          {data.loginHref ? <CustomerLoginLink href={data.loginHref} /> : null}
+          <p style={{ margin: "16px 0 0" }}>
+            <s-link href={data.backHref}>Back to My Requests</s-link>
+          </p>
         </section>
       </CustomerPageShell>
     );
