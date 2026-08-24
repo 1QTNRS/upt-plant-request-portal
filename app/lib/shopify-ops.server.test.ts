@@ -9,6 +9,7 @@ import {
   searchExistingStock,
 } from "./shopify-ops.server";
 import { unlinkableVariantReason } from "./growers-choice";
+import { exactPlantInventoryIdempotencyKey } from "./inventory-concurrency";
 import { FEDEX_PRODUCT_SKU, fedexVariantSkuQuery } from "./portal";
 import { getShopSettings } from "./portal.server";
 import { DEMO_SHOP } from "./shop";
@@ -31,6 +32,11 @@ function fakeAdmin(responses: Responses, calls: Call[]) {
       const operation = query.match(/\b(?:query|mutation)\s+(\w+)/)?.[1] ?? "unknown";
       calls.push({ operation, query, variables: options?.variables ?? {} });
       const data = responses[operation];
+      if (Array.isArray(data)) {
+        const next = data.shift();
+        assert.ok(next !== undefined, `no remaining Shopify responses for ${operation}`);
+        return { json: async () => ({ data: next }) };
+      }
       assert.ok(data !== undefined, `unexpected Shopify operation ${operation}`);
       return { json: async () => ({ data }) };
     },
@@ -86,7 +92,12 @@ const LISTING_RESPONSES: Responses = {
   UpdateExactPlantVariant: { productVariantsBulkUpdate: { userErrors: [] } },
   ExactPlantInventoryLocation: { location: { id: LOCATION_GID } },
   ExactPlantInventoryLevel: {
-    inventoryItem: { inventoryLevel: { id: "gid://shopify/InventoryLevel/1" } },
+    inventoryItem: {
+      inventoryLevel: {
+        id: "gid://shopify/InventoryLevel/1",
+        quantities: [{ name: "available", quantity: 0 }],
+      },
+    },
   },
   StockExactPlant: { inventorySetQuantities: { userErrors: [] } },
   ActivateExactPlantInventory: { inventoryActivate: { userErrors: [] } },
@@ -205,18 +216,34 @@ describe("EXACT PLANTS listing on Shopify", () => {
         },
       },
     ]);
-    assert.deepEqual(callOf(calls, "StockExactPlant").variables.input, {
+    const stock = callOf(calls, "StockExactPlant");
+    assert.deepEqual(stock.variables.input, {
       name: "available",
       reason: "correction",
-      ignoreCompareQuantity: true,
       quantities: [
         {
           inventoryItemId: INVENTORY_ITEM_GID,
           locationId: LOCATION_GID,
           quantity: 1,
+          changeFromQuantity: 0,
         },
       ],
     });
+    assert.equal(
+      stock.variables.idempotencyKey,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "set",
+        changeFromQuantity: 0,
+      }),
+    );
+    assert.match(stock.query, /@idempotent\(key: \$idempotencyKey\)/);
+    assert.equal(
+      JSON.stringify(callOf(calls, "UpdateExactPlantVariant").variables.variants).includes(
+        "quantityAdjustments",
+      ),
+      false,
+    );
   });
 
   it("stocks the plant before publishing it", async () => {
@@ -236,13 +263,144 @@ describe("EXACT PLANTS listing on Shopify", () => {
     const calls = await listOnePlant({
       ExactPlantInventoryLevel: { inventoryItem: { inventoryLevel: null } },
     });
-    assert.deepEqual(callOf(calls, "ActivateExactPlantInventory").variables, {
+    const activate = callOf(calls, "ActivateExactPlantInventory");
+    assert.deepEqual(activate.variables, {
       inventoryItemId: INVENTORY_ITEM_GID,
       locationId: LOCATION_GID,
+      available: 1,
+      idempotencyKey: exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "activate",
+      }),
     });
+    assert.match(activate.query, /@idempotent\(key: \$idempotencyKey\)/);
     assert.equal(
       calls.some((call) => call.operation === "StockExactPlant"),
       false,
+    );
+  });
+
+  it("retries a concurrent inventory set with the same idempotency key", async () => {
+    const calls = await listOnePlant({
+      StockExactPlant: [
+        {
+          inventorySetQuantities: {
+            userErrors: [
+              {
+                code: "IDEMPOTENCY_CONCURRENT_REQUEST",
+                message: "This request is currently in progress, please try again.",
+              },
+            ],
+          },
+        },
+        { inventorySetQuantities: { userErrors: [] } },
+      ],
+    });
+    const stockCalls = calls.filter((call) => call.operation === "StockExactPlant");
+    assert.equal(stockCalls.length, 2);
+    assert.deepEqual(stockCalls[0].variables, stockCalls[1].variables);
+    assert.equal(
+      stockCalls[0].variables.idempotencyKey,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "set",
+        changeFromQuantity: 0,
+      }),
+    );
+  });
+
+  it("re-reads available quantity after a stale compare-and-set", async () => {
+    const calls = await listOnePlant({
+      ExactPlantInventoryLevel: [
+        {
+          inventoryItem: {
+            inventoryLevel: {
+              id: "gid://shopify/InventoryLevel/1",
+              quantities: [{ name: "available", quantity: 0 }],
+            },
+          },
+        },
+        {
+          inventoryItem: {
+            inventoryLevel: {
+              id: "gid://shopify/InventoryLevel/1",
+              quantities: [{ name: "available", quantity: 1 }],
+            },
+          },
+        },
+      ],
+      StockExactPlant: [
+        {
+          inventorySetQuantities: {
+            userErrors: [
+              {
+                code: "CHANGE_FROM_QUANTITY_STALE",
+                message: "The compare quantity no longer matches.",
+              },
+            ],
+          },
+        },
+        { inventorySetQuantities: { userErrors: [] } },
+      ],
+    });
+    const stockCalls = calls.filter((call) => call.operation === "StockExactPlant");
+    assert.equal(stockCalls.length, 2);
+    assert.equal(
+      (stockCalls[0].variables.input as { quantities: Array<{ changeFromQuantity: number }> })
+        .quantities[0].changeFromQuantity,
+      0,
+    );
+    assert.equal(
+      (stockCalls[1].variables.input as { quantities: Array<{ changeFromQuantity: number }> })
+        .quantities[0].changeFromQuantity,
+      1,
+    );
+    assert.notEqual(
+      stockCalls[0].variables.idempotencyKey,
+      stockCalls[1].variables.idempotencyKey,
+    );
+    assert.equal(
+      stockCalls[1].variables.idempotencyKey,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "set",
+        changeFromQuantity: 1,
+      }),
+    );
+  });
+
+  it("retries activate with the same key, then sets if another retry activated first", async () => {
+    const calls = await listOnePlant({
+      ExactPlantInventoryLevel: [
+        { inventoryItem: { inventoryLevel: null } },
+        {
+          inventoryItem: {
+            inventoryLevel: {
+              id: "gid://shopify/InventoryLevel/1",
+              quantities: [{ name: "available", quantity: 0 }],
+            },
+          },
+        },
+      ],
+      ActivateExactPlantInventory: {
+        inventoryActivate: {
+          userErrors: [{ code: "ALREADY_ACTIVATED", message: "Already stocked at this location." }],
+        },
+      },
+    });
+    const activate = callOf(calls, "ActivateExactPlantInventory");
+    assert.equal(
+      activate.variables.idempotencyKey,
+      exactPlantInventoryIdempotencyKey({
+        requestItemId: "item_1",
+        operation: "activate",
+      }),
+    );
+    const stock = callOf(calls, "StockExactPlant");
+    assert.equal(
+      (stock.variables.input as { quantities: Array<{ changeFromQuantity: number }> })
+        .quantities[0].changeFromQuantity,
+      0,
     );
   });
 

@@ -304,7 +304,7 @@ authorization screen.
 
 These need a real Admin API session, which cannot be reached from a build
 environment. Every Shopify call has been validated against the live Admin
-`2025-10` schema (`npm run validate-graphql`), which is as far as static
+`2026-04` schema (`npm run validate-graphql`), which is as far as static
 verification goes. Run each one and send me the error text if anything fails.
 
 ### 8a. Draft order

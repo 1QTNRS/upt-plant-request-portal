@@ -586,26 +586,24 @@ export function buildExactPlantVariantInput(input: {
 export const EXACT_PLANT_STOCK_QUANTITY = 1;
 
 /**
- * `ignoreCompareQuantity` is deprecated in 2025-10 but still mandatory there:
- * without it, or a `compareQuantity` on every entry, Shopify rejects the
- * mutation with "The compareQuantity argument must be given to each quantity or
- * ignored using ignoreCompareQuantity". Its replacement,
- * `InventoryQuantityInput.changeFromQuantity`, does not exist until 2026-01, so
- * this has to be revisited when the API version is bumped.
+ * Sets available stock to one with a compare-and-set against the quantity we
+ * just read. `changeFromQuantity` is required on 2026-04; passing `null` would
+ * skip the CAS check and let concurrent listing retries overwrite each other.
  */
 export function buildExactPlantInventoryInput(input: {
   inventoryItemId: string;
   locationId: string;
+  changeFromQuantity: number;
 }) {
   return {
     name: "available",
     reason: "correction",
-    ignoreCompareQuantity: true,
     quantities: [
       {
         inventoryItemId: input.inventoryItemId,
         locationId: input.locationId,
         quantity: EXACT_PLANT_STOCK_QUANTITY,
+        changeFromQuantity: input.changeFromQuantity,
       },
     ],
   };

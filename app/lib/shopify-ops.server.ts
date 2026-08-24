@@ -5,6 +5,7 @@ import {
   buildExactPlantVariantInput,
   declinedItemTag,
   exactPlantMediaError,
+  EXACT_PLANT_STOCK_QUANTITY,
   EXACT_PLANTS_COLLECTION_TITLE,
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
@@ -14,6 +15,16 @@ import {
   buildExactPlantProductCreateInput,
   type ExistingProductMedia,
 } from "./exact-plants";
+import {
+  availableQuantityFromLevel,
+  exactPlantInventoryIdempotencyKey,
+  INVENTORY_RETRY_DELAY_MS,
+  isConcurrentIdempotencyError,
+  isPreviousAttemptFailedIdempotencyError,
+  isStaleInventoryError,
+  MAX_INVENTORY_MUTATION_ATTEMPTS,
+  type InventoryUserError,
+} from "./inventory-concurrency";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
 import {
   buildStockSearchQuery,
@@ -1537,30 +1548,142 @@ const INVENTORY_TARGET_QUERY = `#graphql
 const INVENTORY_LEVEL_QUERY = `#graphql
   query ExactPlantInventoryLevel($inventoryItemId: ID!, $locationId: ID!) {
     inventoryItem(id: $inventoryItemId) {
-      inventoryLevel(locationId: $locationId) { id }
+      inventoryLevel(locationId: $locationId) {
+        id
+        quantities(names: ["available"]) { name quantity }
+      }
     }
   }
 `;
 
 const INVENTORY_ACTIVATE_MUTATION = `#graphql
-  mutation ActivateExactPlantInventory($inventoryItemId: ID!, $locationId: ID!) {
+  mutation ActivateExactPlantInventory(
+    $inventoryItemId: ID!
+    $locationId: ID!
+    $available: Int
+    $idempotencyKey: String!
+  ) {
     inventoryActivate(
       inventoryItemId: $inventoryItemId
       locationId: $locationId
-      available: 1
-    ) {
-      userErrors { message }
+      available: $available
+    ) @idempotent(key: $idempotencyKey) {
+      userErrors { code message }
     }
   }
 `;
 
 const INVENTORY_SET_MUTATION = `#graphql
-  mutation StockExactPlant($input: InventorySetQuantitiesInput!) {
-    inventorySetQuantities(input: $input) {
-      userErrors { message }
+  mutation StockExactPlant(
+    $input: InventorySetQuantitiesInput!
+    $idempotencyKey: String!
+  ) {
+    inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+      userErrors { code message }
     }
   }
 `;
+
+type InventoryLevelSnapshot = {
+  id: string;
+  quantities: Array<{ name: string; quantity: number }>;
+} | null;
+
+async function readExactPlantInventoryLevel(
+  admin: GraphqlClient,
+  inventoryItemId: string,
+  locationId: string,
+): Promise<InventoryLevelSnapshot> {
+  const level = await adminGraphql<{
+    inventoryItem: {
+      inventoryLevel: InventoryLevelSnapshot;
+    } | null;
+  }>(admin, INVENTORY_LEVEL_QUERY, { inventoryItemId, locationId });
+  return level.inventoryItem?.inventoryLevel ?? null;
+}
+
+function delayInventoryRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, INVENTORY_RETRY_DELAY_MS);
+  });
+}
+
+async function activateExactPlantInventory(
+  admin: GraphqlClient,
+  input: {
+    inventoryItemId: string;
+    locationId: string;
+    requestItemId: string;
+  },
+): Promise<InventoryUserError[]> {
+  const idempotencyKey = exactPlantInventoryIdempotencyKey({
+    requestItemId: input.requestItemId,
+    operation: "activate",
+  });
+  let lastErrors: InventoryUserError[] = [];
+  for (let attempt = 0; attempt < MAX_INVENTORY_MUTATION_ATTEMPTS; attempt += 1) {
+    const activated = await adminGraphql<{
+      inventoryActivate: { userErrors: InventoryUserError[] };
+    }>(admin, INVENTORY_ACTIVATE_MUTATION, {
+      inventoryItemId: input.inventoryItemId,
+      locationId: input.locationId,
+      available: EXACT_PLANT_STOCK_QUANTITY,
+      idempotencyKey,
+    });
+    lastErrors = activated.inventoryActivate.userErrors;
+    if (lastErrors.length === 0) return [];
+    if (
+      isConcurrentIdempotencyError(lastErrors) ||
+      isPreviousAttemptFailedIdempotencyError(lastErrors)
+    ) {
+      await delayInventoryRetry();
+      continue;
+    }
+    return lastErrors;
+  }
+  return lastErrors;
+}
+
+async function setExactPlantAvailableQuantity(
+  admin: GraphqlClient,
+  input: {
+    inventoryItemId: string;
+    locationId: string;
+    requestItemId: string;
+    changeFromQuantity: number;
+  },
+): Promise<InventoryUserError[]> {
+  const mutationInput = buildExactPlantInventoryInput({
+    inventoryItemId: input.inventoryItemId,
+    locationId: input.locationId,
+    changeFromQuantity: input.changeFromQuantity,
+  });
+  const idempotencyKey = exactPlantInventoryIdempotencyKey({
+    requestItemId: input.requestItemId,
+    operation: "set",
+    changeFromQuantity: input.changeFromQuantity,
+  });
+  let lastErrors: InventoryUserError[] = [];
+  for (let attempt = 0; attempt < MAX_INVENTORY_MUTATION_ATTEMPTS; attempt += 1) {
+    const result = await adminGraphql<{
+      inventorySetQuantities: { userErrors: InventoryUserError[] };
+    }>(admin, INVENTORY_SET_MUTATION, {
+      input: mutationInput,
+      idempotencyKey,
+    });
+    lastErrors = result.inventorySetQuantities.userErrors;
+    if (lastErrors.length === 0) return [];
+    if (
+      isConcurrentIdempotencyError(lastErrors) ||
+      isPreviousAttemptFailedIdempotencyError(lastErrors)
+    ) {
+      await delayInventoryRetry();
+      continue;
+    }
+    return lastErrors;
+  }
+  return lastErrors;
+}
 
 /**
  * Puts exactly one of this plant in stock at the shop's primary location.
@@ -1577,6 +1700,7 @@ const INVENTORY_SET_MUTATION = `#graphql
 async function stockOneExactPlant(
   admin: GraphqlClient,
   inventoryItemId: string,
+  requestItemId: string,
 ): Promise<void> {
   const target = await adminGraphql<{ location: { id: string } | null }>(
     admin,
@@ -1589,38 +1713,53 @@ async function stockOneExactPlant(
     );
   }
 
-  const level = await adminGraphql<{
-    inventoryItem: { inventoryLevel: { id: string } | null } | null;
-  }>(admin, INVENTORY_LEVEL_QUERY, { inventoryItemId, locationId });
+  let level = await readExactPlantInventoryLevel(admin, inventoryItemId, locationId);
 
-  if (!level.inventoryItem?.inventoryLevel) {
-    const activated = await adminGraphql<{
-      inventoryActivate: { userErrors: Array<{ message: string }> };
-    }>(admin, INVENTORY_ACTIVATE_MUTATION, { inventoryItemId, locationId });
-    if (activated.inventoryActivate.userErrors.length > 0) {
+  if (!level) {
+    const activateErrors = await activateExactPlantInventory(admin, {
+      inventoryItemId,
+      locationId,
+      requestItemId,
+    });
+    if (activateErrors.length === 0) return;
+    // A concurrent listing retry may have activated first. Re-read and set
+    // rather than fail the approval that still has to land quantity 1.
+    level = await readExactPlantInventoryLevel(admin, inventoryItemId, locationId);
+    if (!level) {
       throw new Error(
         userErrorMessage(
-          activated.inventoryActivate.userErrors,
+          activateErrors,
           "Could not stock the exact plant at the store's primary location.",
         ),
       );
     }
-    return;
   }
 
-  const result = await adminGraphql<{
-    inventorySetQuantities: { userErrors: Array<{ message: string }> };
-  }>(admin, INVENTORY_SET_MUTATION, {
-    input: buildExactPlantInventoryInput({ inventoryItemId, locationId }),
-  });
-  if (result.inventorySetQuantities.userErrors.length > 0) {
-    throw new Error(
-      userErrorMessage(
-        result.inventorySetQuantities.userErrors,
-        "Could not set the exact plant stock to one.",
-      ),
-    );
+  let lastErrors: InventoryUserError[] = [];
+  for (let attempt = 0; attempt < MAX_INVENTORY_MUTATION_ATTEMPTS; attempt += 1) {
+    const changeFromQuantity = availableQuantityFromLevel(level.quantities);
+    lastErrors = await setExactPlantAvailableQuantity(admin, {
+      inventoryItemId,
+      locationId,
+      requestItemId,
+      changeFromQuantity,
+    });
+    if (lastErrors.length === 0) return;
+    if (!isStaleInventoryError(lastErrors)) {
+      throw new Error(
+        userErrorMessage(lastErrors, "Could not set the exact plant stock to one."),
+      );
+    }
+    level = await readExactPlantInventoryLevel(admin, inventoryItemId, locationId);
+    if (!level) {
+      throw new Error(
+        userErrorMessage(lastErrors, "Could not set the exact plant stock to one."),
+      );
+    }
   }
+  throw new Error(
+    userErrorMessage(lastErrors, "Could not set the exact plant stock to one."),
+  );
 }
 
 const PRODUCT_MEDIA_QUERY = `#graphql
@@ -1726,6 +1865,7 @@ async function updateExactPlantProduct(
   admin: GraphqlClient,
   product: ExactPlantProduct,
   input: {
+    requestItemId: string;
     title: string;
     price: number;
     weightLbs: number;
@@ -1794,7 +1934,7 @@ async function updateExactPlantProduct(
 async function priceAndStockExactPlantVariant(
   admin: GraphqlClient,
   product: ExactPlantProduct,
-  input: { price: number; weightLbs: number },
+  input: { price: number; weightLbs: number; requestItemId: string },
 ): Promise<void> {
   if (!product.variantId) return;
   await setExactPlantVariantPriceAndWeight(
@@ -1805,7 +1945,7 @@ async function priceAndStockExactPlantVariant(
     input.weightLbs,
   );
   if (product.inventoryItemId) {
-    await stockOneExactPlant(admin, product.inventoryItemId);
+    await stockOneExactPlant(admin, product.inventoryItemId, input.requestItemId);
   }
 }
 
