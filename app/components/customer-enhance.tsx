@@ -235,23 +235,26 @@ export const FEDEX_WARNING_SCRIPT = `
 
 export const CUSTOMER_PAGED_LIST_SCRIPT = `
 (function () {
-  if (window.__uptPagedList) return;
-  window.__uptPagedList = true;
-
   function bind(root) {
     if (!(root instanceof HTMLElement)) return;
     var size = parseInt(root.getAttribute("data-page-size") || "10", 10);
     if (!size || size < 1) size = 10;
-    var items = root.querySelectorAll("[data-paged-item]");
-    var page = 1;
+    var page = parseInt(root.getAttribute("data-current-page") || "1", 10);
+    if (!page || page < 1) page = 1;
+
+    function items() {
+      return root.querySelectorAll("[data-paged-item]");
+    }
 
     function render() {
-      var total = items.length;
+      var list = items();
+      var total = list.length;
       var pages = Math.max(1, Math.ceil(total / size));
       if (page > pages) page = pages;
       if (page < 1) page = 1;
+      root.setAttribute("data-current-page", String(page));
       var start = (page - 1) * size;
-      Array.prototype.forEach.call(items, function (el, index) {
+      Array.prototype.forEach.call(list, function (el, index) {
         var hide = index < start || index >= start + size;
         el.setAttribute("data-paged-hidden", hide ? "true" : "false");
         if (el instanceof HTMLElement) {
@@ -271,25 +274,39 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
       if (next instanceof HTMLButtonElement) next.disabled = page >= pages;
     }
 
-    root.addEventListener("click", function (event) {
-      var target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("[data-paged-prev]")) {
-        event.preventDefault();
-        page -= 1;
-        render();
-        return;
-      }
-      if (target.closest("[data-paged-next]")) {
-        event.preventDefault();
-        page += 1;
-        render();
-      }
-    });
+    if (!root.getAttribute("data-paged-bound")) {
+      root.setAttribute("data-paged-bound", "true");
+      root.addEventListener("click", function (event) {
+        var target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest("[data-paged-prev]")) {
+          event.preventDefault();
+          page -= 1;
+          render();
+          return;
+        }
+        if (target.closest("[data-paged-next]")) {
+          event.preventDefault();
+          page += 1;
+          render();
+        }
+      });
+    }
     render();
   }
 
-  document.querySelectorAll("[data-paged-list]").forEach(bind);
+  function scan() {
+    document.querySelectorAll("[data-paged-list]").forEach(bind);
+  }
+
+  // App-proxy pages never hydrate. Local React Router does, and that remount
+  // wipes hidden rows unless we apply again after the client paint.
+  scan();
+  document.addEventListener("DOMContentLoaded", scan);
+  window.addEventListener("load", scan);
+  setTimeout(scan, 0);
+  setTimeout(scan, 100);
+  setTimeout(scan, 400);
 })();
 `.trim();
 
