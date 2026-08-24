@@ -23,9 +23,11 @@ function read(file: string): string {
 
 /** The text of one `[table]` section, so a key cannot be read from the wrong one. */
 function section(toml: string, table: string): string {
-  const start = toml.indexOf(`[${table}]`);
-  assert.notEqual(start, -1, `${table} table is missing`);
-  const rest = toml.slice(start + table.length + 2);
+  const header = new RegExp(`(?:^|\\n)\\[${table}\\]\\s*\\n`);
+  const match = header.exec(toml);
+  assert.ok(match, `${table} table is missing`);
+  const start = (match.index ?? 0) + match[0].length;
+  const rest = toml.slice(start);
   const end = rest.search(/^\[[a-z]/m);
   return end === -1 ? rest : rest.slice(0, end);
 }
@@ -121,16 +123,23 @@ describe("shopify.app.toml (production)", () => {
     );
   });
 
-  it("does not subscribe to Shopify's preview Events system", () => {
-    // CLI 4.7+ may demand `[events]` / `[[events.subscription]]`. Those
-    // subscriptions fire on every matching store change. Production still
-    // uses [webhooks]; deploy with CLI 4.6.x or 3.93.x, not 4.7+.
-    assert.ok(!toml.includes("[events]"), "do not declare [events]; use [webhooks]");
+  it("declares the one Events subscription CLI 4.6+ requires to deploy", () => {
+    const events = section(toml, "events");
+    assert.equal(str(events, "api_version"), "unstable");
+    assert.equal(str(events, "handle"), "cli-required-product-create");
+    assert.equal(str(events, "topic"), "Product");
+    assert.deepEqual(strList(events, "actions"), ["create"]);
+    assert.equal(str(events, "uri"), "/events/acknowledge");
+    assert.equal(
+      (toml.match(/^\s*\[\[events\.subscription\]\]/gm) ?? []).length,
+      1,
+      "only the CLI-required Product create subscription",
+    );
   });
 
-  it("serves every configured webhook URI as a route", () => {
+  it("serves every configured webhook or Events URI as a route", () => {
     const uris = [...toml.matchAll(/^\s*uri = "([^"]+)"/gm)].map((match) => match[1]);
-    assert.ok(uris.length >= 6, "expected the app and compliance webhook URIs");
+    assert.ok(uris.length >= 7, "expected the webhook URIs plus the Events acknowledge URI");
     for (const uri of uris) {
       const route = `${uri.replace(/^\//, "").replace(/\//g, ".")}.tsx`;
       assert.ok(
@@ -138,6 +147,12 @@ describe("shopify.app.toml (production)", () => {
         `${uri} has no route (looked for app/routes/${route})`,
       );
     }
+  });
+
+  it("acknowledges Events deliveries through authenticate.webhook", () => {
+    const source = read("app/routes/events.acknowledge.tsx");
+    assert.match(source, /authenticate\.webhook/);
+    assert.match(source, /status: 200/);
   });
 });
 
@@ -177,6 +192,17 @@ describe("shopify.app.dev.toml (development)", () => {
     assert.equal(
       str(section(dev, "webhooks"), "api_version"),
       str(section(production, "webhooks"), "api_version"),
+    );
+  });
+
+  it("uses the same CLI-required Events placeholder as production", () => {
+    assert.equal(
+      str(section(dev, "events"), "handle"),
+      str(section(production, "events"), "handle"),
+    );
+    assert.equal(
+      str(section(dev, "events"), "uri"),
+      str(section(production, "events"), "uri"),
     );
   });
 
