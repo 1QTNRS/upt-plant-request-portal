@@ -99,6 +99,7 @@ import {
 } from "../components/collapsible-section";
 import { saveUploadedPlantPhoto } from "../lib/photo-upload.server";
 import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
+import { adminDialogButtonStyle } from "../components/admin-confirm-dialog";
 import {
   AdminResponsiveStyles,
   wrapRowStyle,
@@ -1135,9 +1136,13 @@ function PlantItemCard({
                       onChange={(event) => setPhotoUrl(event.currentTarget.value)}
                       style={{ ...textInputStyle, flex: "1 1 200px" }}
                     />
-                    <s-button variant="secondary" type="submit">
+                    <button
+                      type="submit"
+                      data-admin-add-photo-url
+                      style={adminDialogButtonStyle}
+                    >
                       Add photo URL
-                    </s-button>
+                    </button>
                   </div>
                 </photoFetcher.Form>
               ) : null}
