@@ -39,7 +39,7 @@ const loginLinkStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
-/** Real storefront <a> — app-proxy pages never hydrate, so onClick is dead. */
+/** Real storefront anchor — app-proxy pages never hydrate. */
 export function CustomerLoginLink({ href }: { href: string }) {
   return (
     <p style={{ margin: "16px 0 0" }}>
