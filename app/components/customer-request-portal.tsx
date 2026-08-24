@@ -124,9 +124,11 @@ export function CustomerRequestPortal({
   return (
     <CustomerPageShell title="Customer Request Form">
       {successMessage ? (
-        <s-banner tone="success">
-          <s-text>{successMessage}</s-text>
-        </s-banner>
+        <div className="upt-banner-gap">
+          <s-banner tone="success">
+            <s-text>{successMessage}</s-text>
+          </s-banner>
+        </div>
       ) : null}
 
       <section className="upt-card">

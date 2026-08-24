@@ -138,6 +138,13 @@ const numberInputStyle = {
   boxSizing: "border-box" as const,
 } as const;
 
+const shippingOverrideInputStyle = {
+  ...numberInputStyle,
+  maxWidth: "min(260px, 100%)",
+  overflow: "hidden" as const,
+  appearance: "textfield" as const,
+};
+
 const disabledNumberInputStyle = {
   ...numberInputStyle,
   background: "#f6f6f7",
@@ -1473,11 +1480,11 @@ function SendOfferSection({
           <input
             id="shippingFeeOverride"
             name="shippingFeeOverride"
-            type="number"
-            min={0}
-            step={0.01}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             placeholder="Leave blank for Shopify's rate"
-            style={numberInputStyle}
+            style={shippingOverrideInputStyle}
           />
         </s-stack>
         <s-text color="subdued">

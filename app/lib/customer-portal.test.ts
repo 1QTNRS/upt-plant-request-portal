@@ -884,6 +884,7 @@ describe("the request form works without JavaScript", () => {
   });
 
   it("drops title icons and keeps the pager off the request numbers", () => {
+    assert.match(source, /className="upt-banner-gap"/);
     assert.match(source, /<h2 className="upt-card-title">New request<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Have an existing order\?<\/h2>/);

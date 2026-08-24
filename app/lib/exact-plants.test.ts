@@ -666,6 +666,13 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /admin-request-collapsibles/);
     assert.match(requestPage, /name="shippingFeeOverride"/);
     assert.match(requestPage, /Override shipping fee/);
+    assert.match(requestPage, /inputMode="decimal"/);
+    const overrideField = requestPage.slice(
+      requestPage.indexOf('id="shippingFeeOverride"'),
+      requestPage.indexOf('id="shippingFeeOverride"') + 280,
+    );
+    assert.match(overrideField, /type="text"/);
+    assert.doesNotMatch(overrideField, /type="number"/);
   });
 });
 
