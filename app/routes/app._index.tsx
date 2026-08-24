@@ -183,7 +183,7 @@ export default function Dashboard() {
             data.query ? ` matching “${data.query}”` : ""
           }${
             data.statusFilter === "ExistingOrder"
-              ? " that have an existing order"
+              ? " with an existing order"
               : data.statusFilter !== "All"
                 ? ` with status ${data.statusFilter}`
                 : ""
