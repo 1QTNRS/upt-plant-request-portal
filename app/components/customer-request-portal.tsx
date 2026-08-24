@@ -258,25 +258,30 @@ export function CustomerRequestPortal({
                       display: "flex",
                       flexWrap: "nowrap",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
+                      width: "100%",
+                      gap: "1in",
                       height: 45,
                       boxSizing: "border-box",
                       padding: "8px 0",
                       borderBottom: `1px solid ${THEME.line}`,
                     }}
                   >
-                    <s-link href={requestDetailHref(request.id)}>
+                    <s-link
+                      href={requestDetailHref(request.id)}
+                      style={{ flex: "0 0 auto" }}
+                    >
                       {request.requestNumber}
                     </s-link>
-                    <StatusBadge
-                      tone={customerStatusTone(request.status as RequestStatus, {
-                        hasPayableItems: request.hasPayableItems,
-                        hasResponded: request.hasResponded,
-                      })}
-                    >
-                      {label}
-                    </StatusBadge>
+                    <span style={{ flex: "0 0 auto", marginLeft: "auto" }}>
+                      <StatusBadge
+                        tone={customerStatusTone(request.status as RequestStatus, {
+                          hasPayableItems: request.hasPayableItems,
+                          hasResponded: request.hasResponded,
+                        })}
+                      >
+                        {label}
+                      </StatusBadge>
+                    </span>
                   </div>
                 );
               })}
