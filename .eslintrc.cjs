@@ -27,6 +27,7 @@ module.exports = {
     "playwright.dev-store.config.ts",
     "playwright-report/**",
     "test-results/**",
+    "mobile/**",
   ],
 
   // Base config

@@ -103,6 +103,7 @@ SQLite migrations (`prisma/migrations/`):
    `DraftOrderReference.reserveInventoryUntil`. Purely additive: `fulfillmentType`
    carries a non-null default of `exact_plant`, so every existing row reads as the
    route it was created under, and every other column is nullable
+9. `20260824190000_admin_mobile_tokens` — `AdminMobileToken` for the iOS admin app
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -125,6 +126,7 @@ Shop-scoped models (multi-tenant by `shop` string):
 - `CanonicalPlant` — unique `(shop, canonicalKey)`; the identity analytics group on. `displayName` is the first spelling the shop saw
 - `PlantNameAlias` — unique `(shop, aliasKey)`; one customer spelling → one `CanonicalPlant`. `source` is `deterministic` or `admin_confirmed`
 - `PlantIdentitySuggestion` — unique `(shop, aliasKey, suggestedCanonicalPlantId)`; a medium-confidence match awaiting Same Plant / Keep Separate. `status` is `open` \| `confirmed` \| `rejected`
+- `AdminMobileToken` — hashed device tokens for the iOS admin app. Plaintext is shown once on create; revoke sets `revokedAt`
 
 Item statuses: `Requested` | `Sourced` | `Offered` | `Sold` | `Unavailable` | `Listed`.
 
@@ -1040,6 +1042,46 @@ shows a critical banner, and one admin email is sent.
 
 ---
 
+## iOS admin app
+
+A dedicated iPhone client for the **same** portal — not a second inventory
+system and not a Shopify-free subset. The phone talks only to this app on
+Render. Render keeps using the existing Shopify offline session for draft
+orders, stock search, Files, reservations, and EXACT PLANTS listings. The
+iOS app must not embed Admin API credentials or write inventory itself.
+
+Business rules stay the ones in this handoff (statuses, FedEx, one-unit
+Exact Plants, declined-item review, etc.). A phone action that sends an
+offer or stocks a plant must call the same `portal.server` /
+`shopify-ops.server` functions the web admin already uses.
+
+Auth: tokens are created in **Settings → iOS admin app**. Only a SHA-256
+hash is stored (`AdminMobileToken`). Revoke cuts off a lost phone. The
+phone sends `Authorization: Bearer upt_admin_…`. Do not put a mobile token
+in `LOGGABLE_PARAMS`.
+
+The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
+`tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
+
+**Shipped:** `GET /api/mobile/admin/session`, request list, request
+detail, and `POST /api/mobile/admin/requests/:id` for the same intents
+the web request page uses (`update-item`, stock search/link, photos,
+send offer, internal notes, close declined, admin override close).
+`GET/POST /api/mobile/admin/exact-plants` reviews, approves, and
+dismisses through `exact-plants.server`. `GET/POST /api/mobile/admin/settings`
+saves the FedEx warning and admin email through `updateShopSettings`.
+All of those call existing portal / Shopify helpers. The phone uses the
+shop's offline Admin session for Shopify writes — never its own
+credentials.
+
+**Still web-only:** Analytics. Token create/revoke stays on website
+Settings. Visual redesign of the iOS client is allowed and expected; it
+must not change stored statuses, Shopify writes, or business rules. Do
+not invent a parallel fulfilment path to get actions onto the phone
+faster.
+
+---
+
 ## Exact next productionization steps
 
 See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md). It is ordered, states who
@@ -1067,6 +1109,10 @@ app, and do not reimplement anything listed there as an account action.
 | `app/lib/plant-behavior.ts` / `plant-behavior.server.ts` | Per-canonical-plant behaviour patterns (admin-only) |
 | `app/lib/seed-demo.server.ts` | Demo seed + legacy number remap |
 | `app/lib/admin-auth.server.ts` / `shop.ts` | Admin auth + demo bypass |
+| `app/lib/admin-mobile-auth.server.ts` | iOS device-token create / verify / revoke |
+| `app/lib/admin-mobile-api.ts` | iOS list/detail/EXACT PLANTS payloads |
+| `app/lib/admin-mobile-exact-plants.server.ts` | iOS EXACT PLANTS approve/dismiss |
+| `mobile/ios-admin/` | Expo iPhone admin app |
 | `app/lib/customer-session.server.ts` | Customer cookie / proxy identity, including the storefront origin check |
 | `app/lib/shop-domains.server.ts` | Storefront hostnames a proxied submission may come from |
 | `server.js` | Production server. Replaces `react-router-serve` only to hand the app-proxy `Origin` to the app |
