@@ -26,8 +26,24 @@ const buttonStyle: React.CSSProperties = {
   borderRadius: "8px",
   border: "1px solid #c9cccf",
   background: "#ffffff",
+  color: "#202223",
+  WebkitTextFillColor: "#202223",
   font: "inherit",
   cursor: "pointer",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  display: "inline-block",
+  width: "auto",
+  minWidth: 120,
+  fontWeight: 600,
+  background: "#008060",
+  color: "#ffffff",
+  WebkitTextFillColor: "#ffffff",
+  borderColor: "#008060",
+  appearance: "none",
+  WebkitAppearance: "none",
 };
 
 const choiceLabelStyle: React.CSSProperties = {
@@ -568,7 +584,8 @@ export function CustomerOfferView({
                   type="submit"
                   name="intent"
                   value="submit-response"
-                  style={{ ...buttonStyle, fontWeight: 600 }}
+                  data-offer-submit
+                  style={primaryButtonStyle}
                 >
                   Submit
                 </button>
@@ -670,7 +687,8 @@ export function CustomerOfferView({
                   type="submit"
                   name="intent"
                   value="submit-response"
-                  style={{ ...buttonStyle, fontWeight: 600 }}
+                  data-offer-submit
+                  style={primaryButtonStyle}
                 >
                   Submit
                 </button>

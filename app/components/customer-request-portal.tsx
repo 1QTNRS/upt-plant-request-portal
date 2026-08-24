@@ -122,9 +122,10 @@ export function CustomerRequestPortal({
       <s-section heading="New request">
         <s-stack direction="block" gap="base">
           <s-text color="subdued">
-            Name and email come from your customer account. You can submit
-            multiple plants in one request. There is no quantity field — each
-            exact plant is reviewed individually.
+            Your name and email are pulled from your customer account. Feel free
+            to request multiple plants at once. Any plants we’re able to offer
+            will be shown individually with photos and details so you know
+            exactly what you’re reviewing.
           </s-text>
           <s-text-field label="Name" value={name} readOnly />
           <s-text-field label="Email" value={email} readOnly />

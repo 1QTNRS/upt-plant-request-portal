@@ -888,6 +888,7 @@ describe("customer Close Request after decline-all", () => {
       form: form({ intent: "close-request" }),
     });
     assert.equal(result.ok, true);
+    assert.equal("closed" in result && result.closed, true);
 
     const request = await getRequest(shop, requestId);
     assert.equal(request?.status, "Closed");

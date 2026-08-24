@@ -143,6 +143,10 @@ describe("an expired offer is not presented as a live one", () => {
     assert.match(live, /Offer expires in 3 days/);
     assert.match(live, /type="radio"/);
     assert.match(live, /value="submit-response"/);
+    assert.match(live, /data-offer-submit/);
+    assert.match(live, /#008060/);
+    assert.match(live, /-webkit-text-fill-color:#ffffff/);
+    assert.match(live, />Submit</);
   });
 });
 

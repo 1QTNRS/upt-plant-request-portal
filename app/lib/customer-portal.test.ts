@@ -650,8 +650,37 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /<form method="post" action=\{formAction\}>/);
   });
 
+  it("uses the current customer-facing request intro", () => {
+    assert.match(
+      source,
+      /Your name and email are pulled from your customer account/,
+    );
+    assert.match(source, /Feel free to request multiple plants at once/);
+    assert.ok(
+      !source.includes("There is no quantity field"),
+      "quantity explanation was replaced with offer-review wording",
+    );
+  });
+
   it("holds no client state for the plant rows", () => {
     assert.ok(!source.includes("useState"));
     assert.ok(!source.includes("useEffect"));
+  });
+});
+
+describe("closing a request returns the customer to My Requests", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "app", "routes", "customer.requests.$id.tsx"),
+    "utf8",
+  );
+
+  it("redirects a successful close to the portal home", () => {
+    assert.match(source, /result\.closed/);
+    assert.match(source, /throw redirect\(/);
+    assert.match(source, /customerPortalRelativeLinks\(context\.viaAppProxy\)\.home/);
+    assert.ok(
+      !source.includes("listInternalNotes"),
+      "internal notes stay off the customer route",
+    );
   });
 });
