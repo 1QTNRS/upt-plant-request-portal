@@ -675,7 +675,9 @@ describe("the request form works without JavaScript", () => {
       !/<h2 className="upt-card-title">\s*<LeafIcon/.test(source),
       "section titles should be text only",
     );
-    assert.match(source, /marginTop:\s*48/);
+    assert.match(source, /marginTop:\s*80/);
+    assert.match(source, /padding-bottom:\s*32px/);
+    assert.match(source, /gap:\s*"1in"/);
   });
 
   it("pages My Requests in place without an Excel export", () => {

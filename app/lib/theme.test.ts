@@ -12,7 +12,7 @@ describe("brand theme", () => {
     assert.equal(THEME.mint, "#d6ece2");
   });
 
-  it("paints the customer page yellow and nested boxes mint without touching admin", () => {
+  it("paints the customer page mint and nested boxes mint without touching admin", () => {
     const themeSource = readFileSync(
       path.join(import.meta.dirname, "..", "components", "theme.tsx"),
       "utf8",
@@ -25,14 +25,14 @@ describe("brand theme", () => {
       path.join(import.meta.dirname, "..", "routes", "app.tsx"),
       "utf8",
     );
-    assert.match(themeSource, /\.upt-customer-surface \{[\s\S]*THEME\.yellow/);
+    assert.match(themeSource, /\.upt-customer-surface \{[\s\S]*THEME\.mint/);
     assert.match(themeSource, /\.upt-nested-box \{[\s\S]*THEME\.mint/);
     assert.match(themeSource, /\.upt-card \{[\s\S]*THEME\.white/);
     assert.match(themeSource, /paintDocument/);
     assert.match(layout, /CustomerSurface paintDocument/);
     assert.ok(
       !admin.includes("CustomerSurface"),
-      "admin chrome must not sit on the customer yellow page",
+      "admin chrome must not sit on the customer mint page",
     );
   });
 

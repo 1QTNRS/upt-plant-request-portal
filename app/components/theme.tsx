@@ -107,7 +107,7 @@ export function ThemeStyles() {
       }
       .upt-customer-surface {
         min-height: 100vh;
-        background: ${THEME.yellow};
+        background: ${THEME.mint};
         box-sizing: border-box;
       }
       .upt-customer-surface s-page {
@@ -197,7 +197,7 @@ export function NestedBox({
 }
 
 /**
- * Yellow page chrome for customer-facing routes only. Do not use on admin —
+ * Mint page chrome for customer-facing routes only. Do not use on admin —
  * ThemeStyles is shared, but this wrapper is what paints the viewport.
  */
 export function CustomerSurface({
@@ -212,7 +212,7 @@ export function CustomerSurface({
     <div className="upt-customer-surface">
       {paintDocument ? (
         <style>{`
-          html, body { background-color: ${THEME.yellow}; }
+          html, body { background-color: ${THEME.mint}; }
         `}</style>
       ) : null}
       {children}
