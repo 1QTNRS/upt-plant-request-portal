@@ -28,6 +28,8 @@ type SeedRequest = {
   paidAt?: Date;
   closedAt?: Date;
   items: SeedItem[];
+  /** Demo REQ6 is the Existing-order dashboard example. */
+  hasExistingOrder?: boolean;
   response?: {
     accepted: string[];
     rejected: string[];
@@ -180,6 +182,7 @@ const SEED_REQUESTS: SeedRequest[] = [
     email: "d.wilson@email.com",
     status: "New",
     submittedAt: daysAgo(1),
+    hasExistingOrder: true,
     items: [
       {
         plantName: "Philodendron Brasil",
@@ -376,6 +379,7 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
         customerEmail: seed.email,
         status: seed.status,
         submittedAt: seed.submittedAt,
+        hasExistingOrder: seed.hasExistingOrder ?? null,
         closedAt: seed.closedAt ?? null,
         expiredAt: seed.status === "Expired" ? expiresAt : null,
         paidAt: seed.paidAt ?? null,
@@ -552,6 +556,12 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
       });
     }
   }
+
+  // Already-seeded demo shops skip the create loop, so mark REQ6 here too.
+  await prisma.plantRequest.updateMany({
+    where: { shop, requestNumber: "REQ6" },
+    data: { hasExistingOrder: true },
+  });
 
   await prisma.customerProfile.upsert({
     where: { shop_email: { shop, email: "alex.rivera@example.com" } },

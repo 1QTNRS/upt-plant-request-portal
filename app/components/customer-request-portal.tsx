@@ -65,6 +65,7 @@ export function CustomerRequestPortal({
   plantLines = [EMPTY_PLANT_LINE],
   canSubmit = true,
   customerTimeZone = null,
+  hasExistingOrder = null,
 }: {
   loggedIn: boolean;
   name: string;
@@ -89,6 +90,7 @@ export function CustomerRequestPortal({
   plantLines?: PlantLine[];
   canSubmit?: boolean;
   customerTimeZone?: string | null;
+  hasExistingOrder?: "yes" | "no" | null;
 }) {
 
   if (!loggedIn) {
@@ -229,6 +231,29 @@ export function CustomerRequestPortal({
             with it and refund any shipping overages. You do not have to worry
             about overpaying for shipping.
           </p>
+          <fieldset className="upt-choice-set">
+            <legend className="upt-sr-only">Have an existing order?</legend>
+            <label className="upt-choice">
+              <input
+                type="radio"
+                name="hasExistingOrder"
+                value="yes"
+                required
+                defaultChecked={hasExistingOrder === "yes"}
+              />
+              <span>Yes</span>
+            </label>
+            <label className="upt-choice">
+              <input
+                type="radio"
+                name="hasExistingOrder"
+                value="no"
+                required
+                defaultChecked={hasExistingOrder === "no"}
+              />
+              <span>No</span>
+            </label>
+          </fieldset>
         </section>
 
         <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>

@@ -31,11 +31,13 @@ import {
   getOfferUrgencyMessage,
   incompleteOfferItems,
   isOfferExpired,
+  adminDashboardFilterLabel,
   countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   matchesAdminSearch,
   matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
+  parseShippingFeeOverride,
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
@@ -238,11 +240,20 @@ describe("admin dashboard status filter", () => {
       items: [{ plantName: "Monstera" }],
     },
     {
+      status: "New" as const,
+      customer: "David Wilson",
+      email: "david@example.com",
+      requestNumber: "REQ6",
+      items: [{ plantName: "Hoya" }],
+      hasExistingOrder: true,
+    },
+    {
       status: "Pending" as const,
       customer: "Alex Rivera",
       email: "alex@example.com",
       requestNumber: "REQ2",
       items: [{ plantName: "Philodendron" }],
+      hasExistingOrder: true,
     },
     {
       status: "Pending" as const,
@@ -272,16 +283,27 @@ describe("admin dashboard status filter", () => {
     assert.equal(parseAdminDashboardStatusFilter(""), "All");
     assert.equal(parseAdminDashboardStatusFilter("pending"), "All");
     assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
+    assert.equal(parseAdminDashboardStatusFilter("ExistingOrder"), "ExistingOrder");
+    assert.equal(adminDashboardFilterLabel("ExistingOrder"), "Existing order");
   });
 
   it("counts each dashboard status filter from the full list", () => {
     assert.deepEqual(countAdminDashboardStatusFilters(requests), {
-      All: 5,
-      New: 1,
+      All: 6,
+      New: 2,
       Pending: 2,
       Expired: 1,
       Closed: 1,
+      ExistingOrder: 1,
     });
+  });
+
+  it("filters New requests that said they have an existing order", () => {
+    const filtered = filterAdminDashboardRequests(requests, "", "ExistingOrder");
+    assert.deepEqual(
+      filtered.map((request) => request.requestNumber),
+      ["REQ6"],
+    );
   });
 
   it("filters the visible list by stored admin status", () => {
@@ -304,7 +326,7 @@ describe("admin dashboard status filter", () => {
     const filtered = filterAdminDashboardRequests(requests, "Alex", "Pending");
     const stats = summarizeAdminDashboardStats(requests);
     assert.equal(filtered.length, 1);
-    assert.equal(stats.newRequests, 1);
+    assert.equal(stats.newRequests, 2);
     assert.equal(stats.pending, 2);
     assert.equal(stats.expired, 1);
     assert.equal(stats.closed, 1);
@@ -503,6 +525,50 @@ describe("how long Shopify holds the stock", () => {
     });
 
     assert.equal("reserveInventoryUntil" in input, false);
+  });
+
+  it("omits shippingLine when the admin left the override blank", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [exactPlantLine],
+    });
+    assert.equal("shippingLine" in input, false);
+  });
+
+  it("puts a custom shipping line on the draft order, including 0", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: [exactPlantLine],
+      shippingFeeOverride: 0,
+    });
+    assert.deepEqual(input.shippingLine, {
+      title: "Shipping",
+      priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
+    });
+  });
+});
+
+describe("shipping fee override", () => {
+  it("treats a blank field as no override", () => {
+    assert.deepEqual(parseShippingFeeOverride(""), { ok: true });
+    assert.deepEqual(parseShippingFeeOverride("  "), { ok: true });
+    assert.deepEqual(parseShippingFeeOverride(null), { ok: true });
+  });
+
+  it("accepts 0 as a real custom shipping amount", () => {
+    assert.deepEqual(parseShippingFeeOverride("0"), { ok: true, value: 0 });
+    assert.deepEqual(parseShippingFeeOverride("12.5"), { ok: true, value: 12.5 });
+  });
+
+  it("rejects a negative or non-numeric amount", () => {
+    assert.equal(parseShippingFeeOverride("-1").ok, false);
+    assert.equal(parseShippingFeeOverride("free").ok, false);
   });
 });
 

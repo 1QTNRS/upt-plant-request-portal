@@ -16,6 +16,18 @@ export const MAX_PLANT_NAME_LENGTH = 120;
 type FieldSource = Pick<FormData, "get">;
 
 /** Reads the plant rows out of a form or a query string, preserving the input. */
+/** Yes / No from the existing-order radios. Null when they have not answered. */
+export function readExistingOrderAnswer(
+  fields: FieldSource,
+): "yes" | "no" | null {
+  const raw = String(fields.get("hasExistingOrder") || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "yes" || raw === "true") return "yes";
+  if (raw === "no" || raw === "false") return "no";
+  return null;
+}
+
 export function readPlantLines(fields: FieldSource): PlantLine[] {
   const declared = Number(fields.get("itemCount") || 1) || 1;
   const count = Math.max(1, Math.min(declared, MAX_PLANT_ROWS));

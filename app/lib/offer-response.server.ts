@@ -119,6 +119,7 @@ async function createDraftOrderFromSnapshot(input: {
   admin?: AdminContext["admin"];
 }) {
   const { items, holdEndsAt } = await acceptedOfferLines(input.shop, input.requestId);
+  const request = await getRequest(input.shop, input.requestId);
   const draft = await createDraftOrderForRequest(input.admin, input.shop, {
     requestId: input.requestId,
     requestNumber: input.requestNumber,
@@ -127,6 +128,7 @@ async function createDraftOrderFromSnapshot(input: {
     fedexSelected: input.fedexSelected,
     fedexPrice: input.fedexPrice,
     holdEndsAt,
+    shippingFeeOverride: request?.sentOffer?.shippingFeeOverride,
   });
 
   if (draft.inventoryReserved) {

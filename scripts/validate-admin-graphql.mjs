@@ -221,6 +221,18 @@ async function inputSamples() {
       }),
     },
     {
+      label: "draftOrderCreate($input) with a custom shipping line",
+      type: "DraftOrderInput!",
+      value: buildDraftOrderInput({
+        requestId: "cm0requestid",
+        requestNumber: "REQ2178",
+        customerEmail: "customer@example.com",
+        currencyCode: "USD",
+        lineItems,
+        shippingFeeOverride: 0,
+      }),
+    },
+    {
       label: "draftOrderDelete($input)",
       type: "DraftOrderDeleteInput!",
       value: { id: "gid://shopify/DraftOrder/1" },

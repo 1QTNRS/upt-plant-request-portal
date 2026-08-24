@@ -31,6 +31,7 @@ export default function CustomerHome() {
       formAction={portal.formAction}
       browseAction={portal.browseAction}
       plantLines={portal.plantLines ?? [EMPTY_PLANT_LINE]}
+      hasExistingOrder={portal.hasExistingOrder}
       canSubmit={portal.canSubmitRequests}
       customerTimeZone={portal.customerTimeZone}
     />

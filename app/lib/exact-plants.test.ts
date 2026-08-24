@@ -677,6 +677,8 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /data-admin-status-filter/);
     assert.match(dashboard, /ADMIN_DASHBOARD_STATUS_FILTERS\.map/);
     assert.match(dashboard, /countAdminDashboardStatusFilters/);
+    assert.match(dashboard, /ExistingOrder/);
+    assert.match(dashboard, /Existing order/);
     assert.ok(!dashboard.includes("<select"));
   });
 

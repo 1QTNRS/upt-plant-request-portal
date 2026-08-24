@@ -162,6 +162,52 @@ export function ThemeStyles() {
       }
       .upt-card-title svg { flex: 0 0 auto; }
       .upt-muted { color: ${THEME.muted}; line-height: 1.5; }
+      .upt-sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .upt-choice-set {
+        display: flex;
+        gap: 10px;
+        margin: 16px 0 0;
+        padding: 0;
+        border: 0;
+      }
+      .upt-choice {
+        flex: 1;
+        cursor: pointer;
+      }
+      .upt-choice input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .upt-choice span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        border: 2px solid ${THEME.darkGreen};
+        border-radius: 10px;
+        background: ${THEME.white};
+        color: ${THEME.darkGreen};
+        font-weight: 700;
+      }
+      .upt-choice input:checked + span {
+        background: ${THEME.darkGreen};
+        color: ${THEME.white};
+      }
+      .upt-choice input:focus-visible + span {
+        outline: 3px solid ${THEME.yellow};
+        outline-offset: 2px;
+      }
       .upt-plant-card {
         border: 1px solid ${THEME.line};
         border-radius: 12px;

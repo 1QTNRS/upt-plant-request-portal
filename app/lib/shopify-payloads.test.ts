@@ -151,6 +151,32 @@ describe("draft order input", () => {
     );
   });
 
+  it("omits shippingLine when the admin left the override blank", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+    });
+    assert.equal("shippingLine" in input, false);
+  });
+
+  it("sets a custom shipping line, including a $0 override", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+      shippingFeeOverride: 0,
+    });
+    assert.deepEqual(input.shippingLine, {
+      title: "Shipping",
+      priceWithCurrency: { amount: "0.00", currencyCode: "USD" },
+    });
+  });
+
   it("falls back to a custom FedEx line when no variant was resolved", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",
