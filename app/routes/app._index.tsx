@@ -24,8 +24,8 @@ import {
   statCardStyle,
   WrappingRow,
 } from "../components/admin-layout";
-import { ExportExcelButton, ListPager, usePagedItems } from "../components/paged-list";
-import { ADMIN_REQUEST_PAGE_SIZE } from "../lib/list-page";
+import { ListPager, PagedFrame, usePagedItems } from "../components/paged-list";
+import { ADMIN_REQUEST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 
 type DashboardData = {
   stats: {
@@ -102,14 +102,7 @@ export default function Dashboard() {
     ADMIN_REQUEST_PAGE_SIZE,
     `${data.query}:${data.statusFilter}:${data.requests.length}`,
   );
-  const exportRows = data.requests.map((request) => [
-    request.requestNumber,
-    request.customer,
-    request.email,
-    request.plantsRequested,
-    request.status,
-    request.submittedDate,
-  ]);
+  const pageSlots = padPageSlots(paged.items, ADMIN_REQUEST_PAGE_SIZE);
 
   return (
     <s-page heading="UPT Plant Request Portal">
@@ -189,20 +182,8 @@ export default function Dashboard() {
       </s-section>
 
       <s-section heading="Recent Requests">
-        <ExportExcelButton
-          filename="admin-requests.xls"
-          sheetName="Requests"
-          headers={[
-            "Request Number",
-            "Customer",
-            "Email",
-            "Plants Requested",
-            "Status",
-            "Submitted Date",
-          ]}
-          rows={exportRows}
-        />
         <div className="upt-narrow-only">
+          <PagedFrame pageSize={ADMIN_REQUEST_PAGE_SIZE} rowHeight={168}>
           {paged.items.map((request) => (
             <article key={request.id} className="upt-request-card">
               <dl>
@@ -230,42 +211,60 @@ export default function Dashboard() {
               <s-link href={`/app/requests/${request.id}`}>View items</s-link>
             </article>
           ))}
+          </PagedFrame>
         </div>
         <div className="upt-wide-only">
-        <s-table>
-          <s-table-header-row>
-            <s-table-header listSlot="primary">Request Number</s-table-header>
-            <s-table-header>Customer</s-table-header>
-            <s-table-header>Email</s-table-header>
-            <s-table-header>Plants Requested</s-table-header>
-            <s-table-header>Status</s-table-header>
-            <s-table-header>Submitted Date</s-table-header>
-            <s-table-header>Actions</s-table-header>
-          </s-table-header-row>
-          <s-table-body>
-            {paged.items.map((request) => (
-              <s-table-row key={request.id}>
-                <s-table-cell>
-                  <s-link href={`/app/requests/${request.id}`}>
-                    {request.requestNumber}
-                  </s-link>
-                </s-table-cell>
-                <s-table-cell>{request.customer}</s-table-cell>
-                <s-table-cell>{request.email}</s-table-cell>
-                <s-table-cell>{request.plantsRequested}</s-table-cell>
-                <s-table-cell>
-                  <s-badge tone={requestStatusTone(request.status)}>
-                    {request.status}
-                  </s-badge>
-                </s-table-cell>
-                <s-table-cell>{request.submittedDate}</s-table-cell>
-                <s-table-cell>
-                  <s-link href={`/app/requests/${request.id}`}>View items</s-link>
-                </s-table-cell>
-              </s-table-row>
-            ))}
-          </s-table-body>
-        </s-table>
+        <table className="upt-fixed-table">
+          <colgroup>
+            <col style={{ width: "8rem" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "20%" }} />
+            <col />
+            <col style={{ width: "6.5rem" }} />
+            <col style={{ width: "9rem" }} />
+            <col style={{ width: "6.5rem" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Request Number</th>
+              <th>Customer</th>
+              <th>Email</th>
+              <th>Plants Requested</th>
+              <th>Status</th>
+              <th>Submitted Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageSlots.map((request, index) =>
+              request ? (
+                <tr key={request.id}>
+                  <td>
+                    <s-link href={`/app/requests/${request.id}`}>
+                      {request.requestNumber}
+                    </s-link>
+                  </td>
+                  <td title={request.customer}>{request.customer}</td>
+                  <td title={request.email}>{request.email}</td>
+                  <td title={request.plantsRequested}>{request.plantsRequested}</td>
+                  <td>
+                    <s-badge tone={requestStatusTone(request.status)}>
+                      {request.status}
+                    </s-badge>
+                  </td>
+                  <td>{request.submittedDate}</td>
+                  <td>
+                    <s-link href={`/app/requests/${request.id}`}>View items</s-link>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
+                  <td colSpan={7}>&nbsp;</td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
         </div>
         <ListPager
           page={paged.page}
