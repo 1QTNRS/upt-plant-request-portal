@@ -65,11 +65,6 @@ api_version = "2025-10"
   uri = "/webhooks/shop/redact"
   compliance_topics = [ "shop/redact" ]
 
-# Shopify CLI 4.7+ requires this table. No event subscriptions — see
-# shopify.app.toml.
-[events]
-api_version = "unstable"
-
 [access_scopes]
 # Must match the production scopes, or a dev session will not exercise the same
 # permissions. app/lib/shopify-config.test.ts asserts this.

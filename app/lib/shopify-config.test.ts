@@ -121,15 +121,11 @@ describe("shopify.app.toml (production)", () => {
     );
   });
 
-  it("declares the [events] table CLI 4.7 requires, with no subscriptions", () => {
-    // `shopify app deploy` on CLI 4.7 fails with `[events]: Required` when
-    // this table is missing. An empty table (api_version only) satisfies the
-    // schema without subscribing to Shopify's preview Events system.
-    assert.equal(str(section(toml, "events"), "api_version"), "unstable");
-    assert.ok(
-      !/^\s*\[\[events\.subscription\]\]/m.test(toml),
-      "do not subscribe to Events; production uses [webhooks]",
-    );
+  it("does not subscribe to Shopify's preview Events system", () => {
+    // CLI 4.7+ may demand `[events]` / `[[events.subscription]]`. Those
+    // subscriptions fire on every matching store change. Production still
+    // uses [webhooks]; deploy with CLI 4.6.x or 3.93.x, not 4.7+.
+    assert.ok(!toml.includes("[events]"), "do not declare [events]; use [webhooks]");
   });
 
   it("serves every configured webhook URI as a route", () => {

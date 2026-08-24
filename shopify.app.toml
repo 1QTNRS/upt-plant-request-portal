@@ -50,13 +50,6 @@ api_version = "2025-10"
   uri = "/webhooks/shop/redact"
   compliance_topics = [ "shop/redact" ]
 
-# Shopify CLI 4.7+ requires this table. Events is a preview pub/sub system
-# we do not use. Production still uses [webhooks] above. Do not add
-# [[events.subscription]] entries — those would fire on every matching
-# store change and we have no handler for them.
-[events]
-api_version = "unstable"
-
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 # Merchants must re-approve after this change.

@@ -265,9 +265,7 @@ function readToml(): string {
 
 describe("shopify.app.toml webhooks", () => {
   it("declares the webhook API version the Admin client uses", () => {
-    const declared = readToml()
-      .split("[events]")[0]
-      .match(/^api_version\s*=\s*"([^"]*)"/m)?.[1];
+    const declared = readToml().match(/^api_version\s*=\s*"([^"]*)"/m)?.[1];
     const source = readFileSync(
       path.join(import.meta.dirname, "..", "shopify.server.ts"),
       "utf8",

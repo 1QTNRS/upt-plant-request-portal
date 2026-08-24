@@ -236,6 +236,17 @@ Do this when you are ready to point the app at the real store.
 | App proxy target | `https://upt-plant-request-portal.onrender.com/customer` |
 | Storefront proxy path | `https://<shop>/apps/plant-requests` |
 
+**CLI version.** Use Shopify CLI **4.6.x** or **3.93.x**, not 4.7 or newer.
+CLI 4.7 refuses to deploy unless `shopify.app.toml` declares Shopify's preview
+**Events** system (`[events]` plus at least one `[[events.subscription]]`).
+This app does not use Events. Production still uses `[webhooks]`. Do not add
+an Events subscription to satisfy the new CLI — that would fire on live store
+changes and we have no handler for them.
+
+```bash
+npm install -g @shopify/cli@4.6.0
+```
+
 **One command, from a checkout of this branch:**
 
 ```bash
