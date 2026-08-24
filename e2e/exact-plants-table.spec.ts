@@ -111,8 +111,8 @@ test.describe("EXACT PLANTS table", () => {
       (element) => element.scrollWidth > element.clientWidth + 1,
     );
     expect(overflow).toBe(false);
-    await expect(page.locator("[data-exact-plant-date]").first()).not.toHaveText(
-      /AM|PM|UTC|GMT|:|\d{1,2}:\d{2}/,
+    await expect(page.locator("[data-exact-plant-date]").first()).toHaveText(
+      /[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M \w+/,
     );
     await expect(page.getByRole("link", { name: "Request REQ8" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "REQ8" })).toBeVisible();
