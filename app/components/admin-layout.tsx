@@ -38,6 +38,38 @@ export function AdminResponsiveStyles() {
       .upt-request-card dd {
         margin: 0 0 10px;
       }
+      .admin-request-summary,
+      .admin-plant-card {
+        max-width: 100%;
+        min-width: 0;
+      }
+      .admin-request-summary input,
+      .admin-request-summary textarea,
+      .admin-request-summary select,
+      .admin-plant-card input,
+      .admin-plant-card textarea,
+      .admin-plant-card select {
+        box-sizing: border-box;
+        max-width: 100%;
+        min-width: 0;
+      }
+      .admin-photo-file-input {
+        font: inherit;
+        width: 100%;
+        max-width: 100%;
+      }
+      .admin-photo-file-input::file-selector-button {
+        font: inherit;
+        font-weight: 550;
+        min-height: 36px;
+        padding: 8px 16px;
+        margin-right: 12px;
+        border: 1px solid #8c9196;
+        border-radius: 8px;
+        background: #fff;
+        color: #202223;
+        cursor: pointer;
+      }
     `}</style>
   );
 }

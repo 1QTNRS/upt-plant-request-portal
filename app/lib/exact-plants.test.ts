@@ -583,6 +583,11 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(table, /exact-plants-row-alt/);
     assert.match(table, /overflowWrap: "break-word"/);
     assert.match(table, /data-exact-plant-select/);
+    assert.match(table, /selectThStyle/);
+    assert.match(table, /selectTdStyle/);
+    assert.match(table, /textAlign: "center"/);
+    assert.match(table, /verticalAlign: "middle"/);
+    assert.match(table, /margin: 0 auto/);
     assert.match(table, /bulk-create-listings/);
     assert.match(table, /border-collapse: collapse/);
     assert.ok(!table.includes("border-left: 3px"));
@@ -597,12 +602,35 @@ describe("the EXACT PLANTS queue page", () => {
     );
     assert.match(collapsible, /onToggle=/);
     assert.match(collapsible, /useState\(defaultOpen\)/);
+    assert.match(requestPage, /title="Customer response"/);
+    assert.match(requestPage, /title="Notes"/);
     assert.match(requestPage, /title="Emails"/);
     assert.match(requestPage, /title="EXACT PLANTS"/);
-    assert.match(requestPage, /title="Internal notes"/);
-    assert.match(requestPage, /title="Customer response"/);
+    const pageOrder = requestPage.slice(requestPage.lastIndexOf("<s-page"));
+    assert.ok(
+      pageOrder.indexOf("<CustomerResponseSection") <
+        pageOrder.indexOf("<InternalNotesSection"),
+    );
+    assert.ok(
+      pageOrder.indexOf("<InternalNotesSection") <
+        pageOrder.indexOf("<EmailSection"),
+    );
+    assert.ok(
+      pageOrder.indexOf("<EmailSection") <
+        pageOrder.indexOf("<DeclinedExactPlantsSection"),
+    );
+    const summarySlice = requestPage.slice(
+      requestPage.indexOf('heading="Request summary"'),
+      requestPage.indexOf("<PlantPatternSection"),
+    );
+    assert.ok(!summarySlice.includes("InternalNotesSection"));
+    assert.ok(!summarySlice.includes("CustomerResponseSection"));
     assert.match(requestPage, /defaultOpen=\{false\}/);
     assert.match(requestPage, /add-internal-note/);
+    assert.match(requestPage, /ViewerLocalTime/);
+    assert.match(requestPage, /key=\{notes\.at\(-1\)\?\.id \?\? "empty"\}/);
+    assert.match(requestPage, /maxWidth: "min\(420px, 100%\)"/);
+    assert.match(requestPage, /AdminResponsiveStyles/);
     assert.match(queue, /title="EXACT PLANTS queue"/);
     assert.match(queue, /defaultOpen=\{true\}/);
     assert.match(queue, /bulk-create-listings/);

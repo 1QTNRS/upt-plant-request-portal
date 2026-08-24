@@ -90,6 +90,8 @@ export function AdminPhotoStrip({
   const fetcher = useFetcher();
   const [uploads, setUploads] = useState<PhotoUploadEntry[]>([]);
   const [jsReady, setJsReady] = useState(false);
+  const [selectedFileNames, setSelectedFileNames] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [order, setOrder] = useState(photos.map((photo) => photo.id));
   const filesByKey = useRef(new Map<string, File>());
   const previewByKey = useRef(new Map<string, string>());
@@ -247,6 +249,7 @@ export function AdminPhotoStrip({
 
   const handleSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files ?? []);
+    setSelectedFileNames(selected.map((file) => file.name));
     if (selected.length === 0) return;
     const { next, started } = enqueuePhotoUploads(
       uploads,
@@ -510,13 +513,52 @@ export function AdminPhotoStrip({
         <input type="hidden" name="intent" value="upload-photo" />
         <input type="hidden" name="itemId" value={itemId} />
         <input
+          ref={fileInputRef}
+          id={`plant-photo-${itemId}`}
+          className={jsReady ? "admin-photo-file-input-hidden" : "admin-photo-file-input"}
           type="file"
           name="photo"
           accept="image/*"
           multiple
+          data-admin-photo-file
           onChange={jsReady ? handleSelect : undefined}
+          style={
+            jsReady
+              ? {
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                  overflow: "hidden",
+                }
+              : undefined
+          }
         />
-        {jsReady ? null : (
+        {jsReady ? (
+          <div
+            data-admin-photo-file-picker
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              alignItems: "center",
+              maxWidth: "100%",
+            }}
+          >
+            <s-button
+              variant="secondary"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Choose files
+            </s-button>
+            <s-text data-admin-photo-file-label>
+              {selectedFileNames.length > 0
+                ? selectedFileNames.join(", ")
+                : "No file selected"}
+            </s-text>
+          </div>
+        ) : (
           <s-button variant="secondary" type="submit">
             Upload plant photo
           </s-button>
