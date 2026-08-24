@@ -21,7 +21,12 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-prev/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-next/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-hidden/);
-    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /style\.display/);
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /el\.hidden = hide/);
+    assert.doesNotMatch(
+      CUSTOMER_PAGED_LIST_SCRIPT,
+      /style\.display/,
+      "clearing display wipes the row grid and packs statuses against REQ numbers",
+    );
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-bound/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /setTimeout\(scan/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /scrollTo/);
