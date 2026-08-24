@@ -140,9 +140,13 @@ const numberInputStyle = {
 
 const shippingOverrideInputStyle = {
   ...numberInputStyle,
-  maxWidth: "min(260px, 100%)",
+  maxWidth: "min(280px, 100%)",
+  height: 40,
+  lineHeight: "20px",
   overflow: "hidden" as const,
+  resize: "none" as const,
   appearance: "textfield" as const,
+  fieldSizing: "fixed" as const,
 };
 
 const disabledNumberInputStyle = {
@@ -1477,6 +1481,10 @@ function SendOfferSection({
           <label htmlFor="shippingFeeOverride">
             <s-text>Override shipping fee</s-text>
           </label>
+          <style>{`
+            #shippingFeeOverride::-webkit-scrollbar { display: none; width: 0; height: 0; }
+            #shippingFeeOverride { scrollbar-width: none; }
+          `}</style>
           <input
             id="shippingFeeOverride"
             name="shippingFeeOverride"

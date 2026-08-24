@@ -673,6 +673,7 @@ describe("the EXACT PLANTS queue page", () => {
     );
     assert.match(overrideField, /type="text"/);
     assert.doesNotMatch(overrideField, /type="number"/);
+    assert.match(requestPage, /#shippingFeeOverride::-webkit-scrollbar/);
   });
 });
 

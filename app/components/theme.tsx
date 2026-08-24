@@ -151,7 +151,10 @@ export function ThemeStyles() {
         margin: 0 0 16px;
         box-shadow: 0 1px 0 rgba(0, 41, 16, 0.04);
       }
-      .upt-banner-gap { margin: 0 0 16px; }
+      .upt-banner-gap {
+        display: block;
+        padding-bottom: 24px;
+      }
       .upt-card-title {
         display: flex;
         align-items: center;
