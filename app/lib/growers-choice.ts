@@ -73,7 +73,7 @@ export function isGrowersChoice(input: {
  */
 export const GROWERS_CHOICE_IMAGE_DISCLOSURE =
   "This photo is from our existing store listing, not of the plant you will receive. " +
-  "Grower's Choice means we choose a healthy plant of this kind for you, so yours will be similar but not identical to the one pictured.";
+  "Grower's Choice means we choose a healthy plant of this kind for you, so yours will be similar or larger to the one pictured.";
 
 /** What the customer is told a Grower's Choice line is, in one line. */
 export const GROWERS_CHOICE_CUSTOMER_SUMMARY =

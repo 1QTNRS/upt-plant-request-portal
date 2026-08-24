@@ -839,13 +839,6 @@ function OfferItemCard({
           </s-stack>
         ) : null}
 
-        {!available ? (
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Unavailable Reason</s-text>
-            <s-text>{item.unavailableReason}</s-text>
-          </s-stack>
-        ) : null}
-
         <s-stack direction="block" gap="small">
           <s-text color="subdued">Customer Notes / Disclaimers</s-text>
           <s-text>{item.notesFromUpt || " "}</s-text>

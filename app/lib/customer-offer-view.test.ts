@@ -198,6 +198,8 @@ describe("the customer sees every photo of each plant", () => {
 
     assert.equal([...html.matchAll(/<img/g)].length, 1);
     assert.match(html, /Not Available/);
+    assert.doesNotMatch(html, /Unavailable Reason/);
+    assert.doesNotMatch(html, /not in our current inventory/);
   });
 });
 
@@ -240,7 +242,7 @@ describe("a Grower's Choice plant on the customer's offer", () => {
     // so an unlabelled listing photo reads as the same promise.
     assert.ok(html.includes(LISTING_IMAGE));
     assert.match(html, /not of the plant you will receive/);
-    assert.match(html, /similar but not identical to the one pictured/);
+    assert.match(html, /similar or larger to the one pictured/);
   });
 
   it("neither shows nor implies an exact plant photo", () => {
