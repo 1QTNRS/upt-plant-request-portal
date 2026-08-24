@@ -216,7 +216,6 @@ export function CustomerRequestPortal({
               minHeight: 52,
             }}
           >
-            <LeafIcon />
             Submit request
           </button>
         </section>

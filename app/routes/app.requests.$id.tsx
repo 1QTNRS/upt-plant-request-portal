@@ -104,6 +104,7 @@ import {
   AdminResponsiveStyles,
   wrapRowStyle,
 } from "../components/admin-layout";
+import { NestedBox } from "../components/theme";
 import { ViewerLocalTime } from "../components/viewer-local-time";
 
 function itemStatusTone(
@@ -981,12 +982,7 @@ function PlantItemCard({
 
   return (
     <div className="admin-plant-card">
-    <s-box
-      padding="base"
-      borderWidth="base"
-      borderRadius="base"
-      background="subdued"
-    >
+    <NestedBox>
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" gap="base">
           <s-heading>{item.plantName}</s-heading>
@@ -1180,7 +1176,7 @@ function PlantItemCard({
           </s-text>
         </s-stack>
       </s-stack>
-    </s-box>
+    </NestedBox>
     </div>
   );
 }
@@ -1246,13 +1242,7 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
           </s-text>
         ) : (
           emails.map((email) => (
-            <s-box
-              key={email.id}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-            >
+            <NestedBox key={email.id}>
               <s-stack direction="block" gap="small">
                 <s-stack direction="inline" gap="base">
                   <s-text>
@@ -1297,7 +1287,7 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
                   </Form>
                 )}
               </s-stack>
-            </s-box>
+            </NestedBox>
           ))
         )}
       </s-stack>
@@ -1361,7 +1351,7 @@ function SendOfferSection({
             </Form>
           </s-stack>
         )}
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+        <NestedBox>
           <s-stack direction="block" gap="base">
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Offer link</s-text>
@@ -1388,7 +1378,7 @@ function SendOfferSection({
               </s-stack>
             </s-stack>
           </s-stack>
-        </s-box>
+        </NestedBox>
       </s-stack>
     );
   }
@@ -1495,13 +1485,7 @@ function DeclinedExactPlantsSection({
             const listed =
               item.listing?.status === "listed" && item.listing.shopifyProductGid;
             return (
-              <s-box
-                key={item.requestItemId}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
+              <NestedBox key={item.requestItemId}>
                 <s-stack direction="block" gap="small">
                   <s-heading>{item.title}</s-heading>
                   <s-text>
@@ -1529,7 +1513,7 @@ function DeclinedExactPlantsSection({
                     </s-link>
                   )}
                 </s-stack>
-              </s-box>
+              </NestedBox>
             );
           })
         )}
@@ -1683,14 +1667,7 @@ function InternalNotesSection({
           <s-text color="subdued">No internal notes yet.</s-text>
         ) : (
           notes.map((note) => (
-            <s-box
-              key={note.id}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              background="subdued"
-              data-internal-note={note.id}
-            >
+            <NestedBox key={note.id} data-internal-note={note.id}>
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">
                   <ViewerLocalTime
@@ -1700,7 +1677,7 @@ function InternalNotesSection({
                 </s-text>
                 <s-text>{note.body}</s-text>
               </s-stack>
-            </s-box>
+            </NestedBox>
           ))
         )}
         <Form method="post">
@@ -1782,7 +1759,7 @@ function CustomerResponseSection({
           </s-stack>
         </s-stack>
 
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+        <NestedBox>
           <s-stack direction="block" gap="base">
             <s-heading>Accepted Items</s-heading>
             {accepted.length === 0 ? (
@@ -1811,9 +1788,9 @@ function CustomerResponseSection({
               />
             ) : null}
           </s-stack>
-        </s-box>
+        </NestedBox>
 
-        <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+        <NestedBox>
           <s-stack direction="block" gap="base">
             <s-heading>Rejected Items</s-heading>
             {rejected.length === 0 ? (
@@ -1826,7 +1803,7 @@ function CustomerResponseSection({
               ))
             )}
           </s-stack>
-        </s-box>
+        </NestedBox>
 
         {accepted.length === 0 && status !== "Closed" ? (
           <CloseRequestSection />
@@ -1955,13 +1932,7 @@ function PlantPatternSection({
           refuse or change this request.
         </s-text>
         {patterns.map((pattern) => (
-          <s-box
-            key={pattern.canonicalPlantId}
-            padding="base"
-            borderWidth="base"
-            borderRadius="base"
-            background="subdued"
-          >
+          <NestedBox key={pattern.canonicalPlantId}>
             <s-stack direction="block" gap="small">
               <s-badge tone="warning">Repeated Request / Decline Pattern</s-badge>
               <s-text>{pattern.summary}</s-text>
@@ -1979,7 +1950,7 @@ function PlantPatternSection({
                 Typed as: {pattern.requestedNames.join(", ")}
               </s-text>
             </s-stack>
-          </s-box>
+          </NestedBox>
         ))}
       </s-stack>
     </s-section>

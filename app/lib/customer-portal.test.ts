@@ -679,6 +679,12 @@ describe("the request form works without JavaScript", () => {
       !/<h2 className="upt-card-title">\s*<LeafIcon/.test(source),
       "section titles should be text only",
     );
+    assert.match(source, />\s*Submit request\s*</);
+    assert.ok(
+      !/Submit request[\s\S]{0,40}<LeafIcon/.test(source) &&
+        !/<LeafIcon \/>\s*Submit request/.test(source),
+      "Submit request should not have a leaf icon",
+    );
     assert.match(source, /marginTop:\s*80/);
     assert.match(source, /padding-bottom:\s*32px/);
     assert.match(source, /gridTemplateColumns:\s*"1fr auto 1fr"/);
