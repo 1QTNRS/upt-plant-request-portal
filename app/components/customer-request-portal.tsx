@@ -284,8 +284,8 @@ export function CustomerRequestPortal({
                 flexWrap: "wrap",
                 alignItems: "center",
                 gap: 8,
-                marginTop: 32,
-                paddingTop: 8,
+                marginTop: 48,
+                paddingTop: 16,
                 minHeight: 36,
               }}
             >
