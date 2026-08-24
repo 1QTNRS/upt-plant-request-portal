@@ -17,6 +17,7 @@ import {
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
+  readExistingOrderAnswer,
   readOfferChoices,
   readPlantLines,
   withExtraRow,
@@ -143,6 +144,16 @@ describe("adding and removing rows through the query string", () => {
       query({ itemCount: "1", "notes-0": "x".repeat(5000), addPlant: "1" }),
     );
     assert.equal(long?.[0].notes.length, 500);
+  });
+});
+
+describe("existing-order answer", () => {
+  it("reads Yes and No from radios or query strings", () => {
+    assert.equal(readExistingOrderAnswer(form({ hasExistingOrder: "yes" })), "yes");
+    assert.equal(readExistingOrderAnswer(form({ hasExistingOrder: "no" })), "no");
+    assert.equal(readExistingOrderAnswer(form({ hasExistingOrder: "YES" })), "yes");
+    assert.equal(readExistingOrderAnswer(form({})), null);
+    assert.equal(readExistingOrderAnswer(form({ hasExistingOrder: "maybe" })), null);
   });
 });
 
@@ -813,7 +824,7 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /<form method="post" action=\{formAction\}>/);
   });
 
-  it("tells a logged-in customer about combining shipping before submit", () => {
+  it("asks Yes or No about an existing order before submit", () => {
     const html = renderToStaticMarkup(
       createElement(CustomerRequestPortal, {
         loggedIn: true,
@@ -825,10 +836,34 @@ describe("the request form works without JavaScript", () => {
       }),
     );
     assert.match(html, /Have an existing order\?/);
-    assert.match(html, /refund any shipping overages/);
+    assert.ok(!html.includes("refund any shipping overages"));
+    assert.ok(!html.includes("Plant 1"));
+    assert.match(html, /name="hasExistingOrder"[^>]*value="yes"/);
+    assert.match(html, /name="hasExistingOrder"[^>]*value="no"/);
+    assert.match(html, /name="hasExistingOrder"[^>]*required/);
+    assert.match(html, />Yes</);
+    assert.match(html, />No</);
     assert.ok(
       html.indexOf("Have an existing order?") < html.indexOf("Submit request"),
     );
+  });
+
+  it("keeps the Yes/No answer when adding a plant row", () => {
+    const html = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: true,
+        name: "Alex Rivera",
+        email: "alex.rivera@example.com",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+        hasExistingOrder: "yes",
+      }),
+    );
+    const yesRadio = [...html.matchAll(/<input[^>]*name="hasExistingOrder"[^>]*>/g)]
+      .map((match) => match[0])
+      .find((input) => input.includes('value="yes"'));
+    assert.match(yesRadio ?? "", /checked/);
   });
 
   it("uses the current customer-facing request intro", () => {
@@ -849,11 +884,17 @@ describe("the request form works without JavaScript", () => {
   });
 
   it("drops title icons and keeps the pager off the request numbers", () => {
+    assert.match(source, /className="upt-banner-gap"/);
     assert.match(source, /<h2 className="upt-card-title">New request<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Have an existing order\?<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">My Requests<\/h2>/);
-    assert.match(source, /refund any shipping overages/);
+    assert.ok(!source.includes("refund any shipping overages"));
+    assert.ok(!source.includes("Plant {index + 1}"));
+    assert.match(source, /type="radio"/);
+    assert.match(source, /value="yes"/);
+    assert.match(source, /value="no"/);
+    assert.match(source, /name="hasExistingOrder"/);
     assert.match(
       source,
       /Have an existing order\?[\s\S]*Submit request/,

@@ -269,6 +269,10 @@ function toSentOffer(offer: Offer, requestId: string): SentOffer {
     expiresAt: formatDateTime(offer.expiresAt),
     expiresAtIso: offer.expiresAt.toISOString(),
     expirationDays: offer.expirationDays as OfferExpirationDays,
+    shippingFeeOverride:
+      offer.shippingFeeOverride === null || offer.shippingFeeOverride === undefined
+        ? undefined
+        : offer.shippingFeeOverride,
   };
 }
 
@@ -288,6 +292,7 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
     expiredAtIso: request.expiredAt?.toISOString(),
     paidAt: request.paidAt ? formatDateTime(request.paidAt) : undefined,
     paidAtIso: request.paidAt?.toISOString(),
+    hasExistingOrder: request.hasExistingOrder,
     items: request.items.map(toPlantItem),
     sentOffer: request.offer ? toSentOffer(request.offer, request.id) : undefined,
     hasPayableItems: request.offer
@@ -585,6 +590,7 @@ export async function submitCustomerRequest(
     email: string;
     shopifyCustomerId?: string;
     items: Array<{ plantName: string; notes?: string }>;
+    hasExistingOrder?: boolean;
   },
 ): Promise<PlantRequest> {
   const customer = await findOrCreateCustomer(shop, input);
@@ -599,6 +605,7 @@ export async function submitCustomerRequest(
       customerEmail: customer.email,
       shopifyCustomerId: customer.shopifyCustomerId,
       status: "New",
+      hasExistingOrder: input.hasExistingOrder ?? false,
       items: {
         create: input.items.map((item) => ({
           plantName: item.plantName.trim(),
@@ -1022,6 +1029,7 @@ export async function sendOffer(
   shop: string,
   requestId: string,
   expirationDays: OfferExpirationDays,
+  options?: { shippingFeeOverride?: number },
 ): Promise<PlantRequest | null> {
   const request = await loadRequest(shop, requestId);
   if (!request) return null;
@@ -1044,6 +1052,7 @@ export async function sendOffer(
         expiresAt,
         expirationDays,
         offerLink: customerLinksForShop(shop).requestDetail(requestId),
+        shippingFeeOverride: options?.shippingFeeOverride ?? null,
         items: {
           create: request.items.map((item) => {
             const fulfillment = resolveFulfillmentType(item);

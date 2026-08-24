@@ -10,7 +10,11 @@ import {
   CustomerRequestPortal,
   EMPTY_PLANT_LINE,
 } from "../components/customer-request-portal";
-import { plantLinesFromQuery, readPlantLines } from "../lib/customer-portal";
+import {
+  plantLinesFromQuery,
+  readExistingOrderAnswer,
+  readPlantLines,
+} from "../lib/customer-portal";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { isDemoDataEnabled } from "../lib/environment.server";
 import { notifyNewRequest } from "../lib/emails.server";
@@ -64,6 +68,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       showDemoLogin: false,
       previewNotice: PREVIEW_NOTICE as string | null,
       plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
+      hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
     };
   }
 
@@ -81,6 +86,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     showDemoLogin: true,
     previewNotice: null as string | null,
     plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
+    hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
   };
 };
 
@@ -98,6 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const submitted = readPlantLines(form);
+  const existingOrderAnswer = readExistingOrderAnswer(form);
   const items = submitted.map((line) => ({
     plantName: line.plantName.trim(),
     notes: line.notes.trim() || undefined,
@@ -110,13 +117,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (items.some((item) => !item.plantName)) {
     errors.push("Each plant row needs a plant name or should be removed.");
   }
+  if (!existingOrderAnswer) {
+    errors.push("Tell us whether you have an existing order.");
+  }
   if (errors.length > 0) {
-    return { errors, successMessage: null, plantLines: submitted };
+    return {
+      errors,
+      successMessage: null,
+      plantLines: submitted,
+      hasExistingOrder: existingOrderAnswer,
+    };
   }
 
   const created = await submitCustomerRequest(shop, {
     ...DEMO_CUSTOMER,
     items: items.filter((item) => item.plantName),
+    hasExistingOrder: existingOrderAnswer === "yes",
   });
   await notifyNewRequest(shop, created.id);
 
@@ -153,6 +169,9 @@ export default function CustomerRequestForm() {
       browseAction="/app/customer-request-form"
       plantLines={
         actionData?.plantLines ?? loaderData.plantLines ?? [EMPTY_PLANT_LINE]
+      }
+      hasExistingOrder={
+        actionData?.hasExistingOrder ?? loaderData.hasExistingOrder
       }
       canSubmit={loaderData.previewNotice === null}
     />

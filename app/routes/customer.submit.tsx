@@ -11,6 +11,7 @@ import {
 } from "../lib/customer-portal.server";
 import {
   portalHome,
+  readExistingOrderAnswer,
   readPlantLines,
   withExtraRow,
   withoutRow,
@@ -68,11 +69,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         );
       }
     }
-    return { errors: [], plantLines: null };
+    return { errors: [], plantLines: null, hasExistingOrder: null };
   }
 
   if (intent === "add-plant") {
-    return { errors: [], plantLines: withExtraRow(readPlantLines(form)) };
+    return {
+      errors: [],
+      plantLines: withExtraRow(readPlantLines(form)),
+      hasExistingOrder: readExistingOrderAnswer(form),
+    };
   }
 
   const removeMatch = intent.match(/^remove-plant-(\d+)$/);
@@ -80,6 +85,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return {
       errors: [],
       plantLines: withoutRow(readPlantLines(form), Number(removeMatch[1])),
+      hasExistingOrder: readExistingOrderAnswer(form),
     };
   }
 
@@ -102,7 +108,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (!context.identity) {
-    return { errors: ["Please log in to submit a request."], plantLines: null };
+    return {
+      errors: ["Please log in to submit a request."],
+      plantLines: null,
+      hasExistingOrder: readExistingOrderAnswer(form),
+    };
   }
 
   const identity = await resolveCustomerIdentity(context.shop, context.identity);
@@ -114,10 +124,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           : "We could not read the email address on your customer account. Please contact us so we can take your request.",
       ],
       plantLines: readPlantLines(form),
+      hasExistingOrder: readExistingOrderAnswer(form),
     };
   }
 
   const submitted = readPlantLines(form);
+  const existingOrderAnswer = readExistingOrderAnswer(form);
   const items = submitted.map((line) => ({
     plantName: line.plantName.trim(),
     notes: line.notes.trim() || undefined,
@@ -130,8 +142,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (items.some((item) => !item.plantName)) {
     errors.push("Each plant row needs a plant name or should be removed.");
   }
+  if (!existingOrderAnswer) {
+    errors.push("Tell us whether you have an existing order.");
+  }
   // Keep what was typed so a validation error does not clear the form.
-  if (errors.length > 0) return { errors, plantLines: submitted };
+  if (errors.length > 0) {
+    return { errors, plantLines: submitted, hasExistingOrder: existingOrderAnswer };
+  }
 
   await saveCustomerTimeZone(
     context.shop,
@@ -143,6 +160,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     email: identity.email,
     shopifyCustomerId: identity.shopifyCustomerId,
     items: items.filter((item) => item.plantName),
+    hasExistingOrder: existingOrderAnswer === "yes",
   });
   await notifyNewRequest(context.shop, created.id);
 
@@ -177,6 +195,7 @@ export default function CustomerRequestSubmit() {
       plantLines={
         actionData?.plantLines ?? portal.plantLines ?? [EMPTY_PLANT_LINE]
       }
+      hasExistingOrder={actionData?.hasExistingOrder ?? portal.hasExistingOrder}
       canSubmit={portal.canSubmitRequests}
       customerTimeZone={portal.customerTimeZone}
     />

@@ -41,6 +41,22 @@ describe("demo seed guard", () => {
   it("creates demo requests outside production", async () => {
     await ensureShopSeeded(shop);
     assert.ok((await prisma.plantRequest.count({ where: { shop } })) >= 6);
+    const req6 = await prisma.plantRequest.findFirst({
+      where: { shop, requestNumber: "REQ6" },
+    });
+    assert.equal(req6?.hasExistingOrder, true);
+  });
+
+  it("marks an already-seeded REQ6 as an existing-order request", async () => {
+    await prisma.plantRequest.updateMany({
+      where: { shop, requestNumber: "REQ6" },
+      data: { hasExistingOrder: false },
+    });
+    await ensureShopSeeded(shop);
+    const req6 = await prisma.plantRequest.findFirst({
+      where: { shop, requestNumber: "REQ6" },
+    });
+    assert.equal(req6?.hasExistingOrder, true);
   });
 
   it("ensureShopSettings is idempotent", async () => {

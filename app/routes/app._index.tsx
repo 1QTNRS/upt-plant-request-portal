@@ -6,6 +6,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
   ADMIN_DASHBOARD_STATUS_FILTERS,
+  adminDashboardFilterLabel,
   countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   formatPlantsSummary,
@@ -46,6 +47,7 @@ type DashboardData = {
     status: RequestStatus;
     submittedDate: string;
     submittedAtIso: string;
+    hasExistingOrder: boolean;
   }>;
   query: string;
   statusFilter: AdminDashboardStatusFilter;
@@ -75,6 +77,7 @@ function toDashboard(
       status: request.status,
       submittedDate: request.submittedDate,
       submittedAtIso: request.submittedAtIso,
+      hasExistingOrder: request.hasExistingOrder === true,
     })),
   };
 }
@@ -168,7 +171,7 @@ export default function Dashboard() {
                     cursor: "pointer",
                   }}
                 >
-                  {status} ({data.statusCounts[status]})
+                  {adminDashboardFilterLabel(status)} ({data.statusCounts[status]})
                 </button>
               ))}
             </s-stack>
@@ -179,9 +182,11 @@ export default function Dashboard() {
           {`Showing ${visibleCount} request${visibleCount === 1 ? "" : "s"}${
             data.query ? ` matching “${data.query}”` : ""
           }${
-            data.statusFilter !== "All"
-              ? ` with status ${data.statusFilter}`
-              : ""
+            data.statusFilter === "ExistingOrder"
+              ? " with an existing order"
+              : data.statusFilter !== "All"
+                ? ` with status ${data.statusFilter}`
+                : ""
           }.`}
         </s-text>
       </s-section>
@@ -209,6 +214,9 @@ export default function Dashboard() {
                   <StatusBadge tone={requestStatusTone(request.status)}>
                     {request.status}
                   </StatusBadge>
+                  {request.hasExistingOrder ? (
+                    <s-text color="subdued">Existing order</s-text>
+                  ) : null}
                 </dd>
                 <dt>Submitted Date</dt>
                 <dd>
@@ -261,6 +269,11 @@ export default function Dashboard() {
                     <StatusBadge tone={requestStatusTone(request.status)}>
                       {request.status}
                     </StatusBadge>
+                    {request.hasExistingOrder ? (
+                      <div>
+                        <s-text color="subdued">Existing order</s-text>
+                      </div>
+                    ) : null}
                   </td>
                   <td className="upt-cell-wrap">
                     <ViewerLocalTime

@@ -28,6 +28,7 @@ describe("brand theme", () => {
     assert.match(themeSource, /\.upt-customer-surface \{[\s\S]*THEME\.mint/);
     assert.match(themeSource, /\.upt-nested-box \{[\s\S]*THEME\.mint/);
     assert.match(themeSource, /\.upt-card \{[\s\S]*THEME\.white/);
+    assert.match(themeSource, /\.upt-banner-gap \{[\s\S]*padding-bottom:\s*32px/);
     assert.match(themeSource, /paintDocument/);
     assert.match(layout, /paintDocument=\{!data\.viaAppProxy\}/);
     assert.match(layout, /inShopTheme=\{data\.viaAppProxy\}/);

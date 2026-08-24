@@ -61,6 +61,8 @@ export type SentOffer = {
   expiresAt: string;
   expiresAtIso: string;
   expirationDays: OfferExpirationDays;
+  /** Set when the admin overrode draft-order shipping at send time. */
+  shippingFeeOverride?: number;
 };
 
 /**
@@ -128,6 +130,8 @@ export type PlantRequest = {
   hasPayableItems?: boolean;
   /** Whether the customer has answered the offer. */
   hasResponded: boolean;
+  /** True when the customer said they already have an order with UPT. */
+  hasExistingOrder?: boolean | null;
 };
 
 export type CustomerMyRequestRow = {
@@ -546,10 +550,17 @@ export const ADMIN_DASHBOARD_STATUS_FILTERS = [
   "Pending",
   "Expired",
   "Closed",
+  "ExistingOrder",
 ] as const;
 
 export type AdminDashboardStatusFilter =
   (typeof ADMIN_DASHBOARD_STATUS_FILTERS)[number];
+
+export function adminDashboardFilterLabel(
+  filter: AdminDashboardStatusFilter,
+): string {
+  return filter === "ExistingOrder" ? "Existing order" : filter;
+}
 
 export function parseAdminDashboardStatusFilter(
   value: string | null | undefined,
@@ -566,7 +577,11 @@ export function parseAdminDashboardStatusFilter(
 export function matchesAdminStatusFilter(
   status: RequestStatus,
   filter: AdminDashboardStatusFilter,
+  hasExistingOrder?: boolean | null,
 ): boolean {
+  if (filter === "ExistingOrder") {
+    return status === "New" && hasExistingOrder === true;
+  }
   return filter === "All" || status === filter;
 }
 
@@ -577,12 +592,16 @@ export function filterAdminDashboardRequests<
     email?: string;
     requestNumber: string;
     items: Array<{ plantName: string; offeredName?: string }>;
+    hasExistingOrder?: boolean | null;
   },
 >(requests: T[], query: string, statusFilter: AdminDashboardStatusFilter): T[] {
   return requests.filter(
     (request) =>
-      matchesAdminStatusFilter(request.status, statusFilter) &&
-      matchesAdminSearch(request, query),
+      matchesAdminStatusFilter(
+        request.status,
+        statusFilter,
+        request.hasExistingOrder,
+      ) && matchesAdminSearch(request, query),
   );
 }
 
@@ -598,7 +617,7 @@ export function summarizeAdminDashboardStats(
 }
 
 export function countAdminDashboardStatusFilters(
-  requests: Array<{ status: RequestStatus }>,
+  requests: Array<{ status: RequestStatus; hasExistingOrder?: boolean | null }>,
 ): Record<AdminDashboardStatusFilter, number> {
   const stats = summarizeAdminDashboardStats(requests);
   return {
@@ -607,7 +626,27 @@ export function countAdminDashboardStatusFilters(
     Pending: stats.pending,
     Expired: stats.expired,
     Closed: stats.closed,
+    ExistingOrder: requests.filter(
+      (request) => request.status === "New" && request.hasExistingOrder === true,
+    ).length,
   };
+}
+
+/**
+ * Blank means Shopify quotes shipping. A parsed number (including 0) is a
+ * custom shipping line on the later draft order.
+ */
+export function parseShippingFeeOverride(
+  raw: unknown,
+): { ok: true; value?: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true };
+  const text = String(raw).trim();
+  if (text === "") return { ok: true };
+  const value = Number.parseFloat(text);
+  if (!Number.isFinite(value) || value < 0) {
+    return { ok: false, error: "Shipping override must be a number of 0 or more." };
+  }
+  return { ok: true, value: normalizePrice(value) };
 }
 
 /**
@@ -947,6 +986,11 @@ export function buildDraftOrderInput(input: {
   lineItems: DraftOrderLineItem[];
   /** ISO 8601 instant from `reserveInventoryUntilFor`. */
   reserveInventoryUntil?: string;
+  /**
+   * Custom shipping line. Omitted when undefined so Shopify quotes a rate.
+   * 0 is a real override (no shipping charge).
+   */
+  shippingFeeOverride?: number;
 }) {
   return {
     email: input.customerEmail,
@@ -956,6 +1000,17 @@ export function buildDraftOrderInput(input: {
       input.requestNumber,
       draftOrderIdempotencyTag(input.requestId),
     ],
+    ...(input.shippingFeeOverride !== undefined
+      ? {
+          shippingLine: {
+            title: "Shipping",
+            priceWithCurrency: {
+              amount: normalizePrice(input.shippingFeeOverride).toFixed(2),
+              currencyCode: input.currencyCode,
+            },
+          },
+        }
+      : {}),
     // Shopify's own hold on the stock behind this order. It is the whole
     // reservation mechanism: nothing else in the app decrements or restores a
     // quantity, so there is no second copy of the truth to drift, and a retry

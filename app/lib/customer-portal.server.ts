@@ -8,6 +8,7 @@ import {
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
+  readExistingOrderAnswer,
 } from "./customer-portal";
 import { resolveCustomerIdentity } from "./customer-identity.server";
 import {
@@ -60,6 +61,8 @@ export type CustomerPortalData = {
   browseAction: string;
   /** Rows carried in the query string by the add/remove buttons. */
   plantLines: PlantLine[] | null;
+  /** Carried in the query string so Yes/No survives add/remove plant. */
+  hasExistingOrder: "yes" | "no" | null;
   customerTimeZone: string | null;
 };
 
@@ -98,6 +101,7 @@ export async function loadCustomerPortal(
     formAction: portalFormAction(context),
     browseAction: portalHome(context),
     plantLines: plantLinesFromQuery(search),
+    hasExistingOrder: readExistingOrderAnswer(search),
     submittedMessage: submittedNumber
       ? `Request submitted. Your request number is ${submittedNumber}. We'll notify you when matching plants become available.`
       : null,

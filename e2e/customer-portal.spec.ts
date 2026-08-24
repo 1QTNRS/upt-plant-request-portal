@@ -36,6 +36,7 @@ test.describe("Customer request", () => {
 
     const plant = `Smoke Portal Plant ${Date.now()}`;
     await page.locator('input[name="plantName-0"]').fill(plant);
+    await page.locator("label.upt-choice").filter({ hasText: "No" }).click();
     await page.getByRole("button", { name: "Submit request" }).click();
     await expect(page.getByText(/Request submitted\. Your request number is REQ/)).toBeVisible();
     await expect(page.getByText("New", { exact: true }).first()).toBeVisible();

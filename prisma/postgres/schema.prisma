@@ -85,6 +85,12 @@ model PlantRequest {
   closedAt              DateTime?
   expiredAt             DateTime?
   paidAt                DateTime?
+  /**
+   * Whether the customer said they already have an order with UPT, so this
+   * request should be combined and extra shipping refunded. Null on older
+   * rows from before the question existed.
+   */
+  hasExistingOrder      Boolean?
   items                 RequestItem[]
   offer                 Offer?
   response              CustomerResponse?
@@ -258,6 +264,11 @@ model Offer {
   expiresAt       DateTime
   expirationDays  Int
   offerLink       String
+  /**
+   * Dollar amount frozen onto the later draft order as a custom shipping
+   * line. Null means Shopify quotes shipping as usual.
+   */
+  shippingFeeOverride Float?
   items           OfferItem[]
 }
 

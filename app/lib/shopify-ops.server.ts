@@ -669,6 +669,8 @@ export async function createDraftOrderForRequest(
      * it, so it must be the offer's own expiry and not a window of its own.
      */
     holdEndsAt?: Date | string | null;
+    /** Custom shipping line on the invoice. Undefined leaves Shopify's rate. */
+    shippingFeeOverride?: number;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -749,6 +751,7 @@ async function createClaimedDraftOrder(
     acceptedItems: AcceptedDraftOrderItem[];
     lineItems: DraftOrderLineItem[];
     reserveInventoryUntil?: string;
+    shippingFeeOverride?: number;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -781,6 +784,7 @@ async function createClaimedDraftOrder(
         currencyCode: await resolveShopCurrency(admin, shop),
         lineItems,
         reserveInventoryUntil,
+        shippingFeeOverride: input.shippingFeeOverride,
       });
 
       const created = await adminGraphql<{

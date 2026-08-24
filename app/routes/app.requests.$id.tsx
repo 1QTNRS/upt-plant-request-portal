@@ -47,6 +47,7 @@ import {
   getDisplayRequestNumber,
   incompleteOfferItems,
   offerReadinessMessage,
+  parseShippingFeeOverride,
   payableInvoiceUrl,
   requestStatusTone,
   shouldOfferAdminPaymentLinkRecovery,
@@ -136,6 +137,17 @@ const numberInputStyle = {
   font: "inherit",
   boxSizing: "border-box" as const,
 } as const;
+
+const shippingOverrideInputStyle = {
+  ...numberInputStyle,
+  maxWidth: "min(280px, 100%)",
+  height: 48,
+  lineHeight: "24px",
+  overflow: "hidden" as const,
+  resize: "none" as const,
+  appearance: "textfield" as const,
+  fieldSizing: "fixed" as const,
+};
 
 const disabledNumberInputStyle = {
   ...numberInputStyle,
@@ -456,7 +468,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       // The offer freezes the FedEx upgrade price into what the customer sees,
       // is emailed and is later billed, so read it from Shopify first.
       await refreshFedexUpgradePrice(admin, shop);
-      const updated = await sendOffer(shop, requestId, expirationDays);
+      const shipping = parseShippingFeeOverride(form.get("shippingFeeOverride"));
+      if (!shipping.ok) return { ok: false, error: shipping.error };
+      const updated = await sendOffer(shop, requestId, expirationDays, {
+        shippingFeeOverride: shipping.value,
+      });
       if (updated) {
         const appUrl =
           process.env.SHOPIFY_APP_URL || new URL(request.url).origin;
@@ -1307,6 +1323,7 @@ function SendOfferSection({
   offerEmail,
   items,
   photoUploadsInProgress = false,
+  hasExistingOrder = false,
 }: {
   status: RequestStatus;
   sentOffer?: SentOffer;
@@ -1314,6 +1331,7 @@ function SendOfferSection({
   offerEmail?: OutboxMessage;
   items: PlantItem[];
   photoUploadsInProgress?: boolean;
+  hasExistingOrder?: boolean;
 }) {
   const [expirationDays, setExpirationDays] = useState<OfferExpirationDays>(3);
   const navigation = useNavigation();
@@ -1376,6 +1394,14 @@ function SendOfferSection({
                 <s-text color="subdued">Expiration window</s-text>
                 <s-text>{sentOffer.expirationDays} days</s-text>
               </s-stack>
+              {sentOffer.shippingFeeOverride !== undefined ? (
+                <s-stack direction="block" gap="small">
+                  <s-text color="subdued">Shipping override</s-text>
+                  <s-text>
+                    ${sentOffer.shippingFeeOverride.toFixed(2)}
+                  </s-text>
+                </s-stack>
+              ) : null}
             </s-stack>
           </s-stack>
         </NestedBox>
@@ -1420,6 +1446,14 @@ function SendOfferSection({
             </s-stack>
           </s-banner>
         ) : null}
+        {hasExistingOrder ? (
+          <s-banner tone="info">
+            <s-text>
+              This customer said they have an existing order. You can override
+              the draft-order shipping fee below if you are combining shipments.
+            </s-text>
+          </s-banner>
+        ) : null}
         <s-paragraph>
           Choose how long the customer has to review and accept this offer.
         </s-paragraph>
@@ -1443,6 +1477,29 @@ function SendOfferSection({
             </button>
           ))}
         </s-stack>
+        <s-stack direction="block" gap="small">
+          <label htmlFor="shippingFeeOverride">
+            <s-text>Override shipping fee</s-text>
+          </label>
+          <style>{`
+            #shippingFeeOverride::-webkit-scrollbar { display: none; width: 0; height: 0; }
+            #shippingFeeOverride { scrollbar-width: none; }
+          `}</style>
+          <input
+            id="shippingFeeOverride"
+            name="shippingFeeOverride"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="Leave blank for Shopify's rate"
+            style={shippingOverrideInputStyle}
+          />
+        </s-stack>
+        <s-text color="subdued">
+          Optional. Sets a custom shipping amount on the draft-order invoice,
+          including 0 to charge no shipping. Leave blank to let Shopify quote
+          the rate.
+        </s-text>
         <s-button
           variant="primary"
           type="submit"
@@ -2106,6 +2163,16 @@ export default function RequestDetail() {
                 fallback={plantRequest.submittedDate}
               />
             </s-stack>
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Existing order</s-text>
+              <s-text>
+                {plantRequest.hasExistingOrder === true
+                  ? "Yes — combine shipping"
+                  : plantRequest.hasExistingOrder === false
+                    ? "No"
+                    : "Not asked"}
+              </s-text>
+            </s-stack>
           </s-stack>
         </s-stack>
       </s-section>
@@ -2143,6 +2210,7 @@ export default function RequestDetail() {
           offerEmail={emails.find((email) => email.templateKey === "offer_ready")}
           items={plantRequest.items}
           photoUploadsInProgress={photoUploadsInProgress}
+          hasExistingOrder={plantRequest.hasExistingOrder === true}
         />
       </s-section>
 

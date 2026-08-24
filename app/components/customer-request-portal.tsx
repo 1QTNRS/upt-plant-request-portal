@@ -65,6 +65,7 @@ export function CustomerRequestPortal({
   plantLines = [EMPTY_PLANT_LINE],
   canSubmit = true,
   customerTimeZone = null,
+  hasExistingOrder = null,
 }: {
   loggedIn: boolean;
   name: string;
@@ -89,6 +90,7 @@ export function CustomerRequestPortal({
   plantLines?: PlantLine[];
   canSubmit?: boolean;
   customerTimeZone?: string | null;
+  hasExistingOrder?: "yes" | "no" | null;
 }) {
 
   if (!loggedIn) {
@@ -122,9 +124,11 @@ export function CustomerRequestPortal({
   return (
     <CustomerPageShell title="Customer Request Form">
       {successMessage ? (
-        <s-banner tone="success">
-          <s-text>{successMessage}</s-text>
-        </s-banner>
+        <div className="upt-banner-gap">
+          <s-banner tone="success">
+            <s-text>{successMessage}</s-text>
+          </s-banner>
+        </div>
       ) : null}
 
       <section className="upt-card">
@@ -151,9 +155,6 @@ export function CustomerRequestPortal({
           <h2 className="upt-card-title">Plants requested</h2>
           {plantLines.map((line, index) => (
             <div key={index} className="upt-plant-card">
-              <h3 style={{ margin: "0 0 12px", color: THEME.darkGreen }}>
-                Plant {index + 1}
-              </h3>
               <label>
                 <span>Plant Name</span>
                 <input
@@ -224,11 +225,29 @@ export function CustomerRequestPortal({
           style={{ borderColor: THEME.yellow, borderWidth: 2 }}
         >
           <h2 className="upt-card-title">Have an existing order?</h2>
-          <p className="upt-muted">
-            If you already have an order with us, we will combine this request
-            with it and refund any shipping overages. You do not have to worry
-            about overpaying for shipping.
-          </p>
+          <fieldset className="upt-choice-set">
+            <legend className="upt-sr-only">Have an existing order?</legend>
+            <label className="upt-choice">
+              <input
+                type="radio"
+                name="hasExistingOrder"
+                value="yes"
+                required
+                defaultChecked={hasExistingOrder === "yes"}
+              />
+              <span>Yes</span>
+            </label>
+            <label className="upt-choice">
+              <input
+                type="radio"
+                name="hasExistingOrder"
+                value="no"
+                required
+                defaultChecked={hasExistingOrder === "no"}
+              />
+              <span>No</span>
+            </label>
+          </fieldset>
         </section>
 
         <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>
