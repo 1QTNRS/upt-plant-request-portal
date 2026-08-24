@@ -151,6 +151,17 @@ describe("draft order input", () => {
     );
   });
 
+  it("lets the customer enter a discount code at checkout", () => {
+    const input = buildDraftOrderInput({
+      requestId: "req_1",
+      requestNumber: "REQ2178",
+      customerEmail: "customer@example.com",
+      currencyCode: "USD",
+      lineItems: lineItems(false),
+    });
+    assert.equal(input.allowDiscountCodesInCheckout, true);
+  });
+
   it("omits shippingLine when the override is blank so checkout can choose a rate", () => {
     const input = buildDraftOrderInput({
       requestId: "req_1",

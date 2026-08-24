@@ -997,6 +997,9 @@ export function buildDraftOrderInput(input: {
   return {
     email: input.customerEmail,
     note: `UPT plant request ${input.requestNumber}`,
+    // Shopify defaults this off. Without it the invoice checkout hides the
+    // discount-code field, so a customer with a store code cannot use it.
+    allowDiscountCodesInCheckout: true,
     tags: [
       DRAFT_ORDER_TAG,
       input.requestNumber,
