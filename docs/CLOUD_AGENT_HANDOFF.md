@@ -569,6 +569,9 @@ The page also has to stop offering what it cannot deliver:
   offer back: plant name, the price and customer-facing notes they were shown,
   the exact offer photos, and their Declined decision — with no checkout link,
   no payment control and FedEx not shown as selected.
+- A customer who accepted plants still sees those same snapshot photos on
+  **Final approval summary** when they come back (including after payment or
+  close). The photos come from the response snapshot, not the live request.
 - The customer is never shown the confirmation email. The admin outbox on the
   request page is where queued mail is read.
 
@@ -911,8 +914,8 @@ list above.
 Phase 4 UI polish is presentational only: admin photo reorder posts a whole
 id list (`intent=reorder-photos`) with Move left/right as the no-JS fallback;
 metric cards, fulfilment buttons, price/weight, stock search and the dashboard
-table wrap below 720px; customer offer images and Accept/Reject/FedEx hit areas
-fit a 375px viewport without hydration. Stored statuses, eligibility rules and
+table wrap below 720px; customer offer images sit in a horizontal row (three
+across) and Accept/Reject/FedEx hit areas fit a 375px viewport without hydration. Stored statuses, eligibility rules and
 computed numbers did not change.
 
 One analytics correctness bug is **reported, not silently "fixed"**: the

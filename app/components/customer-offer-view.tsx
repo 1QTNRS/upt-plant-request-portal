@@ -397,24 +397,7 @@ export function CustomerOfferView({
           <s-section heading="Final approval summary">
             <s-stack direction="block" gap="base">
               {acceptedItems.map((item) => (
-                <NestedBox key={item.offerItemId}>
-                  <s-stack direction="block" gap="small">
-                    <s-heading>{item.plantName}</s-heading>
-                    <s-text>{formatCurrency(item.price)}</s-text>
-                    {item.fulfillmentType === "growers_choice" ? (
-                      <s-stack direction="block" gap="small">
-                        <s-badge tone="info">
-                          {FULFILLMENT_TYPE_LABELS.growers_choice}
-                        </s-badge>
-                        <s-text color="subdued">
-                          {GROWERS_CHOICE_CUSTOMER_SUMMARY}
-                        </s-text>
-                      </s-stack>
-                    ) : null}
-                    <s-text color="subdued">Customer Notes / Disclaimers</s-text>
-                    <s-text>{item.customerNotes}</s-text>
-                  </s-stack>
-                </NestedBox>
+                <AcceptedItemCard key={item.offerItemId} item={item} />
               ))}
               {response?.fedexUpgradeSelected ? (
                 <s-text>
@@ -746,6 +729,57 @@ function StatusBadge({
   );
 }
 
+/** Snapshot photos from the response, not the live request item. */
+function ResponseItemPhotos({
+  item,
+}: {
+  item: CustomerOfferResponse["items"][number];
+}) {
+  const growersChoice = item.fulfillmentType === "growers_choice";
+
+  if (growersChoice && item.linkedImageUrl) {
+    return (
+      <CustomerPhotoGallery
+        urls={[item.linkedImageUrl]}
+        alt={`${item.plantName}, from our store listing`}
+      />
+    );
+  }
+
+  if (!growersChoice && item.photoUrls.length > 0) {
+    return <CustomerPhotoGallery urls={item.photoUrls} alt={item.plantName} />;
+  }
+
+  return null;
+}
+
+/** One plant the customer accepted, as the offer and the answer froze it. */
+function AcceptedItemCard({ item }: { item: CustomerOfferResponse["items"][number] }) {
+  return (
+    <NestedBox>
+      <s-stack direction="block" gap="base">
+        <ResponseItemPhotos item={item} />
+        <s-stack direction="block" gap="small">
+          <s-heading>{item.plantName}</s-heading>
+          <s-text>{formatCurrency(item.price)}</s-text>
+          {item.fulfillmentType === "growers_choice" ? (
+            <s-stack direction="block" gap="small">
+              <s-badge tone="info">
+                {FULFILLMENT_TYPE_LABELS.growers_choice}
+              </s-badge>
+              <s-text color="subdued">
+                {GROWERS_CHOICE_CUSTOMER_SUMMARY}
+              </s-text>
+            </s-stack>
+          ) : null}
+          <s-text color="subdued">Customer Notes / Disclaimers</s-text>
+          <s-text>{item.customerNotes}</s-text>
+        </s-stack>
+      </s-stack>
+    </NestedBox>
+  );
+}
+
 /** One plant the customer rejected, as the offer and the answer froze it. */
 function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][number] }) {
   const growersChoice = item.fulfillmentType === "growers_choice";
@@ -753,16 +787,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
   return (
     <NestedBox>
       <s-stack direction="block" gap="base">
-        {growersChoice && item.linkedImageUrl ? (
-          <CustomerPhotoGallery
-            urls={[item.linkedImageUrl]}
-            alt={`${item.plantName}, from our store listing`}
-          />
-        ) : null}
-
-        {!growersChoice && item.photoUrls.length > 0 ? (
-          <CustomerPhotoGallery urls={item.photoUrls} alt={item.plantName} />
-        ) : null}
+        <ResponseItemPhotos item={item} />
 
         <s-stack direction="block" gap="base">
           <s-heading>{item.plantName}</s-heading>
