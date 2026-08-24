@@ -36,7 +36,6 @@ const HIGH_RISK_PATHS: RegExp[] = [
   /^app\/lib\/smoke-cleanup/,
   /^app\/lib\/pr-risk\.ts$/,
   /^app\/routes\/webhooks/,
-  /^app\/routes\/events/,
   /^app\/routes\/auth/,
   /^app\/routes\/smoke/,
   /^app\/shopify\.server\.ts$/,

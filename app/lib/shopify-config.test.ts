@@ -123,23 +123,22 @@ describe("shopify.app.toml (production)", () => {
     );
   });
 
-  it("declares the one Events subscription CLI 4.6+ requires to deploy", () => {
+  it("declares an empty Events table so CLI 4.7 remote schema is satisfied", () => {
+    // CLI 4.7's bundled Zod schema leaves events optional. Deploy still
+    // validates against a remote spec that requires the events.subscription
+    // key. An empty array is the supported "we use webhooks, not Events" form.
     const events = section(toml, "events");
     assert.equal(str(events, "api_version"), "unstable");
-    assert.equal(str(events, "handle"), "cli-required-product-create");
-    assert.equal(str(events, "topic"), "Product");
-    assert.deepEqual(strList(events, "actions"), ["create"]);
-    assert.equal(str(events, "uri"), "/events/acknowledge");
-    assert.equal(
-      (toml.match(/^\s*\[\[events\.subscription\]\]/gm) ?? []).length,
-      1,
-      "only the CLI-required Product create subscription",
+    assert.match(events, /^\s*subscription\s*=\s*\[\s*\]/m);
+    assert.ok(
+      !/^\s*\[\[events\.subscription\]\]/m.test(toml),
+      "do not invent Event topic subscriptions; production uses [webhooks]",
     );
   });
 
-  it("serves every configured webhook or Events URI as a route", () => {
+  it("serves every configured webhook URI as a route", () => {
     const uris = [...toml.matchAll(/^\s*uri = "([^"]+)"/gm)].map((match) => match[1]);
-    assert.ok(uris.length >= 7, "expected the webhook URIs plus the Events acknowledge URI");
+    assert.ok(uris.length >= 6, "expected the app and compliance webhook URIs");
     for (const uri of uris) {
       const route = `${uri.replace(/^\//, "").replace(/\//g, ".")}.tsx`;
       assert.ok(
@@ -147,12 +146,6 @@ describe("shopify.app.toml (production)", () => {
         `${uri} has no route (looked for app/routes/${route})`,
       );
     }
-  });
-
-  it("acknowledges Events deliveries through authenticate.webhook", () => {
-    const source = read("app/routes/events.acknowledge.tsx");
-    assert.match(source, /authenticate\.webhook/);
-    assert.match(source, /status: 200/);
   });
 });
 
@@ -195,15 +188,12 @@ describe("shopify.app.dev.toml (development)", () => {
     );
   });
 
-  it("uses the same CLI-required Events placeholder as production", () => {
+  it("uses the same empty Events table as production", () => {
     assert.equal(
-      str(section(dev, "events"), "handle"),
-      str(section(production, "events"), "handle"),
+      str(section(dev, "events"), "api_version"),
+      str(section(production, "events"), "api_version"),
     );
-    assert.equal(
-      str(section(dev, "events"), "uri"),
-      str(section(production, "events"), "uri"),
-    );
+    assert.match(section(dev, "events"), /^\s*subscription\s*=\s*\[\s*\]/m);
   });
 
   it("keeps the same app proxy path, so customer links behave the same", () => {

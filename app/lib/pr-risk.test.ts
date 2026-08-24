@@ -30,10 +30,6 @@ describe("PR risk classification", () => {
       "high-risk",
     );
     assert.equal(
-      classifyPullRequestRisk({ files: ["app/routes/events.acknowledge.tsx"] }).risk,
-      "high-risk",
-    );
-    assert.equal(
       classifyPullRequestRisk({ files: ["prisma/schema.prisma"] }).risk,
       "high-risk",
     );

@@ -236,17 +236,16 @@ Do this when you are ready to point the app at the real store.
 | App proxy target | `https://upt-plant-request-portal.onrender.com/customer` |
 | Storefront proxy path | `https://<shop>/apps/plant-requests` |
 
-**CLI version.** Shopify CLI 4.6+ validates `shopify.app.toml` against a schema
-that requires `[events]` and one `[[events.subscription]]`. The committed file
-has a placeholder Product-create subscription (`cli-required-product-create`)
-that the app only acknowledges. Real portal work still uses `[webhooks]`.
+**CLI 4.7 Events table.** `shopify app deploy` and `shopify app config validate`
+check `shopify.app.toml` against a remote App Management schema. That schema
+requires an `[events]` table and an `events.subscription` key even when the
+app does not use Shopify Events. The committed file declares the table with
+`subscription = []` — no topics, no deliveries. Do not add
+`[[events.subscription]]` Product/Customer listeners to satisfy the validator.
+Real portal deliveries still come from `[webhooks]`.
 
-Keep auto-upgrade off (`shopify config autoupgrade off`) so CLI 4.7 does not
-replace 4.6 during deploy. 4.6.0 is enough:
-
-```bash
-npm install -g @shopify/cli@4.6.0
-```
+CLI 4.7 is fine. If auto-upgrade is off from an earlier workaround, you can
+leave it off or turn it back on; this file no longer depends on staying on 4.6.
 
 **One command, from a checkout of this branch:**
 
