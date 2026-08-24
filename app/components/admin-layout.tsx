@@ -95,6 +95,48 @@ export function AdminResponsiveStyles() {
         white-space: normal;
         overflow-wrap: anywhere;
       }
+      .upt-fixed-table.upt-wrap-table th,
+      .upt-fixed-table.upt-wrap-table td {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        height: auto;
+        min-height: 44px;
+        line-height: 1.3;
+        vertical-align: top;
+        padding: 8px 6px;
+      }
+      .upt-fixed-table.upt-wrap-table th {
+        vertical-align: bottom;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
+      }
+      .upt-fixed-table.upt-wrap-table td {
+        overflow-wrap: break-word;
+        word-break: normal;
+      }
+      .upt-cell-meta {
+        color: #6d7175;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .upt-flag-pill {
+        display: inline-block;
+        box-sizing: border-box;
+        max-width: 100%;
+        padding: 3px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.3;
+        white-space: normal;
+        overflow-wrap: break-word;
+      }
+      .upt-flag-pill[data-tone="success"] { background: #cbf4d8; color: #0c5132; }
+      .upt-flag-pill[data-tone="info"] { background: #a4e8f2; color: #003d4c; }
+      .upt-flag-pill[data-tone="warning"] { background: #ffd79d; color: #5c4300; }
+      .upt-flag-pill[data-tone="critical"] { background: #fed3d1; color: #8e1f0b; }
+      .upt-flag-pill[data-tone="caution"] { background: #ffea8a; color: #5c4300; }
       .upt-page-slot td {
         border-bottom-color: transparent;
       }

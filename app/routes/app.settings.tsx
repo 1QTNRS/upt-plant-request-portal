@@ -9,7 +9,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { requireAdmin } from "../lib/admin-auth.server";
 import { missingProductionSecrets } from "../lib/environment.server";
-import { DEFAULT_FEDEX_REMOVAL_WARNING } from "../lib/portal";
+import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU } from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
@@ -106,7 +106,8 @@ export default function Settings() {
             removed.
           </s-paragraph>
           <s-text color="subdued">
-            FedEx product: {settings.fedexProductHandle}
+            FedEx listing SKU: {FEDEX_PRODUCT_SKU} (handle fallback:{" "}
+            {settings.fedexProductHandle})
           </s-text>
 
           <Form method="post">

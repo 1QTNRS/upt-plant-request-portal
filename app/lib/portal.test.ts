@@ -11,6 +11,8 @@ import {
   buildResponseSummaryEmail,
   ADMIN_OVERRIDE_CLOSE_REASON,
   CUSTOMER_SUPPORT_EMAIL,
+  FEDEX_PRODUCT_SKU,
+  fedexVariantSkuQuery,
   INVOICE_VOIDED_BY_ADMIN_REASON,
   INVOICE_VOIDED_REASON,
   PAYMENT_AFTER_VOID_REASON,
@@ -47,6 +49,13 @@ import {
   variantBackedLines,
   computeTimeRemaining,
 } from "./portal";
+
+describe("FedEx listing identity", () => {
+  it("identifies the live UPT upgrade by SKU", () => {
+    assert.equal(FEDEX_PRODUCT_SKU, "UPTUPGTOFED1236S");
+    assert.equal(fedexVariantSkuQuery(), "sku:UPTUPGTOFED1236S");
+  });
+});
 
 describe("request numbers", () => {
   it("formats sequential request numbers as REQ1, REQ2, REQ2178", () => {

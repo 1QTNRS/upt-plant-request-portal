@@ -28,6 +28,8 @@ import {
   buildDraftOrderLineItems,
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
+  FEDEX_PRODUCT_SKU,
+  fedexVariantSkuQuery,
   plantRevenueFromLines,
   reserveInventoryUntilFor,
   tagSearchQuery,
@@ -62,6 +64,42 @@ async function adminGraphql<T>(
   return json.data;
 }
 
+const FEDEX_VARIANT_BY_SKU_QUERY = `#graphql
+  query FedexUpgradeVariantBySku($query: String!) {
+    productVariants(first: 1, query: $query) {
+      nodes { id sku price }
+    }
+  }
+`;
+
+const FEDEX_PRODUCT_BY_HANDLE_QUERY = `#graphql
+  query FedexUpgradeProduct($identifier: ProductIdentifierInput!) {
+    productByIdentifier(identifier: $identifier) {
+      variants(first: 1) {
+        nodes { id price }
+      }
+    }
+  }
+`;
+
+type FedexVariantNode = { id: string; price: string };
+
+async function persistFedexVariant(
+  shop: string,
+  variant: FedexVariantNode,
+  fallbackPrice: number,
+): Promise<{ variantGid: string; price: number }> {
+  const price = Number.parseFloat(variant.price) || fallbackPrice;
+  // The stored price is what the offer quotes, the confirmation email states
+  // and the response snapshot freezes. Nothing else ever wrote it, so it sat
+  // at its default of 15 while Shopify billed the live variant price.
+  await updateShopSettings(shop, {
+    fedexVariantGid: variant.id,
+    fedexUpgradePrice: price,
+  });
+  return { variantGid: variant.id, price };
+}
+
 export async function resolveFedexVariant(
   admin: GraphqlClient | undefined,
   shop: string,
@@ -71,37 +109,29 @@ export async function resolveFedexVariant(
     return { variantGid: settings.fedexVariantGid ?? undefined, price: settings.fedexUpgradePrice };
   }
 
-  const data = await adminGraphql<{
-    productByIdentifier: {
-      variants: { nodes: Array<{ id: string; price: string }> };
-    } | null;
-  }>(
-    admin,
-    `#graphql
-      query FedexUpgradeProduct($identifier: ProductIdentifierInput!) {
-        productByIdentifier(identifier: $identifier) {
-          variants(first: 1) {
-            nodes { id price }
-          }
-        }
-      }
-    `,
-    {
-      identifier: { handle: settings.fedexProductHandle || FEDEX_PRODUCT_HANDLE },
-    },
-  );
+  // Live UPT listing is identified by SKU. Handle is only a fallback for
+  // stores that do not carry that SKU (dev/demo).
+  const skuData = await adminGraphql<{
+    productVariants: { nodes: Array<FedexVariantNode & { sku?: string }> };
+  }>(admin, FEDEX_VARIANT_BY_SKU_QUERY, {
+    query: fedexVariantSkuQuery(FEDEX_PRODUCT_SKU),
+  });
+  const skuVariant = skuData.productVariants.nodes[0];
+  if (skuVariant) {
+    return persistFedexVariant(shop, skuVariant, settings.fedexUpgradePrice);
+  }
 
-  const variant = data.productByIdentifier?.variants.nodes[0];
-  if (variant) {
-    const price = Number.parseFloat(variant.price) || settings.fedexUpgradePrice;
-    // The stored price is what the offer quotes, the confirmation email states
-    // and the response snapshot freezes. Nothing else ever wrote it, so it sat
-    // at its default of 15 while Shopify billed the live variant price.
-    await updateShopSettings(shop, {
-      fedexVariantGid: variant.id,
-      fedexUpgradePrice: price,
-    });
-    return { variantGid: variant.id, price };
+  const handleData = await adminGraphql<{
+    productByIdentifier: {
+      variants: { nodes: FedexVariantNode[] };
+    } | null;
+  }>(admin, FEDEX_PRODUCT_BY_HANDLE_QUERY, {
+    identifier: { handle: settings.fedexProductHandle || FEDEX_PRODUCT_HANDLE },
+  });
+
+  const handleVariant = handleData.productByIdentifier?.variants.nodes[0];
+  if (handleVariant) {
+    return persistFedexVariant(shop, handleVariant, settings.fedexUpgradePrice);
   }
 
   return { variantGid: settings.fedexVariantGid ?? undefined, price: settings.fedexUpgradePrice };

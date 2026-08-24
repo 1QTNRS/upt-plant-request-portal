@@ -19,6 +19,11 @@ export const pagerArrowStyle: CSSProperties = {
   cursor: "pointer",
 };
 
+const exportButtonWrapStyle: CSSProperties = {
+  display: "block",
+  padding: "0 0 32px",
+};
+
 const exportButtonStyle: CSSProperties = {
   boxSizing: "border-box",
   minHeight: 36,
@@ -180,13 +185,15 @@ export function ExportExcelButton({
   rows: Array<Array<string | number>>;
 }) {
   return (
-    <button
-      type="button"
-      data-export-excel
-      onClick={() => downloadSpreadsheet(filename, sheetName, headers, rows)}
-      style={exportButtonStyle}
-    >
-      Export to Excel
-    </button>
+    <div data-export-excel-wrap style={exportButtonWrapStyle}>
+      <button
+        type="button"
+        data-export-excel
+        onClick={() => downloadSpreadsheet(filename, sheetName, headers, rows)}
+        style={exportButtonStyle}
+      >
+        Export to Excel
+      </button>
+    </div>
   );
 }

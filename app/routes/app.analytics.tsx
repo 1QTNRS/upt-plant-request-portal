@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -711,16 +711,59 @@ export default function Analytics() {
   );
 }
 
+type ItemConversionRow = AnalyticsData["itemPurchaseRows"][number];
+
 function ItemConversionAnalytics({
   rows,
 }: {
   rows: AnalyticsData["itemPurchaseRows"];
 }) {
-  const paged = usePagedItems(
-    rows,
-    ANALYTICS_LIST_PAGE_SIZE,
-    `item-conversion:${rows.length}`,
+  const [sortKey, setSortKey] = useState<keyof ItemConversionRow>("customerName");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const sorted = useMemo(
+    () => sortByKey(rows, sortKey, sortDirection),
+    [rows, sortKey, sortDirection],
   );
+  const paged = usePagedItems(
+    sorted,
+    ANALYTICS_LIST_PAGE_SIZE,
+    `item-conversion:${sortKey}:${sortDirection}:${rows.length}`,
+  );
+
+  const handleSort = (key: keyof ItemConversionRow) => {
+    if (sortKey === key) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(
+      key === "customerName" ||
+        key === "email" ||
+        key === "requestId" ||
+        key === "behaviorFlag"
+        ? "asc"
+        : "desc",
+    );
+  };
+
+  const headerLabel = (key: keyof ItemConversionRow, label: ReactNode) => (
+    <span
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={() => handleSort(key)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleSort(key);
+        }
+      }}
+    >
+      {label}
+      {sortKey === key ? (sortDirection === "asc" ? " ↑" : " ↓") : ""}
+    </span>
+  );
+
   return (
       <s-section heading="Item Conversion Analytics">
         <ExportExcelButton
@@ -739,7 +782,7 @@ function ItemConversionAnalytics({
             "Item Revenue",
             "Behavior Flag",
           ]}
-          rows={rows.map((row) => [
+          rows={sorted.map((row) => [
             row.customerName,
             row.email,
             row.requestId,
@@ -787,41 +830,44 @@ function ItemConversionAnalytics({
           </PagedFrame>
         </div>
         <div className="upt-wide-only">
-        <table className="upt-fixed-table">
+        <table className="upt-fixed-table upt-wrap-table">
           <colgroup>
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "8rem" }} />
-            <col style={{ width: "6rem" }} />
-            <col style={{ width: "6rem" }} />
-            <col style={{ width: "6rem" }} />
-            <col style={{ width: "6rem" }} />
-            <col style={{ width: "7rem" }} />
-            <col style={{ width: "7rem" }} />
-            <col style={{ width: "7rem" }} />
-            <col style={{ width: "8rem" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "15%" }} />
           </colgroup>
           <thead>
             <tr>
-              <th>Customer Name</th>
-              <th>Email</th>
-              <th>Request Number</th>
-              <th>Items Requested</th>
-              <th>Items Offered</th>
-              <th>Items Accepted</th>
-              <th>Items Purchased</th>
-              <th>Accepted vs Purchased %</th>
-              <th>Request-to-Purchase %</th>
-              <th>Item Revenue</th>
-              <th>Behavior Flag</th>
+              <th>
+                {headerLabel("customerName", <>Customer<br />Name</>)}
+                <div>{headerLabel("email", "Email")}</div>
+              </th>
+              <th>{headerLabel("requestId", <>Request<br />Number</>)}</th>
+              <th>{headerLabel("itemsRequested", <>Items<br />Requested</>)}</th>
+              <th>{headerLabel("itemsOffered", <>Items<br />Offered</>)}</th>
+              <th>{headerLabel("itemsAccepted", <>Items<br />Accepted</>)}</th>
+              <th>{headerLabel("itemsPurchased", <>Items<br />Purchased</>)}</th>
+              <th>{headerLabel("acceptedVsPurchasedPercent", <>Accepted vs<br />Purchased %</>)}</th>
+              <th>{headerLabel("requestToPurchasePercent", <>Request-to-<br />Purchase %</>)}</th>
+              <th>{headerLabel("itemRevenue", <>Item<br />Revenue</>)}</th>
+              <th>{headerLabel("behaviorFlag", <>Behavior<br />Flag</>)}</th>
             </tr>
           </thead>
           <tbody>
             {padPageSlots(paged.items, ANALYTICS_LIST_PAGE_SIZE).map((row, index) =>
               row ? (
                 <tr key={`${row.email}-${row.requestId}`}>
-                  <td title={row.customerName}>{row.customerName}</td>
-                  <td title={row.email}>{row.email}</td>
+                  <td title={`${row.customerName} ${row.email}`}>
+                    <div>{row.customerName}</div>
+                    <div className="upt-cell-meta">{row.email}</div>
+                  </td>
                   <td>{row.requestId}</td>
                   <td>{row.itemsRequested}</td>
                   <td>{row.itemsOffered}</td>
@@ -831,14 +877,17 @@ function ItemConversionAnalytics({
                   <td>{row.requestToPurchasePercent}%</td>
                   <td>{formatCurrency(row.itemRevenue)}</td>
                   <td>
-                    <s-badge tone={behaviorFlagTone(row.behaviorFlag)}>
+                    <span
+                      className="upt-flag-pill"
+                      data-tone={behaviorFlagTone(row.behaviorFlag)}
+                    >
                       {row.behaviorFlag}
-                    </s-badge>
+                    </span>
                   </td>
                 </tr>
               ) : (
                 <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
-                  <td colSpan={11}>&nbsp;</td>
+                  <td colSpan={10}>&nbsp;</td>
                 </tr>
               ),
             )}
