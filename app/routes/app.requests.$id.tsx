@@ -2134,6 +2134,7 @@ export default function RequestDetail() {
         />
       ) : null}
 
+      <div className="admin-request-collapsibles">
       <CustomerResponseSection
         response={response}
         status={plantRequest.status}
@@ -2151,6 +2152,7 @@ export default function RequestDetail() {
         requestId={plantRequest.id}
         items={declinedExactPlants}
       />
+      </div>
     </s-page>
   );
 }

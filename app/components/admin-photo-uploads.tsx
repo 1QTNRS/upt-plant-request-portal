@@ -305,7 +305,7 @@ export function AdminPhotoStrip({
   return (
     <div
       data-admin-photo-strip
-      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      style={{ display: "flex", flexDirection: "column", gap: 24 }}
     >
       <div
         style={{
@@ -513,7 +513,12 @@ export function AdminPhotoStrip({
           );
         })}
       </div>
-      <form method="post" encType="multipart/form-data" action={`/app/requests/${requestId}`}>
+      <form
+        method="post"
+        encType="multipart/form-data"
+        action={`/app/requests/${requestId}`}
+        style={{ marginTop: 8 }}
+      >
         <input type="hidden" name="intent" value="upload-photo" />
         <input type="hidden" name="itemId" value={itemId} />
         <input
