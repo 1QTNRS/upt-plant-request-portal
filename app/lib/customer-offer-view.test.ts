@@ -144,7 +144,7 @@ describe("an expired offer is not presented as a live one", () => {
     assert.match(live, /type="radio"/);
     assert.match(live, /value="submit-response"/);
     assert.match(live, /data-offer-submit/);
-    assert.match(live, /#008060/);
+    assert.match(live, /#002910/);
     assert.match(live, /-webkit-text-fill-color:#ffffff/);
     assert.match(live, />Submit</);
   });
@@ -513,7 +513,9 @@ describe("the customer-facing status label", () => {
       statusTone: "caution",
     });
 
-    assert.match(html, /<s-badge tone="caution">Offer Ready for Review<\/s-badge>/);
+    assert.match(html, /data-status-badge/);
+    assert.match(html, /Offer Ready for Review/);
+    assert.match(html, /#f1a638/);
   });
 
   it("renders nothing when there is no label to show", () => {
