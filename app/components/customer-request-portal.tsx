@@ -219,6 +219,18 @@ export function CustomerRequestPortal({
           </s-banner>
         )}
 
+        <section
+          className="upt-card"
+          style={{ borderColor: THEME.yellow, borderWidth: 2 }}
+        >
+          <h2 className="upt-card-title">Have an existing order?</h2>
+          <p className="upt-muted">
+            If you already have an order with us, we will combine this request
+            with it and refund any shipping overages. You do not have to worry
+            about overpaying for shipping.
+          </p>
+        </section>
+
         <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>
           <button
             type="submit"
