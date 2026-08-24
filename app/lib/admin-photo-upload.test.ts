@@ -297,6 +297,10 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /onChange=\{jsReady \? handleSelect : undefined\}/);
     assert.match(uploader, /multiple/);
     assert.match(uploader, /Upload plant photo/);
+    assert.match(uploader, /data-admin-photo-file-picker/);
+    assert.match(uploader, />Choose files</);
+    assert.match(uploader, /No file selected/);
+    assert.match(uploader, /variant="secondary"/);
     assert.match(uploader, /startUpload/);
     assert.match(uploader, /\/photos/);
     assert.match(uploader, /parseUploadActionResponse/);

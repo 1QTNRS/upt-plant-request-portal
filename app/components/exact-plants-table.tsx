@@ -131,7 +131,7 @@ export function ExactPlantsTable({
           <thead>
             <tr>
               {!dismissed ? (
-                <th scope="col" className="exact-plants-col-select" style={thStyle}>
+                <th scope="col" className="exact-plants-col-select" style={selectThStyle}>
                   <input
                     type="checkbox"
                     data-exact-plant-select-all
@@ -222,7 +222,7 @@ export function ExactPlantsTable({
                   className={index % 2 === 1 ? "exact-plants-row-alt" : undefined}
                 >
                   {!dismissed ? (
-                    <td className="exact-plants-col-select" style={tdStyle}>
+                    <td className="exact-plants-col-select" style={selectTdStyle}>
                       {canCreate ? (
                         <input
                           type="checkbox"
@@ -474,7 +474,17 @@ const tableLayoutCss = `
     font: inherit;
     border: 1px solid #c9cccf;
   }
-  .exact-plants-col-select { width: 36px; text-align: center; }
+  .exact-plants-col-select {
+    width: 36px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .exact-plants-col-select input[type="checkbox"] {
+    display: block;
+    margin: 0 auto;
+    width: 16px;
+    height: 16px;
+  }
   .exact-plants-col-photo { width: 52px; }
   .exact-plants-col-name { width: auto; }
   .exact-plants-col-request { width: 4.6rem; }
@@ -521,6 +531,23 @@ const thStyle: CSSProperties = {
 const tdStyle: CSSProperties = {
   padding: "10px 6px",
   verticalAlign: "top",
+};
+
+const selectCellStyle: CSSProperties = {
+  textAlign: "center",
+  verticalAlign: "middle",
+  padding: "8px 6px",
+  width: 36,
+};
+
+const selectThStyle: CSSProperties = {
+  ...thStyle,
+  ...selectCellStyle,
+};
+
+const selectTdStyle: CSSProperties = {
+  ...tdStyle,
+  ...selectCellStyle,
 };
 
 const sortButtonStyle: CSSProperties = {
