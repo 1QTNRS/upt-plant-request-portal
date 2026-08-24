@@ -457,8 +457,9 @@ Rules for `app/routes/customer*`:
    Hidden inputs mirroring React state submit empty values.
 3. Buttons that change the form must be `type="submit"` with an `intent`, not
    `onClick`.
-4. Form actions and redirects must be storefront paths — use
-   `portalFormAction()` / `portalHome()` / `customerPortalRelativeLinks()`.
+4. Form actions must be storefront paths — use `portalFormAction()` /
+   `portalHome()` / `customerPortalRelativeLinks()`. Redirects are the
+   exception; see rule 7.
 5. **Never use React Router's `?index`.** React Router strips `index` from the
    request URL before a loader sees it, so Shopify signs a query string
    containing `index` that the app then verifies without it: the app proxy HMAC
@@ -472,7 +473,17 @@ Rules for `app/routes/customer*`:
    choice, not a workaround: those round-trips carry no side effects, so a URL
    the customer can reload is the right shape for them.
 
-`app/lib/customer-portal.test.ts` enforces 1–6 for the request form.
+7. **A redirect out of a proxied POST must be an absolute storefront URL** —
+   use `portalRedirectTarget()`, not `portalHome()`. Shopify follows 30x
+   responses from the proxy itself instead of handing them to the browser, and
+   resolves the `Location` against the **app's** origin. A relative
+   `/apps/plant-requests` therefore becomes
+   `https://upt-plant-request-portal.onrender.com/apps/plant-requests`, which
+   the app does not serve. That is why the final Submit Request showed
+   **"Bad Request"** on the dev store *after* the request had already been
+   saved: the POST succeeded and only the redirect died.
+
+`app/lib/customer-portal.test.ts` enforces 1–7 for the request form.
 
 #### Why proxied POSTs used to return "Bad Request"
 

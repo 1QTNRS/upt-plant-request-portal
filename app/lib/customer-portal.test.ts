@@ -17,6 +17,7 @@ import {
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
+  portalRedirectTarget,
   readOfferChoices,
   readPlantLines,
   withExtraRow,
@@ -28,9 +29,10 @@ import {
 } from "./customer-nav";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
+const SHOP = "upt-dev.myshopify.com";
 
 function context(viaAppProxy: boolean) {
-  return { viaAppProxy };
+  return { viaAppProxy, shop: SHOP };
 }
 
 function form(fields: Record<string, string>): FormData {
@@ -66,6 +68,35 @@ describe("customer portal form target", () => {
   it("keeps the customer on the storefront after submitting", () => {
     assert.equal(portalHome(context(true)), APP_PROXY_BASE_PATH);
     assert.ok(!portalHome(context(true)).startsWith(CUSTOMER_PORTAL_PATH));
+  });
+});
+
+/**
+ * Shopify follows a 30x from the proxy itself instead of handing it to the
+ * browser, and resolves the `Location` against the app's own origin. A
+ * storefront-relative target becomes `https://<app-host>/apps/plant-requests`,
+ * a path the app does not serve, so the submission failed with "Bad Request"
+ * after the request had already been saved.
+ */
+describe("where a proxied POST redirects to", () => {
+  it("is absolute and on the shop's domain under the proxy", () => {
+    const target = portalRedirectTarget(context(true));
+    assert.equal(target, `https://${SHOP}${APP_PROXY_BASE_PATH}`);
+  });
+
+  it("is never a bare path under the proxy", () => {
+    assert.ok(
+      !portalRedirectTarget(context(true)).startsWith("/"),
+      "a relative Location resolves against the app origin, not the shop",
+    );
+  });
+
+  it("never points at the app's own customer path under the proxy", () => {
+    assert.ok(!portalRedirectTarget(context(true)).includes(CUSTOMER_PORTAL_PATH));
+  });
+
+  it("still uses the app path for the local demo", () => {
+    assert.equal(portalRedirectTarget(context(false)), CUSTOMER_PORTAL_PATH);
   });
 });
 

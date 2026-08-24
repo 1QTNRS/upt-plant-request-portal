@@ -1,5 +1,5 @@
 import type { PlantLine } from "../components/customer-request-portal";
-import { customerPortalRelativeLinks } from "./app-proxy";
+import { customerPortalLinks, customerPortalRelativeLinks } from "./app-proxy";
 
 /**
  * Pure parts of the customer portal: how many plant rows a form has, and where
@@ -78,6 +78,25 @@ export function portalFormAction(context: { viaAppProxy: boolean }): string {
 /** The page the customer returns to, always on the storefront under the proxy. */
 export function portalHome(context: { viaAppProxy: boolean }): string {
   return customerPortalRelativeLinks(context.viaAppProxy).home;
+}
+
+/**
+ * Where a proxied POST may redirect to. Absolute, unlike `portalHome`.
+ *
+ * Shopify follows 30x responses from the proxy itself rather than handing them
+ * to the browser, and it resolves the `Location` against the app's own origin.
+ * A storefront-relative `/apps/plant-requests` therefore becomes
+ * `https://<app-host>/apps/plant-requests`, which the app does not serve, and
+ * the submission dies after the request was already saved. The absolute
+ * storefront URL is correct whether Shopify follows the redirect or passes it
+ * to the browser.
+ */
+export function portalRedirectTarget(context: {
+  viaAppProxy: boolean;
+  shop: string;
+}): string {
+  if (!context.viaAppProxy) return portalHome(context);
+  return customerPortalLinks({ shop: context.shop, viaAppProxy: true }).home;
 }
 
 /**
