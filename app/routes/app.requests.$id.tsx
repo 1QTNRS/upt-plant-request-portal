@@ -972,8 +972,8 @@ function PlantItemCard({
   };
 
   return (
+    <div className="admin-plant-card">
     <s-box
-      className="admin-plant-card"
       padding="base"
       borderWidth="base"
       borderRadius="base"
@@ -1169,6 +1169,7 @@ function PlantItemCard({
         </s-stack>
       </s-stack>
     </s-box>
+    </div>
   );
 }
 
@@ -2062,7 +2063,8 @@ export default function RequestDetail() {
         </s-section>
       ) : null}
 
-      <s-section heading="Request summary" className="admin-request-summary">
+      <div className="admin-request-summary">
+      <s-section heading="Request summary">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="large">
             <s-stack direction="block" gap="small">
@@ -2086,6 +2088,7 @@ export default function RequestDetail() {
           </s-stack>
         </s-stack>
       </s-section>
+      </div>
 
       <PlantPatternSection patterns={plantPatterns} />
 
