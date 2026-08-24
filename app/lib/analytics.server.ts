@@ -500,6 +500,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       ),
       totalRevenue: customer.totalRevenue,
       lastRequestDate: formatDate(customer.lastRequestDate),
+      lastRequestAtIso: customer.lastRequestDate.toISOString(),
       behaviorFlag: primaryBehaviorFlag(flags) as BehaviorFlag,
       behaviorFlags: flags,
       plantPatterns: patterns.map((pattern) => ({
@@ -512,6 +513,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
         timesPurchased: pattern.activity.timesPurchased,
         rangeDays: pattern.activity.rangeDays,
         mostRecentRequestDate: formatDate(pattern.activity.mostRecentRequestAt),
+        mostRecentRequestAtIso: pattern.activity.mostRecentRequestAt.toISOString(),
         requestedNames: pattern.activity.requestedNames,
       })),
     };

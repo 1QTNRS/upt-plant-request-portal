@@ -204,6 +204,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const emails = plantRequest
     ? (await listEmailsForRequest(shop, requestId)).map((email) => ({
         ...email,
+        createdAtIso: email.createdAt.toISOString(),
+        sentAtIso: email.sentAt ? email.sentAt.toISOString() : null,
         createdAt: formatDateTime(email.createdAt),
         sentAt: email.sentAt ? formatDateTime(email.sentAt) : null,
       }))
@@ -226,6 +228,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         timesPurchased: pattern.activity.timesPurchased,
         rangeDays: pattern.activity.rangeDays,
         mostRecentRequestDate: formatDateTime(pattern.activity.mostRecentRequestAt),
+        mostRecentRequestAtIso: pattern.activity.mostRecentRequestAt.toISOString(),
         requestedNames: pattern.activity.requestedNames,
       }))
     : [];
@@ -254,6 +257,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
             paidAt: plantRequest?.paidAt,
           }),
           until: formatDateTime(draftOrder.reserveInventoryUntil),
+          untilIso: draftOrder.reserveInventoryUntil.toISOString(),
         }
       : null,
     declinedExactPlants,
@@ -271,6 +275,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
           shopifyDraftOrderGid: draftOrder.shopifyDraftOrderGid,
           voidedAt: draftOrder.voidedAt
             ? formatDateTime(draftOrder.voidedAt)
+            : null,
+          voidedAtIso: draftOrder.voidedAt
+            ? draftOrder.voidedAt.toISOString()
             : null,
         }
       : null,
@@ -1259,9 +1266,21 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
                 </s-stack>
                 <s-text color="subdued">To {email.toEmail}</s-text>
                 <s-text color="subdued">
-                  {email.sentAt
-                    ? `Sent ${email.sentAt}`
-                    : `Queued ${email.createdAt} · ${email.attempts} delivery attempt(s)`}
+                  {email.sentAt && email.sentAtIso ? (
+                    <>
+                      Sent{" "}
+                      <ViewerLocalTime iso={email.sentAtIso} fallback={email.sentAt} />
+                    </>
+                  ) : (
+                    <>
+                      Queued{" "}
+                      <ViewerLocalTime
+                        iso={email.createdAtIso}
+                        fallback={email.createdAt}
+                      />{" "}
+                      · {email.attempts} delivery attempt(s)
+                    </>
+                  )}
                 </s-text>
                 {email.error ? (
                   <s-banner tone="critical">
@@ -1351,11 +1370,17 @@ function SendOfferSection({
             <s-stack direction="inline" gap="large">
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">Offer sent</s-text>
-                <s-text>{sentOffer.sentAt}</s-text>
+                <ViewerLocalTime
+                  iso={sentOffer.sentAtIso}
+                  fallback={sentOffer.sentAt}
+                />
               </s-stack>
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">Expires</s-text>
-                <s-text>{sentOffer.expiresAt}</s-text>
+                <ViewerLocalTime
+                  iso={sentOffer.expiresAtIso}
+                  fallback={sentOffer.expiresAt}
+                />
               </s-stack>
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">Expiration window</s-text>
@@ -1418,7 +1443,7 @@ function SendOfferSection({
                 padding: "8px 16px",
                 borderRadius: "8px",
                 border: "1px solid #c9cccf",
-                background: expirationDays === option.days ? "#008060" : "#fff",
+                background: expirationDays === option.days ? "#002910" : "#fff",
                 color: expirationDays === option.days ? "#fff" : "inherit",
                 font: "inherit",
                 cursor: "pointer",
@@ -1595,7 +1620,11 @@ function CloseRequestSection() {
   );
 }
 
-type InventoryHold = { state: InventoryHoldState; until: string };
+type InventoryHold = {
+  state: InventoryHoldState;
+  until: string;
+  untilIso: string;
+};
 
 /**
  * Whether Shopify is still holding the linked stock behind an accepted plant.
@@ -1616,7 +1645,8 @@ function InventoryHoldNotice({ hold }: { hold: InventoryHold }) {
   if (hold.state === "held") {
     return (
       <s-text color="subdued">
-        Shopify is holding the linked website stock until {hold.until}, when the
+        Shopify is holding the linked website stock until{" "}
+        <ViewerLocalTime iso={hold.untilIso} fallback={hold.until} />, when the
         payment deadline runs out and the plant goes back on sale.
       </s-text>
     );
@@ -1624,7 +1654,8 @@ function InventoryHoldNotice({ hold }: { hold: InventoryHold }) {
   return (
     <s-banner tone="warning">
       <s-text>
-        The hold on the linked website stock ended at {hold.until} without
+        The hold on the linked website stock ended at{" "}
+        <ViewerLocalTime iso={hold.untilIso} fallback={hold.until} /> without
         payment, so the plant is back on open sale and another customer could buy
         it. Check the listing before chasing this payment.
       </s-text>
@@ -1730,7 +1761,10 @@ function CustomerResponseSection({
         <s-stack direction="inline" gap="large">
           <s-stack direction="block" gap="small">
             <s-text color="subdued">Customer response timestamp</s-text>
-            <s-text>{response.respondedAt}</s-text>
+            <ViewerLocalTime
+              iso={response.respondedAtIso}
+              fallback={response.respondedAt}
+            />
           </s-stack>
           <s-stack direction="block" gap="small">
             <s-text color="subdued">FedEx upgrade</s-text>
@@ -1810,6 +1844,7 @@ function ShopifyDraftOrderSection({
   draft: {
     shopifyDraftOrderGid: string | null;
     voidedAt: string | null;
+    voidedAtIso: string | null;
   } | null;
 }) {
   if (!draft) return null;
@@ -1838,7 +1873,14 @@ function ShopifyDraftOrderSection({
             </s-banner>
           </>
         ) : (
-          <s-text>Draft Order voided on {draft.voidedAt}</s-text>
+          <s-text>
+            Draft Order voided on{" "}
+            {draft.voidedAtIso ? (
+              <ViewerLocalTime iso={draft.voidedAtIso} fallback={draft.voidedAt ?? ""} />
+            ) : (
+              draft.voidedAt
+            )}
+          </s-text>
         )}
       </s-stack>
     </s-section>
@@ -1927,7 +1969,11 @@ function PlantPatternSection({
                 Requested {pattern.timesRequested} · offered {pattern.timesOffered}{" "}
                 · declined {pattern.timesDeclined} · purchased{" "}
                 {pattern.timesPurchased} · over {pattern.rangeDays} days · most
-                recent {pattern.mostRecentRequestDate}
+                recent{" "}
+                <ViewerLocalTime
+                  iso={pattern.mostRecentRequestAtIso}
+                  fallback={pattern.mostRecentRequestDate}
+                />
               </s-text>
               <s-text color="subdued">
                 Typed as: {pattern.requestedNames.join(", ")}
@@ -2084,7 +2130,10 @@ export default function RequestDetail() {
             </s-stack>
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Submitted</s-text>
-              <s-text>{plantRequest.submittedDate}</s-text>
+              <ViewerLocalTime
+                iso={plantRequest.submittedAtIso}
+                fallback={plantRequest.submittedDate}
+              />
             </s-stack>
           </s-stack>
         </s-stack>

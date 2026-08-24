@@ -579,6 +579,7 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(table, /Confirm Dismiss from EXACT PLANTS/);
     assert.match(table, /AdminPhotoLightbox/);
     assert.match(table, /formatDate\(/);
+    assert.match(table, /ViewerLocalTime/);
     assert.ok(!table.includes("formatDateTime"));
     assert.match(table, /exact-plants-row-alt/);
     assert.match(table, /overflowWrap: "break-word"/);
@@ -678,6 +679,7 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /usePagedItems/);
     assert.match(dashboard, /ADMIN_REQUEST_PAGE_SIZE/);
     assert.match(dashboard, /ListPager/);
+    assert.match(dashboard, /ViewerLocalTime/);
     assert.match(dashboard, /upt-fixed-table/);
     assert.ok(!dashboard.includes("ExportExcelButton"));
     assert.ok(!dashboard.includes("admin-requests.xls"));

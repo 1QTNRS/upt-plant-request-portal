@@ -6,6 +6,7 @@ import {
   CustomerSupportNote,
 } from "../components/customer-offer-view";
 import { CustomerEnhanceScripts } from "../components/customer-enhance";
+import { CustomerPageShell, StatusBadge } from "../components/theme";
 import { customerPortalRelativeLinks } from "../lib/app-proxy";
 import {
   fedexRemovalNeedsConfirmation,
@@ -193,33 +194,32 @@ export default function CustomerRequestDetail() {
 
   if (data.forbidden) {
     return (
-      <s-page heading="Request not available">
-        <s-section>
-          <s-stack direction="block" gap="base">
-            <s-text>
-              You can only view your own plant requests. Please log in with the
-              customer account that submitted this request.
-            </s-text>
-            <s-link href={data.backHref}>Back to My Requests</s-link>
-          </s-stack>
-        </s-section>
-      </s-page>
+      <CustomerPageShell title="Request not available">
+        <section className="upt-card">
+          <p className="upt-muted">
+            You can only view your own plant requests. Please log in with the
+            customer account that submitted this request.
+          </p>
+          <s-link href={data.backHref}>Back to My Requests</s-link>
+        </section>
+      </CustomerPageShell>
     );
   }
 
   if (!data.offer && data.request) {
     return (
-      <s-page heading={getDisplayRequestNumber(data.request)}>
-        <s-section heading="Request details">
+      <CustomerPageShell title={getDisplayRequestNumber(data.request)}>
+        <section className="upt-card">
+          <h2 className="upt-card-title">Request details</h2>
           <s-stack direction="block" gap="base">
-            <s-badge
+            <StatusBadge
               tone={customerStatusTone(data.request.status, {
                 hasPayableItems: data.request.hasPayableItems,
                 hasResponded: data.request.hasResponded,
               })}
             >
               {data.statusLabel}
-            </s-badge>
+            </StatusBadge>
             <s-text>
               Submitted{" "}
               <time dateTime={data.request.submittedAtIso} data-customer-time>
@@ -241,7 +241,7 @@ export default function CustomerRequestDetail() {
             ) : null}
             <s-link href={data.backHref}>Back to My Requests</s-link>
           </s-stack>
-        </s-section>
+        </section>
         <form
           method="post"
           action={data.formAction}
@@ -253,7 +253,7 @@ export default function CustomerRequestDetail() {
           <input type="hidden" name="customerTimeZone" defaultValue="" />
         </form>
         <CustomerEnhanceScripts />
-      </s-page>
+      </CustomerPageShell>
     );
   }
 

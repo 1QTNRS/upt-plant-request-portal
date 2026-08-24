@@ -33,6 +33,7 @@ import {
   WrappingRow,
 } from "../components/admin-layout";
 import { ExportExcelButton, ListPager, PagedFrame, usePagedItems } from "../components/paged-list";
+import { ViewerLocalTime } from "../components/viewer-local-time";
 import { ANALYTICS_LIST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 
 type SortDirection = "asc" | "desc";
@@ -444,7 +445,11 @@ function RepeatedRequestDeclinePatterns({
                   Requested {pattern.timesRequested} · offered{" "}
                   {pattern.timesOffered} · declined {pattern.timesDeclined} ·
                   purchased {pattern.timesPurchased} · over {pattern.rangeDays}{" "}
-                  days · most recent {pattern.mostRecentRequestDate}
+                  days · most recent{" "}
+                  <ViewerLocalTime
+                    iso={pattern.mostRecentRequestAtIso}
+                    fallback={pattern.mostRecentRequestDate}
+                  />
                 </s-text>
                 <s-text color="subdued">
                   Typed as: {pattern.requestedNames.join(", ")}
@@ -673,7 +678,12 @@ export default function Analytics() {
                   <s-table-cell>{customer.acceptedVsPurchasedPercent}%</s-table-cell>
                   <s-table-cell>{customer.requestToPurchasePercent}%</s-table-cell>
                   <s-table-cell>{formatCurrency(customer.totalRevenue)}</s-table-cell>
-                  <s-table-cell>{customer.lastRequestDate}</s-table-cell>
+                  <s-table-cell>
+                    <ViewerLocalTime
+                      iso={customer.lastRequestAtIso}
+                      fallback={customer.lastRequestDate}
+                    />
+                  </s-table-cell>
                   <s-table-cell>
                     <s-badge tone={behaviorFlagTone(customer.behaviorFlag as BehaviorFlag)}>
                       {customer.behaviorFlag}
