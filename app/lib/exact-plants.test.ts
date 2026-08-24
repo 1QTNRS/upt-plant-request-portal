@@ -664,6 +664,8 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(emailFn, /<CollapsibleSection/);
     assert.match(exactFn, /<CollapsibleSection/);
     assert.match(requestPage, /admin-request-collapsibles/);
+    assert.match(requestPage, /name="shippingFeeOverride"/);
+    assert.match(requestPage, /Override shipping fee/);
   });
 });
 

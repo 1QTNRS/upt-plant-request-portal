@@ -1466,14 +1466,20 @@ function SendOfferSection({
             </button>
           ))}
         </s-stack>
-        <s-text-field
-          name="shippingFeeOverride"
-          label="Override shipping fee"
-          type="number"
-          min={0}
-          step={0.01}
-          placeholder="Leave blank for Shopify's rate"
-        />
+        <s-stack direction="block" gap="small">
+          <label htmlFor="shippingFeeOverride">
+            <s-text>Override shipping fee</s-text>
+          </label>
+          <input
+            id="shippingFeeOverride"
+            name="shippingFeeOverride"
+            type="number"
+            min={0}
+            step={0.01}
+            placeholder="Leave blank for Shopify's rate"
+            style={numberInputStyle}
+          />
+        </s-stack>
         <s-text color="subdued">
           Optional. Sets a custom shipping amount on the draft-order invoice,
           including 0 to charge no shipping. Leave blank to let Shopify quote

@@ -858,7 +858,10 @@ describe("the request form works without JavaScript", () => {
         hasExistingOrder: "yes",
       }),
     );
-    assert.match(html, /name="hasExistingOrder"[^>]*value="yes"[^>]*checked/);
+    const yesRadio = [...html.matchAll(/<input[^>]*name="hasExistingOrder"[^>]*>/g)]
+      .map((match) => match[0])
+      .find((input) => input.includes('value="yes"'));
+    assert.match(yesRadio ?? "", /checked/);
   });
 
   it("uses the current customer-facing request intro", () => {
