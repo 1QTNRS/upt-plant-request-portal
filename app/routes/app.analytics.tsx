@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -746,7 +746,7 @@ function ItemConversionAnalytics({
     );
   };
 
-  const headerLabel = (key: keyof ItemConversionRow, label: string) => (
+  const headerLabel = (key: keyof ItemConversionRow, label: ReactNode) => (
     <span
       role="button"
       tabIndex={0}
@@ -846,17 +846,17 @@ function ItemConversionAnalytics({
           </colgroup>
           <thead>
             <tr>
-              <th>{headerLabel("customerName", "Customer Name")}</th>
+              <th>{headerLabel("customerName", <>Customer<br />Name</>)}</th>
               <th>{headerLabel("email", "Email")}</th>
-              <th>{headerLabel("requestId", "Request Number")}</th>
-              <th>{headerLabel("itemsRequested", "Items Requested")}</th>
-              <th>{headerLabel("itemsOffered", "Items Offered")}</th>
-              <th>{headerLabel("itemsAccepted", "Items Accepted")}</th>
-              <th>{headerLabel("itemsPurchased", "Items Purchased")}</th>
-              <th>{headerLabel("acceptedVsPurchasedPercent", "Accepted vs Purchased %")}</th>
-              <th>{headerLabel("requestToPurchasePercent", "Request-to-Purchase %")}</th>
-              <th>{headerLabel("itemRevenue", "Item Revenue")}</th>
-              <th>{headerLabel("behaviorFlag", "Behavior Flag")}</th>
+              <th>{headerLabel("requestId", <>Request<br />Number</>)}</th>
+              <th>{headerLabel("itemsRequested", <>Items<br />Requested</>)}</th>
+              <th>{headerLabel("itemsOffered", <>Items<br />Offered</>)}</th>
+              <th>{headerLabel("itemsAccepted", <>Items<br />Accepted</>)}</th>
+              <th>{headerLabel("itemsPurchased", <>Items<br />Purchased</>)}</th>
+              <th>{headerLabel("acceptedVsPurchasedPercent", <>Accepted vs<br />Purchased %</>)}</th>
+              <th>{headerLabel("requestToPurchasePercent", <>Request-to-<br />Purchase %</>)}</th>
+              <th>{headerLabel("itemRevenue", <>Item<br />Revenue</>)}</th>
+              <th>{headerLabel("behaviorFlag", <>Behavior<br />Flag</>)}</th>
             </tr>
           </thead>
           <tbody>
@@ -874,9 +874,12 @@ function ItemConversionAnalytics({
                   <td>{row.requestToPurchasePercent}%</td>
                   <td>{formatCurrency(row.itemRevenue)}</td>
                   <td>
-                    <s-badge tone={behaviorFlagTone(row.behaviorFlag)}>
+                    <span
+                      className="upt-flag-pill"
+                      data-tone={behaviorFlagTone(row.behaviorFlag)}
+                    >
                       {row.behaviorFlag}
-                    </s-badge>
+                    </span>
                   </td>
                 </tr>
               ) : (

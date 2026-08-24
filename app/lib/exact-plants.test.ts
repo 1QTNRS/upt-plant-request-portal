@@ -723,6 +723,9 @@ describe("analytics list paging and export", () => {
     assert.match(conversion, /headerLabel\("itemRevenue"/);
     assert.match(conversion, /headerLabel\("behaviorFlag"/);
     assert.match(conversion, /sortByKey\(rows, sortKey, sortDirection\)/);
+    assert.match(conversion, /upt-flag-pill/);
+    assert.match(conversion, /Customer<br \/>Name/);
+    assert.match(conversion, /Accepted vs<br \/>Purchased %/);
   });
 });
 
@@ -732,7 +735,8 @@ describe("analytics export spacing", () => {
       path.join(import.meta.dirname, "..", "..", "app", "components", "paged-list.tsx"),
       "utf8",
     );
-    assert.match(source, /marginBottom:\s*16/);
+    assert.match(source, /data-export-excel-wrap/);
+    assert.match(source, /margin:\s*"0 0 24px"/);
   });
 });
 
