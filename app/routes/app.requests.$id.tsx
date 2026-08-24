@@ -60,9 +60,11 @@ import {
   type UnavailableReason,
 } from "../lib/portal";
 import {
+  addInternalNote,
   addItemPhotos,
   expireOverdueOffers,
   getCustomerResponse,
+  listInternalNotes,
   getDraftOrder,
   getRequest,
   requestHasEventReason,
@@ -242,6 +244,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         }
       : null,
     declinedExactPlants,
+    internalNotes: plantRequest ? await listInternalNotes(shop, requestId) : [],
     plantPatterns,
     adminOverrideClosed: plantRequest
       ? await requestHasEventReason(
@@ -470,6 +473,18 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         admin,
       });
       if (!result.ok) return { ok: false, error: result.error };
+      return { ok: true };
+    }
+
+    if (intent === "add-internal-note") {
+      const note = await addInternalNote(
+        shop,
+        requestId,
+        String(form.get("note") || ""),
+      );
+      if (!note) {
+        return { ok: false, error: "Write a note before saving." };
+      }
       return { ok: true };
     }
 
@@ -1602,6 +1617,66 @@ function InventoryHoldNotice({ hold }: { hold: InventoryHold }) {
   );
 }
 
+function InternalNotesSection({
+  notes,
+}: {
+  notes: Awaited<ReturnType<typeof listInternalNotes>>;
+}) {
+  return (
+    <CollapsibleSection
+      title="Internal notes"
+      badge={notes.length}
+      defaultOpen={false}
+    >
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          Admin only. These notes never reach the customer, the offer, or
+          emails. Each save is stamped with the date and time.
+        </s-text>
+        {notes.length === 0 ? (
+          <s-text color="subdued">No internal notes yet.</s-text>
+        ) : (
+          notes.map((note) => (
+            <s-box
+              key={note.id}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
+              data-internal-note={note.id}
+            >
+              <s-stack direction="block" gap="small">
+                <s-text color="subdued">
+                  <time dateTime={note.createdAtIso}>{note.createdAt}</time>
+                </s-text>
+                <s-text>{note.body}</s-text>
+              </s-stack>
+            </s-box>
+          ))
+        )}
+        <Form method="post">
+          <s-stack direction="block" gap="small">
+            <input type="hidden" name="intent" value="add-internal-note" />
+            <label htmlFor="internal-note-body">
+              <s-text color="subdued">Add a note</s-text>
+            </label>
+            <textarea
+              id="internal-note-body"
+              name="note"
+              rows={4}
+              defaultValue=""
+              style={editableTextareaStyle}
+            />
+            <s-button variant="primary" type="submit">
+              Save note
+            </s-button>
+          </s-stack>
+        </Form>
+      </s-stack>
+    </CollapsibleSection>
+  );
+}
+
 function CustomerResponseSection({
   response,
   status,
@@ -1619,11 +1694,11 @@ function CustomerResponseSection({
 }) {
   if (!response) {
     return (
-      <s-section heading="Customer response">
+      <CollapsibleSection title="Customer response" defaultOpen={false}>
         <s-text color="subdued">
           No customer response has been submitted for this request yet.
         </s-text>
-      </s-section>
+      </CollapsibleSection>
     );
   }
 
@@ -1631,7 +1706,7 @@ function CustomerResponseSection({
   const rejected = response.items.filter((item) => item.choice === "reject");
 
   return (
-    <s-section heading="Customer response">
+    <CollapsibleSection title="Customer response" defaultOpen={false}>
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" gap="large">
           <s-stack direction="block" gap="small">
@@ -1704,7 +1779,7 @@ function CustomerResponseSection({
           <CloseRequestSection />
         ) : null}
       </s-stack>
-    </s-section>
+    </CollapsibleSection>
   );
 }
 
@@ -1857,6 +1932,7 @@ export default function RequestDetail() {
     invoiceVoided,
     inventoryHold,
     declinedExactPlants,
+    internalNotes,
     plantPatterns,
     adminOverrideClosed,
     draftOrderAdmin,
@@ -1969,25 +2045,38 @@ export default function RequestDetail() {
       ) : null}
 
       <s-section heading="Request summary">
-        <s-stack direction="inline" gap="large">
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Customer</s-text>
-            <s-text>{plantRequest.customer}</s-text>
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="large">
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Customer</s-text>
+              <s-text>{plantRequest.customer}</s-text>
+            </s-stack>
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Email</s-text>
+              <s-text>{plantRequest.email}</s-text>
+            </s-stack>
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Status</s-text>
+              <s-badge tone={requestStatusTone(plantRequest.status)}>
+                {plantRequest.status}
+              </s-badge>
+            </s-stack>
+            <s-stack direction="block" gap="small">
+              <s-text color="subdued">Submitted</s-text>
+              <s-text>{plantRequest.submittedDate}</s-text>
+            </s-stack>
           </s-stack>
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Email</s-text>
-            <s-text>{plantRequest.email}</s-text>
-          </s-stack>
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Status</s-text>
-            <s-badge tone={requestStatusTone(plantRequest.status)}>
-              {plantRequest.status}
-            </s-badge>
-          </s-stack>
-          <s-stack direction="block" gap="small">
-            <s-text color="subdued">Submitted</s-text>
-            <s-text>{plantRequest.submittedDate}</s-text>
-          </s-stack>
+
+          <InternalNotesSection notes={internalNotes} />
+
+          <CustomerResponseSection
+            response={response}
+            status={plantRequest.status}
+            paymentLink={paymentLink}
+            inventoryHold={inventoryHold}
+            invoiceVoided={invoiceVoided}
+            requestPaid={Boolean(plantRequest.paidAt)}
+          />
         </s-stack>
       </s-section>
 
@@ -2025,15 +2114,6 @@ export default function RequestDetail() {
           photoUploadsInProgress={photoUploadsInProgress}
         />
       </s-section>
-
-      <CustomerResponseSection
-        response={response}
-        status={plantRequest.status}
-        paymentLink={paymentLink}
-        inventoryHold={inventoryHold}
-        invoiceVoided={invoiceVoided}
-        requestPaid={Boolean(plantRequest.paidAt)}
-      />
 
       <ShopifyDraftOrderSection shop={shop} draft={draftOrderAdmin} />
 

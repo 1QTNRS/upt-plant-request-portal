@@ -4,10 +4,12 @@ import { after, before, describe, it } from "node:test";
 import prisma from "../db.server";
 import { DEMO_SHOP } from "./shop";
 import {
+  addInternalNote,
   addItemPhotos,
   buildCustomerOffer,
   closeRequest,
   getCustomerResponse,
+  listInternalNotes,
   getCustomerTimeZone,
   getRequest,
   getShopSettings,
@@ -798,5 +800,52 @@ describe("customer timezone is stored per profile", () => {
       offered?.sentOffer?.expiresAtIso ?? offer!.expiresAtIso,
     );
     assert.ok(offer!.expiresAtIso.endsWith("Z"));
+  });
+});
+
+describe("admin internal notes", () => {
+  const notesShop = `${shop}-internal-notes`;
+
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: notesShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: notesShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: notesShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: notesShop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: notesShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: notesShop } });
+    await prisma.shopSettings.deleteMany({ where: { shop: notesShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: notesShop } });
+  });
+
+  it("stores each note with a timestamp and ignores blank saves", async () => {
+    const created = await submitCustomerRequest(notesShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera" }],
+    });
+
+    assert.equal(await addInternalNote(notesShop, created.id, "   "), null);
+    const first = await addInternalNote(
+      notesShop,
+      created.id,
+      "Customer asked about leaf size.",
+    );
+    assert.ok(first);
+    assert.equal(first?.body, "Customer asked about leaf size.");
+    assert.match(first!.createdAt, /\d{4}/);
+    assert.ok(first!.createdAtIso);
+
+    await addInternalNote(notesShop, created.id, "Follow up after the offer.");
+    const notes = await listInternalNotes(notesShop, created.id);
+    assert.equal(notes.length, 2);
+    assert.equal(notes[0]?.body, "Customer asked about leaf size.");
+    assert.equal(notes[1]?.body, "Follow up after the offer.");
+    assert.ok(
+      new Date(notes[0]!.createdAtIso).getTime() <=
+        new Date(notes[1]!.createdAtIso).getTime(),
+    );
   });
 });

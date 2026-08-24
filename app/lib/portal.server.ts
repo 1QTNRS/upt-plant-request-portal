@@ -1675,3 +1675,65 @@ export async function findRequestByNumber(shop: string, requestNumber: string) {
     where: { shop, requestNumber: { in: candidates } },
   });
 }
+
+export type RequestInternalNoteRecord = {
+  id: string;
+  body: string;
+  createdAt: string;
+  createdAtIso: string;
+};
+
+/**
+ * Admin-only notes. Newest last so a thread reads top-to-bottom. Never loaded
+ * on a customer route.
+ */
+export async function listInternalNotes(
+  shop: string,
+  requestId: string,
+): Promise<RequestInternalNoteRecord[]> {
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: { id: true },
+  });
+  if (!request) return [];
+
+  const notes = await prisma.requestInternalNote.findMany({
+    where: { shop, requestId },
+    orderBy: { createdAt: "asc" },
+  });
+  return notes.map((note) => ({
+    id: note.id,
+    body: note.body,
+    createdAt: formatDateTime(note.createdAt),
+    createdAtIso: note.createdAt.toISOString(),
+  }));
+}
+
+export async function addInternalNote(
+  shop: string,
+  requestId: string,
+  body: string,
+): Promise<RequestInternalNoteRecord | null> {
+  const trimmed = body.trim();
+  if (!trimmed) return null;
+
+  const request = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: { id: true },
+  });
+  if (!request) return null;
+
+  const note = await prisma.requestInternalNote.create({
+    data: {
+      shop,
+      requestId,
+      body: trimmed.slice(0, 4000),
+    },
+  });
+  return {
+    id: note.id,
+    body: note.body,
+    createdAt: formatDateTime(note.createdAt),
+    createdAtIso: note.createdAt.toISOString(),
+  };
+}

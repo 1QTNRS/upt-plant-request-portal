@@ -25,6 +25,7 @@ export type CustomerDataExport = {
     submittedAt: string;
     plants: string[];
     response: string | null;
+    internalNotes: Array<{ createdAt: string; body: string }>;
   }>;
 };
 
@@ -77,6 +78,11 @@ export function formatCustomerDataExport(
                 `    Submitted: ${request.submittedAt}`,
                 `    Plants requested: ${request.plants.join(", ") || "(none)"}`,
                 `    Customer response: ${request.response ?? "(none)"}`,
+                request.internalNotes.length
+                  ? `    Internal notes:\n${request.internalNotes
+                      .map((note) => `      ${note.createdAt}: ${note.body}`)
+                      .join("\n")}`
+                  : "    Internal notes: (none)",
               ].join("\n"),
             )
             .join("\n")
@@ -106,6 +112,7 @@ export async function handleCustomerDataRequest(
         include: {
           items: true,
           response: { include: { items: true } },
+          internalNotes: { orderBy: { createdAt: "asc" } },
         },
         orderBy: { submittedAt: "asc" },
       },
@@ -127,6 +134,10 @@ export async function handleCustomerDataRequest(
         request.response?.items
           .map((item) => `${item.plantName}: ${item.choice}`)
           .join("; ") ?? null,
+      internalNotes: request.internalNotes.map((note) => ({
+        createdAt: note.createdAt.toISOString(),
+        body: note.body,
+      })),
     })),
   }));
 
