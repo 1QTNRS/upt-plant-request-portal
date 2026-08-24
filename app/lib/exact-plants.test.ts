@@ -724,6 +724,7 @@ describe("analytics list paging and export", () => {
     assert.match(conversion, /headerLabel\("behaviorFlag"/);
     assert.match(conversion, /sortByKey\(rows, sortKey, sortDirection\)/);
     assert.match(conversion, /upt-flag-pill/);
+    assert.match(conversion, /upt-cell-meta/);
     assert.match(conversion, /Customer<br \/>Name/);
     assert.match(conversion, /Accepted vs<br \/>Purchased %/);
   });
@@ -736,7 +737,7 @@ describe("analytics export spacing", () => {
       "utf8",
     );
     assert.match(source, /data-export-excel-wrap/);
-    assert.match(source, /margin:\s*"0 0 24px"/);
+    assert.match(source, /margin:\s*"0 0 32px"/);
   });
 });
 

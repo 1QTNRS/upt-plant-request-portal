@@ -832,22 +832,23 @@ function ItemConversionAnalytics({
         <div className="upt-wide-only">
         <table className="upt-fixed-table upt-wrap-table">
           <colgroup>
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "6%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "9%" }} />
             <col style={{ width: "8%" }} />
             <col style={{ width: "8%" }} />
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "21%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "15%" }} />
           </colgroup>
           <thead>
             <tr>
-              <th>{headerLabel("customerName", <>Customer<br />Name</>)}</th>
-              <th>{headerLabel("email", "Email")}</th>
+              <th>
+                {headerLabel("customerName", <>Customer<br />Name</>)}
+                <div>{headerLabel("email", "Email")}</div>
+              </th>
               <th>{headerLabel("requestId", <>Request<br />Number</>)}</th>
               <th>{headerLabel("itemsRequested", <>Items<br />Requested</>)}</th>
               <th>{headerLabel("itemsOffered", <>Items<br />Offered</>)}</th>
@@ -863,8 +864,10 @@ function ItemConversionAnalytics({
             {padPageSlots(paged.items, ANALYTICS_LIST_PAGE_SIZE).map((row, index) =>
               row ? (
                 <tr key={`${row.email}-${row.requestId}`}>
-                  <td title={row.customerName}>{row.customerName}</td>
-                  <td title={row.email}>{row.email}</td>
+                  <td title={`${row.customerName} ${row.email}`}>
+                    <div>{row.customerName}</div>
+                    <div className="upt-cell-meta">{row.email}</div>
+                  </td>
                   <td>{row.requestId}</td>
                   <td>{row.itemsRequested}</td>
                   <td>{row.itemsOffered}</td>
@@ -884,7 +887,7 @@ function ItemConversionAnalytics({
                 </tr>
               ) : (
                 <tr key={`empty-${index}`} className="upt-page-slot" aria-hidden="true">
-                  <td colSpan={11}>&nbsp;</td>
+                  <td colSpan={10}>&nbsp;</td>
                 </tr>
               ),
             )}

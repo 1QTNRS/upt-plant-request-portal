@@ -102,13 +102,24 @@ export function AdminResponsiveStyles() {
         text-overflow: unset;
         height: auto;
         min-height: 44px;
-        overflow-wrap: break-word;
-        word-break: normal;
         line-height: 1.3;
         vertical-align: top;
+        padding: 8px 6px;
       }
       .upt-fixed-table.upt-wrap-table th {
         vertical-align: bottom;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        hyphens: none;
+      }
+      .upt-fixed-table.upt-wrap-table td {
+        overflow-wrap: break-word;
+        word-break: normal;
+      }
+      .upt-cell-meta {
+        color: #6d7175;
+        font-size: 12px;
+        overflow-wrap: anywhere;
       }
       .upt-flag-pill {
         display: inline-block;

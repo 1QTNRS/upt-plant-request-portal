@@ -21,7 +21,7 @@ export const pagerArrowStyle: CSSProperties = {
 
 const exportButtonWrapStyle: CSSProperties = {
   display: "block",
-  margin: "0 0 24px",
+  margin: "0 0 32px",
 };
 
 const exportButtonStyle: CSSProperties = {
