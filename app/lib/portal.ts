@@ -633,8 +633,9 @@ export function countAdminDashboardStatusFilters(
 }
 
 /**
- * Blank means Shopify quotes shipping. A parsed number (including 0) is a
- * custom shipping line on the later draft order.
+ * Blank leaves shipping unset on the later draft order so the customer can
+ * pick a store rate at checkout. A parsed number (including 0) is a custom
+ * shipping line and locks that amount.
  */
 export function parseShippingFeeOverride(
   raw: unknown,
@@ -987,8 +988,9 @@ export function buildDraftOrderInput(input: {
   /** ISO 8601 instant from `reserveInventoryUntilFor`. */
   reserveInventoryUntil?: string;
   /**
-   * Custom shipping line. Omitted when undefined so Shopify quotes a rate.
-   * 0 is a real override (no shipping charge).
+   * Custom shipping line. Omitted when undefined so checkout can offer the
+   * shop's weight-based rates. A preselected line locks shipping. 0 is a real
+   * override (no shipping charge).
    */
   shippingFeeOverride?: number;
 }) {
