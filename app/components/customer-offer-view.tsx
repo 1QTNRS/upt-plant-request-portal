@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   FULFILLMENT_TYPE_LABELS,
   GROWERS_CHOICE_CUSTOMER_SUMMARY,
@@ -17,7 +19,29 @@ import {
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { CustomerPhotoGallery } from "./customer-photo-gallery";
 import { OfferExpiryBanner } from "./customer-request-portal";
-import { StatusBadge as ThemeStatusBadge, ThemeStyles } from "./theme";
+import {
+  CustomerSurface,
+  NestedBox,
+  StatusBadge as ThemeStatusBadge,
+  ThemeStyles,
+} from "./theme";
+
+function CustomerOfferPage({
+  heading,
+  children,
+}: {
+  heading: string;
+  children: ReactNode;
+}) {
+  return (
+    <CustomerSurface>
+      <s-page heading={heading}>
+        <ThemeStyles />
+        {children}
+      </s-page>
+    </CustomerSurface>
+  );
+}
 
 type ItemChoice = "accept" | "reject" | "unavailable";
 
@@ -172,8 +196,7 @@ export function CustomerOfferView({
 }) {
   if (!offer) {
     return (
-      <s-page heading="Customer Offer">
-        <ThemeStyles />
+      <CustomerOfferPage heading="Customer Offer">
         <s-section>
           <s-stack direction="block" gap="base">
             <s-text>
@@ -183,7 +206,7 @@ export function CustomerOfferView({
             {backHref ? <s-link href={backHref}>Back to My Requests</s-link> : null}
           </s-stack>
         </s-section>
-      </s-page>
+      </CustomerOfferPage>
     );
   }
 
@@ -212,7 +235,7 @@ export function CustomerOfferView({
 
   if (submitted) {
     return (
-      <s-page
+      <CustomerOfferPage
         heading={answeredOfferHeading({
           requestPaid,
           requestClosed,
@@ -221,7 +244,6 @@ export function CustomerOfferView({
           allUnavailable,
         })}
       >
-        <ThemeStyles />
         <StatusBadge label={statusLabel} tone={statusTone} />
         {showSupportNote ? (
           <s-section>
@@ -375,13 +397,7 @@ export function CustomerOfferView({
           <s-section heading="Final approval summary">
             <s-stack direction="block" gap="base">
               {acceptedItems.map((item) => (
-                <s-box
-                  key={item.offerItemId}
-                  padding="base"
-                  borderWidth="base"
-                  borderRadius="base"
-                  background="subdued"
-                >
+                <NestedBox key={item.offerItemId}>
                   <s-stack direction="block" gap="small">
                     <s-heading>{item.plantName}</s-heading>
                     <s-text>{formatCurrency(item.price)}</s-text>
@@ -398,7 +414,7 @@ export function CustomerOfferView({
                     <s-text color="subdued">Customer Notes / Disclaimers</s-text>
                     <s-text>{item.customerNotes}</s-text>
                   </s-stack>
-                </s-box>
+                </NestedBox>
               ))}
               {response?.fedexUpgradeSelected ? (
                 <s-text>
@@ -437,7 +453,7 @@ export function CustomerOfferView({
           <input type="hidden" name="customerTimeZone" defaultValue="" />
         </form>
         <CustomerEnhanceScripts />
-      </s-page>
+      </CustomerOfferPage>
     );
   }
 
@@ -452,7 +468,7 @@ export function CustomerOfferView({
   const expired = isOfferExpired(offer.expiresAtIso) || requestClosed;
 
   return (
-    <s-page
+    <CustomerOfferPage
       heading={
         requestClosed
           ? "Request closed"
@@ -461,7 +477,6 @@ export function CustomerOfferView({
             : offer.title
       }
     >
-      <ThemeStyles />
       <StatusBadge label={statusLabel} tone={statusTone} />
       {showSupportNote ? (
         <s-section>
@@ -712,7 +727,7 @@ export function CustomerOfferView({
         <input type="hidden" name="customerTimeZone" defaultValue="" />
       </form>
       <CustomerEnhanceScripts includeFedexWarning={!expired && !pendingFedexRemoval} />
-    </s-page>
+    </CustomerOfferPage>
   );
 }
 
@@ -736,7 +751,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
   const growersChoice = item.fulfillmentType === "growers_choice";
 
   return (
-    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+    <NestedBox>
       <s-stack direction="block" gap="base">
         {growersChoice && item.linkedImageUrl ? (
           <CustomerPhotoGallery
@@ -765,7 +780,7 @@ function DeclinedItemCard({ item }: { item: CustomerOfferResponse["items"][numbe
           </s-stack>
         ) : null}
       </s-stack>
-    </s-box>
+    </NestedBox>
   );
 }
 
@@ -784,7 +799,7 @@ function OfferItemCard({
   const growersChoice = available && item.fulfillmentType === "growers_choice";
 
   return (
-    <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+    <NestedBox>
       <s-stack direction="block" gap="base">
         {growersChoice && item.listingImageUrl ? (
           /*
@@ -872,6 +887,6 @@ function OfferItemCard({
           </s-text>
         ) : null}
       </s-stack>
-    </s-box>
+    </NestedBox>
   );
 }

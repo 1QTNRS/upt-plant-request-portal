@@ -113,9 +113,7 @@ export function CustomerRequestPortal({
       ) : null}
 
       <section className="upt-card">
-        <h2 className="upt-card-title">
-          <LeafIcon /> New request
-        </h2>
+        <h2 className="upt-card-title">New request</h2>
         <p className="upt-muted">
           Your name and email are pulled from your customer account. Feel free
           to request multiple plants at once. Any plants we’re able to offer
@@ -135,9 +133,7 @@ export function CustomerRequestPortal({
       <form method="post" action={formAction}>
         <input type="hidden" name="customerTimeZone" defaultValue="" />
         <section className="upt-card">
-          <h2 className="upt-card-title">
-            <LeafIcon /> Plants requested
-          </h2>
+          <h2 className="upt-card-title">Plants requested</h2>
           {plantLines.map((line, index) => (
             <div key={index} className="upt-plant-card">
               <h3 style={{ margin: "0 0 12px", color: THEME.darkGreen }}>
@@ -227,9 +223,7 @@ export function CustomerRequestPortal({
       </form>
 
       <section className="upt-card">
-        <h2 className="upt-card-title">
-          <LeafIcon /> My Requests
-        </h2>
+        <h2 className="upt-card-title">My Requests</h2>
         {myRequests.length === 0 ? (
           <p className="upt-muted">
             You have not submitted any plant requests yet.
@@ -289,8 +283,9 @@ export function CustomerRequestPortal({
                 display: "flex",
                 flexWrap: "wrap",
                 alignItems: "center",
-                gap: 4,
-                marginTop: 12,
+                gap: 8,
+                marginTop: 32,
+                paddingTop: 8,
                 minHeight: 36,
               }}
             >

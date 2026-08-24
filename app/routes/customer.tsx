@@ -5,6 +5,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { CustomerLightboxRoot } from "../components/customer-photo-gallery";
 import { CustomerPortalNav } from "../components/customer-portal-nav";
+import { CustomerSurface, ThemeStyles } from "../components/theme";
 import { customerMyRequestsHref, storefrontHomeUrl } from "../lib/customer-nav";
 import { readCustomerContext } from "../lib/customer-session.server";
 
@@ -23,7 +24,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function CustomerLayout() {
   const data = useLoaderData<typeof loader>();
   return (
-    <>
+    <CustomerSurface paintDocument>
+      <ThemeStyles />
       <AppProvider>
         <CustomerPortalNav
           homeHref={data.storefrontHomeUrl}
@@ -32,7 +34,7 @@ export default function CustomerLayout() {
         <Outlet />
       </AppProvider>
       <CustomerLightboxRoot />
-    </>
+    </CustomerSurface>
   );
 }
 

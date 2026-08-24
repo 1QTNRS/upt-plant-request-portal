@@ -105,6 +105,26 @@ export function ThemeStyles() {
         --upt-cream: ${THEME.cream};
         --upt-line: ${THEME.line};
       }
+      .upt-customer-surface {
+        min-height: 100vh;
+        background: ${THEME.yellow};
+        box-sizing: border-box;
+      }
+      .upt-customer-surface s-page {
+        background: transparent !important;
+        background-color: transparent !important;
+      }
+      .upt-customer-surface s-section {
+        background: ${THEME.white} !important;
+        background-color: ${THEME.white} !important;
+        border-radius: 14px;
+      }
+      .upt-nested-box {
+        background: ${THEME.mint};
+        border: 1px solid ${THEME.line};
+        border-radius: 12px;
+        padding: 16px;
+      }
       .upt-customer-page {
         position: relative;
         max-width: 720px;
@@ -112,22 +132,6 @@ export function ThemeStyles() {
         padding: 8px 4px 32px;
         color: ${THEME.ink};
       }
-      .upt-customer-page::before,
-      .upt-customer-page::after {
-        content: "";
-        position: absolute;
-        width: 180px;
-        height: 180px;
-        pointer-events: none;
-        opacity: 0.22;
-        background:
-          radial-gradient(circle at 30% 30%, ${THEME.mint} 0 42%, transparent 43%),
-          radial-gradient(circle at 70% 60%, ${THEME.mint} 0 28%, transparent 29%);
-        z-index: 0;
-      }
-      .upt-customer-page::before { top: -24px; left: -36px; }
-      .upt-customer-page::after { bottom: 40px; left: -48px; }
-      .upt-customer-page > * { position: relative; z-index: 1; }
       .upt-customer-title {
         margin: 8px 0 20px;
         color: ${THEME.darkGreen};
@@ -178,6 +182,44 @@ export function ThemeStyles() {
   );
 }
 
+export function NestedBox({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <div className="upt-nested-box" style={style}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Yellow page chrome for customer-facing routes only. Do not use on admin —
+ * ThemeStyles is shared, but this wrapper is what paints the viewport.
+ */
+export function CustomerSurface({
+  children,
+  paintDocument = false,
+}: {
+  children: ReactNode;
+  /** Only the customer layout should paint html/body, so admin previews stay unpainted. */
+  paintDocument?: boolean;
+}) {
+  return (
+    <div className="upt-customer-surface">
+      {paintDocument ? (
+        <style>{`
+          html, body { background-color: ${THEME.yellow}; }
+        `}</style>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
 export function CustomerPageShell({
   title,
   children,
@@ -186,12 +228,14 @@ export function CustomerPageShell({
   children: ReactNode;
 }) {
   return (
-    <s-page>
-      <ThemeStyles />
-      <div className="upt-customer-page">
-        <h1 className="upt-customer-title">{title}</h1>
-        {children}
-      </div>
-    </s-page>
+    <CustomerSurface>
+      <s-page>
+        <ThemeStyles />
+        <div className="upt-customer-page">
+          <h1 className="upt-customer-title">{title}</h1>
+          {children}
+        </div>
+      </s-page>
+    </CustomerSurface>
   );
 }
