@@ -248,6 +248,7 @@ export function CustomerRequestPortal({
                 max-width: max-content;
                 justify-self: start;
               }
+              [data-paged-item] [data-status-badge] { justify-self: center; }
             `}</style>
             <div data-paged-items>
               {myRequests.map((request) => {
@@ -261,7 +262,7 @@ export function CustomerRequestPortal({
                     data-paged-item
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "max-content minmax(1in, 1fr) max-content",
+                      gridTemplateColumns: "1fr auto 1fr",
                       alignItems: "center",
                       width: "100%",
                       height: 45,
@@ -273,7 +274,6 @@ export function CustomerRequestPortal({
                     <s-link href={requestDetailHref(request.id)}>
                       {request.requestNumber}
                     </s-link>
-                    <span aria-hidden="true" />
                     <StatusBadge
                       tone={customerStatusTone(request.status as RequestStatus, {
                         hasPayableItems: request.hasPayableItems,
@@ -282,6 +282,7 @@ export function CustomerRequestPortal({
                     >
                       {label}
                     </StatusBadge>
+                    <span aria-hidden="true" />
                   </div>
                 );
               })}
