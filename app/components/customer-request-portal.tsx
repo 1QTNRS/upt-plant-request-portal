@@ -235,7 +235,10 @@ export function CustomerRequestPortal({
           >
             <style>{`
               [data-paged-item][hidden] { display: none !important; }
-              [data-paged-items] { min-height: calc(${CUSTOMER_REQUEST_PAGE_SIZE} * 45px); }
+              [data-paged-items] {
+                min-height: calc(${CUSTOMER_REQUEST_PAGE_SIZE} * 45px);
+                padding-bottom: 32px;
+              }
               [data-paged-list] { overflow-anchor: none; }
               [data-paged-prev]:disabled,
               [data-paged-next]:disabled { opacity: 0.35; cursor: default; }
@@ -284,8 +287,8 @@ export function CustomerRequestPortal({
                 flexWrap: "wrap",
                 alignItems: "center",
                 gap: 8,
-                marginTop: 32,
-                paddingTop: 8,
+                marginTop: 80,
+                paddingTop: 32,
                 minHeight: 36,
               }}
             >
