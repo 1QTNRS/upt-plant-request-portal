@@ -63,7 +63,29 @@ describe("iOS admin API payloads", () => {
     assert.equal(detail.requestNumber, "REQ12");
     assert.equal(detail.items[0].adminNotes, "internal only");
     assert.deepEqual(detail.items[0].photoUrls, ["https://cdn.shopify.com/albo.jpg"]);
+    assert.deepEqual(detail.items[0].photos, []);
     assert.equal(detail.items[0].unavailableReason, undefined);
+    assert.equal(detail.canEditItems, false);
+    assert.equal(detail.canSendOffer, false);
+    assert.equal(detail.canOverrideClose, true);
+  });
+
+  it("lets a complete New request be sent from the phone", () => {
+    const detail = toMobileAdminRequestDetail(
+      request({
+        status: "New",
+        items: [
+          {
+            ...request().items[0],
+            itemStatus: "Requested",
+            photos: [{ id: "p1", url: "https://cdn.shopify.com/albo.jpg" }],
+          },
+        ],
+      }),
+    );
+    assert.equal(detail.canEditItems, true);
+    assert.equal(detail.canSendOffer, true);
+    assert.deepEqual(detail.offerProblems, []);
   });
 
   it("includes the unavailable reason on a Not Available line", () => {

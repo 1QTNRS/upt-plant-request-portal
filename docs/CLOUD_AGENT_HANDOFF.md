@@ -1062,16 +1062,20 @@ in `LOGGABLE_PARAMS`.
 The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
 `tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
 
-**Shipped (first slice):** `GET /api/mobile/admin/session`, request list,
-request detail. Read-only browse.
+**Shipped:** `GET /api/mobile/admin/session`, request list, request
+detail, and `POST /api/mobile/admin/requests/:id` for the same intents
+the web request page uses (`update-item`, stock search/link, photos,
+send offer, internal notes, close declined, admin override close). All
+of those call existing `portal.server` / `shopify-ops.server` /
+`offer-response.server` functions. The phone uses the shop's offline
+Admin session for Shopify writes — never its own credentials.
 
-**Still to port, same Shopify-backed backend:** request item edit (exact
-plant / link website stock / not available), photos, send offer, close
-request, EXACT PLANTS review/list, settings. **Analytics stays web-only**
-— do not add it to the iPhone app. Visual redesign of the iOS client is
-allowed and expected; it must not change stored statuses, Shopify writes,
-or business rules. Do not invent a parallel fulfilment path to get
-actions onto the phone faster.
+**Still to port, same Shopify-backed backend:** EXACT PLANTS
+review/list, settings (FedEx warning) on the phone. **Analytics stays
+web-only** — do not add it to the iPhone app. Visual redesign of the
+iOS client is allowed and expected; it must not change stored statuses,
+Shopify writes, or business rules. Do not invent a parallel fulfilment
+path to get actions onto the phone faster.
 
 ---
 

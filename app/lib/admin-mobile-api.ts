@@ -2,12 +2,13 @@ import {
   filterAdminDashboardRequests,
   formatPlantsSummary,
   getDisplayRequestNumber,
+  incompleteOfferItems,
   parseAdminDashboardStatusFilter,
   summarizeAdminDashboardStats,
   type AdminDashboardStatusFilter,
+  type IncompleteOfferItem,
   type PlantRequest,
 } from "./portal";
-
 export type MobileAdminRequestRow = {
   id: string;
   requestNumber: string;
@@ -30,6 +31,17 @@ export type MobileAdminRequestDetail = {
   expiredAtIso?: string;
   paidAtIso?: string;
   hasResponded: boolean;
+  canEditItems: boolean;
+  canSendOffer: boolean;
+  canCloseDeclined: boolean;
+  canOverrideClose: boolean;
+  offerProblems: IncompleteOfferItem[];
+  sentOffer?: {
+    expirationDays: number;
+    sentAtIso: string;
+    expiresAtIso: string;
+  };
+  internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
   items: Array<{
     id: string;
     plantName: string;
@@ -43,6 +55,17 @@ export type MobileAdminRequestDetail = {
     customerFacingNotes: string;
     adminNotes: string;
     photoUrls: string[];
+    photos: Array<{ id: string; url: string }>;
+    linkedStock?: {
+      productTitle: string;
+      variantTitle: string;
+      variantGid: string;
+      sku?: string;
+      price?: number;
+      weightLbs?: number;
+      inventoryQuantity?: number;
+      imageUrl?: string;
+    };
   }>;
 };
 
@@ -63,7 +86,12 @@ export function toMobileAdminRequestRow(
 
 export function toMobileAdminRequestDetail(
   request: PlantRequest,
+  extras: {
+    canCloseDeclined?: boolean;
+    internalNotes?: MobileAdminRequestDetail["internalNotes"];
+  } = {},
 ): MobileAdminRequestDetail {
+  const offerProblems = incompleteOfferItems(request.items);
   return {
     id: request.id,
     requestNumber: getDisplayRequestNumber(request),
@@ -75,6 +103,19 @@ export function toMobileAdminRequestDetail(
     expiredAtIso: request.expiredAtIso,
     paidAtIso: request.paidAtIso,
     hasResponded: request.hasResponded,
+    canEditItems: request.status === "New",
+    canSendOffer: request.status === "New" && offerProblems.length === 0,
+    canCloseDeclined: Boolean(extras.canCloseDeclined),
+    canOverrideClose: request.status !== "Closed",
+    offerProblems,
+    sentOffer: request.sentOffer
+      ? {
+          expirationDays: request.sentOffer.expirationDays,
+          sentAtIso: request.sentOffer.sentAtIso,
+          expiresAtIso: request.sentOffer.expiresAtIso,
+        }
+      : undefined,
+    internalNotes: extras.internalNotes ?? [],
     items: request.items.map((item) => ({
       id: item.id,
       plantName: item.plantName,
@@ -89,6 +130,19 @@ export function toMobileAdminRequestDetail(
       customerFacingNotes: item.customerFacingNotes,
       adminNotes: item.adminNotes,
       photoUrls: item.photoUrls,
+      photos: item.photos,
+      linkedStock: item.linkedStock
+        ? {
+            productTitle: item.linkedStock.productTitle,
+            variantTitle: item.linkedStock.variantTitle,
+            variantGid: item.linkedStock.variantGid,
+            sku: item.linkedStock.sku,
+            price: item.linkedStock.variantPrice,
+            weightLbs: item.linkedStock.variantWeightLbs,
+            inventoryQuantity: item.linkedStock.inventoryQuantity,
+            imageUrl: item.linkedStock.imageUrl,
+          }
+        : undefined,
     })),
   };
 }

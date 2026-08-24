@@ -7,9 +7,17 @@ orders, inventory holds, Exact Plants, and Files stay on the server.
 The phone never talks to Shopify directly and never holds Admin API secrets.
 A lost phone is revoked from **Settings → iOS admin app**.
 
-## Now (first slice)
+## Now
 
-Sign in with a device token, browse requests, open a request.
+Sign in with a device token, browse requests, and work a request on the phone:
+
+- Offer Exact Plant / Link Existing Website Stock / Not Available
+- Price, weight, notes, photos (library or URL)
+- Search and link live website stock
+- Send offer (3 / 5 / 7 day hold)
+- Internal notes, close declined, Close Entire Request
+
+Every write goes through the same Render functions as the website. The phone never talks to Shopify.
 
 You do **not** need a Mac. Install [Expo Go](https://expo.dev/go) on the iPhone.
 
@@ -33,14 +41,8 @@ rules stay in the Render app.
 
 ## Next slices (same backend)
 
-These stay connected to Shopify by calling the existing server code — not a
-new inventory system:
-
-- Edit a request item (exact plant / link website stock / not available)
-- Photos
-- Send offer and close request
 - EXACT PLANTS review and listing
-- Settings (tokens, FedEx warning)
+- Settings (FedEx warning) on the phone
 
-Analytics stays on the website only. Until the slices above land, the
-Shopify Admin iOS app still has the full embedded portal.
+Analytics stays on the website only. Token create/revoke stays in the
+website Settings page.
