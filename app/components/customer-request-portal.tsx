@@ -240,7 +240,7 @@ export function CustomerRequestPortal({
             data-page-size={CUSTOMER_REQUEST_PAGE_SIZE}
           >
             <style>{`
-              [data-paged-item][data-paged-hidden="true"] { display: none !important; }
+              [data-paged-item][hidden] { display: none !important; }
             `}</style>
             <a
               href={spreadsheetHref(
@@ -274,36 +274,38 @@ export function CustomerRequestPortal({
             >
               Export to Excel
             </a>
-            <s-table>
-              <s-table-header-row>
-                <s-table-header listSlot="primary">Request Number</s-table-header>
-                <s-table-header>Status</s-table-header>
-              </s-table-header-row>
-              <s-table-body>
-                {myRequests.map((request) => (
-                  <s-table-row key={request.id} data-paged-item>
-                    <s-table-cell>
-                      <s-link href={requestDetailHref(request.id)}>
-                        {request.requestNumber}
-                      </s-link>
-                    </s-table-cell>
-                    <s-table-cell>
-                      <s-badge
-                        tone={customerStatusTone(request.status as RequestStatus, {
-                          hasPayableItems: request.hasPayableItems,
-                          hasResponded: request.hasResponded,
-                        })}
-                      >
-                        {formatCustomerStatusLabel(request.status, {
-                          hasPayableItems: request.hasPayableItems,
-                          hasResponded: request.hasResponded,
-                        })}
-                      </s-badge>
-                    </s-table-cell>
-                  </s-table-row>
-                ))}
-              </s-table-body>
-            </s-table>
+            <div>
+              {myRequests.map((request) => (
+                <div
+                  key={request.id}
+                  data-paged-item
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    padding: "10px 0",
+                    borderBottom: "1px solid #e1e3e5",
+                  }}
+                >
+                  <s-link href={requestDetailHref(request.id)}>
+                    {request.requestNumber}
+                  </s-link>
+                  <s-badge
+                    tone={customerStatusTone(request.status as RequestStatus, {
+                      hasPayableItems: request.hasPayableItems,
+                      hasResponded: request.hasResponded,
+                    })}
+                  >
+                    {formatCustomerStatusLabel(request.status, {
+                      hasPayableItems: request.hasPayableItems,
+                      hasResponded: request.hasResponded,
+                    })}
+                  </s-badge>
+                </div>
+              ))}
+            </div>
             <div
               style={{
                 display: "flex",
