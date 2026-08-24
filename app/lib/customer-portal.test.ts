@@ -667,6 +667,17 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("useEffect"));
   });
 
+  it("drops title icons and keeps the pager off the request numbers", () => {
+    assert.match(source, /<h2 className="upt-card-title">New request<\/h2>/);
+    assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
+    assert.match(source, /<h2 className="upt-card-title">My Requests<\/h2>/);
+    assert.ok(
+      !/<h2 className="upt-card-title">\s*<LeafIcon/.test(source),
+      "section titles should be text only",
+    );
+    assert.match(source, /marginTop:\s*32/);
+  });
+
   it("pages My Requests in place without an Excel export", () => {
     assert.match(source, /data-paged-list/);
     assert.match(source, /data-page-size=\{CUSTOMER_REQUEST_PAGE_SIZE\}/);

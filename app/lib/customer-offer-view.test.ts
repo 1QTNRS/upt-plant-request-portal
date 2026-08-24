@@ -147,6 +147,11 @@ describe("an expired offer is not presented as a live one", () => {
     assert.match(live, /#002910/);
     assert.match(live, /-webkit-text-fill-color:#ffffff/);
     assert.match(live, />Submit</);
+    assert.match(live, /upt-customer-surface/);
+    assert.match(live, /upt-nested-box/);
+    assert.match(live, /#f1a638/);
+    assert.match(live, /#d6ece2/);
+    assert.ok(!live.includes('background="subdued"'));
   });
 });
 

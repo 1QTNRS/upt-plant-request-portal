@@ -5,7 +5,7 @@ const navStyle: React.CSSProperties = {
   gap: 16,
   padding: "10px 16px",
   margin: "0 0 12px",
-  borderBottom: "1px solid #e1e3e5",
+  borderBottom: "1px solid rgba(0, 41, 16, 0.18)",
   font: "inherit",
 };
 
