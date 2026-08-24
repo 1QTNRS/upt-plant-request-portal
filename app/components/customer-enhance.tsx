@@ -254,7 +254,10 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
       Array.prototype.forEach.call(items, function (el, index) {
         var hide = index < start || index >= start + size;
         el.setAttribute("data-paged-hidden", hide ? "true" : "false");
-        if (el instanceof HTMLElement) el.hidden = hide;
+        if (el instanceof HTMLElement) {
+          el.hidden = hide;
+          el.style.display = hide ? "none" : "";
+        }
       });
       var status = root.querySelector("[data-paged-status]");
       if (status) {
