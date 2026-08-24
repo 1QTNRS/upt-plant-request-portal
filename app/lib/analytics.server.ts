@@ -117,17 +117,6 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     orderBy: { submittedAt: "desc" },
   });
 
-  const allShopRequests = await prisma.plantRequest.findMany({
-    where: { shop },
-    include: {
-      items: { orderBy: REQUEST_ITEM_ORDER },
-      offer: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
-      response: { include: { items: { orderBy: OFFER_ITEM_ORDER } } },
-      draftOrder: true,
-      shopifyOrder: true,
-    },
-  });
-
   const statusCounts = {
     total: requests.length,
     new: requests.filter((request) => request.status === "New").length,
@@ -137,9 +126,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   };
 
   const closedPaid = requests.filter((request) => request.paidAt);
-  // Narrowed to the two rows revenue is actually read from, so it accepts both
-  // the ranged and the whole-shop query without them having to load the same
-  // relations.
+  // Paid-order plant revenue, or the draft snapshot when the order row is
+  // missing. Every figure on this page uses the Date Range `requests` query —
+  // including the customer table, item conversion, and this/last-month cards.
   const plantRevenue = (request: {
     shopifyOrder: { plantRevenue: number } | null;
     draftOrder: { lineItemsJson: string } | null;
@@ -153,10 +142,10 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthEnd = thisMonthStart;
 
-  const revenueThisMonth = allShopRequests
+  const revenueThisMonth = requests
     .filter((request) => request.paidAt && request.paidAt >= thisMonthStart)
     .reduce((sum, request) => sum + plantRevenue(request), 0);
-  const revenueLastMonth = allShopRequests
+  const revenueLastMonth = requests
     .filter(
       (request) =>
         request.paidAt &&
@@ -196,7 +185,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     }, 0);
 
   const revenueByMonthMap = new Map<string, number>();
-  for (const request of allShopRequests) {
+  for (const request of requests) {
     if (!request.paidAt) continue;
     const key = monthKey(request.paidAt);
     revenueByMonthMap.set(key, (revenueByMonthMap.get(key) ?? 0) + plantRevenue(request));
@@ -421,7 +410,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     }
   >();
 
-  for (const request of allShopRequests) {
+  for (const request of requests) {
     const key = request.customerEmail.toLowerCase();
     const current = customers.get(key) ?? {
       customerName: request.customerName,
@@ -519,7 +508,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
     };
   });
 
-  const itemPurchaseRows = allShopRequests.map((request) => {
+  const itemPurchaseRows = requests.map((request) => {
     const itemsRequested = request.items.length;
     const itemsOffered = (request.offer?.items ?? []).filter(
       (item) => item.availability === "available",

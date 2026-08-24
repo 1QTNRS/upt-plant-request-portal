@@ -764,7 +764,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The share of a customer's requests that have not ended as a paid, closed request.",
     detail: [
       "`computeNoPaymentRate` is total requests minus closed-and-paid requests, over total requests. A request the customer may still pay for counts against it, and so does one that is still New.",
-      "It is not the No Payment Needed label. That is a per-request, customer-facing label meaning nothing on this offer can be paid for; this is a lifetime ratio in the admin's customer table.",
+      "It is not the No Payment Needed label. That is a per-request, customer-facing label meaning nothing on this offer can be paid for; this is a ratio over the customer's requests in the analytics Date Range.",
     ],
     citations: [
       {
