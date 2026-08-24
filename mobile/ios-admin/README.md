@@ -1,19 +1,20 @@
 # UPT Admin (iOS)
 
-First slice of the iPhone admin app: sign in with a device token, browse
-requests, and open a request. Offer editing, photo upload, Exact Plants, and
-analytics stay in the Shopify admin web app for now.
+Dedicated iPhone client for the UPT Plant Request Portal. It uses the **same**
+Render app, Prisma data, and Shopify Admin connection as the website — draft
+orders, inventory holds, Exact Plants, and Files stay on the server.
 
-You do **not** need a Mac to try this. Install [Expo Go](https://expo.dev/go)
-on your iPhone.
+The phone never talks to Shopify directly and never holds Admin API secrets.
+A lost phone is revoked from **Settings → iOS admin app**.
 
-## 1. Create a device token
+## Now (first slice)
 
-In the live Shopify admin: **UPT Plant Request Portal → Settings → iOS admin app → Create device token**.
+Sign in with a device token, browse requests, open a request.
 
-Copy the token immediately. It is not stored in plaintext.
+You do **not** need a Mac. Install [Expo Go](https://expo.dev/go) on the iPhone.
 
-## 2. Run the app
+1. After this work is live: Shopify admin → **UPT Plant Request Portal → Settings → iOS admin app → Create device token**. Copy it immediately.
+2. On a computer:
 
 ```bash
 cd mobile/ios-admin
@@ -21,13 +22,17 @@ npm install
 npx expo start
 ```
 
-Scan the QR code with the iPhone camera (or Expo Go). Paste the token. The
-default App URL is the live Render service.
+3. Scan the QR code. Default App URL is the live Render service.
 
-A lost phone: revoke that token on the same Settings page.
+## Next slices (same backend)
 
-## What this first slice does not do
+These stay connected to Shopify by calling the existing server code — not a
+new inventory system:
 
-Sending an offer, linking website stock, uploading photos, EXACT PLANTS review,
-and analytics. Use the Shopify Admin iOS app (the embedded portal) for those
-until the next slices land.
+- Edit a request item (exact plant / link website stock / not available)
+- Photos
+- Send offer and close request
+- EXACT PLANTS review and listing
+- Analytics and settings
+
+Until those land, the Shopify Admin iOS app still has the full embedded portal.

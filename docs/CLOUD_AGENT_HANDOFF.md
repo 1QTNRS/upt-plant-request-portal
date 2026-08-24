@@ -1041,23 +1041,34 @@ shows a critical banner, and one admin email is sent.
 
 ---
 
-## iOS admin app (first slice)
+## iOS admin app
 
-The Shopify Admin iOS app can already open the embedded portal. The dedicated
-iPhone app is a separate client:
+A dedicated iPhone client for the **same** portal — not a second inventory
+system and not a Shopify-free subset. The phone talks only to this app on
+Render. Render keeps using the existing Shopify offline session for draft
+orders, stock search, Files, reservations, and EXACT PLANTS listings. The
+iOS app must not embed Admin API credentials or write inventory itself.
 
-- Tokens are created in **Settings → iOS admin app**. Only a SHA-256 hash is
-  stored (`AdminMobileToken`). Revoke cuts off a lost phone.
-- The phone sends `Authorization: Bearer upt_admin_…` to
-  `GET /api/mobile/admin/session`, `GET /api/mobile/admin/requests`, and
-  `GET /api/mobile/admin/requests/:id`.
-- The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
-  `tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
-- This slice is **read-only**: list + detail. Offer send, stock link, photos,
-  EXACT PLANTS and analytics stay in the web admin until later slices.
+Business rules stay the ones in this handoff (statuses, FedEx, one-unit
+Exact Plants, declined-item review, etc.). A phone action that sends an
+offer or stocks a plant must call the same `portal.server` /
+`shopify-ops.server` functions the web admin already uses.
 
-Do not put a mobile token in `LOGGABLE_PARAMS`. A query-string token is
-redacted by default.
+Auth: tokens are created in **Settings → iOS admin app**. Only a SHA-256
+hash is stored (`AdminMobileToken`). Revoke cuts off a lost phone. The
+phone sends `Authorization: Bearer upt_admin_…`. Do not put a mobile token
+in `LOGGABLE_PARAMS`.
+
+The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
+`tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
+
+**Shipped (first slice):** `GET /api/mobile/admin/session`, request list,
+request detail. Read-only browse.
+
+**Still to port, same Shopify-backed backend:** request item edit (exact
+plant / link website stock / not available), photos, send offer, close
+request, EXACT PLANTS review/list, analytics, settings. Do not invent a
+parallel fulfilment path to get those onto the phone faster.
 
 ---
 
