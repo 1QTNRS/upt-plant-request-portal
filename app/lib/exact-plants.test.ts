@@ -722,11 +722,28 @@ describe("analytics list paging and export", () => {
     assert.match(conversion, /headerLabel\("requestToPurchasePercent"/);
     assert.match(conversion, /headerLabel\("itemRevenue"/);
     assert.match(conversion, /headerLabel\("behaviorFlag"/);
-    assert.match(conversion, /sortByKey\(rows, sortKey, sortDirection\)/);
+    assert.match(conversion, /sortByKey\(filtered, sortKey, sortDirection\)/);
     assert.match(conversion, /upt-flag-pill/);
     assert.match(conversion, /upt-cell-meta/);
     assert.match(conversion, /Customer<br \/>Name/);
     assert.match(conversion, /Accepted vs<br \/>Purchased %/);
+  });
+
+  it("searches customers by name or email and hides Plant Name Review", () => {
+    assert.match(analytics, /analytics-customer-search/);
+    assert.match(analytics, /matchesAnalyticsCustomerSearch/);
+    assert.match(analytics, /placeholder="Customer name or email"/);
+    assert.ok(!analytics.includes("Plant Name Review"));
+    assert.ok(!analytics.includes("PlantIdentitySuggestions"));
+  });
+
+  it("collapses Repeated Request / Decline Pattern by default", () => {
+    const patterns = analytics.slice(
+      analytics.indexOf("function RepeatedRequestDeclinePatterns"),
+    );
+    assert.match(patterns, /CollapsibleSection/);
+    assert.match(patterns, /defaultOpen=\{false\}/);
+    assert.match(patterns, /Repeated Request \/ Decline Pattern/);
   });
 });
 

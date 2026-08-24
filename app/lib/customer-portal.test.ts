@@ -18,6 +18,7 @@ import {
   withExtraRow,
   withoutRow,
 } from "./customer-portal";
+import { shouldRenderCustomerPortalNav } from "./customer-nav";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
 
@@ -590,7 +591,7 @@ describe("the offer response works without JavaScript", () => {
 });
 
 describe("customer portal navigation", () => {
-  it("puts Home and My Requests on the customer layout, not admin links", () => {
+  it("puts Home and My Requests on the local demo layout only, not the storefront", () => {
     const layout = readFileSync(
       path.join(REPO_ROOT, "app", "routes", "customer.tsx"),
       "utf8",
@@ -599,6 +600,7 @@ describe("customer portal navigation", () => {
       path.join(REPO_ROOT, "app", "components", "customer-portal-nav.tsx"),
       "utf8",
     );
+    assert.match(layout, /shouldRenderCustomerPortalNav\(data\.viaAppProxy\)/);
     assert.match(layout, /CustomerPortalNav/);
     assert.match(layout, /storefrontHomeUrl/);
     assert.match(layout, /customerMyRequestsHref/);
@@ -608,6 +610,8 @@ describe("customer portal navigation", () => {
     assert.match(nav, /My Requests/);
     assert.ok(!nav.includes("/app"), "customer nav must not expose admin routes");
     assert.ok(!layout.includes('href="/app"'));
+    assert.equal(shouldRenderCustomerPortalNav(true), false);
+    assert.equal(shouldRenderCustomerPortalNav(false), true);
   });
 });
 

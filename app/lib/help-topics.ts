@@ -241,7 +241,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       "`RequestItem.plantName` is the customer's own wording and is never rewritten. `RequestItem.canonicalPlantId` points at the identity the line is counted under, so `Hoya carnosa` and `H. carnosa` are one row in analytics and the customer still sees what they typed.",
       "Matching is deterministic and needs no network. Identical canonical keys, or an edit distance of 1 on the epithet, link automatically. Distance 2, or an abbreviation expansion that is not exact, opens an admin suggestion and merges nothing. Anything else stays separate, silently.",
       "Quoted names, cultivars, accession, clone, collection and seedling numbers, collector codes and locality words are never merged automatically. A wrong merge corrupts per-plant figures invisibly, which is worse than two rows for one plant.",
-      "Suggestions are answered from the Plant Name Review card on the analytics page: Same Plant merges the identities and records the answer so it is not asked again, Keep Separate refuses the pair forever.",
+      "High-confidence matches still group automatically. Medium-confidence suggestions are stored for later review and do not merge on their own; analytics no longer shows a Plant Name Review card.",
     ],
     citations: [
       {

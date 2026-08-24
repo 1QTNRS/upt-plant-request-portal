@@ -18,8 +18,10 @@ const linkStyle: React.CSSProperties = {
 };
 
 /**
- * Unobtrusive Home / My Requests chrome for customer-facing pages.
- * No admin links. Works without hydration.
+ * Unobtrusive Home / My Requests chrome for the local customer demo only.
+ * App-proxy pages sit inside the shop theme, so this nav is omitted there
+ * and UPT's real website menu is what the customer sees. No admin links.
+ * Works without hydration.
  */
 export function CustomerPortalNav({
   homeHref,
