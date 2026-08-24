@@ -813,6 +813,24 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /<form method="post" action=\{formAction\}>/);
   });
 
+  it("tells a logged-in customer about combining shipping before submit", () => {
+    const html = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: true,
+        name: "Alex Rivera",
+        email: "alex.rivera@example.com",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+      }),
+    );
+    assert.match(html, /Have an existing order\?/);
+    assert.match(html, /refund any shipping overages/);
+    assert.ok(
+      html.indexOf("Have an existing order?") < html.indexOf("Submit request"),
+    );
+  });
+
   it("uses the current customer-facing request intro", () => {
     assert.match(
       source,
@@ -833,7 +851,13 @@ describe("the request form works without JavaScript", () => {
   it("drops title icons and keeps the pager off the request numbers", () => {
     assert.match(source, /<h2 className="upt-card-title">New request<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
+    assert.match(source, /<h2 className="upt-card-title">Have an existing order\?<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">My Requests<\/h2>/);
+    assert.match(source, /refund any shipping overages/);
+    assert.match(
+      source,
+      /Have an existing order\?[\s\S]*Submit request/,
+    );
     assert.ok(
       !/<h2 className="upt-card-title">\s*<LeafIcon/.test(source),
       "section titles should be text only",
