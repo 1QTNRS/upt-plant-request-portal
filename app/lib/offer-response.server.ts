@@ -328,7 +328,7 @@ export async function customerCloseRequest(input: {
   shop: string;
   requestId: string;
   admin?: AdminContext["admin"];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; closed: true } | { ok: false; error: string }> {
   const request = await getRequest(input.shop, input.requestId);
   if (!request) {
     return { ok: false, error: "This request could not be loaded." };
@@ -350,7 +350,7 @@ export async function customerCloseRequest(input: {
 
   if (!canClose) {
     if (request.status === "Closed") {
-      return { ok: true };
+      return { ok: true, closed: true };
     }
     return {
       ok: false,
@@ -375,7 +375,7 @@ export async function customerCloseRequest(input: {
     { reason: INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON },
   );
 
-  return { ok: true };
+  return { ok: true, closed: true };
 }
 
 export async function handleCustomerOfferAction(input: {

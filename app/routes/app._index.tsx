@@ -6,6 +6,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
   ADMIN_DASHBOARD_STATUS_FILTERS,
+  countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   formatPlantsSummary,
   getDisplayRequestNumber,
@@ -42,6 +43,7 @@ type DashboardData = {
   }>;
   query: string;
   statusFilter: AdminDashboardStatusFilter;
+  statusCounts: Record<AdminDashboardStatusFilter, number>;
 };
 
 function toDashboard(
@@ -56,6 +58,7 @@ function toDashboard(
     statusFilter,
     // Counts stay on the full shop dataset so the Overview cards do not
     // shrink when the list is filtered.
+    statusCounts: countAdminDashboardStatusFilters(requests),
     stats: summarizeAdminDashboardStats(requests),
     requests: filtered.map((request) => ({
       id: request.id,
@@ -117,45 +120,47 @@ export default function Dashboard() {
       </s-section>
 
       <s-section heading="Search requests">
-        <Form method="get">
-          <WrappingRow>
-            <s-text-field
-              name="q"
-              label="Search"
-              labelAccessibilityVisibility="exclusive"
-              value={query}
-              placeholder="Customer name, plant, or request number"
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-            <input type="hidden" name="q" value={query} />
-            <label>
-              <s-text color="subdued">Status</s-text>
-              <select
-                name="status"
-                defaultValue={data.statusFilter}
-                aria-label="Filter by status"
-                style={{
-                  display: "block",
-                  marginTop: "6px",
-                  minHeight: "36px",
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid #c9cccf",
-                  background: "#fff",
-                  font: "inherit",
-                }}
-              >
-                {ADMIN_DASHBOARD_STATUS_FILTERS.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <s-button variant="primary" type="submit">
-              Search
-            </s-button>
-          </WrappingRow>
+        <Form method="get" data-admin-status-filter>
+          <s-stack direction="block" gap="base">
+            <WrappingRow>
+              <s-text-field
+                name="q"
+                label="Search"
+                labelAccessibilityVisibility="exclusive"
+                value={query}
+                placeholder="Customer name, plant, or request number"
+                onChange={(event) => setQuery(event.currentTarget.value)}
+              />
+              <input type="hidden" name="q" value={query} />
+              <s-button variant="primary" type="submit">
+                Search
+              </s-button>
+            </WrappingRow>
+            <s-stack direction="inline" gap="small">
+              {ADMIN_DASHBOARD_STATUS_FILTERS.map((status) => (
+                <button
+                  key={status}
+                  type="submit"
+                  name="status"
+                  value={status}
+                  aria-pressed={data.statusFilter === status}
+                  style={{
+                    padding: "8px 12px",
+                    minHeight: 44,
+                    borderRadius: 8,
+                    border: "1px solid #c9cccf",
+                    background: data.statusFilter === status ? "#008060" : "#fff",
+                    color: data.statusFilter === status ? "#fff" : "inherit",
+                    font: "inherit",
+                    cursor: "pointer",
+                  }}
+                >
+                  {status} ({data.statusCounts[status]})
+                </button>
+              ))}
+            </s-stack>
+            <input type="hidden" name="status" value={data.statusFilter} />
+          </s-stack>
         </Form>
         <s-text color="subdued">
           {`Showing ${visibleCount} request${visibleCount === 1 ? "" : "s"}${

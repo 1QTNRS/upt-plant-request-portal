@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { data, useActionData, useLoaderData } from "react-router";
+import { data, redirect, useActionData, useLoaderData } from "react-router";
 
 import {
   CustomerOfferView,
@@ -176,6 +176,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     form,
     admin,
   });
+  if (result.ok && "closed" in result && result.closed) {
+    throw redirect(customerPortalRelativeLinks(context.viaAppProxy).home);
+  }
   return {
     error: null as string | null,
     ...result,

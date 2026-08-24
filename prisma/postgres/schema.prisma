@@ -92,6 +92,7 @@ model PlantRequest {
   shopifyOrder          ShopifyOrderReference?
   statusEvents          StatusEvent[]
   emails                EmailMessage[]
+  internalNotes         RequestInternalNote[]
 
   @@unique([shop, requestNumber])
   @@index([shop, status])
@@ -427,4 +428,20 @@ model EmailMessage {
   @@index([shop, status])
   // The hourly maintenance run counts reminders by template, twice per shop.
   @@index([shop, templateKey])
+}
+
+/**
+ * Admin-only scratch notes on a request. Never shown to the customer, never
+ * copied into an offer or email. Each save is a new row so the date and time
+ * stay attached to what was written.
+ */
+model RequestInternalNote {
+  id        String       @id @default(cuid())
+  shop      String
+  requestId String
+  request   PlantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime     @default(now())
+
+  @@index([shop, requestId, createdAt])
 }

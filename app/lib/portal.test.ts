@@ -29,6 +29,7 @@ import {
   getOfferUrgencyMessage,
   incompleteOfferItems,
   isOfferExpired,
+  countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   matchesAdminSearch,
   parseAdminDashboardStatusFilter,
@@ -246,6 +247,16 @@ describe("admin dashboard status filter", () => {
     assert.equal(parseAdminDashboardStatusFilter(""), "All");
     assert.equal(parseAdminDashboardStatusFilter("pending"), "All");
     assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
+  });
+
+  it("counts each dashboard status filter from the full list", () => {
+    assert.deepEqual(countAdminDashboardStatusFilters(requests), {
+      All: 5,
+      New: 1,
+      Pending: 2,
+      Expired: 1,
+      Closed: 1,
+    });
   });
 
   it("filters the visible list by stored admin status", () => {

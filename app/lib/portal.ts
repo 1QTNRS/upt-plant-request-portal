@@ -577,6 +577,19 @@ export function summarizeAdminDashboardStats(
   };
 }
 
+export function countAdminDashboardStatusFilters(
+  requests: Array<{ status: RequestStatus }>,
+): Record<AdminDashboardStatusFilter, number> {
+  const stats = summarizeAdminDashboardStats(requests);
+  return {
+    All: requests.length,
+    New: stats.newRequests,
+    Pending: stats.pending,
+    Expired: stats.expired,
+    Closed: stats.closed,
+  };
+}
+
 /**
  * Names what is on offer without promising an exact plant that is not one.
  *
