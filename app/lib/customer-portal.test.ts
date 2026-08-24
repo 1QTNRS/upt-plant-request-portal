@@ -621,12 +621,16 @@ describe("customer portal navigation", () => {
     assert.equal(shouldRenderCustomerPortalNav(false), true);
   });
 
-  it("tells a signed-out storefront visitor to come back after they log in", () => {
+  it("does not add a second logged-out instruction on the storefront", () => {
     const portal = readFileSync(
       path.join(REPO_ROOT, "app", "components", "customer-request-portal.tsx"),
       "utf8",
     );
-    assert.match(portal, /Come back to this page when you log in\./);
+    assert.match(
+      portal,
+      /Please log in to your Shopify customer account to submit a plant/,
+    );
+    assert.doesNotMatch(portal, /Come back to this page when you log in/);
     assert.doesNotMatch(
       portal,
       /Open this page from your Shopify account while logged in/,
@@ -666,7 +670,7 @@ describe("customer portal navigation", () => {
         showDemoLogin: false,
       }),
     );
-    assert.match(html, /Come back to this page when you log in\./);
+    assert.doesNotMatch(html, /Come back to this page when you log in/);
     assert.match(
       html,
       /Please log in to your Shopify customer account to submit a plant/,

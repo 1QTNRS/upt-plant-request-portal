@@ -94,11 +94,7 @@ export function CustomerRequestPortal({
                 Customer Account authentication.
               </p>
             </form>
-          ) : (
-            <p className="upt-muted">
-              Come back to this page when you log in.
-            </p>
-          )}
+          ) : null}
         </section>
       </CustomerPageShell>
     );
