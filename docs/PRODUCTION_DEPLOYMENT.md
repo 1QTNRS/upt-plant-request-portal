@@ -286,14 +286,16 @@ authorization screen.
 
 ### 7c. Store settings
 
-1. **Shopify admin → Products.** Confirm a product exists with the handle
-   `upgrade-to-fedex-priority-overnight-for-just-15-extra`. If the real handle
-   differs, change it on the portal's **Settings** page. When the handle
-   resolves, the app reads the variant's Shopify price when the offer is sent
-   and quotes, emails, freezes and bills that one amount; when it does not, the
-   app falls back to a custom line item at the last known price — the customer
-   is charged what they were quoted either way, but the order does not reference
-   the product and your product reporting will not see it.
+1. **Shopify admin → Products.** Confirm the live FedEx upgrade listing exists
+   with SKU `UPTUPGTOFED1236S`. The app looks that SKU up first and uses its
+   variant GID and Shopify price when the offer is sent. If the SKU is missing,
+   it falls back to the product handle
+   `upgrade-to-fedex-priority-overnight-for-just-15-extra` (or the handle stored
+   on **Settings**). When a listing resolves, the app quotes, emails, freezes
+   and bills that one amount; when it does not, the app falls back to a custom
+   line item at the last known price — the customer is charged what they were
+   quoted either way, but the order does not reference the product and your
+   product reporting will not see it.
 2. **Portal admin → Settings.** Set the admin notification email.
 
 ---

@@ -705,6 +705,35 @@ describe("analytics list paging and export", () => {
     assert.match(analytics, /Most Purchased Plants/);
     assert.match(analytics, /Highest Revenue Plants/);
   });
+
+  it("sorts Item Conversion columns and wraps headers and flags in the box", () => {
+    const conversion = analytics.slice(
+      analytics.indexOf("function ItemConversionAnalytics"),
+    );
+    assert.match(conversion, /upt-wrap-table/);
+    assert.match(conversion, /headerLabel\("customerName"/);
+    assert.match(conversion, /headerLabel\("email"/);
+    assert.match(conversion, /headerLabel\("requestId"/);
+    assert.match(conversion, /headerLabel\("itemsRequested"/);
+    assert.match(conversion, /headerLabel\("itemsOffered"/);
+    assert.match(conversion, /headerLabel\("itemsAccepted"/);
+    assert.match(conversion, /headerLabel\("itemsPurchased"/);
+    assert.match(conversion, /headerLabel\("acceptedVsPurchasedPercent"/);
+    assert.match(conversion, /headerLabel\("requestToPurchasePercent"/);
+    assert.match(conversion, /headerLabel\("itemRevenue"/);
+    assert.match(conversion, /headerLabel\("behaviorFlag"/);
+    assert.match(conversion, /sortByKey\(rows, sortKey, sortDirection\)/);
+  });
+});
+
+describe("analytics export spacing", () => {
+  it("keeps Export to Excel off the table", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "..", "..", "app", "components", "paged-list.tsx"),
+      "utf8",
+    );
+    assert.match(source, /marginBottom:\s*16/);
+  });
 });
 
 describe("EXACT PLANTS table sorting", () => {

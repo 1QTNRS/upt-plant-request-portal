@@ -110,7 +110,7 @@ migrations are added under both directories.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
-- `ShopSettings` — FedEx warning, product handle/variant, upgrade price/label, admin email
+- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email. Live FedEx listing is SKU `UPTUPGTOFED1236S`
 - `RequestNumberSequence` — still keyed by `(shop, year)`; live numbering uses `year = 0` (`GLOBAL_REQUEST_SEQUENCE_YEAR`) for a shop-wide counter
 - `CustomerProfile` — unique `(shop, email)`
 - `PlantRequest` — statuses stored as `New` / `Pending` / `Closed` / `Expired`
@@ -142,7 +142,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Customer name/email resolved from the Admin API and cached in `CustomerProfile` (`app/lib/customer-identity.server.ts`)
 - Request ownership decided by `identityOwnsRequest` (`app/lib/customer-identity.ts`, pure). A request already claimed by a Shopify account id is **never** reachable by email, so changing an account email cannot reach a stranger's request
 - Draft order create + invoice send (`createDraftOrderForRequest` in `app/lib/shopify-ops.server.ts`), custom lines priced with `originalUnitPriceWithCurrency`
-- FedEx upgrade product lookup via `productByIdentifier`
+- FedEx upgrade product lookup by live SKU `UPTUPGTOFED1236S` (`productVariants`), then handle via `productByIdentifier`
 - Shopify Files staged upload + `fileCreate`, polling `fileStatus` until `READY` (`uploadPlantPhoto`)
 - `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes, ignores redeliveries for an already-paid request
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
@@ -930,9 +930,10 @@ Remaining, all on the owner:
    it names the channel in the log instead. Until this is off, every EXACT
    PLANTS listing — one physical plant — sits on a channel where it can be sold
    again.
-3. Confirm the FedEx product handle on the real store (runbook §7). The dev
-   store has no product at that handle, so the variant-priced FedEx line has
-   never run against a real variant.
+3. Confirm the FedEx listing SKU `UPTUPGTOFED1236S` on the real store (runbook
+   §7). The app resolves that SKU first. The dev store has no product at that
+   SKU or the fallback handle, so the variant-priced FedEx line has never run
+   against a real variant.
 4. Database backups (runbook §6) — Render point-in-time recovery is already on
    for this plan, so this is confirming retention, not enabling it: 3 days on
    Hobby, 7 on Pro. It has already been used once to recover this database.

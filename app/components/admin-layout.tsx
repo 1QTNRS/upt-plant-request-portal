@@ -95,6 +95,28 @@ export function AdminResponsiveStyles() {
         white-space: normal;
         overflow-wrap: anywhere;
       }
+      .upt-fixed-table.upt-wrap-table th,
+      .upt-fixed-table.upt-wrap-table td {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        height: auto;
+        min-height: 44px;
+        overflow-wrap: anywhere;
+        line-height: 1.3;
+        vertical-align: top;
+      }
+      .upt-fixed-table.upt-wrap-table th {
+        vertical-align: bottom;
+      }
+      .upt-fixed-table.upt-wrap-table s-badge {
+        display: inline-block;
+        max-width: 100%;
+        height: auto;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
+      }
       .upt-page-slot td {
         border-bottom-color: transparent;
       }

@@ -193,8 +193,15 @@ export const DEFAULT_FEDEX_REMOVAL_WARNING =
 export const FEDEX_PRODUCT_HANDLE =
   "upgrade-to-fedex-priority-overnight-for-just-15-extra";
 
+/** Live UPT listing. Draft-order lines resolve this SKU first. */
+export const FEDEX_PRODUCT_SKU = "UPTUPGTOFED1236S";
+
 export const FEDEX_PRODUCT_URL =
   "https://unsolicitedplanttalks.com/products/upgrade-to-fedex-priority-overnight-for-just-15-extra";
+
+export function fedexVariantSkuQuery(sku = FEDEX_PRODUCT_SKU): string {
+  return `sku:${sku}`;
+}
 
 const LEGACY_PENDING_STATUSES = new Set([
   "Pending",

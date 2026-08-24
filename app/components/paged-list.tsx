@@ -23,6 +23,7 @@ const exportButtonStyle: CSSProperties = {
   boxSizing: "border-box",
   minHeight: 36,
   padding: "6px 12px",
+  marginBottom: 16,
   borderRadius: 8,
   border: "1px solid #002910",
   background: "#002910",

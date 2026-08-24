@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
+import prisma from "../db.server";
 import {
   createExactPlantShopifyProduct,
+  resolveFedexVariant,
   resolveOnlineStoreAndPosPublications,
   searchExistingStock,
 } from "./shopify-ops.server";
 import { unlinkableVariantReason } from "./growers-choice";
+import { FEDEX_PRODUCT_SKU, fedexVariantSkuQuery } from "./portal";
+import { getShopSettings } from "./portal.server";
+import { DEMO_SHOP } from "./shop";
 
 type Call = { operation: string; query: string; variables: Record<string, unknown> };
 
@@ -556,6 +561,80 @@ describe("searching the shop's existing stock", () => {
         "This variant has no price in Shopify.",
         "Shopify reports this variant as not available for sale.",
       ],
+    );
+  });
+});
+
+describe("FedEx upgrade listing", () => {
+  const shop = `${DEMO_SHOP}-fedex-sku`;
+  const skuVariantGid = "gid://shopify/ProductVariant/991236";
+  const handleVariantGid = "gid://shopify/ProductVariant/778899";
+
+  const reset = async () => {
+    await prisma.shopSettings.deleteMany({ where: { shop } });
+  };
+
+  before(reset);
+  after(reset);
+
+  it("looks up the live UPT SKU before the product handle", async () => {
+    const calls: Call[] = [];
+    const result = await resolveFedexVariant(
+      fakeAdmin(
+        {
+          FedexUpgradeVariantBySku: {
+            productVariants: {
+              nodes: [
+                { id: skuVariantGid, sku: FEDEX_PRODUCT_SKU, price: "15.00" },
+              ],
+            },
+          },
+        },
+        calls,
+      ),
+      shop,
+    );
+
+    assert.equal(result.variantGid, skuVariantGid);
+    assert.equal(result.price, 15);
+    assert.deepEqual(
+      calls.map((call) => call.operation),
+      ["FedexUpgradeVariantBySku"],
+    );
+    assert.deepEqual(calls[0]?.variables, {
+      query: fedexVariantSkuQuery(FEDEX_PRODUCT_SKU),
+    });
+    assert.equal(fedexVariantSkuQuery(), `sku:${FEDEX_PRODUCT_SKU}`);
+
+    const settings = await getShopSettings(shop);
+    assert.equal(settings.fedexVariantGid, skuVariantGid);
+    assert.equal(settings.fedexUpgradePrice, 15);
+  });
+
+  it("falls back to the product handle when the SKU is missing", async () => {
+    const calls: Call[] = [];
+    const result = await resolveFedexVariant(
+      fakeAdmin(
+        {
+          FedexUpgradeVariantBySku: { productVariants: { nodes: [] } },
+          FedexUpgradeProduct: {
+            productByIdentifier: {
+              variants: {
+                nodes: [{ id: handleVariantGid, price: "18.00" }],
+              },
+            },
+          },
+        },
+        calls,
+      ),
+      shop,
+    );
+
+    assert.equal(result.variantGid, handleVariantGid);
+    assert.equal(result.price, 18);
+    assert.deepEqual(
+      calls.map((call) => call.operation),
+      ["FedexUpgradeVariantBySku", "FedexUpgradeProduct"],
     );
   });
 });
