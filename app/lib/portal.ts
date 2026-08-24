@@ -633,8 +633,15 @@ export function countAdminDashboardStatusFilters(
 }
 
 /**
+ * Custom shipping-line title when the admin overrode the draft-order fee.
+ * Shopify's own quoted rate keeps its carrier name; this override must not
+ * look like ordinary shipping on the invoice.
+ */
+export const OVERRIDDEN_SHIPPING_LINE_TITLE = "ADD ON";
+
+/**
  * Blank means Shopify quotes shipping. A parsed number (including 0) is a
- * custom shipping line on the later draft order.
+ * custom ADD ON line on the later draft order.
  */
 export function parseShippingFeeOverride(
   raw: unknown,
@@ -644,7 +651,7 @@ export function parseShippingFeeOverride(
   if (text === "") return { ok: true };
   const value = Number.parseFloat(text);
   if (!Number.isFinite(value) || value < 0) {
-    return { ok: false, error: "Shipping override must be a number of 0 or more." };
+    return { ok: false, error: "ADD ON must be a number of 0 or more." };
   }
   return { ok: true, value: normalizePrice(value) };
 }
@@ -1003,7 +1010,7 @@ export function buildDraftOrderInput(input: {
     ...(input.shippingFeeOverride !== undefined
       ? {
           shippingLine: {
-            title: "Shipping",
+            title: OVERRIDDEN_SHIPPING_LINE_TITLE,
             priceWithCurrency: {
               amount: normalizePrice(input.shippingFeeOverride).toFixed(2),
               currencyCode: input.currencyCode,
