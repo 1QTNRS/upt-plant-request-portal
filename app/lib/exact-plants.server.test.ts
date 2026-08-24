@@ -5,6 +5,7 @@ import prisma from "../db.server";
 import { EXACT_PLANT_DISMISSED_REASON } from "./exact-plants";
 import {
   createExactPlantListing,
+  createExactPlantListingsFromDrafts,
   dismissExactPlantFromQueue,
   ExactPlantListingError,
   getExactPlantReview,
@@ -233,6 +234,33 @@ describe("declined exact plant listings", () => {
       where: { requestItemId: availableId },
     });
     assert.equal(listingCount, 1);
+  });
+
+  it("creates listings from multiple review drafts in one call", async () => {
+    const first = await createOfferedRequest({ includeUnavailable: false });
+    const second = await createOfferedRequest({ includeUnavailable: false });
+
+    const result = await createExactPlantListingsFromDrafts(undefined, shop, [
+      first.availableId,
+      second.availableId,
+      first.availableId,
+    ]);
+    assert.equal(result.created, 2);
+    assert.equal(result.skipped, 0);
+    assert.equal(result.errors.length, 0);
+
+    const listed = await prisma.exactPlantListing.findMany({
+      where: { requestItemId: { in: [first.availableId, second.availableId] } },
+    });
+    assert.equal(listed.length, 2);
+    assert.ok(listed.every((row) => row.status === "listed"));
+    assert.ok(listed.every((row) => row.title === "Thai Constellation Exact"));
+
+    const again = await createExactPlantListingsFromDrafts(undefined, shop, [
+      first.availableId,
+    ]);
+    assert.equal(again.created, 0);
+    assert.equal(again.skipped, 1);
   });
 
   it("lets only one of two simultaneous approvals create the product", async () => {

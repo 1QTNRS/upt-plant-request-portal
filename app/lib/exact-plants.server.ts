@@ -655,3 +655,60 @@ export async function dismissExactPlantFromQueue(input: {
 
   return { ok: true, alreadyDismissed: false };
 }
+
+export type BulkExactPlantListingResult = {
+  created: number;
+  skipped: number;
+  errors: Array<{ requestItemId: string; error: string }>;
+};
+
+/**
+ * Creates listings from each item's existing review draft (offered title,
+ * price, weight, photos). One Shopify product per plant. Already-listed
+ * rows are skipped so a retry does not duplicate.
+ */
+export async function createExactPlantListingsFromDrafts(
+  admin: GraphqlClient | undefined,
+  shop: string,
+  requestItemIds: string[],
+): Promise<BulkExactPlantListingResult> {
+  const uniqueIds = [...new Set(requestItemIds.map((id) => id.trim()).filter(Boolean))];
+  const result: BulkExactPlantListingResult = {
+    created: 0,
+    skipped: 0,
+    errors: [],
+  };
+
+  for (const requestItemId of uniqueIds) {
+    try {
+      const review = await getExactPlantReview(shop, requestItemId);
+      if (
+        review.listing?.status === "listed" &&
+        review.listing.shopifyProductGid
+      ) {
+        result.skipped += 1;
+        continue;
+      }
+      await createExactPlantListing(admin, shop, {
+        requestItemId,
+        title: review.draft.title,
+        price: review.draft.price,
+        weightLbs: review.draft.weightLbs,
+        photoUrls: review.draft.photoUrls,
+      });
+      result.created += 1;
+    } catch (error) {
+      result.errors.push({
+        requestItemId,
+        error:
+          error instanceof ExactPlantListingError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Listing creation failed.",
+      });
+    }
+  }
+
+  return result;
+}

@@ -22,6 +22,7 @@ import {
   sortExactPlantTable,
 } from "../lib/exact-plants";
 import {
+  createExactPlantListingsFromDrafts,
   dismissExactPlantFromQueue,
   listDismissedExactPlants,
   listExactPlantCandidates,
@@ -57,10 +58,62 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop } = await requireAdmin(request);
+  const { shop, admin } = await requireAdmin(request);
   const form = await request.formData();
-  if (String(form.get("intent")) !== "dismiss-exact-plant") {
-    return { error: "Unknown action.", pendingDismissItemId: null as string | null };
+  const intent = String(form.get("intent") || "");
+
+  if (intent === "bulk-create-listings") {
+    const requestItemIds = form
+      .getAll("requestItemId")
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+    if (requestItemIds.length === 0) {
+      return {
+        error: "Select at least one plant to list.",
+        pendingDismissItemId: null as string | null,
+        bulkMessage: null as string | null,
+      };
+    }
+    const result = await createExactPlantListingsFromDrafts(
+      admin,
+      shop,
+      requestItemIds,
+    );
+    if (result.created === 0 && result.errors.length > 0) {
+      return {
+        error: result.errors.map((entry) => entry.error).join(" "),
+        pendingDismissItemId: null,
+        bulkMessage: null,
+      };
+    }
+    const parts = [
+      result.created === 1
+        ? "Created 1 listing."
+        : `Created ${result.created} listings.`,
+    ];
+    if (result.skipped > 0) {
+      parts.push(
+        result.skipped === 1
+          ? "Skipped 1 already-listed plant."
+          : `Skipped ${result.skipped} already-listed plants.`,
+      );
+    }
+    if (result.errors.length > 0) {
+      parts.push(result.errors.map((entry) => entry.error).join(" "));
+    }
+    return {
+      error: result.errors.length > 0 ? parts.join(" ") : null,
+      pendingDismissItemId: null,
+      bulkMessage: result.errors.length > 0 ? null : parts.join(" "),
+    };
+  }
+
+  if (intent !== "dismiss-exact-plant") {
+    return {
+      error: "Unknown action.",
+      pendingDismissItemId: null as string | null,
+      bulkMessage: null as string | null,
+    };
   }
 
   const requestItemId = String(form.get("requestItemId") || "");
@@ -73,9 +126,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return {
       error: result.error,
       pendingDismissItemId: result.pendingDismiss ? requestItemId : null,
+      bulkMessage: null,
     };
   }
-  return { error: null as string | null, pendingDismissItemId: null as string | null };
+  return {
+    error: null as string | null,
+    pendingDismissItemId: null as string | null,
+    bulkMessage: null as string | null,
+  };
 };
 
 export default function ExactPlantsIndex() {
@@ -104,6 +162,13 @@ export default function ExactPlantsIndex() {
         <s-section>
           <s-banner tone="critical">
             <s-text>{actionData.error}</s-text>
+          </s-banner>
+        </s-section>
+      ) : null}
+      {actionData?.bulkMessage ? (
+        <s-section>
+          <s-banner tone="success">
+            <s-text>{actionData.bulkMessage}</s-text>
           </s-banner>
         </s-section>
       ) : null}

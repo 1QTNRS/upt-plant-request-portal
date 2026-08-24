@@ -7,7 +7,10 @@ import type {
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-import { AdminConfirmDialog } from "../components/admin-confirm-dialog";
+import {
+  AdminConfirmDialog,
+  adminDialogPrimaryButtonStyle,
+} from "../components/admin-confirm-dialog";
 import { requireAdmin } from "../lib/admin-auth.server";
 import {
   canDismissExactPlantFromQueue,
@@ -376,9 +379,9 @@ export default function ExactPlantListingReview() {
               <input type="hidden" name="intent" value="dismiss-exact-plant" />
               <input type="hidden" name="returnTo" value={returnTo} />
               <input type="hidden" name="confirmed" value="true" />
-              <s-button variant="primary" tone="critical" type="submit">
+              <button type="submit" style={adminDialogPrimaryButtonStyle}>
                 Confirm Dismiss from EXACT PLANTS
-              </s-button>
+              </button>
             </Form>
           }
         >

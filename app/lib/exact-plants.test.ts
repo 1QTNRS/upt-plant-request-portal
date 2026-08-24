@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import {
   buildExactPlantListingDraft,
   buildExactPlantProductCreateInput,
+  canCreateExactPlantListing,
   canDismissExactPlantFromQueue,
   countExactPlantListingFilters,
   declinedItemTag,
@@ -329,6 +330,28 @@ describe("exact plant queue dismiss", () => {
       false,
     );
   });
+
+  it("allows listing create for queue rows that are not already listed", () => {
+    assert.equal(canCreateExactPlantListing({}), true);
+    assert.equal(
+      canCreateExactPlantListing({ listing: { status: "failed" } }),
+      true,
+    );
+    assert.equal(
+      canCreateExactPlantListing({ dismissedAt: new Date() }),
+      false,
+    );
+    assert.equal(
+      canCreateExactPlantListing({
+        listing: { status: "listed", shopifyProductGid: "gid://shopify/Product/1" },
+      }),
+      false,
+    );
+    assert.equal(
+      canCreateExactPlantListing({ listing: { status: "creating" } }),
+      false,
+    );
+  });
 });
 
 describe("exact plant listing draft", () => {
@@ -559,6 +582,12 @@ describe("the EXACT PLANTS queue page", () => {
     assert.ok(!table.includes("formatDateTime"));
     assert.match(table, /exact-plants-row-alt/);
     assert.match(table, /overflowWrap: "break-word"/);
+    assert.match(table, /data-exact-plant-select/);
+    assert.match(table, /bulk-create-listings/);
+    assert.match(table, /border-collapse: collapse/);
+    assert.ok(!table.includes("border-left: 3px"));
+    assert.ok(!table.includes('borderBottom: "2px solid #8c9196"'));
+    assert.match(table, /adminDialogPrimaryButtonStyle/);
   });
 
   it("collapses Emails and EXACT PLANTS without remounting children", () => {
@@ -570,9 +599,28 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(collapsible, /useState\(defaultOpen\)/);
     assert.match(requestPage, /title="Emails"/);
     assert.match(requestPage, /title="EXACT PLANTS"/);
+    assert.match(requestPage, /title="Internal notes"/);
+    assert.match(requestPage, /title="Customer response"/);
     assert.match(requestPage, /defaultOpen=\{false\}/);
+    assert.match(requestPage, /add-internal-note/);
     assert.match(queue, /title="EXACT PLANTS queue"/);
     assert.match(queue, /defaultOpen=\{true\}/);
+    assert.match(queue, /bulk-create-listings/);
+    assert.match(queue, /createExactPlantListingsFromDrafts/);
+  });
+});
+
+describe("admin dashboard status filters", () => {
+  const dashboard = readFileSync(
+    path.join(import.meta.dirname, "..", "..", "app", "routes", "app._index.tsx"),
+    "utf8",
+  );
+
+  it("uses one button per stored status like EXACT PLANTS", () => {
+    assert.match(dashboard, /data-admin-status-filter/);
+    assert.match(dashboard, /ADMIN_DASHBOARD_STATUS_FILTERS\.map/);
+    assert.match(dashboard, /countAdminDashboardStatusFilters/);
+    assert.ok(!dashboard.includes("<select"));
   });
 });
 

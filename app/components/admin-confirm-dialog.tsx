@@ -19,14 +19,27 @@ const cardStyle: CSSProperties = {
   border: "1px solid #c9cccf",
 };
 
-const buttonStyle: CSSProperties = {
+export const adminDialogButtonStyle: CSSProperties = {
+  boxSizing: "border-box",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   minHeight: 44,
+  height: 44,
   padding: "8px 14px",
   borderRadius: 8,
   border: "1px solid #c9cccf",
   background: "#fff",
+  color: "#202223",
   font: "inherit",
   cursor: "pointer",
+};
+
+export const adminDialogPrimaryButtonStyle: CSSProperties = {
+  ...adminDialogButtonStyle,
+  background: "#8a1f11",
+  color: "#fff",
+  borderColor: "#8a1f11",
 };
 
 export function AdminConfirmDialog({
@@ -66,9 +79,16 @@ export function AdminConfirmDialog({
         <s-stack direction="block" gap="base">
           <s-heading>{title}</s-heading>
           {children}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "stretch",
+              gap: 8,
+            }}
+          >
             {confirm}
-            <button type="button" onClick={onCancel} style={buttonStyle}>
+            <button type="button" onClick={onCancel} style={adminDialogButtonStyle}>
               Cancel
             </button>
           </div>

@@ -1,8 +1,9 @@
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { Form } from "react-router";
 
 import type { ExactPlantCandidateRow } from "../lib/exact-plants.server";
 import {
+  canCreateExactPlantListing,
   canDismissExactPlantFromQueue,
   EXACT_PLANT_LISTING_FILTER_LABELS,
   EXACT_PLANT_RELEASE_LABELS,
@@ -13,7 +14,10 @@ import {
   type ExactPlantTableSortState,
 } from "../lib/exact-plants";
 import { formatCurrency, formatDate } from "../lib/portal";
-import { AdminConfirmDialog } from "./admin-confirm-dialog";
+import {
+  AdminConfirmDialog,
+  adminDialogPrimaryButtonStyle,
+} from "./admin-confirm-dialog";
 import { AdminPhotoLightbox } from "./admin-photo-lightbox";
 
 const SORTABLE: Array<{
@@ -55,15 +59,93 @@ export function ExactPlantsTable({
     startIndex: number;
   } | null>(null);
   const [dismissItemId, setDismissItemId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkCreateOpen, setBulkCreateOpen] = useState(false);
   const dismissed = mode === "dismissed";
+  const creatableIds = useMemo(
+    () =>
+      dismissed
+        ? []
+        : items
+            .filter((item) =>
+              canCreateExactPlantListing({
+                dismissedAt: item.dismissedAt,
+                listing: item.listing,
+              }),
+            )
+            .map((item) => item.requestItemId),
+    [dismissed, items],
+  );
+  const selectedCreatable = selectedIds.filter((id) => creatableIds.includes(id));
+  const allCreatableSelected =
+    creatableIds.length > 0 &&
+    creatableIds.every((id) => selectedIds.includes(id));
+
+  const toggleSelected = (requestItemId: string, checked: boolean) => {
+    setSelectedIds((current) => {
+      if (checked) {
+        return current.includes(requestItemId)
+          ? current
+          : [...current, requestItemId];
+      }
+      return current.filter((id) => id !== requestItemId);
+    });
+  };
 
   return (
     <>
       <style>{tableLayoutCss}</style>
+      {!dismissed ? (
+        <div
+          data-exact-plants-bulk-bar
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
+          <button
+            type="button"
+            data-bulk-create-listings
+            disabled={selectedCreatable.length === 0}
+            onClick={() => setBulkCreateOpen(true)}
+            style={{
+              ...adminDialogPrimaryButtonStyle,
+              background: selectedCreatable.length === 0 ? "#c9cccf" : "#008060",
+              borderColor: selectedCreatable.length === 0 ? "#c9cccf" : "#008060",
+              cursor: selectedCreatable.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
+            Create listings ({selectedCreatable.length})
+          </button>
+          <s-text color="subdued">
+            Select plants in the table, then create listings from each offered
+            title, price, weight, and photos.
+          </s-text>
+        </div>
+      ) : null}
       <div data-exact-plants-table-wrap className="exact-plants-table-wrap">
         <table data-exact-plants-table className="exact-plants-table">
           <thead>
             <tr>
+              {!dismissed ? (
+                <th scope="col" className="exact-plants-col-select" style={thStyle}>
+                  <input
+                    type="checkbox"
+                    data-exact-plant-select-all
+                    aria-label="Select all plants that can be listed"
+                    checked={allCreatableSelected}
+                    disabled={creatableIds.length === 0}
+                    onChange={(event) => {
+                      setSelectedIds(
+                        event.currentTarget.checked ? creatableIds : [],
+                      );
+                    }}
+                  />
+                </th>
+              ) : null}
               <th scope="col" className="exact-plants-col-photo" style={thStyle}>
                 Photo
               </th>
@@ -126,6 +208,10 @@ export function ExactPlantsTable({
               const canDismiss = canDismissExactPlantFromQueue({
                 listing: item.listing,
               });
+              const canCreate = canCreateExactPlantListing({
+                dismissedAt: item.dismissedAt,
+                listing: item.listing,
+              });
               const dismissedAt = item.dismissedAt;
               const photos = item.photoUrls.filter(Boolean);
               const eligibilityTone = ELIGIBILITY_TONE[exactPlantReleaseTone(item.releaseReason)];
@@ -135,6 +221,26 @@ export function ExactPlantsTable({
                   data-exact-plant-row={item.requestItemId}
                   className={index % 2 === 1 ? "exact-plants-row-alt" : undefined}
                 >
+                  {!dismissed ? (
+                    <td className="exact-plants-col-select" style={tdStyle}>
+                      {canCreate ? (
+                        <input
+                          type="checkbox"
+                          data-exact-plant-select
+                          aria-label={`Select ${item.title} for listing`}
+                          checked={selectedIds.includes(item.requestItemId)}
+                          onChange={(event) =>
+                            toggleSelected(
+                              item.requestItemId,
+                              event.currentTarget.checked,
+                            )
+                          }
+                        />
+                      ) : (
+                        <span style={{ color: "#6d7175" }}>—</span>
+                      )}
+                    </td>
+                  ) : null}
                   <td className="exact-plants-col-photo" style={tdStyle}>
                     {photos[0] ? (
                       <button
@@ -298,9 +404,9 @@ export function ExactPlantsTable({
               <input type="hidden" name="intent" value="dismiss-exact-plant" />
               <input type="hidden" name="requestItemId" value={dismissItemId} />
               <input type="hidden" name="confirmed" value="true" />
-              <s-button variant="primary" tone="critical" type="submit">
+              <button type="submit" style={adminDialogPrimaryButtonStyle}>
                 Confirm Dismiss from EXACT PLANTS
-              </s-button>
+              </button>
             </Form>
           }
         >
@@ -309,6 +415,45 @@ export function ExactPlantsTable({
             product is created. The original request, customer response, offer
             snapshot, photos, and history stay. You can still find it on the
             Dismissed tab.
+          </s-text>
+        </AdminConfirmDialog>
+      ) : null}
+      {bulkCreateOpen ? (
+        <AdminConfirmDialog
+          title="Create EXACT PLANTS listings?"
+          onCancel={() => setBulkCreateOpen(false)}
+          confirm={
+            <Form
+              method="post"
+              onSubmit={() => {
+                setBulkCreateOpen(false);
+                setSelectedIds([]);
+              }}
+            >
+              <input type="hidden" name="intent" value="bulk-create-listings" />
+              {selectedCreatable.map((id) => (
+                <input key={id} type="hidden" name="requestItemId" value={id} />
+              ))}
+              <button
+                type="submit"
+                data-confirm-bulk-create
+                style={{
+                  ...adminDialogPrimaryButtonStyle,
+                  background: "#008060",
+                  borderColor: "#008060",
+                }}
+              >
+                Create {selectedCreatable.length} listing
+                {selectedCreatable.length === 1 ? "" : "s"}
+              </button>
+            </Form>
+          }
+        >
+          <s-text>
+            This creates one Shopify EXACT PLANTS product for each selected
+            plant, using that plant&apos;s offered title, price, weight, and
+            photos. Already-listed plants are skipped. Review a single plant
+            first if you need to change those details.
           </s-text>
         </AdminConfirmDialog>
       ) : null}
@@ -324,10 +469,12 @@ const tableLayoutCss = `
   .exact-plants-table {
     width: 100%;
     table-layout: fixed;
-    border-collapse: separate;
+    border-collapse: collapse;
     border-spacing: 0;
     font: inherit;
+    border: 1px solid #c9cccf;
   }
+  .exact-plants-col-select { width: 36px; text-align: center; }
   .exact-plants-col-photo { width: 52px; }
   .exact-plants-col-name { width: auto; }
   .exact-plants-col-request { width: 4.6rem; }
@@ -336,15 +483,9 @@ const tableLayoutCss = `
   .exact-plants-col-price { width: 4.6rem; }
   .exact-plants-col-date { width: 6.4rem; }
   .exact-plants-col-actions { width: 7.2rem; }
-  .exact-plants-table tbody td {
-    border-top: 1px solid #c9cccf;
-    border-bottom: 1px solid #8c9196;
-  }
-  .exact-plants-table tbody td:first-child {
-    border-left: 3px solid #8c9196;
-  }
-  .exact-plants-table tbody td:last-child {
-    border-right: 1px solid #c9cccf;
+  .exact-plants-table th,
+  .exact-plants-table td {
+    border: 1px solid #c9cccf;
   }
   .exact-plants-table th,
   .exact-plants-table td {
@@ -372,7 +513,6 @@ const tableLayoutCss = `
 const thStyle: CSSProperties = {
   textAlign: "left",
   padding: "8px 6px",
-  borderBottom: "2px solid #8c9196",
   background: "#f1f2f3",
   whiteSpace: "nowrap",
   verticalAlign: "bottom",
@@ -380,7 +520,6 @@ const thStyle: CSSProperties = {
 
 const tdStyle: CSSProperties = {
   padding: "10px 6px",
-  borderBottom: "2px solid #c9cccf",
   verticalAlign: "top",
 };
 

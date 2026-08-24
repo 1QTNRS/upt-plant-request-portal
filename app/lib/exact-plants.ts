@@ -29,6 +29,23 @@ export function canDismissExactPlantFromQueue(input: {
   return true;
 }
 
+/** Eligible queue rows that do not already have a finished or in-flight listing. */
+export function canCreateExactPlantListing(input: {
+  dismissedAt?: Date | string | null;
+  listing?: {
+    status?: string | null;
+    shopifyProductGid?: string | null;
+  } | null;
+}): boolean {
+  if (input.dismissedAt) return false;
+  if (input.listing?.shopifyProductGid && input.listing.status === "listed") {
+    return false;
+  }
+  if (input.listing?.status === "listed") return false;
+  if (input.listing?.status === "creating") return false;
+  return true;
+}
+
 export type ExactPlantListingStatus = "listed" | "failed";
 
 export type ExactPlantListingDraft = {
