@@ -24,6 +24,13 @@ npx expo start
 
 3. Scan the QR code. Default App URL is the live Render service.
 
+## Visuals
+
+The iPhone UI is its own layer (colors, type, layout, navigation). You can
+redesign how the app looks without changing Shopify, inventory, or the
+website admin. Look-and-feel changes belong in `mobile/ios-admin/`; business
+rules stay in the Render app.
+
 ## Next slices (same backend)
 
 These stay connected to Shopify by calling the existing server code — not a
@@ -33,6 +40,7 @@ new inventory system:
 - Photos
 - Send offer and close request
 - EXACT PLANTS review and listing
-- Analytics and settings
+- Settings (tokens, FedEx warning)
 
-Until those land, the Shopify Admin iOS app still has the full embedded portal.
+Analytics stays on the website only. Until the slices above land, the
+Shopify Admin iOS app still has the full embedded portal.

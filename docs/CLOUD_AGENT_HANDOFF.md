@@ -1067,8 +1067,11 @@ request detail. Read-only browse.
 
 **Still to port, same Shopify-backed backend:** request item edit (exact
 plant / link website stock / not available), photos, send offer, close
-request, EXACT PLANTS review/list, analytics, settings. Do not invent a
-parallel fulfilment path to get those onto the phone faster.
+request, EXACT PLANTS review/list, settings. **Analytics stays web-only**
+— do not add it to the iPhone app. Visual redesign of the iOS client is
+allowed and expected; it must not change stored statuses, Shopify writes,
+or business rules. Do not invent a parallel fulfilment path to get
+actions onto the phone faster.
 
 ---
 
