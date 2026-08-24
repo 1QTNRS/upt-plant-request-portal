@@ -231,7 +231,7 @@ export default function Dashboard() {
             <col style={{ width: "20%" }} />
             <col />
             <col style={{ width: "6.5rem" }} />
-            <col style={{ width: "11rem" }} />
+            <col style={{ width: "12.5rem" }} />
             <col style={{ width: "6.5rem" }} />
           </colgroup>
           <thead>
@@ -262,7 +262,7 @@ export default function Dashboard() {
                       {request.status}
                     </StatusBadge>
                   </td>
-                  <td>
+                  <td className="upt-cell-wrap">
                     <ViewerLocalTime
                       iso={request.submittedAtIso}
                       fallback={request.submittedDate}
