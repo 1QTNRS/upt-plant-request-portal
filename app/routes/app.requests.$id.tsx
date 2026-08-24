@@ -1215,7 +1215,6 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
   const undelivered = emails.filter((email) => email.status !== "sent");
 
   return (
-    <s-section>
       <CollapsibleSection
         title="Emails"
         badge={emails.length}
@@ -1284,7 +1283,6 @@ function EmailSection({ emails }: { emails: OutboxMessage[] }) {
         )}
       </s-stack>
       </CollapsibleSection>
-    </s-section>
   );
 }
 
@@ -1454,7 +1452,6 @@ function DeclinedExactPlantsSection({
 }) {
   const returnTo = `/app/requests/${requestId}`;
   return (
-    <s-section>
       <CollapsibleSection
         title="EXACT PLANTS"
         badge={items.length}
@@ -1513,7 +1510,6 @@ function DeclinedExactPlantsSection({
         )}
       </s-stack>
       </CollapsibleSection>
-    </s-section>
   );
 }
 

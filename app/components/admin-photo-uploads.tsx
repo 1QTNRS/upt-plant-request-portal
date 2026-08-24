@@ -303,7 +303,10 @@ export function AdminPhotoStrip({
   const viewerUrls = orderedSaved.map((photo) => photo.url);
 
   return (
-    <div data-admin-photo-strip>
+    <div
+      data-admin-photo-strip
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+    >
       <div
         style={{
           display: "flex",

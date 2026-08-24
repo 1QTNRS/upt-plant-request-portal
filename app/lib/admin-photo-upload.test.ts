@@ -300,6 +300,9 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /data-admin-photo-file-picker/);
     assert.match(uploader, /data-admin-photo-choose-files/);
     assert.match(uploader, /Choose files/);
+    assert.match(uploader, /data-admin-photo-strip/);
+    assert.match(uploader, /flexDirection: "column"/);
+    assert.match(uploader, /gap: 16/);
     assert.match(uploader, /No file selected/);
     assert.match(uploader, /adminDialogButtonStyle/);
     assert.match(requestPage, /data-admin-add-photo-url/);
