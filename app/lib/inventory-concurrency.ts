@@ -69,7 +69,11 @@ export function isStaleInventoryError(errors: InventoryUserError[] | undefined):
 export function isConcurrentIdempotencyError(
   errors: InventoryUserError[] | undefined,
 ): boolean {
-  return inventoryErrorCodes(errors).includes(INVENTORY_CONCURRENT_IDEMPOTENCY_CODE);
+  return (errors ?? []).some(
+    (error) =>
+      error.code === INVENTORY_CONCURRENT_IDEMPOTENCY_CODE ||
+      /currently in progress/i.test(error.message),
+  );
 }
 
 export function isPreviousAttemptFailedIdempotencyError(

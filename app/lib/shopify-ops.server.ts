@@ -1568,7 +1568,8 @@ const INVENTORY_ACTIVATE_MUTATION = `#graphql
       locationId: $locationId
       available: $available
     ) @idempotent(key: $idempotencyKey) {
-      userErrors { code message }
+      # UserError has no code field; concurrent retries match the message.
+      userErrors { message }
     }
   }
 `;

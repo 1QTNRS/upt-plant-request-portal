@@ -40,6 +40,12 @@ describe("inventory concurrency helpers", () => {
     );
     assert.equal(
       isConcurrentIdempotencyError([
+        { message: "This request is currently in progress, please try again." },
+      ]),
+      true,
+    );
+    assert.equal(
+      isConcurrentIdempotencyError([
         { code: "IDEMPOTENCY_KEY_PARAMETER_MISMATCH", message: "mismatch" },
       ]),
       false,
