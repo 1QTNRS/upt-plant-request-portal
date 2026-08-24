@@ -666,8 +666,6 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /admin-request-collapsibles/);
     assert.match(requestPage, /name="shippingFeeOverride"/);
     assert.match(requestPage, /Override shipping fee/);
-    assert.match(requestPage, /Leave blank for the store's usual rate/);
-    assert.match(requestPage, /usual shipping rate for the plants/);
     assert.match(requestPage, /inputMode="decimal"/);
     const overrideField = requestPage.slice(
       requestPage.indexOf('id="shippingFeeOverride"'),

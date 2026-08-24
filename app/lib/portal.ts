@@ -973,75 +973,6 @@ export function tagSearchQuery(tag: string): string {
   return `tag:'${tag}'`;
 }
 
-/** A store shipping rate Shopify quoted for the draft order's line weights. */
-export type QuotedShippingRate = {
-  handle: string;
-  title: string;
-  amount: string;
-  currencyCode: string;
-};
-
-/** Fields `DraftOrderInput.shippingAddress` accepts. */
-export type DraftOrderShippingAddress = {
-  address1?: string;
-  address2?: string;
-  city?: string;
-  zip?: string;
-  provinceCode?: string;
-  countryCode?: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-};
-
-export function compactMailingAddress(
-  address: DraftOrderShippingAddress,
-): DraftOrderShippingAddress | undefined {
-  const compact = Object.fromEntries(
-    Object.entries(address).filter(
-      ([, value]) => typeof value === "string" && value.trim().length > 0,
-    ),
-  ) as DraftOrderShippingAddress;
-  return Object.keys(compact).length > 0 ? compact : undefined;
-}
-
-/** The cheapest quoted rate — what checkout would normally auto-select. */
-export function pickStoreShippingRate(
-  rates: QuotedShippingRate[],
-): QuotedShippingRate | undefined {
-  if (rates.length === 0) return undefined;
-  return rates.reduce((best, rate) =>
-    Number.parseFloat(rate.amount) < Number.parseFloat(best.amount) ? rate : best,
-  );
-}
-
-function draftOrderShippingLine(input: {
-  currencyCode: string;
-  shippingFeeOverride?: number;
-  quotedShippingRate?: QuotedShippingRate;
-}) {
-  if (input.shippingFeeOverride !== undefined) {
-    return {
-      title: "Shipping",
-      priceWithCurrency: {
-        amount: normalizePrice(input.shippingFeeOverride).toFixed(2),
-        currencyCode: input.currencyCode,
-      },
-    };
-  }
-  if (input.quotedShippingRate) {
-    return {
-      title: input.quotedShippingRate.title,
-      shippingRateHandle: input.quotedShippingRate.handle,
-      priceWithCurrency: {
-        amount: input.quotedShippingRate.amount,
-        currencyCode: input.quotedShippingRate.currencyCode,
-      },
-    };
-  }
-  return undefined;
-}
-
 /**
  * Variables for `draftOrderCreate`. Kept pure and separate from the API call so
  * `scripts/validate-admin-graphql.mjs` can check the payload against the real
@@ -1057,20 +988,12 @@ export function buildDraftOrderInput(input: {
   /** ISO 8601 instant from `reserveInventoryUntilFor`. */
   reserveInventoryUntil?: string;
   /**
-   * Custom shipping line. 0 is a real override (no shipping charge).
-   * When omitted, pass `quotedShippingRate` from `draftOrderCalculate` so the
-   * draft uses the shop's usual weight-based rate. Leaving both off creates a
-   * draft with no shipping chosen.
+   * Custom shipping line. Omitted when undefined so checkout can offer the
+   * shop's weight-based rates. A preselected line locks shipping. 0 is a real
+   * override (no shipping charge).
    */
   shippingFeeOverride?: number;
-  /** The shop rate Shopify quoted for these line weights. */
-  quotedShippingRate?: QuotedShippingRate;
-  /** Shopify customer GID so the draft can use their default address. */
-  customerGid?: string;
-  shippingAddress?: DraftOrderShippingAddress;
-  useCustomerDefaultAddress?: boolean;
 }) {
-  const shippingLine = draftOrderShippingLine(input);
   return {
     email: input.customerEmail,
     note: `UPT plant request ${input.requestNumber}`,
@@ -1079,14 +1002,17 @@ export function buildDraftOrderInput(input: {
       input.requestNumber,
       draftOrderIdempotencyTag(input.requestId),
     ],
-    ...(input.customerGid
-      ? { purchasingEntity: { customerId: input.customerGid } }
+    ...(input.shippingFeeOverride !== undefined
+      ? {
+          shippingLine: {
+            title: "Shipping",
+            priceWithCurrency: {
+              amount: normalizePrice(input.shippingFeeOverride).toFixed(2),
+              currencyCode: input.currencyCode,
+            },
+          },
+        }
       : {}),
-    ...(input.shippingAddress ? { shippingAddress: input.shippingAddress } : {}),
-    ...(input.useCustomerDefaultAddress
-      ? { useCustomerDefaultAddress: true }
-      : {}),
-    ...(shippingLine ? { shippingLine } : {}),
     // Shopify's own hold on the stock behind this order. It is the whole
     // reservation mechanism: nothing else in the app decrements or restores a
     // quantity, so there is no second copy of the truth to drift, and a retry
@@ -1145,12 +1071,6 @@ export function plantRevenueFromLines(lines: DraftOrderLineItem[]): number {
   return lines
     .filter((line) => line.kind === "plant")
     .reduce((sum, line) => sum + line.price * line.quantity, 0);
-}
-
-/** Normalize a stored Shopify customer id to a GID. */
-export function shopifyCustomerGid(shopifyCustomerId: string): string {
-  const text = shopifyCustomerId.trim();
-  return text.startsWith("gid://") ? text : `gid://shopify/Customer/${text}`;
 }
 
 /** The numeric part of a Shopify GID, or of an id that is already numeric. */

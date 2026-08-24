@@ -233,38 +233,6 @@ async function inputSamples() {
       }),
     },
     {
-      label: "draftOrderCreate($input) with a quoted shop shipping rate",
-      type: "DraftOrderInput!",
-      value: buildDraftOrderInput({
-        requestId: "cm0requestid",
-        requestNumber: "REQ2178",
-        customerEmail: "customer@example.com",
-        currencyCode: "USD",
-        lineItems,
-        customerGid: "gid://shopify/Customer/1",
-        shippingAddress: { countryCode: "US", zip: "98101" },
-        quotedShippingRate: {
-          handle: "usps-priority",
-          title: "USPS Priority Mail",
-          amount: "12.00",
-          currencyCode: "USD",
-        },
-      }),
-    },
-    {
-      label: "draftOrderCalculate($input)",
-      type: "DraftOrderInput!",
-      value: buildDraftOrderInput({
-        requestId: "cm0requestid",
-        requestNumber: "REQ2178",
-        customerEmail: "customer@example.com",
-        currencyCode: "USD",
-        lineItems,
-        customerGid: "gid://shopify/Customer/1",
-        useCustomerDefaultAddress: true,
-      }),
-    },
-    {
       label: "draftOrderDelete($input)",
       type: "DraftOrderDeleteInput!",
       value: { id: "gid://shopify/DraftOrder/1" },
