@@ -640,6 +640,11 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /key=\{notes\.at\(-1\)\?\.id \?\? "empty"\}/);
     assert.match(requestPage, /maxWidth: "min\(420px, 100%\)"/);
     assert.match(requestPage, /AdminResponsiveStyles/);
+    assert.match(requestPage, /<NestedBox/);
+    assert.ok(
+      !requestPage.includes('background="subdued"'),
+      "request summary boxes should be mint NestedBox, not grey Polariss boxes",
+    );
     assert.match(queue, /title="EXACT PLANTS queue"/);
     assert.match(queue, /defaultOpen=\{true\}/);
     assert.match(queue, /bulk-create-listings/);

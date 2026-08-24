@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 
 import { THEME, themeBadgeStyle, type ThemeTone } from "../lib/theme";
 
@@ -184,13 +184,16 @@ export function ThemeStyles() {
 
 export function NestedBox({
   children,
+  className,
   style,
-}: {
-  children: ReactNode;
-  style?: CSSProperties;
-}) {
+  ...rest
+}: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="upt-nested-box" style={style}>
+    <div
+      className={["upt-nested-box", className].filter(Boolean).join(" ")}
+      style={style}
+      {...rest}
+    >
       {children}
     </div>
   );
