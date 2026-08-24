@@ -677,7 +677,7 @@ describe("the request form works without JavaScript", () => {
     );
     assert.match(source, /marginTop:\s*80/);
     assert.match(source, /padding-bottom:\s*32px/);
-    assert.match(source, /gap:\s*"1in"/);
+    assert.match(source, /gridTemplateColumns:\s*"1fr auto 1fr"/);
   });
 
   it("pages My Requests in place without an Excel export", () => {

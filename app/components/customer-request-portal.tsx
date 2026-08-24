@@ -243,6 +243,12 @@ export function CustomerRequestPortal({
               [data-paged-prev]:disabled,
               [data-paged-next]:disabled { opacity: 0.35; cursor: default; }
               [data-paged-status] { display: inline-block; min-width: 11ch; text-align: center; }
+              [data-paged-item] s-link {
+                width: auto !important;
+                max-width: max-content;
+                justify-self: start;
+              }
+              [data-paged-item] [data-status-badge] { justify-self: center; }
             `}</style>
             <div data-paged-items>
               {myRequests.map((request) => {
@@ -255,33 +261,28 @@ export function CustomerRequestPortal({
                     key={request.id}
                     data-paged-item
                     style={{
-                      display: "flex",
-                      flexWrap: "nowrap",
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto 1fr",
                       alignItems: "center",
                       width: "100%",
-                      gap: "1in",
                       height: 45,
                       boxSizing: "border-box",
                       padding: "8px 0",
                       borderBottom: `1px solid ${THEME.line}`,
                     }}
                   >
-                    <s-link
-                      href={requestDetailHref(request.id)}
-                      style={{ flex: "0 0 auto" }}
-                    >
+                    <s-link href={requestDetailHref(request.id)}>
                       {request.requestNumber}
                     </s-link>
-                    <span style={{ flex: "0 0 auto", marginLeft: "auto" }}>
-                      <StatusBadge
-                        tone={customerStatusTone(request.status as RequestStatus, {
-                          hasPayableItems: request.hasPayableItems,
-                          hasResponded: request.hasResponded,
-                        })}
-                      >
-                        {label}
-                      </StatusBadge>
-                    </span>
+                    <StatusBadge
+                      tone={customerStatusTone(request.status as RequestStatus, {
+                        hasPayableItems: request.hasPayableItems,
+                        hasResponded: request.hasResponded,
+                      })}
+                    >
+                      {label}
+                    </StatusBadge>
+                    <span aria-hidden="true" />
                   </div>
                 );
               })}
