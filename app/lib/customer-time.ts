@@ -26,19 +26,38 @@ function formatInZone(
   );
 }
 
+const VIEWER_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+};
+
 /** Customer-facing date+time. Unknown zone falls back to labelled UTC. */
 export function formatCustomerDateTime(
   date: Date,
   timeZone?: string | null,
 ): string {
-  return formatInZone(date, timeZone, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
+  return formatInZone(date, timeZone, VIEWER_DATE_TIME_OPTIONS);
+}
+
+/**
+ * Formats an instant in a reader's timezone. Pass an IANA zone in tests;
+ * omit it in the browser so Intl uses that viewer's local zone and abbreviation.
+ */
+export function formatViewerDateTime(
+  date: Date | string,
+  timeZone?: string | null,
+): string {
+  const value = typeof date === "string" ? new Date(date) : date;
+  if (!Number.isFinite(value.getTime())) return "";
+  const zone = normalizeIanaTimeZone(timeZone);
+  return new Intl.DateTimeFormat("en-US", {
+    ...VIEWER_DATE_TIME_OPTIONS,
+    ...(zone ? { timeZone: zone } : {}),
+  }).format(value);
 }
 
 /** Customer-facing date. Unknown zone falls back to the UTC calendar day. */

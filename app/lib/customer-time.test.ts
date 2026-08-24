@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
   CUSTOMER_TIME_FALLBACK_ZONE,
   customerTimeZoneLabel,
   formatCustomerDateTime,
+  formatViewerDateTime,
   normalizeIanaTimeZone,
 } from "./customer-time";
 
@@ -66,5 +69,29 @@ describe("formatCustomerDateTime", () => {
     assert.match(alex, /PST/);
     assert.match(jordan, /EST/);
     assert.notEqual(alex, jordan);
+  });
+});
+
+describe("formatViewerDateTime", () => {
+  // 19:00 UTC on 24 Aug 2026 is 3:00 PM Eastern and 12:00 PM Pacific.
+  const writtenInEastern = "2026-08-24T19:00:00.000Z";
+
+  it("shows the same instant in the reader's zone, not the writer's", () => {
+    const eastern = formatViewerDateTime(writtenInEastern, "America/New_York");
+    const pacific = formatViewerDateTime(writtenInEastern, "America/Los_Angeles");
+    assert.match(eastern, /3:00 PM/);
+    assert.match(eastern, /EDT/);
+    assert.match(pacific, /12:00 PM/);
+    assert.match(pacific, /PDT/);
+    assert.notEqual(eastern, pacific);
+  });
+
+  it("rewrites admin note stamps in the browser after hydrate", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "..", "components", "viewer-local-time.tsx"),
+      "utf8",
+    );
+    assert.match(source, /formatViewerDateTime\(iso\)/);
+    assert.match(source, /useState\(fallback\)/);
   });
 });
