@@ -110,6 +110,9 @@ export function ThemeStyles() {
         background: ${THEME.mint};
         box-sizing: border-box;
       }
+      .upt-customer-surface--in-theme {
+        min-height: 0;
+      }
       .upt-customer-surface s-page {
         background: transparent !important;
         background-color: transparent !important;
@@ -206,13 +209,23 @@ export function NestedBox({
 export function CustomerSurface({
   children,
   paintDocument = false,
+  inShopTheme = false,
 }: {
   children: ReactNode;
   /** Only the customer layout should paint html/body, so admin previews stay unpainted. */
   paintDocument?: boolean;
+  /** App-proxy pages sit inside the shop theme; do not paint the whole viewport. */
+  inShopTheme?: boolean;
 }) {
   return (
-    <div className="upt-customer-surface">
+    <div
+      className={[
+        "upt-customer-surface",
+        inShopTheme ? "upt-customer-surface--in-theme" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {paintDocument ? (
         <style>{`
           html, body { background-color: ${THEME.mint}; }

@@ -94,11 +94,7 @@ export function CustomerRequestPortal({
                 Customer Account authentication.
               </p>
             </form>
-          ) : (
-            <p className="upt-muted">
-              Open this page from your Shopify account while logged in.
-            </p>
-          )}
+          ) : null}
         </section>
       </CustomerPageShell>
     );
