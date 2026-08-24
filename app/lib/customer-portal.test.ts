@@ -666,6 +666,18 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("useState"));
     assert.ok(!source.includes("useEffect"));
   });
+
+  it("pages My Requests in place and exports the full list", () => {
+    assert.match(source, /data-paged-list/);
+    assert.match(source, /data-page-size=\{CUSTOMER_REQUEST_PAGE_SIZE\}/);
+    assert.match(source, /data-paged-item/);
+    assert.match(source, /data-paged-prev/);
+    assert.match(source, /data-paged-next/);
+    assert.match(source, /data-export-excel/);
+    assert.match(source, /spreadsheetHref/);
+    assert.match(source, /type="button"/);
+    assert.ok(!source.includes("?page="));
+  });
 });
 
 describe("closing a request returns the customer to My Requests", () => {

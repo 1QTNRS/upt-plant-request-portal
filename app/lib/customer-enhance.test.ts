@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   CUSTOMER_LIGHTBOX_SCRIPT,
+  CUSTOMER_PAGED_LIST_SCRIPT,
   CUSTOMER_TIME_SCRIPT,
   FEDEX_WARNING_SCRIPT,
 } from "../components/customer-enhance";
@@ -13,6 +14,14 @@ describe("customer progressive-enhancement scripts", () => {
     assert.doesNotMatch(CUSTOMER_TIME_SCRIPT, /geo|ip address|ipinfo/i);
     assert.match(CUSTOMER_TIME_SCRIPT, /data-customer-time/);
     assert.match(CUSTOMER_TIME_SCRIPT, /save-timezone/);
+  });
+
+  it("pages the My Requests list without changing the URL", () => {
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-list/);
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-prev/);
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-next/);
+    assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /data-paged-hidden/);
+    assert.doesNotMatch(CUSTOMER_PAGED_LIST_SCRIPT, /\?page=/);
   });
 
   it("opens a customer photo lightbox with swipe and previous/next", () => {

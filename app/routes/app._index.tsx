@@ -24,6 +24,8 @@ import {
   statCardStyle,
   WrappingRow,
 } from "../components/admin-layout";
+import { ExportExcelButton, ListPager, usePagedItems } from "../components/paged-list";
+import { ADMIN_REQUEST_PAGE_SIZE } from "../lib/list-page";
 
 type DashboardData = {
   stats: {
@@ -95,6 +97,19 @@ export default function Dashboard() {
   ];
 
   const visibleCount = useMemo(() => data.requests.length, [data.requests.length]);
+  const paged = usePagedItems(
+    data.requests,
+    ADMIN_REQUEST_PAGE_SIZE,
+    `${data.query}:${data.statusFilter}:${data.requests.length}`,
+  );
+  const exportRows = data.requests.map((request) => [
+    request.requestNumber,
+    request.customer,
+    request.email,
+    request.plantsRequested,
+    request.status,
+    request.submittedDate,
+  ]);
 
   return (
     <s-page heading="UPT Plant Request Portal">
@@ -174,8 +189,21 @@ export default function Dashboard() {
       </s-section>
 
       <s-section heading="Recent Requests">
+        <ExportExcelButton
+          filename="admin-requests.xls"
+          sheetName="Requests"
+          headers={[
+            "Request Number",
+            "Customer",
+            "Email",
+            "Plants Requested",
+            "Status",
+            "Submitted Date",
+          ]}
+          rows={exportRows}
+        />
         <div className="upt-narrow-only">
-          {data.requests.map((request) => (
+          {paged.items.map((request) => (
             <article key={request.id} className="upt-request-card">
               <dl>
                 <dt>Request Number</dt>
@@ -215,7 +243,7 @@ export default function Dashboard() {
             <s-table-header>Actions</s-table-header>
           </s-table-header-row>
           <s-table-body>
-            {data.requests.map((request) => (
+            {paged.items.map((request) => (
               <s-table-row key={request.id}>
                 <s-table-cell>
                   <s-link href={`/app/requests/${request.id}`}>
@@ -239,6 +267,14 @@ export default function Dashboard() {
           </s-table-body>
         </s-table>
         </div>
+        <ListPager
+          page={paged.page}
+          pageCount={paged.pageCount}
+          total={paged.total}
+          start={paged.start}
+          end={paged.end}
+          onPage={paged.setPage}
+        />
       </s-section>
     </s-page>
   );

@@ -7,6 +7,7 @@ import {
   createExactPlantListing,
   createExactPlantListingsFromDrafts,
   dismissExactPlantFromQueue,
+  dismissExactPlantsFromQueue,
   ExactPlantListingError,
   getExactPlantReview,
   listDismissedExactPlants,
@@ -971,6 +972,41 @@ describe("admin dismiss from EXACT PLANTS", () => {
       })).exactPlantDismissedAt,
       null,
     );
+  });
+
+  it("mass-dismisses confirmed queue items and skips already dismissed", async () => {
+    const first = await createOfferedRequest();
+    const second = await createOfferedRequest();
+    const unconfirmed = await dismissExactPlantsFromQueue({
+      shop,
+      requestItemIds: [first.availableId, second.availableId],
+      confirmed: false,
+    });
+    assert.equal(unconfirmed.dismissed, 0);
+    assert.ok(unconfirmed.errors.length > 0);
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({
+        where: { id: first.availableId },
+      })).exactPlantDismissedAt,
+      null,
+    );
+
+    const result = await dismissExactPlantsFromQueue({
+      shop,
+      requestItemIds: [first.availableId, first.availableId, second.availableId],
+      confirmed: true,
+    });
+    assert.equal(result.dismissed, 2);
+    assert.equal(result.skipped, 0);
+    assert.equal(result.errors.length, 0);
+
+    const again = await dismissExactPlantsFromQueue({
+      shop,
+      requestItemIds: [first.availableId],
+      confirmed: true,
+    });
+    assert.equal(again.dismissed, 0);
+    assert.equal(again.skipped, 1);
   });
 });
 

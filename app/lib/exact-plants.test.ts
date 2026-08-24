@@ -589,6 +589,14 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(table, /verticalAlign: "middle"/);
     assert.match(table, /margin: 0 auto/);
     assert.match(table, /bulk-create-listings/);
+    assert.match(table, /data-bulk-dismiss-exact-plants/);
+    assert.match(table, /Dismiss selected/);
+    assert.match(table, /bulk-dismiss-exact-plants/);
+    assert.match(table, /data-confirm-bulk-dismiss/);
+    assert.match(table, /EXACT_PLANTS_PAGE_SIZE/);
+    assert.match(table, /ListPager/);
+    assert.match(table, /ExportExcelButton/);
+    assert.match(table, /Select all plants on this page/);
     assert.match(table, /border-collapse: collapse/);
     assert.ok(!table.includes("border-left: 3px"));
     assert.ok(!table.includes('borderBottom: "2px solid #8c9196"'));
@@ -635,6 +643,20 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(queue, /defaultOpen=\{true\}/);
     assert.match(queue, /bulk-create-listings/);
     assert.match(queue, /createExactPlantListingsFromDrafts/);
+    assert.match(queue, /bulk-dismiss-exact-plants/);
+    assert.match(queue, /dismissExactPlantsFromQueue/);
+    const emailFn = requestPage.slice(
+      requestPage.indexOf("function EmailSection"),
+      requestPage.indexOf("const EXPIRATION_OPTIONS"),
+    );
+    const exactFn = requestPage.slice(
+      requestPage.indexOf("function DeclinedExactPlantsSection"),
+      requestPage.indexOf("function PaymentLinkSection"),
+    );
+    assert.ok(!emailFn.includes("<s-section>"));
+    assert.ok(!exactFn.includes("<s-section>"));
+    assert.match(emailFn, /<CollapsibleSection/);
+    assert.match(exactFn, /<CollapsibleSection/);
   });
 });
 
@@ -649,6 +671,34 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /ADMIN_DASHBOARD_STATUS_FILTERS\.map/);
     assert.match(dashboard, /countAdminDashboardStatusFilters/);
     assert.ok(!dashboard.includes("<select"));
+  });
+
+  it("pages Recent Requests in place and exports the filtered list", () => {
+    assert.match(dashboard, /usePagedItems/);
+    assert.match(dashboard, /ADMIN_REQUEST_PAGE_SIZE/);
+    assert.match(dashboard, /ListPager/);
+    assert.match(dashboard, /ExportExcelButton/);
+    assert.match(dashboard, /admin-requests\.xls/);
+    assert.ok(!dashboard.includes("searchParams.set(\"page\""));
+  });
+});
+
+describe("analytics list paging and export", () => {
+  const analytics = readFileSync(
+    path.join(import.meta.dirname, "..", "..", "app", "routes", "app.analytics.tsx"),
+    "utf8",
+  );
+
+  it("pages the four plant/item tables and exports every row", () => {
+    assert.match(analytics, /ANALYTICS_LIST_PAGE_SIZE/);
+    assert.match(analytics, /usePagedItems/);
+    assert.match(analytics, /ListPager/);
+    assert.match(analytics, /item-conversion-analytics\.xls/);
+    assert.match(analytics, /heading.toLowerCase\(\)\.replaceAll/);
+    assert.match(analytics, /ItemConversionAnalytics/);
+    assert.match(analytics, /Most Requested Plants/);
+    assert.match(analytics, /Most Purchased Plants/);
+    assert.match(analytics, /Highest Revenue Plants/);
   });
 });
 
