@@ -295,6 +295,11 @@ describe("an answered Grower's Choice plant", () => {
 
     assert.match(html, /Grower&#x27;s Choice/);
     assert.match(html, /Monstera Thai Constellation/);
+    assert.match(
+      html,
+      /https:\/\/cdn\.shopify\.com\/listing-thai\.jpg/,
+      "the listing photo stays on the accepted-plant summary",
+    );
   });
 });
 
@@ -453,6 +458,65 @@ describe("a request with nothing to pay for still has a way out", () => {
       formAction: "/apps/plant-requests/requests/req-1",
     });
     assert.ok(!html.includes('value="close-request"'));
+  });
+});
+
+describe("a customer who accepted plants can still see their photos later", () => {
+  const accepted = (requestClosed: boolean) =>
+    render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([
+        { plantName: "Monstera Albo", choice: "accept" },
+        { plantName: "Hoya Callistophylla", choice: "accept" },
+      ]),
+      invoiceUrl: requestClosed ? undefined : "https://upt.myshopify.com/invoice/abc",
+      fedexRemovalWarning: "",
+      requestClosed,
+      statusLabel: requestClosed ? "Closed" : "Needs Payment",
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+  it("keeps every accepted-plant photo on the final approval summary", () => {
+    const html = accepted(false);
+
+    assert.match(html, /Final approval summary/);
+    assert.match(html, /Monstera Albo/);
+    assert.match(html, /Hoya Callistophylla/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url), `${url} is missing from the accepted plant`);
+    }
+  });
+
+  it("still shows those photos after the request is closed", () => {
+    const html = accepted(true);
+
+    assert.match(html, /Final approval summary/);
+    assert.match(html, /Monstera Albo/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url));
+    }
+  });
+
+  it("keeps declined-plant photos on a mixed answer, including after close", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([
+        { plantName: "Monstera Albo", choice: "accept" },
+        { plantName: "Hoya Callistophylla", choice: "reject" },
+      ]),
+      fedexRemovalWarning: "",
+      requestClosed: true,
+      statusLabel: "Closed",
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+    assert.match(html, /Final approval summary/);
+    assert.match(html, /Monstera Albo/);
+    assert.match(html, /Plants you declined/);
+    assert.match(html, /Hoya Callistophylla/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url));
+    }
   });
 });
 

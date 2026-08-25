@@ -223,6 +223,10 @@ describe("plant request persistence", () => {
     const response = await getCustomerResponse(shop, created.id);
     assert.equal(response?.fedexUpgradeSelected, false);
     assert.equal(response?.items.filter((item) => item.choice === "accept").length, 1);
+    assert.deepEqual(
+      response?.items.find((item) => item.choice === "accept")?.photoUrls,
+      ["https://cdn.example.com/monstera-peru.jpg"],
+    );
 
     const closed = await closeRequest(shop, created.id, "Customer closed request");
     assert.equal(closed?.status, "Closed");

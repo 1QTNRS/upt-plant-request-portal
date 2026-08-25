@@ -49,7 +49,9 @@ function RequestStatusBadges({
     >
       <StatusBadge tone={requestStatusTone(status)}>{status}</StatusBadge>
       {hasExistingOrder ? (
-        <StatusBadge tone="warning">Existing Order</StatusBadge>
+        <StatusBadge tone={status === "Closed" ? "success" : "warning"}>
+          Existing Order
+        </StatusBadge>
       ) : null}
     </div>
   );

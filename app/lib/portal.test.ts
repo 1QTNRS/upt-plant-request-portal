@@ -39,6 +39,8 @@ import {
   parseAdminDashboardStatusFilter,
   parseShippingFeeOverride,
   OVERRIDDEN_SHIPPING_LINE_TITLE,
+  responseSnapshotListingImage,
+  responseSnapshotPhotoUrls,
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
@@ -286,6 +288,24 @@ describe("admin dashboard status filter", () => {
     assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
     assert.equal(parseAdminDashboardStatusFilter("ExistingOrder"), "ExistingOrder");
     assert.equal(adminDashboardFilterLabel("ExistingOrder"), "Existing Order");
+  });
+
+  it("falls back to offer photos when an older response stored none", () => {
+    assert.deepEqual(
+      responseSnapshotPhotoUrls([], ["https://cdn.example/one.jpg"]),
+      ["https://cdn.example/one.jpg"],
+    );
+    assert.deepEqual(
+      responseSnapshotPhotoUrls(
+        ["https://cdn.example/response.jpg"],
+        ["https://cdn.example/offer.jpg"],
+      ),
+      ["https://cdn.example/response.jpg"],
+    );
+    assert.equal(
+      responseSnapshotListingImage(null, "https://cdn.example/listing.jpg"),
+      "https://cdn.example/listing.jpg",
+    );
   });
 
   it("counts each dashboard status filter from the full list", () => {

@@ -43,6 +43,8 @@ import {
   offerIsAllExactPlants,
   offerReadinessMessage,
   PAYMENT_AFTER_VOID_REASON,
+  responseSnapshotListingImage,
+  responseSnapshotPhotoUrls,
   type CustomerOfferResponse,
   type CustomerResponseItem,
   type CustomerResponseItemChoice,
@@ -1217,28 +1219,45 @@ function toResponseDto(
   }> },
   closedAt?: Date | null,
   timeZone?: string | null,
+  offerItems: Array<{
+    requestItemId: string;
+    photoUrlsJson: string;
+    linkedImageUrl?: string | null;
+  }> = [],
 ): CustomerOfferResponse {
-  const items = (response.items ?? []).map((item) => ({
-    offerItemId: item.id,
-    sourceItemId: item.requestItemId,
-    plantName: item.plantName,
-    choice: item.choice as CustomerResponseItemChoice,
-    price: item.price,
-    quantity: item.quantity,
-    lineRevenue:
-      item.choice === "accept" ? normalizePrice(item.price) * item.quantity : 0,
-    customerNotes: item.customerFacingNotes,
-    photoUrls: parsePhotoUrls(item.photoUrlsJson),
-    unavailableReason: item.unavailableReason ?? undefined,
-    fulfillmentType: resolveFulfillmentType({
-      availability: item.choice === "unavailable" ? "not_available" : "available",
-      fulfillmentType: item.fulfillmentType,
-    }),
-    linkedProductTitle: item.linkedProductTitle ?? undefined,
-    linkedVariantTitle: item.linkedVariantTitle ?? undefined,
-    linkedVariantGid: item.linkedVariantGid ?? undefined,
-    linkedImageUrl: item.linkedImageUrl ?? undefined,
-  }));
+  const offerByItem = new Map(
+    offerItems.map((item) => [item.requestItemId, item]),
+  );
+  const items = (response.items ?? []).map((item) => {
+    const offerItem = offerByItem.get(item.requestItemId);
+    return {
+      offerItemId: item.id,
+      sourceItemId: item.requestItemId,
+      plantName: item.plantName,
+      choice: item.choice as CustomerResponseItemChoice,
+      price: item.price,
+      quantity: item.quantity,
+      lineRevenue:
+        item.choice === "accept" ? normalizePrice(item.price) * item.quantity : 0,
+      customerNotes: item.customerFacingNotes,
+      photoUrls: responseSnapshotPhotoUrls(
+        parsePhotoUrls(item.photoUrlsJson),
+        offerItem ? parsePhotoUrls(offerItem.photoUrlsJson) : [],
+      ),
+      unavailableReason: item.unavailableReason ?? undefined,
+      fulfillmentType: resolveFulfillmentType({
+        availability: item.choice === "unavailable" ? "not_available" : "available",
+        fulfillmentType: item.fulfillmentType,
+      }),
+      linkedProductTitle: item.linkedProductTitle ?? undefined,
+      linkedVariantTitle: item.linkedVariantTitle ?? undefined,
+      linkedVariantGid: item.linkedVariantGid ?? undefined,
+      linkedImageUrl: responseSnapshotListingImage(
+        item.linkedImageUrl,
+        offerItem?.linkedImageUrl,
+      ),
+    };
+  });
 
   return {
     requestId: response.requestId,
@@ -1272,7 +1291,12 @@ export async function getCustomerResponse(
   });
   if (!withItems) return null;
   const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
-  return toResponseDto(withItems, request.closedAt, timeZone);
+  return toResponseDto(
+    withItems,
+    request.closedAt,
+    timeZone,
+    request.offer?.items ?? [],
+  );
 }
 
 /**
@@ -1397,7 +1421,12 @@ export async function saveCustomerResponse(
     });
 
     const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
-    return toResponseDto(saved, request.closedAt, timeZone);
+    return toResponseDto(
+      saved,
+      request.closedAt,
+      timeZone,
+      request.offer?.items ?? [],
+    );
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       throw new OfferAlreadyAnsweredError();
