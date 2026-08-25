@@ -559,7 +559,7 @@ export type AdminDashboardStatusFilter =
 export function adminDashboardFilterLabel(
   filter: AdminDashboardStatusFilter,
 ): string {
-  return filter === "ExistingOrder" ? "Existing order" : filter;
+  return filter === "ExistingOrder" ? "Existing Order" : filter;
 }
 
 export function parseAdminDashboardStatusFilter(
@@ -633,9 +633,16 @@ export function countAdminDashboardStatusFilters(
 }
 
 /**
+ * Custom shipping-line title when the admin overrode the draft-order fee.
+ * Shopify's own quoted rate keeps its carrier name; this override must not
+ * look like ordinary shipping on the invoice.
+ */
+export const OVERRIDDEN_SHIPPING_LINE_TITLE = "ADD ON";
+
+/**
  * Blank leaves shipping unset on the later draft order so the customer can
  * pick a store rate at checkout. A parsed number (including 0) is a custom
- * shipping line and locks that amount.
+ * ADD ON line and locks that amount.
  */
 export function parseShippingFeeOverride(
   raw: unknown,
@@ -645,7 +652,7 @@ export function parseShippingFeeOverride(
   if (text === "") return { ok: true };
   const value = Number.parseFloat(text);
   if (!Number.isFinite(value) || value < 0) {
-    return { ok: false, error: "Shipping override must be a number of 0 or more." };
+    return { ok: false, error: "ADD ON must be a number of 0 or more." };
   }
   return { ok: true, value: normalizePrice(value) };
 }
@@ -1008,7 +1015,7 @@ export function buildDraftOrderInput(input: {
     ...(input.shippingFeeOverride !== undefined
       ? {
           shippingLine: {
-            title: "Shipping",
+            title: OVERRIDDEN_SHIPPING_LINE_TITLE,
             priceWithCurrency: {
               amount: normalizePrice(input.shippingFeeOverride).toFixed(2),
               currencyCode: input.currencyCode,

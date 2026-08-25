@@ -1396,7 +1396,7 @@ function SendOfferSection({
               </s-stack>
               {sentOffer.shippingFeeOverride !== undefined ? (
                 <s-stack direction="block" gap="small">
-                  <s-text color="subdued">Shipping override</s-text>
+                  <s-text color="subdued">ADD ON</s-text>
                   <s-text>
                     ${sentOffer.shippingFeeOverride.toFixed(2)}
                   </s-text>
@@ -1449,8 +1449,8 @@ function SendOfferSection({
         {hasExistingOrder ? (
           <s-banner tone="info">
             <s-text>
-              This customer said they have an existing order. You can override
-              the draft-order shipping fee below if you are combining shipments.
+              This customer said they have an existing order. You can set an
+              ADD ON amount below if you are combining shipments.
             </s-text>
           </s-banner>
         ) : null}
@@ -1479,7 +1479,7 @@ function SendOfferSection({
         </s-stack>
         <s-stack direction="block" gap="small">
           <label htmlFor="shippingFeeOverride">
-            <s-text>Override shipping fee</s-text>
+            <s-text>ADD ON</s-text>
           </label>
           <style>{`
             #shippingFeeOverride::-webkit-scrollbar { display: none; width: 0; height: 0; }
@@ -1496,9 +1496,9 @@ function SendOfferSection({
           />
         </s-stack>
         <s-text color="subdued">
-          Optional. Sets a custom shipping amount on the draft-order invoice,
-          including 0 to charge no shipping. Leave blank so the customer can
-          choose a store shipping rate at checkout.
+          Optional. Sets a custom ADD ON amount on the draft-order invoice,
+          including 0. Leave blank so the customer can choose a store shipping
+          rate at checkout.
         </s-text>
         <s-button
           variant="primary"
