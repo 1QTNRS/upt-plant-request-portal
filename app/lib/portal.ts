@@ -995,9 +995,9 @@ export function buildDraftOrderInput(input: {
   /** ISO 8601 instant from `reserveInventoryUntilFor`. */
   reserveInventoryUntil?: string;
   /**
-   * Custom shipping line. Omitted when undefined so checkout can offer the
-   * shop's weight-based rates. A preselected line locks shipping. 0 is a real
-   * override (no shipping charge).
+   * Custom ADD ON shipping line. Omitted when undefined so checkout can offer
+   * the shop's weight-based rates. A preselected line locks shipping. 0 is a
+   * real override (no ADD ON charge). The line title is ADD ON, not Shipping.
    */
   shippingFeeOverride?: number;
 }) {
