@@ -162,10 +162,10 @@ export const HELP_TOPICS: HelpTopic[] = [
       "email delivery",
     ],
     summary:
-      "Three to the customer — received, offer ready, one consolidated answer summary — plus an expiry reminder; exactly two to UPT.",
+      "Offer ready and one consolidated answer summary to the customer, plus an expiry reminder; UPT picks which admin emails to receive in Settings.",
     detail: [
-      "UPT's mailbox gets two events only: a new request, and one summary per customer response. Never one per item, and never for admin-side status changes, analytics, expiry maintenance or payment — Shopify's own paid-order notification covers that.",
-      "The customer gets a request-received mail, an offer-ready mail that says UPT has responded and links to the offer without claiming payment is due, and a single confirmation covering their whole answer: accepted and declined items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain no-payment-needed line when nothing was.",
+      "UPT's mailbox is opt-in under Settings → Admin emails: a new request, one summary per customer response, and payment after a voided invoice. Never one per item, and never for admin-side status changes, analytics or expiry maintenance — Shopify's own paid-order notification covers ordinary payment.",
+      "The customer is not emailed when they submit a request. They get an offer-ready mail that says UPT has responded and links to the offer without claiming payment is due, and a single confirmation covering their whole answer: accepted and declined items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain no-payment-needed line when nothing was. Shopify is not asked to send its own draft-order invoice.",
       "One expiration reminder goes out before the hold ends, and only to customers who either never answered or accepted something. A customer who declined every plant is not chased.",
       "Delivery needs `RESEND_API_KEY`. Without it messages stay in the outbox with status `preview` and nothing is attempted. `failed` is a different state and means Resend refused the send — an unverified `EMAIL_FROM` domain is the likely first cause, and it must not be described as leaving messages in `preview`.",
       "Every customer-facing link in an email is a storefront app-proxy URL. A link to the app's own origin carries no signed identity and renders 'Request not available'.",
@@ -175,7 +175,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         path: HANDOFF_DOC,
         locator: "Emails",
         quote:
-          "UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response`",
+          "UPT's mailbox is opt-in under Settings → Admin emails",
       },
       {
         path: HANDOFF_DOC,

@@ -48,6 +48,10 @@ model ShopSettings {
   fedexUpgradePrice       Float    @default(15)
   fedexUpgradeLabel       String   @default("FedEx Priority Overnight Upgrade")
   adminNotificationEmail  String   @default("")
+  /// Settings → Admin emails. Defaults stay on so existing shops keep current mail.
+  adminEmailNewRequest          Boolean @default(true)
+  adminEmailCustomerResponse    Boolean @default(true)
+  adminEmailPaymentAfterVoid    Boolean @default(true)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

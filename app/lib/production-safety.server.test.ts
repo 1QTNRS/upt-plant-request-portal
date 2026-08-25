@@ -221,11 +221,15 @@ describe("outbound email is deduplicated", () => {
     await notifyNewRequest(shop, created.id);
     await notifyNewRequest(shop, created.id);
 
-    const messages = await prisma.emailMessage.findMany({
+    const received = await prisma.emailMessage.findMany({
       where: { shop, requestId: created.id, templateKey: "request_received" },
     });
-    assert.equal(messages.length, 1);
-    assert.equal(messages[0].idempotencyKey, `request_received:${created.id}`);
+    assert.equal(received.length, 0, "customers are not emailed a request confirmation");
+
+    const admin = await prisma.emailMessage.findMany({
+      where: { shop, requestId: created.id, templateKey: "admin_new_request" },
+    });
+    assert.equal(admin.length, 0, "no admin mailbox is configured on this shop");
   });
 });
 

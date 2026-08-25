@@ -632,6 +632,47 @@ export function countAdminDashboardStatusFilters(
   };
 }
 
+export const ADMIN_EMAIL_SUBSCRIPTION_OPTIONS = [
+  {
+    key: "admin_new_request",
+    field: "adminEmailNewRequest",
+    label: "New customer request",
+    description: "Someone submitted a plant request.",
+  },
+  {
+    key: "admin_response",
+    field: "adminEmailCustomerResponse",
+    label: "Customer answered an offer",
+    description: "They accepted or declined plants on an offer.",
+  },
+  {
+    key: "admin_payment_after_void",
+    field: "adminEmailPaymentAfterVoid",
+    label: "Payment after a voided invoice",
+    description:
+      "Money arrived after the invoice was already voided. Needs a human check.",
+  },
+] as const;
+
+export type AdminEmailSubscriptionKey =
+  (typeof ADMIN_EMAIL_SUBSCRIPTION_OPTIONS)[number]["key"];
+
+export type AdminEmailSubscriptionSettings = {
+  adminEmailNewRequest: boolean;
+  adminEmailCustomerResponse: boolean;
+  adminEmailPaymentAfterVoid: boolean;
+};
+
+export function adminSubscribedToEmail(
+  settings: AdminEmailSubscriptionSettings,
+  templateKey: AdminEmailSubscriptionKey,
+): boolean {
+  const option = ADMIN_EMAIL_SUBSCRIPTION_OPTIONS.find(
+    (row) => row.key === templateKey,
+  );
+  return option ? settings[option.field] === true : false;
+}
+
 /**
  * Photos the customer was shown. Prefer the response snapshot; if an older
  * answer stored none, fall back to the offer snapshot so a closed request

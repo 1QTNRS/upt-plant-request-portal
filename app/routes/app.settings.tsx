@@ -14,7 +14,11 @@ import {
 } from "../lib/admin-mobile-auth.server";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { missingProductionSecrets } from "../lib/environment.server";
-import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU } from "../lib/portal";
+import {
+  ADMIN_EMAIL_SUBSCRIPTION_OPTIONS,
+  DEFAULT_FEDEX_REMOVAL_WARNING,
+  FEDEX_PRODUCT_SKU,
+} from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
@@ -26,6 +30,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     fedexRemovalWarning: settings.fedexRemovalWarning,
     adminNotificationEmail: settings.adminNotificationEmail,
+    adminEmailNewRequest: settings.adminEmailNewRequest,
+    adminEmailCustomerResponse: settings.adminEmailCustomerResponse,
+    adminEmailPaymentAfterVoid: settings.adminEmailPaymentAfterVoid,
     fedexProductHandle: settings.fedexProductHandle,
     missingSecrets: missingProductionSecrets(),
     mobileTokens: mobileTokens.map((token) => ({
@@ -66,9 +73,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: true, reset: true };
   }
 
+  if (intent === "save-admin-emails") {
+    await updateShopSettings(shop, {
+      adminNotificationEmail: String(form.get("adminNotificationEmail") || ""),
+      adminEmailNewRequest: form.get("adminEmailNewRequest") === "true",
+      adminEmailCustomerResponse: form.get("adminEmailCustomerResponse") === "true",
+      adminEmailPaymentAfterVoid: form.get("adminEmailPaymentAfterVoid") === "true",
+    });
+    return { saved: true, reset: false };
+  }
+
   await updateShopSettings(shop, {
     fedexRemovalWarning: String(form.get("fedexRemovalWarning") || ""),
-    adminNotificationEmail: String(form.get("adminNotificationEmail") || ""),
   });
   return { saved: true, reset: false };
 };
@@ -162,12 +178,6 @@ export default function Settings() {
                   resize: "vertical",
                 }}
               />
-              <s-text-field
-                name="adminNotificationEmail"
-                label="Admin notification email"
-                value={adminEmail}
-                onChange={(event) => setAdminEmail(event.currentTarget.value)}
-              />
               <s-stack direction="inline" gap="small">
                 <s-button
                   variant="primary"
@@ -184,6 +194,56 @@ export default function Settings() {
             <s-button variant="secondary" type="submit">
               Reset warning to default
             </s-button>
+          </Form>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Admin emails">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Choose which automatic emails reach this inbox. Customers are not
+            emailed when they submit a request. They are emailed when you send
+            an offer, and again with the app&apos;s pay link. Shopify is not
+            asked to send its own draft-order invoice.
+          </s-paragraph>
+          <Form method="post">
+            <s-stack direction="block" gap="base">
+              <input type="hidden" name="intent" value="save-admin-emails" />
+              <s-text-field
+                name="adminNotificationEmail"
+                label="Admin notification email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.currentTarget.value)}
+              />
+              {ADMIN_EMAIL_SUBSCRIPTION_OPTIONS.map((option) => (
+                <s-stack key={option.field} direction="block" gap="small">
+                  <label
+                    htmlFor={option.field}
+                    style={{ display: "flex", gap: 10, alignItems: "center" }}
+                  >
+                    <input
+                      id={option.field}
+                      name={option.field}
+                      type="checkbox"
+                      value="true"
+                      defaultChecked={settings[option.field]}
+                    />
+                    {option.label}
+                  </label>
+                  <s-text color="subdued">{option.description}</s-text>
+                </s-stack>
+              ))}
+              <s-button
+                variant="primary"
+                type="submit"
+                {...(navigation.state !== "idle" &&
+                navigation.formData?.get("intent") === "save-admin-emails"
+                  ? { loading: true }
+                  : {})}
+              >
+                Save admin emails
+              </s-button>
+            </s-stack>
           </Form>
         </s-stack>
       </s-section>

@@ -224,6 +224,19 @@ describe("iOS admin API payloads", () => {
     assert.match(settings, /create-mobile-token/);
     assert.match(settings, /revoke-mobile-token/);
     assert.match(settings, /iOS admin app/);
+    assert.match(settings, /save-admin-emails/);
+    assert.match(settings, /adminEmailNewRequest/);
+    assert.match(settings, /adminEmailCustomerResponse/);
+    assert.match(settings, /adminEmailPaymentAfterVoid/);
+  });
+
+  it("does not ask Shopify to email the draft-order invoice", () => {
+    const shopifyOps = readFileSync(
+      path.join(import.meta.dirname, "shopify-ops.server.ts"),
+      "utf8",
+    );
+    assert.doesNotMatch(shopifyOps, /draftOrderInvoiceSend/);
+    assert.doesNotMatch(shopifyOps, /SendPlantRequestInvoice/);
   });
 
   it("puts EXACT PLANTS and Settings on the iPhone app tabs", () => {

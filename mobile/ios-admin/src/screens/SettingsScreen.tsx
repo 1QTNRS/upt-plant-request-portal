@@ -4,8 +4,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
+  View,
 } from "react-native";
 
 import { apiGet, apiPostJson } from "../api";
@@ -21,6 +23,9 @@ type Props = {
 export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
   const [warning, setWarning] = useState("");
   const [email, setEmail] = useState("");
+  const [newRequestEmail, setNewRequestEmail] = useState(true);
+  const [customerResponseEmail, setCustomerResponseEmail] = useState(true);
+  const [paymentAfterVoidEmail, setPaymentAfterVoidEmail] = useState(true);
   const [sku, setSku] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +42,9 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
       );
       setWarning(settings.fedexRemovalWarning);
       setEmail(settings.adminNotificationEmail);
+      setNewRequestEmail(settings.adminEmailNewRequest);
+      setCustomerResponseEmail(settings.adminEmailCustomerResponse);
+      setPaymentAfterVoidEmail(settings.adminEmailPaymentAfterVoid);
       setSku(settings.fedexProductSku);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load settings.");
@@ -63,6 +71,9 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
           intent,
           fedexRemovalWarning: warning,
           adminNotificationEmail: email,
+          adminEmailNewRequest: newRequestEmail,
+          adminEmailCustomerResponse: customerResponseEmail,
+          adminEmailPaymentAfterVoid: paymentAfterVoidEmail,
         },
       );
       if (!result.ok) {
@@ -71,6 +82,9 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
       }
       setWarning(result.fedexRemovalWarning);
       setEmail(result.adminNotificationEmail);
+      setNewRequestEmail(result.adminEmailNewRequest);
+      setCustomerResponseEmail(result.adminEmailCustomerResponse);
+      setPaymentAfterVoidEmail(result.adminEmailPaymentAfterVoid);
       setSku(result.fedexProductSku);
       setSaved(result.reset ? "FedEx warning reset to the default." : "Settings saved.");
     } catch (caught) {
@@ -107,6 +121,25 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
         keyboardType="email-address"
         style={styles.input}
       />
+      <Text style={styles.muted}>
+        Subscribe to the automatic emails you want in that inbox.
+      </Text>
+      {(
+        [
+          ["New customer request", newRequestEmail, setNewRequestEmail],
+          ["Customer answered an offer", customerResponseEmail, setCustomerResponseEmail],
+          ["Payment after a voided invoice", paymentAfterVoidEmail, setPaymentAfterVoidEmail],
+        ] as const
+      ).map(([label, value, setValue]) => (
+        <View key={label} style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>{label}</Text>
+          <Switch
+            value={value}
+            onValueChange={setValue}
+            trackColor={{ true: THEME.darkGreen }}
+          />
+        </View>
+      ))}
       <Pressable style={styles.button} disabled={loading} onPress={() => void save("save")}>
         <Text style={styles.buttonLabel}>{loading ? "Saving…" : "Save settings"}</Text>
       </Pressable>
@@ -162,4 +195,12 @@ const styles = StyleSheet.create({
   secondaryLabel: { color: THEME.darkGreen, fontWeight: "700" },
   error: { color: "#8e1f0b" },
   success: { color: THEME.darkGreen, fontWeight: "600" },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 6,
+  },
+  toggleLabel: { color: THEME.darkGreen, flex: 1, fontWeight: "600" },
 });

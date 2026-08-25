@@ -36,7 +36,7 @@ Implemented end-to-end in app code:
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
 - Settings: FedEx warning text and admin notification email
-- Email outbox rows for request received, admin new-request, offer ready, confirmation, checkout, expiration reminder
+- Email outbox rows for admin new-request (if subscribed), offer ready, confirmation, checkout, expiration reminder. Customers are not emailed a request-received confirmation. Shopify is not asked to send its draft-order invoice.
 - Admin override **Close Entire Request** (confirmation required; writes `Admin Override Close`; voids an unpaid Draft Order; declined Exact Plants stay EXACT PLANTS-eligible; Grower's Choice stays excluded)
 - Admin-only **Open Draft Order in Shopify** on request detail when a live GID exists; voided drafts show the void timestamp instead of a live link
 - Customer request-detail support note on New / Pending only (`support@unsolicitedplanttalks.com`), pointing customers back to the portal for ordinary tracking
@@ -104,6 +104,7 @@ SQLite migrations (`prisma/migrations/`):
    carries a non-null default of `exact_plant`, so every existing row reads as the
    route it was created under, and every other column is nullable
 9. `20260824190000_admin_mobile_tokens` — `AdminMobileToken` for the iOS admin app
+10. `20260825183000_admin_email_subscriptions` — Settings checkboxes for which admin emails to receive
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -111,7 +112,7 @@ migrations are added under both directories.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
-- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email. Live FedEx listing is SKU `UPTUPGTOFED1236S`
+- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email, and which admin emails are subscribed. Live FedEx listing is SKU `UPTUPGTOFED1236S`
 - `RequestNumberSequence` — still keyed by `(shop, year)`; live numbering uses `year = 0` (`GLOBAL_REQUEST_SEQUENCE_YEAR`) for a shop-wide counter
 - `CustomerProfile` — unique `(shop, email)`
 - `PlantRequest` — statuses stored as `New` / `Pending` / `Closed` / `Expired`
@@ -401,7 +402,9 @@ Do not pass `changeFromQuantity: null` to skip the check.
 
 Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, admin response, checkout, expiration reminder, plus `compliance_data_request`.
 
-Volume is deliberately small. UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response` — one concise mail per submitted answer, never one per item, never for admin-side status changes, analytics, expiry maintenance or payment (Shopify's own paid-order notification covers that). The customer gets `request_received`, `offer_ready` (which says UPT has responded and links to the offer, and must not claim payment is due before they have read it), and a single `confirmation` covering their whole answer — accepted and rejected items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain "no payment needed" when nothing was. `checkout_link` survives only as the admin's manual recovery action on the request page.
+Volume is deliberately small. Customers are not emailed when they submit a request. They get `offer_ready` when UPT responds (it links to the offer and must not claim payment is due before they have read it), then a single `confirmation` covering their whole answer — accepted and rejected items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain "no payment needed" when nothing was. `checkout_link` survives as the admin's manual recovery action on the request page. Shopify's `draftOrderInvoiceSend` is not used; the app already mails the pay link.
+
+UPT's mailbox is opt-in under Settings → Admin emails. The available events are `admin_new_request`, `admin_response` (one concise mail per submitted answer, never one per item), and `admin_payment_after_void`. Never for admin-side status changes, analytics, or expiry maintenance. Shopify's own paid-order notification covers ordinary payment.
 
 `preview` and `failed` are different states with different causes: `preview` means no `RESEND_API_KEY`, so nothing was attempted; `failed` means Resend refused the send — a 403 for an unverified `EMAIL_FROM` domain is the likely first one. Do not describe an unverified domain as leaving messages in `preview`.
 

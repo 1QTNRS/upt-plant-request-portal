@@ -10,11 +10,11 @@ import {
   buildCheckoutEmail,
   buildExpirationReminderEmail,
   buildOfferReadyEmail,
-  buildRequestReceivedEmail,
   buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   offerIsAllExactPlants,
   payableInvoiceUrl,
+  adminSubscribedToEmail,
   type ResponseSummaryItem,
 } from "./portal";
 import { formatCustomerDateTime } from "./customer-time";
@@ -354,36 +354,24 @@ export async function notifyNewRequest(shop: string, requestId: string) {
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  const plantNames = request.items.map((item) => item.plantName);
+  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_new_request")) {
+    return;
+  }
 
-  const customerEmail = buildRequestReceivedEmail({
-    customerName: request.customer,
+  const plantNames = request.items.map((item) => item.plantName);
+  const admin = buildAdminNewRequestEmail({
     requestNumber: request.requestNumber,
+    customerName: request.customer,
+    customerEmail: request.email,
     plantNames,
   });
   await queueEmail({
     shop,
     requestId,
-    toEmail: request.email,
-    ...customerEmail,
-    templateKey: "request_received",
+    toEmail: adminEmail,
+    ...admin,
+    templateKey: "admin_new_request",
   });
-
-  if (adminEmail) {
-    const admin = buildAdminNewRequestEmail({
-      requestNumber: request.requestNumber,
-      customerName: request.customer,
-      customerEmail: request.email,
-      plantNames,
-    });
-    await queueEmail({
-      shop,
-      requestId,
-      toEmail: adminEmail,
-      ...admin,
-      templateKey: "admin_new_request",
-    });
-  }
 }
 
 export async function notifyOfferReady(shop: string, requestId: string, appUrl: string) {
@@ -487,11 +475,7 @@ export async function notifyResponseSummary(
 }
 
 /**
- * Tells UPT that a customer answered, once per response.
- *
- * One of only two events that reach the admin mailbox; the other is a new
- * request. Anything per item, per status change or per payment is Shopify's job
- * or nobody's.
+ * Tells UPT that a customer answered, once per response, when subscribed.
  */
 export async function notifyAdminResponse(
   shop: string,
@@ -503,7 +487,9 @@ export async function notifyAdminResponse(
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail) return;
+  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_response")) {
+    return;
+  }
 
   const email = buildAdminResponseEmail({
     requestNumber: request.requestNumber,
@@ -540,7 +526,9 @@ export async function notifyAdminPaymentAfterVoid(
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail) return;
+  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_payment_after_void")) {
+    return;
+  }
 
   const email = buildAdminPaymentAfterVoidEmail({
     requestNumber: request.requestNumber,

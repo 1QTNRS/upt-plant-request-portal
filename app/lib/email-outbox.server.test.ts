@@ -5,7 +5,10 @@ import prisma from "../db.server";
 import { customerLinksForShop } from "./customer-links.server";
 import {
   listEmailsForRequest,
+  notifyAdminPaymentAfterVoid,
+  notifyAdminResponse,
   notifyExpirationReminders,
+  notifyNewRequest,
   notifyOfferReady,
   queueEmail,
   redeliverEmailMessage,
@@ -17,6 +20,7 @@ import {
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
+  updateShopSettings,
 } from "./portal.server";
 import { ensureShopSettings } from "./seed-demo.server";
 import { DEMO_SHOP } from "./shop";
@@ -516,5 +520,69 @@ describe("the outbox the merchant is shown", () => {
     assert.ok(!("bodyText" in row), "bodyText must not reach the browser");
     assert.equal(row.templateKey, "offer_ready");
     assert.equal(row.attempts, 0);
+  });
+});
+
+describe("customer and admin email volume", () => {
+  before(async () => {
+    await purge();
+    await ensureShopSettings(shop);
+    await updateShopSettings(shop, { adminNotificationEmail: "upt@example.com" });
+  });
+  after(purge);
+
+  it("does not email the customer a request-received confirmation", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Hoya Linearis" }],
+    });
+    await notifyNewRequest(shop, created.id);
+
+    const rows = await prisma.emailMessage.findMany({
+      where: { shop, requestId: created.id },
+    });
+    assert.equal(
+      rows.some((row) => row.templateKey === "request_received"),
+      false,
+    );
+    assert.equal(
+      rows.filter((row) => row.templateKey === "admin_new_request").length,
+      1,
+    );
+    assert.equal(rows[0]?.toEmail, "upt@example.com");
+  });
+
+  it("skips an admin email the shop has unsubscribed from", async () => {
+    await updateShopSettings(shop, {
+      adminEmailNewRequest: false,
+      adminEmailCustomerResponse: false,
+      adminEmailPaymentAfterVoid: false,
+    });
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Philodendron Gloriosum" }],
+    });
+    await notifyNewRequest(shop, created.id);
+    await notifyAdminResponse(shop, {
+      requestId: created.id,
+      acceptedCount: 1,
+      rejectedCount: 0,
+    });
+    await notifyAdminPaymentAfterVoid(shop, { requestId: created.id });
+
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: {
+          shop,
+          requestId: created.id,
+          templateKey: {
+            in: ["admin_new_request", "admin_response", "admin_payment_after_void"],
+          },
+        },
+      }),
+      0,
+    );
   });
 });

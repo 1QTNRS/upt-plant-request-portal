@@ -249,6 +249,7 @@ describe("admin mobile EXACT PLANTS and settings", () => {
             intent: "save",
             fedexRemovalWarning: "Phone-updated warning.",
             adminNotificationEmail: "phone@example.com",
+            adminEmailNewRequest: false,
           }),
         }),
       ),
@@ -257,10 +258,12 @@ describe("admin mobile EXACT PLANTS and settings", () => {
       ok: boolean;
       fedexRemovalWarning: string;
       adminNotificationEmail: string;
+      adminEmailNewRequest: boolean;
     };
     assert.equal(savedBody.ok, true);
     assert.equal(savedBody.fedexRemovalWarning, "Phone-updated warning.");
     assert.equal(savedBody.adminNotificationEmail, "phone@example.com");
+    assert.equal(savedBody.adminEmailNewRequest, false);
 
     const reset = await settingsAction(
       actionArgs(
