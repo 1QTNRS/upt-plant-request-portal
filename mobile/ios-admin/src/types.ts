@@ -14,6 +14,7 @@ export type RequestRow = {
   status: string;
   submittedAtIso: string;
   hasResponded: boolean;
+  hasExistingOrder: boolean;
 };
 
 export type OfferProblem = {
@@ -54,6 +55,7 @@ export type RequestDetail = {
   email: string;
   status: string;
   submittedAtIso: string;
+  hasExistingOrder: boolean;
   canEditItems: boolean;
   canSendOffer: boolean;
   canCloseDeclined: boolean;
@@ -63,6 +65,7 @@ export type RequestDetail = {
     expirationDays: number;
     sentAtIso: string;
     expiresAtIso: string;
+    shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
   items: RequestItem[];

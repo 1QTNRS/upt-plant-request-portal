@@ -59,6 +59,39 @@ describe("iOS admin API payloads", () => {
     assert.equal(payload.requests.length, 1);
     assert.equal(payload.requests[0].requestNumber, "REQ12");
     assert.equal(payload.requests[0].plantsRequested, "Monstera Albo");
+    assert.equal(payload.requests[0].hasExistingOrder, false);
+  });
+
+  it("filters New existing-order rows the same way the website does", () => {
+    const payload = mobileAdminDashboardPayload(
+      "demo-shop.myshopify.com",
+      [
+        request({
+          id: "req-existing",
+          status: "New",
+          requestNumber: "REQ23",
+          hasExistingOrder: true,
+        }),
+        request({
+          id: "req-new",
+          status: "New",
+          requestNumber: "REQ24",
+          hasExistingOrder: false,
+        }),
+        request({
+          id: "req-closed-existing",
+          status: "Closed",
+          requestNumber: "REQ6",
+          hasExistingOrder: true,
+        }),
+      ],
+      "",
+      "ExistingOrder",
+    );
+    assert.equal(payload.statusFilter, "ExistingOrder");
+    assert.equal(payload.requests.length, 1);
+    assert.equal(payload.requests[0].requestNumber, "REQ23");
+    assert.equal(payload.requests[0].hasExistingOrder, true);
   });
 
   it("keeps admin notes and photos on the detail payload", () => {
@@ -71,6 +104,26 @@ describe("iOS admin API payloads", () => {
     assert.equal(detail.canEditItems, false);
     assert.equal(detail.canSendOffer, false);
     assert.equal(detail.canOverrideClose, true);
+    assert.equal(detail.hasExistingOrder, false);
+  });
+
+  it("carries Existing Order and a frozen ADD ON onto the phone detail", () => {
+    const detail = toMobileAdminRequestDetail(
+      request({
+        hasExistingOrder: true,
+        sentOffer: {
+          expirationDays: 3,
+          sentAt: "Aug 21, 2026",
+          sentAtIso: "2026-08-21T16:00:00.000Z",
+          expiresAt: "Aug 24, 2026",
+          expiresAtIso: "2026-08-24T16:00:00.000Z",
+          offerLink: "https://example.test/customer/requests/req-1",
+          shippingFeeOverride: 12.5,
+        },
+      }),
+    );
+    assert.equal(detail.hasExistingOrder, true);
+    assert.equal(detail.sentOffer?.shippingFeeOverride, 12.5);
   });
 
   it("lets a complete New request be sent from the phone", () => {
@@ -181,5 +234,8 @@ describe("iOS admin API payloads", () => {
     assert.match(app, /exact-plants/);
     assert.match(app, /ExactPlantsScreen/);
     assert.match(app, /SettingsScreen/);
+    assert.match(app, /StatusPills/);
+    assert.match(app, /shippingFeeOverride/);
+    assert.match(app, /Existing order:/);
   });
 });

@@ -13,10 +13,11 @@ import {
   closeDeclinedRequest,
 } from "./offer-response.server";
 import { saveUploadedPlantPhoto } from "./photo-upload.server";
-import type {
-  ItemAvailabilityStatus,
-  OfferExpirationDays,
-  UnavailableReason,
+import {
+  parseShippingFeeOverride,
+  type ItemAvailabilityStatus,
+  type OfferExpirationDays,
+  type UnavailableReason,
 } from "./portal";
 import {
   addInternalNote,
@@ -248,9 +249,13 @@ export async function handleMobileAdminRequestAction(input: {
       const days = Number(fields.expirationDays) as OfferExpirationDays;
       const expirationDays: OfferExpirationDays =
         days === 5 || days === 7 ? days : 3;
+      const shipping = parseShippingFeeOverride(fields.shippingFeeOverride);
+      if (!shipping.ok) return { ok: false, error: shipping.error };
       const admin = await offlineAdminClient(shop);
       await refreshFedexUpgradePrice(admin, shop);
-      const updated = await sendOffer(shop, requestId, expirationDays);
+      const updated = await sendOffer(shop, requestId, expirationDays, {
+        shippingFeeOverride: shipping.value,
+      });
       if (updated) {
         const appUrl = process.env.SHOPIFY_APP_URL || input.origin;
         await notifyOfferReady(shop, requestId, appUrl);

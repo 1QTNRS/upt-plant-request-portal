@@ -124,6 +124,51 @@ describe("admin mobile request actions", () => {
     assert.equal(incomplete.request?.status, "Pending");
     assert.equal(incomplete.request?.canEditItems, false);
     assert.equal(incomplete.request?.sentOffer?.expirationDays, 3);
+    assert.equal(incomplete.request?.sentOffer?.shippingFeeOverride, undefined);
+  });
+
+  it("freezes an ADD ON amount on send-offer the same way the website does", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      shopifyCustomerId: "demo-customer-alex",
+      items: [{ plantName: "Anthurium Clarinervium" }],
+      hasExistingOrder: true,
+    });
+    await updateRequestItem(shop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      price: 85,
+      weightLbs: 4,
+      photoUrls: ["https://cdn.example.com/anthurium.jpg"],
+    });
+
+    const rejected = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: {
+        intent: "send-offer",
+        expirationDays: 3,
+        shippingFeeOverride: "free",
+      },
+    });
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.error ?? "", /ADD ON/);
+
+    const sent = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: {
+        intent: "send-offer",
+        expirationDays: 3,
+        shippingFeeOverride: "12.50",
+      },
+    });
+    assert.equal(sent.ok, true);
+    assert.equal(sent.request?.hasExistingOrder, true);
+    assert.equal(sent.request?.sentOffer?.shippingFeeOverride, 12.5);
   });
 
   it("searches demo stock and links a Grower's Choice listing", async () => {

@@ -31,6 +31,7 @@ export type MobileAdminRequestRow = {
   status: PlantRequest["status"];
   submittedAtIso: string;
   hasResponded: boolean;
+  hasExistingOrder: boolean;
 };
 
 export type MobileAdminRequestDetail = {
@@ -44,6 +45,7 @@ export type MobileAdminRequestDetail = {
   expiredAtIso?: string;
   paidAtIso?: string;
   hasResponded: boolean;
+  hasExistingOrder: boolean;
   canEditItems: boolean;
   canSendOffer: boolean;
   canCloseDeclined: boolean;
@@ -53,6 +55,7 @@ export type MobileAdminRequestDetail = {
     expirationDays: number;
     sentAtIso: string;
     expiresAtIso: string;
+    shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
   items: Array<{
@@ -94,6 +97,7 @@ export function toMobileAdminRequestRow(
     status: request.status,
     submittedAtIso: request.submittedAtIso,
     hasResponded: request.hasResponded,
+    hasExistingOrder: request.hasExistingOrder === true,
   };
 }
 
@@ -116,6 +120,7 @@ export function toMobileAdminRequestDetail(
     expiredAtIso: request.expiredAtIso,
     paidAtIso: request.paidAtIso,
     hasResponded: request.hasResponded,
+    hasExistingOrder: request.hasExistingOrder === true,
     canEditItems: request.status === "New",
     canSendOffer: request.status === "New" && offerProblems.length === 0,
     canCloseDeclined: Boolean(extras.canCloseDeclined),
@@ -126,6 +131,9 @@ export function toMobileAdminRequestDetail(
           expirationDays: request.sentOffer.expirationDays,
           sentAtIso: request.sentOffer.sentAtIso,
           expiresAtIso: request.sentOffer.expiresAtIso,
+          ...(request.sentOffer.shippingFeeOverride !== undefined
+            ? { shippingFeeOverride: request.sentOffer.shippingFeeOverride }
+            : {}),
         }
       : undefined,
     internalNotes: extras.internalNotes ?? [],

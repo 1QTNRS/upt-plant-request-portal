@@ -17,6 +17,7 @@ import { StatusBar } from "expo-status-bar";
 import { apiGet, apiPost, apiUploadPhoto } from "./src/api";
 import { ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { STATUS_FILTERS, StatusPills } from "./src/StatusPills";
 import { THEME } from "./src/theme";
 import type {
   ActionResult,
@@ -64,6 +65,7 @@ export default function App() {
   const [stockTerm, setStockTerm] = useState<Record<string, string>>({});
   const [stockResults, setStockResults] = useState<Record<string, StockCandidate[]>>({});
   const [expirationDays, setExpirationDays] = useState(3);
+  const [shippingFeeOverride, setShippingFeeOverride] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
   const [tab, setTab] = useState<Tab>("list");
@@ -173,6 +175,7 @@ export default function App() {
     setError(null);
     setLoading(true);
     setConfirmOverride(false);
+    setShippingFeeOverride("");
     try {
       const payload = await apiGet<RequestDetail>(
         apiUrl,
@@ -612,17 +615,22 @@ export default function App() {
             returnKeyType="search"
           />
           <View style={styles.filters}>
-            {["All", "New", "Pending", "Expired", "Closed"].map((status) => (
+            {STATUS_FILTERS.map((status) => (
               <Pressable
-                key={status}
-                style={[styles.chip, statusFilter === status && styles.chipOn]}
+                key={status.value}
+                style={[styles.chip, statusFilter === status.value && styles.chipOn]}
                 onPress={() => {
-                  setStatusFilter(status);
-                  void loadList(query, status);
+                  setStatusFilter(status.value);
+                  void loadList(query, status.value);
                 }}
               >
-                <Text style={[styles.chipLabel, statusFilter === status && styles.chipLabelOn]}>
-                  {status}
+                <Text
+                  style={[
+                    styles.chipLabel,
+                    statusFilter === status.value && styles.chipLabelOn,
+                  ]}
+                >
+                  {status.label}
                 </Text>
               </Pressable>
             ))}
@@ -635,9 +643,11 @@ export default function App() {
             {requests.map((row) => (
               <Pressable key={row.id} style={styles.card} onPress={() => void openRequest(row.id)}>
                 <Text style={styles.cardTitle}>{row.requestNumber}</Text>
-                <Text style={styles.cardMeta}>
-                  {row.status} · {row.customer}
-                </Text>
+                <Text style={styles.cardMeta}>{row.customer}</Text>
+                <StatusPills
+                  status={row.status}
+                  hasExistingOrder={row.hasExistingOrder}
+                />
                 <Text style={styles.muted}>{row.plantsRequested || "No plants listed"}</Text>
               </Pressable>
             ))}
@@ -663,10 +673,16 @@ export default function App() {
             <Text style={styles.link}>← Requests</Text>
           </Pressable>
           <Text style={styles.title}>{detail.requestNumber}</Text>
-          <Text style={styles.cardMeta}>
-            {detail.status} · {detail.customer}
-          </Text>
+          <Text style={styles.cardMeta}>{detail.customer}</Text>
+          <StatusPills
+            status={detail.status}
+            hasExistingOrder={detail.hasExistingOrder}
+          />
           <Text style={styles.muted}>{detail.email}</Text>
+          <Text style={styles.muted}>
+            Existing order:{" "}
+            {detail.hasExistingOrder ? "Yes — combine shipping" : "No"}
+          </Text>
           {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -677,9 +693,16 @@ export default function App() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Send offer</Text>
             {detail.sentOffer ? (
-              <Text style={styles.muted}>
-                Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
-              </Text>
+              <>
+                <Text style={styles.muted}>
+                  Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
+                </Text>
+                {detail.sentOffer.shippingFeeOverride !== undefined ? (
+                  <Text style={styles.muted}>
+                    ADD ON ${detail.sentOffer.shippingFeeOverride.toFixed(2)}
+                  </Text>
+                ) : null}
+              </>
             ) : (
               <>
                 {detail.offerProblems.map((problem) => (
@@ -687,6 +710,12 @@ export default function App() {
                     {problem.itemName} is missing {problem.missing.join(", ")}.
                   </Text>
                 ))}
+                {detail.hasExistingOrder ? (
+                  <Text style={styles.muted}>
+                    This customer said they have an existing order. You can set an
+                    ADD ON amount below if you are combining shipments.
+                  </Text>
+                ) : null}
                 <View style={styles.filters}>
                   {[3, 5, 7].map((days) => (
                     <Pressable
@@ -705,11 +734,29 @@ export default function App() {
                     </Pressable>
                   ))}
                 </View>
+                <Text style={styles.label}>ADD ON</Text>
+                <TextInput
+                  value={shippingFeeOverride}
+                  onChangeText={setShippingFeeOverride}
+                  placeholder="Leave blank so they choose at checkout"
+                  placeholderTextColor={THEME.muted}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                />
+                <Text style={styles.muted}>
+                  Optional. Sets a custom ADD ON amount on the draft-order invoice,
+                  including 0. Leave blank so the customer can choose a store
+                  shipping rate at checkout.
+                </Text>
                 <Pressable
                   style={[styles.button, !detail.canSendOffer && styles.buttonDisabled]}
                   disabled={!detail.canSendOffer || loading}
                   onPress={() =>
-                    void runAction({ intent: "send-offer", expirationDays })
+                    void runAction({
+                      intent: "send-offer",
+                      expirationDays,
+                      shippingFeeOverride,
+                    })
                   }
                 >
                   <Text style={styles.buttonLabel}>Send offer</Text>
