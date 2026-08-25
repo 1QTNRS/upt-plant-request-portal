@@ -462,3 +462,22 @@ model RequestInternalNote {
 
   @@index([shop, requestId, createdAt])
 }
+
+/**
+ * Device token for the iOS admin app.
+ *
+ * The plaintext token is shown once when it is created. Only this hash is
+ * stored. Revoking sets `revokedAt` so a lost phone can be cut off without
+ * deleting the row.
+ */
+model AdminMobileToken {
+  id         String    @id @default(cuid())
+  shop       String
+  label      String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([shop, revokedAt])
+}

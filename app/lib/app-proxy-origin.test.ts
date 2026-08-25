@@ -140,6 +140,14 @@ describe("request log redaction", () => {
     assert.equal(redactUrl("/x?surprise=value"), "/x?surprise=[redacted]");
   });
 
+  it("redacts a mobile admin token if it ever appears in a query string", () => {
+    const logged = redactUrl(
+      "/api/mobile/admin/session?token=upt_admin_aaaaaaaaaaaaaaaa",
+    );
+    assert.equal(logged.includes("upt_admin_aaaaaaaaaaaaaaaa"), false);
+    assert.equal(logged.includes("token=[redacted]"), true);
+  });
+
   it("leaves a URL with no query string alone", () => {
     assert.equal(redactUrl("/healthz"), "/healthz");
   });

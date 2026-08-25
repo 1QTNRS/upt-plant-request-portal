@@ -40,3 +40,8 @@ schema/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Expo iOS admin app
+mobile/ios-admin/node_modules/
+mobile/ios-admin/.expo/
+mobile/ios-admin/dist/
