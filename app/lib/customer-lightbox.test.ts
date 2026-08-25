@@ -51,7 +51,10 @@ describe("customer photo lightbox", () => {
     assert.equal(html.includes("onclick"), false);
     assert.match(html, /flex-direction:row/);
     assert.doesNotMatch(html, /flex-direction:column/);
-    assert.match(html, /max-width:calc\(\(100% - 16px\) \/ 3\)/);
+    assert.match(html, /width:64px!important/);
+    assert.match(html, /height:64px!important/);
+    assert.match(html, /width="64"/);
+    assert.doesNotMatch(html, /max-width:calc/);
   });
 
   it("keeps the overlay hidden until opened, even with an inline flex style", () => {
