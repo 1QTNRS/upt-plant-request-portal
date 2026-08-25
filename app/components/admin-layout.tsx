@@ -95,6 +95,12 @@ export function AdminResponsiveStyles() {
         white-space: normal;
         overflow-wrap: anywhere;
       }
+      .upt-fixed-table td.upt-status-cell {
+        height: auto;
+        min-height: 44px;
+        white-space: normal;
+        overflow: visible;
+      }
       .upt-fixed-table.upt-wrap-table th,
       .upt-fixed-table.upt-wrap-table td {
         white-space: normal;

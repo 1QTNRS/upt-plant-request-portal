@@ -665,7 +665,7 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(exactFn, /<CollapsibleSection/);
     assert.match(requestPage, /admin-request-collapsibles/);
     assert.match(requestPage, /name="shippingFeeOverride"/);
-    assert.match(requestPage, /Override shipping fee/);
+    assert.match(requestPage, /ADD ON/);
     assert.match(requestPage, /inputMode="decimal"/);
     const overrideField = requestPage.slice(
       requestPage.indexOf('id="shippingFeeOverride"'),
@@ -688,7 +688,8 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /ADMIN_DASHBOARD_STATUS_FILTERS\.map/);
     assert.match(dashboard, /countAdminDashboardStatusFilters/);
     assert.match(dashboard, /ExistingOrder/);
-    assert.match(dashboard, /Existing order/);
+    assert.match(dashboard, /Existing Order/);
+    assert.match(dashboard, /RequestStatusBadges/);
     assert.ok(!dashboard.includes("<select"));
   });
 

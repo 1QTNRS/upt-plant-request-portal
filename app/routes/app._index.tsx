@@ -31,6 +31,30 @@ import { ViewerLocalTime } from "../components/viewer-local-time";
 import { ADMIN_REQUEST_PAGE_SIZE, padPageSlots } from "../lib/list-page";
 import { THEME } from "../lib/theme";
 
+function RequestStatusBadges({
+  status,
+  hasExistingOrder,
+}: {
+  status: RequestStatus;
+  hasExistingOrder: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      <StatusBadge tone={requestStatusTone(status)}>{status}</StatusBadge>
+      {hasExistingOrder ? (
+        <StatusBadge tone="warning">Existing Order</StatusBadge>
+      ) : null}
+    </div>
+  );
+}
+
 type DashboardData = {
   stats: {
     newRequests: number;
@@ -211,12 +235,10 @@ export default function Dashboard() {
                 <dd>{request.plantsRequested}</dd>
                 <dt>Status</dt>
                 <dd>
-                  <StatusBadge tone={requestStatusTone(request.status)}>
-                    {request.status}
-                  </StatusBadge>
-                  {request.hasExistingOrder ? (
-                    <s-text color="subdued">Existing order</s-text>
-                  ) : null}
+                  <RequestStatusBadges
+                    status={request.status}
+                    hasExistingOrder={request.hasExistingOrder}
+                  />
                 </dd>
                 <dt>Submitted Date</dt>
                 <dd>
@@ -238,8 +260,8 @@ export default function Dashboard() {
             <col style={{ width: "16%" }} />
             <col style={{ width: "20%" }} />
             <col />
-            <col style={{ width: "6.5rem" }} />
-            <col style={{ width: "12.5rem" }} />
+            <col style={{ width: "10rem" }} />
+            <col style={{ width: "11rem" }} />
             <col style={{ width: "6.5rem" }} />
           </colgroup>
           <thead>
@@ -265,15 +287,11 @@ export default function Dashboard() {
                   <td title={request.customer}>{request.customer}</td>
                   <td title={request.email}>{request.email}</td>
                   <td title={request.plantsRequested}>{request.plantsRequested}</td>
-                  <td>
-                    <StatusBadge tone={requestStatusTone(request.status)}>
-                      {request.status}
-                    </StatusBadge>
-                    {request.hasExistingOrder ? (
-                      <div>
-                        <s-text color="subdued">Existing order</s-text>
-                      </div>
-                    ) : null}
+                  <td className="upt-status-cell">
+                    <RequestStatusBadges
+                      status={request.status}
+                      hasExistingOrder={request.hasExistingOrder}
+                    />
                   </td>
                   <td className="upt-cell-wrap">
                     <ViewerLocalTime
