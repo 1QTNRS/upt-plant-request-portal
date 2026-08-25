@@ -2,10 +2,14 @@ import type { CSSProperties } from "react";
 
 import { LIGHTBOX_NAV_CSS } from "../lib/photo-lightbox";
 
+/** Small click-to-enlarge thumb. Locked in px so a storefront `img { width:100% }` cannot blow it up. */
+export const CUSTOMER_PHOTO_THUMB_PX = 64;
+
 /**
  * A wrap flexbox with no width shrinks to one thumb and stacks the rest. The
- * row is 100% of the plant card so photos sit side by side and the box stays
- * short. Three thumbs share a row; extras wrap.
+ * row is 100% of the plant card so thumbs sit side by side. Pixel sizes use
+ * !important: Dawn and other themes set `img { width:100%; height:auto }`,
+ * which otherwise paints the full Shopify File.
  */
 const GALLERY_ROW_CSS = `
 [data-customer-gallery]{
@@ -18,18 +22,19 @@ const GALLERY_ROW_CSS = `
   box-sizing:border-box;
 }
 [data-customer-gallery]>a{
-  flex:0 0 auto;
-  display:block;
-  width:112px;
-  max-width:calc((100% - 16px) / 3);
+  flex:0 0 ${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  display:block!important;
+  width:${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  max-width:${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  height:${CUSTOMER_PHOTO_THUMB_PX}px!important;
   line-height:0;
 }
 [data-customer-gallery] img{
-  display:block;
-  width:100%;
-  height:auto;
-  aspect-ratio:1;
-  object-fit:cover;
+  display:block!important;
+  width:${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  height:${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  max-width:${CUSTOMER_PHOTO_THUMB_PX}px!important;
+  object-fit:cover!important;
   border-radius:8px;
   cursor:zoom-in;
 }
@@ -42,6 +47,25 @@ const rowStyle: CSSProperties = {
   alignItems: "flex-start",
   gap: 8,
   width: "100%",
+};
+
+const thumbLinkStyle: CSSProperties = {
+  flex: `0 0 ${CUSTOMER_PHOTO_THUMB_PX}px`,
+  display: "block",
+  width: CUSTOMER_PHOTO_THUMB_PX,
+  maxWidth: CUSTOMER_PHOTO_THUMB_PX,
+  height: CUSTOMER_PHOTO_THUMB_PX,
+  lineHeight: 0,
+};
+
+const thumbImageStyle: CSSProperties = {
+  display: "block",
+  width: CUSTOMER_PHOTO_THUMB_PX,
+  height: CUSTOMER_PHOTO_THUMB_PX,
+  maxWidth: CUSTOMER_PHOTO_THUMB_PX,
+  objectFit: "cover",
+  borderRadius: 8,
+  cursor: "zoom-in",
 };
 
 /**
@@ -71,6 +95,7 @@ export function CustomerPhotoGallery({
             data-alt={
               urls.length > 1 ? `${alt}, photo ${index + 1} of ${urls.length}` : alt
             }
+            style={thumbLinkStyle}
           >
             <img
               src={url}
@@ -79,8 +104,9 @@ export function CustomerPhotoGallery({
                   ? `${alt}, photo ${index + 1} of ${urls.length}`
                   : alt
               }
-              width={112}
-              height={112}
+              width={CUSTOMER_PHOTO_THUMB_PX}
+              height={CUSTOMER_PHOTO_THUMB_PX}
+              style={thumbImageStyle}
             />
           </a>
         ))}

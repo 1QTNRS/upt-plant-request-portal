@@ -550,8 +550,8 @@ Do not reintroduce a default; a pre-checked Accept turns an unread offer into a
 purchase for anyone who just presses Submit.
 
 The component holds **no client state at all**. Every photo the offer froze is
-rendered as a plain `<img>`; a lightbox behind a click handler showed the
-storefront customer only the first photo of the plant they were buying.
+a 64px thumb (`CUSTOMER_PHOTO_THUMB_PX`) that opens `#customer-lightbox`. Pixel
+sizes are `!important` so the shop theme cannot stretch them to the full File.
 
 The page also has to stop offering what it cannot deliver:
 
