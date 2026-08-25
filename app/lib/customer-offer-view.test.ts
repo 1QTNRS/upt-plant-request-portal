@@ -496,6 +496,28 @@ describe("a customer who accepted plants can still see their photos later", () =
       assert.ok(html.includes(url));
     }
   });
+
+  it("keeps declined-plant photos on a mixed answer, including after close", () => {
+    const html = render({
+      offer: offer({ expiresAt: inThreeDays() }),
+      response: answer([
+        { plantName: "Monstera Albo", choice: "accept" },
+        { plantName: "Hoya Callistophylla", choice: "reject" },
+      ]),
+      fedexRemovalWarning: "",
+      requestClosed: true,
+      statusLabel: "Closed",
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+
+    assert.match(html, /Final approval summary/);
+    assert.match(html, /Monstera Albo/);
+    assert.match(html, /Plants you declined/);
+    assert.match(html, /Hoya Callistophylla/);
+    for (const url of PHOTOS) {
+      assert.ok(html.includes(url));
+    }
+  });
 });
 
 describe("a customer who declined everything can still see what they declined", () => {

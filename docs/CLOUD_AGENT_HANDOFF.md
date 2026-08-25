@@ -571,7 +571,9 @@ The page also has to stop offering what it cannot deliver:
   no payment control and FedEx not shown as selected.
 - A customer who accepted plants still sees those same snapshot photos on
   **Final approval summary** when they come back (including after payment or
-  close). The photos come from the response snapshot, not the live request.
+  close). Declined plants on a mixed answer stay under **Plants you declined**
+  with their photos. The photos come from the response snapshot, not the live
+  request.
 - The customer is never shown the confirmation email. The admin outbox on the
   request page is where queued mail is read.
 
