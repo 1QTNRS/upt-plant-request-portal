@@ -690,6 +690,7 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /ExistingOrder/);
     assert.match(dashboard, /Existing Order/);
     assert.match(dashboard, /RequestStatusBadges/);
+    assert.match(dashboard, /status === "Closed" \? "success"/);
     assert.ok(!dashboard.includes("<select"));
   });
 

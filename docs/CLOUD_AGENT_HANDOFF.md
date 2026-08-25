@@ -23,7 +23,7 @@ Implemented end-to-end in app code:
 - Customer request submit (plant name required, notes optional, no quantity UI, quantity stored as 1, **no Budget field**). Required Yes/No **Have an existing order?** (header and buttons only); stored on `PlantRequest.hasExistingOrder`
 - Request numbers: sequential `REQ1`, `REQ2`, … `REQ2178` (no year prefix, no zero-padding)
 - Private customer request list (identity-scoped)
-- Admin dashboard with search (customer name, email, request number, plant/offered name) and a stored-status filter (All / New / Pending / Expired / Closed / **Existing Order**). Existing Order is New + customer said Yes; the row shows it as a status pill next to the stored status. Search and status combine. Overview stat counts stay on the full dataset. Demo seed `REQ6` is the Existing-order example.
+- Admin dashboard with search (customer name, email, request number, plant/offered name) and a stored-status filter (All / New / Pending / Expired / Closed / **Existing Order**). Existing Order is New + customer said Yes; the row shows it as a status pill next to the stored status (yellow, or the same dark green as Closed when the request is Closed). Search and status combine. Overview stat counts stay on the full dataset. Demo seed `REQ6` is the Existing-order example.
 - Admin request detail: three fulfilment routes per item — Offer Exact Plant / Link Existing Website Stock / Not Available — offered name, price, weight, customer-facing notes, multi-photo upload
 - Grower's Choice: admin searches the shop's live Shopify products and variants, links a purchasable one, and the draft order sells that real variant with a Shopify inventory reservation ending at the customer's payment deadline
 - Offer send with 3/5/7 day hold; offer snapshot freezes name, price, weight, photos, notes, availability, fulfilment route and the linked product/variant titles. Optional **ADD ON** fee freezes on `Offer.shippingFeeOverride` and becomes a custom `shippingLine` titled **ADD ON** on the later draft order (blank = leave shipping unset so checkout offers store rates; `0` = no ADD ON charge). Do not preselect a quoted rate: that locks shipping.
@@ -572,8 +572,8 @@ The page also has to stop offering what it cannot deliver:
 - A customer who accepted plants still sees those same snapshot photos on
   **Final approval summary** when they come back (including after payment or
   close). Declined plants on a mixed answer stay under **Plants you declined**
-  with their photos. The photos come from the response snapshot, not the live
-  request.
+  with their photos. Photos come from the response snapshot; if an older answer
+  stored none, the offer snapshot is used. Never the live request.
 - The customer is never shown the confirmation email. The admin outbox on the
   request page is where queued mail is read.
 
