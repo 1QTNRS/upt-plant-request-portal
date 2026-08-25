@@ -633,6 +633,27 @@ export function countAdminDashboardStatusFilters(
 }
 
 /**
+ * Photos the customer was shown. Prefer the response snapshot; if an older
+ * answer stored none, fall back to the offer snapshot so a closed request
+ * still shows the plants they accepted or declined.
+ */
+export function responseSnapshotPhotoUrls(
+  responsePhotoUrls: string[],
+  offerPhotoUrls: string[] = [],
+): string[] {
+  return responsePhotoUrls.length > 0
+    ? responsePhotoUrls
+    : offerPhotoUrls.filter((url) => url.trim().length > 0);
+}
+
+export function responseSnapshotListingImage(
+  responseImageUrl?: string | null,
+  offerImageUrl?: string | null,
+): string | undefined {
+  return responseImageUrl || offerImageUrl || undefined;
+}
+
+/**
  * Custom shipping-line title when the admin overrode the draft-order fee.
  * Shopify's own quoted rate keeps its carrier name; this override must not
  * look like ordinary shipping on the invoice.
