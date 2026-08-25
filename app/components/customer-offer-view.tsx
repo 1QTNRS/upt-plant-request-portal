@@ -377,12 +377,14 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {!hasAccepted && rejectedItems.length > 0 ? (
+        {rejectedItems.length > 0 ? (
           /*
            * What the customer turned down, exactly as the offer froze it. This
            * is the only record they have once the request is closed, so it
            * comes from the response snapshot rather than the live request —
-           * a later admin edit must not rewrite what they were shown.
+           * a later admin edit must not rewrite what they were shown. Keep it
+           * even when they also accepted plants — those live in the summary
+           * below, and hiding this used to drop the declined photos entirely.
            */
           <s-section heading="Plants you declined">
             <s-stack direction="block" gap="base">
