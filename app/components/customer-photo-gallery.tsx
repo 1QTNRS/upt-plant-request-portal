@@ -2,20 +2,46 @@ import type { CSSProperties } from "react";
 
 import { LIGHTBOX_NAV_CSS } from "../lib/photo-lightbox";
 
-const thumbStyle: CSSProperties = {
-  display: "block",
-  objectFit: "cover",
-  borderRadius: "8px",
-  maxWidth: "100%",
-  width: "min(200px, 100%)",
-  height: "auto",
-  cursor: "zoom-in",
-};
+/**
+ * A wrap flexbox with no width shrinks to one thumb and stacks the rest. The
+ * row is 100% of the plant card so photos sit side by side and the box stays
+ * short. Three thumbs share a row; extras wrap.
+ */
+const GALLERY_ROW_CSS = `
+[data-customer-gallery]{
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  gap:8px;
+  width:100%;
+  box-sizing:border-box;
+}
+[data-customer-gallery]>a{
+  flex:0 0 auto;
+  display:block;
+  width:112px;
+  max-width:calc((100% - 16px) / 3);
+  line-height:0;
+}
+[data-customer-gallery] img{
+  display:block;
+  width:100%;
+  height:auto;
+  aspect-ratio:1;
+  object-fit:cover;
+  border-radius:8px;
+  cursor:zoom-in;
+}
+`;
 
 const rowStyle: CSSProperties = {
   display: "flex",
+  flexDirection: "row",
   flexWrap: "wrap",
-  gap: "8px",
+  alignItems: "flex-start",
+  gap: 8,
+  width: "100%",
 };
 
 /**
@@ -32,32 +58,34 @@ export function CustomerPhotoGallery({
   if (urls.length === 0) return null;
   const galleryId = alt;
   return (
-    <div style={rowStyle} data-customer-gallery>
-      {urls.map((url, index) => (
-        <a
-          key={url}
-          href={url}
-          data-customer-photo
-          data-gallery={galleryId}
-          data-index={String(index)}
-          data-alt={
-            urls.length > 1 ? `${alt}, photo ${index + 1} of ${urls.length}` : alt
-          }
-        >
-          <img
-            src={url}
-            alt={
-              urls.length > 1
-                ? `${alt}, photo ${index + 1} of ${urls.length}`
-                : alt
+    <>
+      <style>{GALLERY_ROW_CSS}</style>
+      <div style={rowStyle} data-customer-gallery>
+        {urls.map((url, index) => (
+          <a
+            key={url}
+            href={url}
+            data-customer-photo
+            data-gallery={galleryId}
+            data-index={String(index)}
+            data-alt={
+              urls.length > 1 ? `${alt}, photo ${index + 1} of ${urls.length}` : alt
             }
-            width={200}
-            height={200}
-            style={thumbStyle}
-          />
-        </a>
-      ))}
-    </div>
+          >
+            <img
+              src={url}
+              alt={
+                urls.length > 1
+                  ? `${alt}, photo ${index + 1} of ${urls.length}`
+                  : alt
+              }
+              width={112}
+              height={112}
+            />
+          </a>
+        ))}
+      </div>
+    </>
   );
 }
 
