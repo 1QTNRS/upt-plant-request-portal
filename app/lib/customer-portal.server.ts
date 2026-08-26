@@ -29,8 +29,8 @@ import { ensureShopSeeded } from "./seed-demo.server";
  * Shared by the portal page and the form's POST target.
  *
  * Both routes have to render the same page: the POST target renders it after
- * adding or removing a plant row, or when validation fails. Keeping one loader
- * means the two cannot drift.
+ * a submit (or when validation fails), and the GET fallback for add/remove
+ * plant also lands here. Keeping one loader means the two cannot drift.
  */
 /**
  * Shown when the app cannot reach Shopify to identify the visitor. It has to

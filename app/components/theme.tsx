@@ -223,6 +223,11 @@ export function ThemeStyles() {
         margin-bottom: 12px;
         background: ${THEME.cream};
       }
+      /* Inline display:inline-flex on these buttons beats the hidden attribute. */
+      .upt-customer-surface [data-plant-add][hidden],
+      .upt-customer-surface [data-plant-remove][hidden] {
+        display: none !important;
+      }
       .upt-fixed-table th { background: ${THEME.mint} !important; color: ${THEME.darkGreen}; }
       .upt-request-card { border-color: ${THEME.line}; }
       [data-list-prev],

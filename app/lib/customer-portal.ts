@@ -46,11 +46,12 @@ export function readPlantLines(fields: FieldSource): PlantLine[] {
 
 /**
  * The rows to render, taken from the query string that the add and remove
- * buttons navigate to.
+ * buttons navigate to when JavaScript is blocked.
  *
- * Those buttons submit the form with GET rather than POST: a GET is the same
- * request shape as the page load the storefront already serves, and the browser
- * puts everything the customer typed into the query string for us.
+ * Those buttons stay GET submits so a blocked script still works: a GET is the
+ * same request shape as the page load the storefront already serves, and the
+ * browser puts everything the customer typed into the query string. When the
+ * plant-rows enhance script runs it intercepts the click and never navigates.
  */
 export function plantLinesFromQuery(search: URLSearchParams): PlantLine[] | null {
   const adding = search.has("addPlant");

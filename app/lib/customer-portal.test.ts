@@ -74,10 +74,10 @@ describe("customer portal form target", () => {
 
 describe("adding and removing rows through the query string", () => {
   /*
-   * The add and remove buttons submit the form with GET rather than POST. A GET
-   * is the same request shape as the page load the storefront already serves,
-   * and a proxied POST to the row endpoints returned "Bad Request" on the real
-   * store. The browser serializes the typed values into the query string.
+   * GET is the no-JavaScript fallback. A GET is the same request shape as the
+   * page load the storefront already serves, and a proxied POST to the row
+   * endpoints returned "Bad Request" on the real store. The enhance script
+   * intercepts the click so a working browser never navigates.
    */
   const query = (params: Record<string, string>) => new URLSearchParams(params);
 
@@ -797,12 +797,76 @@ describe("the request form works without JavaScript", () => {
     assert.ok(!source.includes("onClick"), "onClick does nothing without hydration");
     assert.match(source, /name="addPlant"/);
     assert.match(source, /name="removePlant"/);
+    assert.match(source, /data-plant-rows/);
+    assert.match(source, /data-plant-add/);
+    assert.match(source, /data-plant-remove/);
+    assert.match(source, /data-item-count/);
+    assert.match(source, /data-max-rows=\{MAX_PLANT_ROWS\}/);
+    assert.match(source, /defaultValue=\{String\(plantLines\.length\)\}/);
+    const theme = readFileSync(
+      path.join(REPO_ROOT, "app", "components", "theme.tsx"),
+      "utf8",
+    );
+    assert.match(theme, /\[data-plant-add\]\[hidden\]/);
+    assert.match(theme, /\[data-plant-remove\]\[hidden\]/);
+    const enhance = readFileSync(
+      path.join(REPO_ROOT, "app", "components", "customer-enhance.tsx"),
+      "utf8",
+    );
+    assert.match(enhance, /CUSTOMER_PLANT_ROWS_SCRIPT/);
   });
 
   it("uses a real storefront login anchor instead of a click handler", () => {
     assert.match(source, /export function CustomerLoginLink/);
     assert.match(source, /<a href=\{href\}/);
     assert.match(source, /Log in/);
+  });
+
+  it("hides Remove on a single row and Add at the cap", () => {
+    const one = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: true,
+        name: "Alex Rivera",
+        email: "alex.rivera@example.com",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+        plantLines: [{ plantName: "Monstera", notes: "" }],
+      }),
+    );
+    assert.match(one, /data-plant-remove/);
+    assert.match(one, /data-plant-add/);
+    const removeOne = [...one.matchAll(/<button[^>]*data-plant-remove[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.equal(removeOne.length, 1);
+    assert.match(removeOne[0], /hidden/);
+    assert.doesNotMatch(
+      [...one.matchAll(/<button[^>]*data-plant-add[^>]*>/g)][0][0],
+      /hidden/,
+    );
+
+    const two = renderToStaticMarkup(
+      createElement(CustomerRequestPortal, {
+        loggedIn: true,
+        name: "Alex Rivera",
+        email: "alex.rivera@example.com",
+        myRequests: [],
+        requestDetailHref: (id: string) => `/apps/plant-requests/requests/${id}`,
+        showDemoLogin: false,
+        plantLines: [
+          { plantName: "A", notes: "" },
+          { plantName: "B", notes: "" },
+        ],
+      }),
+    );
+    const removeTwo = [...two.matchAll(/<button[^>]*data-plant-remove[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    assert.equal(removeTwo.length, 2);
+    for (const button of removeTwo) {
+      assert.doesNotMatch(button, /hidden/);
+    }
   });
 
   it("adds and removes rows with GET, not a proxied POST", () => {

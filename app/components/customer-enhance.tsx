@@ -315,6 +315,117 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
 })();
 `.trim();
 
+export const CUSTOMER_PLANT_ROWS_SCRIPT = `
+(function () {
+  if (window.__uptPlantRows) return;
+  window.__uptPlantRows = true;
+
+  function rootOf(node) {
+    return node.closest("[data-plant-rows]");
+  }
+
+  function rows(root) {
+    return root.querySelectorAll("[data-plant-row]");
+  }
+
+  function sync(root) {
+    var list = rows(root);
+    var count = list.length;
+    var max = parseInt(root.getAttribute("data-max-rows") || "20", 10);
+    if (!max || max < 1) max = 20;
+    var field = root.querySelector("[data-item-count]");
+    if (field instanceof HTMLInputElement) field.value = String(count);
+    Array.prototype.forEach.call(list, function (row, index) {
+      if (!(row instanceof HTMLElement)) return;
+      var name = row.querySelector('input[name^="plantName-"]');
+      var notes = row.querySelector('textarea[name^="notes-"]');
+      if (name instanceof HTMLInputElement) name.name = "plantName-" + index;
+      if (notes instanceof HTMLTextAreaElement) notes.name = "notes-" + index;
+      var remove = row.querySelector("[data-plant-remove]");
+      if (remove instanceof HTMLButtonElement) {
+        remove.type = "button";
+        remove.value = String(index);
+        remove.hidden = count <= 1;
+      }
+    });
+    var add = root.querySelector("[data-plant-add]");
+    if (add instanceof HTMLButtonElement) {
+      add.type = "button";
+      add.hidden = count >= max;
+    }
+  }
+
+  function addRow(root) {
+    var list = rows(root);
+    var max = parseInt(root.getAttribute("data-max-rows") || "20", 10);
+    if (!max || max < 1) max = 20;
+    if (list.length >= max) return;
+    var last = list[list.length - 1];
+    if (!(last instanceof HTMLElement) || !last.parentNode) return;
+    var clone = last.cloneNode(true);
+    if (!(clone instanceof HTMLElement)) return;
+    Array.prototype.forEach.call(
+      clone.querySelectorAll("input, textarea"),
+      function (field) {
+        if (
+          field instanceof HTMLInputElement ||
+          field instanceof HTMLTextAreaElement
+        ) {
+          field.value = "";
+        }
+      },
+    );
+    last.parentNode.insertBefore(clone, last.nextSibling);
+    sync(root);
+    var name = clone.querySelector('input[name^="plantName-"]');
+    if (name instanceof HTMLInputElement) name.focus();
+  }
+
+  function removeRow(button) {
+    var root = rootOf(button);
+    if (!root) return;
+    var row = button.closest("[data-plant-row]");
+    if (!row || rows(root).length <= 1) return;
+    if (row.parentNode) row.parentNode.removeChild(row);
+    sync(root);
+  }
+
+  function scan() {
+    document.querySelectorAll("[data-plant-rows]").forEach(function (root) {
+      if (root instanceof HTMLElement) sync(root);
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    function (event) {
+      var target = event.target;
+      if (!(target instanceof Element)) return;
+      var add = target.closest("[data-plant-add]");
+      if (add) {
+        event.preventDefault();
+        var addRoot = rootOf(add);
+        if (addRoot) addRow(addRoot);
+        return;
+      }
+      var remove = target.closest("[data-plant-remove]");
+      if (remove) {
+        event.preventDefault();
+        removeRow(remove);
+      }
+    },
+    true,
+  );
+
+  scan();
+  document.addEventListener("DOMContentLoaded", scan);
+  window.addEventListener("load", scan);
+  setTimeout(scan, 0);
+  setTimeout(scan, 100);
+  setTimeout(scan, 400);
+})();
+`.trim();
+
 export const CUSTOMER_LIGHTBOX_SCRIPT = `
 (function () {
   if (window.__uptCustomerLightbox) return;
@@ -488,6 +599,7 @@ export function CustomerEnhanceScripts({
     CUSTOMER_TIME_SCRIPT,
     CUSTOMER_LIGHTBOX_SCRIPT,
     CUSTOMER_PAGED_LIST_SCRIPT,
+    CUSTOMER_PLANT_ROWS_SCRIPT,
     includeFedexWarning ? FEDEX_WARNING_SCRIPT : "",
   ]
     .filter(Boolean)
