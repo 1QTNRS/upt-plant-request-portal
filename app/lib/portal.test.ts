@@ -871,7 +871,7 @@ describe("the offer-ready email", () => {
     assert.match(none.bodyText, /None of the requested plants are available/);
     assert.match(none.bodyText, /No payment is needed/);
     assert.doesNotMatch(none.bodyText, /being held/);
-    assert.doesNotMatch(none.bodyText, /payment|invoice|checkout/i);
+    assert.doesNotMatch(none.bodyText, /invoice|checkout/i);
   });
 });
 

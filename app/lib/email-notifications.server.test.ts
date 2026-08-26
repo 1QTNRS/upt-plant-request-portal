@@ -387,7 +387,7 @@ describe("customer email count when the response is unavailable-only", () => {
     assert.match(offer.bodyText, /None of the requested plants are available/);
     assert.match(offer.bodyText, /not in our current inventory/);
     assert.match(offer.bodyText, /No payment is needed/);
-    assert.doesNotMatch(offer.bodyText, /payment|invoice|checkout/i);
+    assert.doesNotMatch(offer.bodyText, /invoice|checkout/i);
     assert.equal(await getDraftOrder(shop, created.id), null);
   });
 });
