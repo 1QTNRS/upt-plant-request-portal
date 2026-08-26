@@ -582,8 +582,9 @@ export async function notifyAdminPaymentAfterVoid(
  * Failed offer_ready rows are retried by the outbox sweep; a missing payment
  * link is recovered with the admin "Resend payment link" action.
  */
-export async function notifyExpirationReminders(_shop: string, _appUrl: string) {
-  return;
+export async function notifyExpirationReminders(shop: string, appUrl: string) {
+  void shop;
+  void appUrl;
 }
 
 /**
