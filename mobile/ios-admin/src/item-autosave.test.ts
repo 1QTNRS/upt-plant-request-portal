@@ -122,7 +122,9 @@ describe("item autosave", () => {
       path.join(import.meta.dirname, "components", "ItemEditor.tsx"),
       "utf8",
     );
-    assert.match(editor, /Couldn’t save/);
+    const labels = readFileSync(path.join(import.meta.dirname, "item-autosave.ts"), "utf8");
+    assert.match(labels, /Couldn’t save/);
+    assert.match(editor, /autosaveLabel\(autosave\)/);
     assert.match(editor, / · Retry/);
   });
 });

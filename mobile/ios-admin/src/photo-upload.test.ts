@@ -116,10 +116,10 @@ describe("multi-photo picker and progress", () => {
     assert.match(editor, /uploadKey: photo\.clientKey/);
     assert.match(editor, /retryPhoto/);
     const kept = ["p1"];
-    const uploaded = new Map([[retryKey!, "p-new"]]);
-    assert.deepEqual(
-      orderedPhotoIdsAfterUpload(kept, [retryKey!, retryKey!], uploaded),
-      ["p1", "p-new"],
-    );
+    const uploaded = new Map([[retryKey, "p-new"]]);
+    assert.deepEqual(orderedPhotoIdsAfterUpload(kept, [retryKey], uploaded), [
+      "p1",
+      "p-new",
+    ]);
   });
 });

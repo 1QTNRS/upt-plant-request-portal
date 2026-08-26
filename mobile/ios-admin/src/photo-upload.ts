@@ -74,9 +74,14 @@ export function orderedPhotoIdsAfterUpload(
   pickedClientKeys: string[],
   uploadedByKey: Map<string, string>,
 ): string[] {
+  const seen = new Set(keptIds);
   const added = pickedClientKeys
     .map((key) => uploadedByKey.get(key))
-    .filter((id): id is string => Boolean(id));
+    .filter((id): id is string => {
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   return [...keptIds, ...added];
 }
 
