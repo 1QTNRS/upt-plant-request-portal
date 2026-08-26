@@ -405,10 +405,11 @@ describe("the admin can create a missing payment link", () => {
 });
 
 /**
- * The stored status stays Pending until something closes or expires the
- * request. Closing a declined request must not take its Exact Plants out of
- * the EXACT PLANTS review queue — `exactPlantReleaseReason` still returns
- * `customer_declined` on a Closed unpaid request.
+ * A purchasable offer stays Pending until something closes or expires it.
+ * An offer with nothing to buy closes immediately. Closing a declined
+ * request must not take its Exact Plants out of the EXACT PLANTS review
+ * queue — `exactPlantReleaseReason` still returns `customer_declined` on a
+ * Closed unpaid request.
  */
 describe("what the customer is told is owed", () => {
   before(purge);
@@ -489,9 +490,9 @@ describe("what the customer is told is owed", () => {
     const requestId = await nothingAvailable();
     const request = await getRequest(shop, requestId);
 
-    assert.equal(request?.status, "Pending");
+    assert.equal(request?.status, "Closed");
     assert.equal(request?.hasPayableItems, false);
-    assert.equal(labelOf(request), "No Payment Needed");
+    assert.equal(labelOf(request), "Closed");
   });
 
   it("carries the same answer into the customer's own request list", async () => {

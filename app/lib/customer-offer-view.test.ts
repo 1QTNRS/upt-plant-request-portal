@@ -369,7 +369,7 @@ describe("a request with nothing to pay for still has a way out", () => {
     assert.match(reviewing, /value="submit-response"/);
   });
 
-  it("does not offer Close Request on an unanswered all-unavailable offer", () => {
+  it("does not offer Accept/Reject after an all-unavailable admin close", () => {
     const html = render({
       offer: offer({
         expiresAt: inThreeDays(),
@@ -385,11 +385,12 @@ describe("a request with nothing to pay for still has a way out", () => {
       }),
       response: null,
       fedexRemovalWarning: "",
-      requestClosed: false,
+      requestClosed: true,
       formAction: "/apps/plant-requests/requests/req-1",
     });
     assert.ok(!html.includes('value="close-request"'));
-    assert.match(html, /value="submit-response"/);
+    assert.ok(!html.includes('value="submit-response"'));
+    assert.match(html, /Request closed/);
   });
 
   it("offers to close a request where nothing was available", () => {
