@@ -492,11 +492,7 @@ export async function notifyResponseSummary(
 }
 
 /**
- * Tells UPT that a customer answered, once per response.
- *
- * One of only two events that reach the admin mailbox; the other is a new
- * request. Anything per item, per status change or per payment is Shopify's job
- * or nobody's.
+ * Tells UPT that a customer answered, once per response, when subscribed.
  */
 export async function notifyAdminResponse(
   shop: string,

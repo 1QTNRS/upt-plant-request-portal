@@ -1204,6 +1204,7 @@ const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
   request_received: "Request received",
   admin_new_request: "New request (admin)",
   admin_response: "Customer responded (admin)",
+  admin_payment_after_void: "Payment after void (admin)",
   offer_ready: "Offer ready",
   confirmation: "Response summary",
   checkout_link: "Payment link",

@@ -38,6 +38,7 @@ import {
   matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
   parseShippingFeeOverride,
+  adminSubscribedToEmail,
   OVERRIDDEN_SHIPPING_LINE_TITLE,
   responseSnapshotListingImage,
   responseSnapshotPhotoUrls,
@@ -62,6 +63,39 @@ describe("FedEx listing identity", () => {
   it("identifies the live UPT upgrade by SKU", () => {
     assert.equal(FEDEX_PRODUCT_SKU, "UPTUPGTOFED1236S");
     assert.equal(fedexVariantSkuQuery(), "sku:UPTUPGTOFED1236S");
+  });
+});
+
+describe("admin email subscriptions", () => {
+  const allOn = {
+    adminEmailNewRequest: true,
+    adminEmailCustomerResponse: true,
+    adminEmailPaymentAfterVoid: true,
+  };
+
+  it("honours each Settings checkbox independently", () => {
+    assert.equal(adminSubscribedToEmail(allOn, "admin_new_request"), true);
+    assert.equal(
+      adminSubscribedToEmail(
+        { ...allOn, adminEmailNewRequest: false },
+        "admin_new_request",
+      ),
+      false,
+    );
+    assert.equal(
+      adminSubscribedToEmail(
+        { ...allOn, adminEmailCustomerResponse: false },
+        "admin_response",
+      ),
+      false,
+    );
+    assert.equal(
+      adminSubscribedToEmail(
+        { ...allOn, adminEmailPaymentAfterVoid: false },
+        "admin_payment_after_void",
+      ),
+      false,
+    );
   });
 });
 

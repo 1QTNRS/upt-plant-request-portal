@@ -14,7 +14,10 @@ import {
 } from "../lib/admin-mobile-auth.server";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { missingProductionSecrets } from "../lib/environment.server";
-import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU } from "../lib/portal";
+import {
+  DEFAULT_FEDEX_REMOVAL_WARNING,
+  FEDEX_PRODUCT_SKU,
+} from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 

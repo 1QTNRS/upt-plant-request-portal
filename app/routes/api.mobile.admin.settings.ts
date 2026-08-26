@@ -7,12 +7,21 @@ import {
 import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU } from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 
+function asOptionalBool(value: unknown): boolean | undefined {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return undefined;
+}
+
 function settingsPayload(
   settings: Awaited<ReturnType<typeof getShopSettings>>,
 ) {
   return {
     fedexRemovalWarning: settings.fedexRemovalWarning,
     adminNotificationEmail: settings.adminNotificationEmail,
+    adminEmailNewRequest: settings.adminEmailNewRequest,
+    adminEmailCustomerResponse: settings.adminEmailCustomerResponse,
+    adminEmailPaymentAfterVoid: settings.adminEmailPaymentAfterVoid,
     fedexProductHandle: settings.fedexProductHandle,
     fedexProductSku: FEDEX_PRODUCT_SKU,
   };
@@ -46,6 +55,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const settings = await updateShopSettings(auth.shop, {
     fedexRemovalWarning: String(body.fedexRemovalWarning ?? ""),
     adminNotificationEmail: String(body.adminNotificationEmail ?? ""),
+    adminEmailNewRequest: asOptionalBool(body.adminEmailNewRequest),
+    adminEmailCustomerResponse: asOptionalBool(body.adminEmailCustomerResponse),
+    adminEmailPaymentAfterVoid: asOptionalBool(body.adminEmailPaymentAfterVoid),
   });
   return Response.json({ ok: true, reset: false, ...settingsPayload(settings) });
 };

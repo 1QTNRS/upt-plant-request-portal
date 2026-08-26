@@ -162,6 +162,9 @@ export type ExactPlantActionResult = {
 export type ShopSettings = {
   fedexRemovalWarning: string;
   adminNotificationEmail: string;
+  adminEmailNewRequest: boolean;
+  adminEmailCustomerResponse: boolean;
+  adminEmailPaymentAfterVoid: boolean;
   fedexProductHandle: string;
   fedexProductSku: string;
 };

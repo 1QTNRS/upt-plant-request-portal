@@ -104,6 +104,7 @@ SQLite migrations (`prisma/migrations/`):
    carries a non-null default of `exact_plant`, so every existing row reads as the
    route it was created under, and every other column is nullable
 9. `20260824190000_admin_mobile_tokens` — `AdminMobileToken` for the iOS admin app
+10. `20260825183000_admin_email_subscriptions` — Settings checkboxes for which admin emails to receive
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -111,7 +112,7 @@ migrations are added under both directories.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
-- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email. Live FedEx listing is SKU `UPTUPGTOFED1236S`
+- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email, and which admin emails are subscribed. Live FedEx listing is SKU `UPTUPGTOFED1236S`
 - `RequestNumberSequence` — still keyed by `(shop, year)`; live numbering uses `year = 0` (`GLOBAL_REQUEST_SEQUENCE_YEAR`) for a shop-wide counter
 - `CustomerProfile` — unique `(shop, email)`
 - `PlantRequest` — statuses stored as `New` / `Pending` / `Closed` / `Expired`
