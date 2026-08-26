@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPost, apiUploadPhoto } from "./src/api";
 import { ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
@@ -246,7 +246,7 @@ export default function App() {
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       quality: 0.8,
     });
     if (picked.canceled || !picked.assets[0] || !detail) return;
@@ -543,6 +543,7 @@ export default function App() {
   }
 
   return (
+    <SafeAreaProvider>
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
       {screen === "boot" ? (
@@ -850,6 +851,7 @@ export default function App() {
         </View>
       ) : null}
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

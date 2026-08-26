@@ -17,15 +17,15 @@ Sign in with a device token. Three tabs on the phone:
 
 Every write goes through the same Render functions as the website. The phone never talks to Shopify. Token create/revoke stays on the website. Analytics stays on the website.
 
-You do **not** need a Mac. Install [Expo Go](https://expo.dev/go) on the iPhone.
+You do **not** need a Mac. Install [Expo Go](https://expo.dev/go) on the iPhone. This project uses **Expo SDK 54**, which matches current Expo Go.
 
 1. After this work is live: Shopify admin → **UPT Plant Request Portal → Settings → iOS admin app → Create device token**. Copy it immediately.
-2. On a computer:
+2. On a computer (Windows, from the repo root):
 
-```bash
-cd mobile/ios-admin
+```bat
+cd mobile\ios-admin
 npm install
-npx expo start
+npx expo start -c
 ```
 
 3. Scan the QR code. Default App URL is the live Render service.

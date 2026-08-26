@@ -231,11 +231,17 @@ describe("iOS admin API payloads", () => {
       path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "App.tsx"),
       "utf8",
     );
+    const iosPackage = readFileSync(
+      path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "package.json"),
+      "utf8",
+    );
     assert.match(app, /exact-plants/);
     assert.match(app, /ExactPlantsScreen/);
     assert.match(app, /SettingsScreen/);
     assert.match(app, /StatusPills/);
     assert.match(app, /shippingFeeOverride/);
     assert.match(app, /Existing order:/);
+    assert.match(iosPackage, /"expo": "~54\./);
+    assert.doesNotMatch(iosPackage, /"expo": "~52\./);
   });
 });
