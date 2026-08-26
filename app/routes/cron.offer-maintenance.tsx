@@ -7,11 +7,11 @@ import {
 } from "../lib/scheduler.server";
 
 /**
- * Scheduler entry point for offer expiry and expiration-reminder emails.
+ * Scheduler entry point for offer expiry, unpaid invoice void, and outbox
+ * redelivery. Automatic expiration-reminder emails are no longer sent.
  *
- * Nothing in the app was driving `notifyExpirationReminders`, so reminders were
- * never sent and offers only expired when someone happened to load a page. Call
- * this hourly from any scheduler that can make an authenticated HTTPS request:
+ * Call this hourly from any scheduler that can make an authenticated HTTPS
+ * request:
  *
  *   curl -fsS -X POST https://<app-url>/cron/offer-maintenance \
  *     -H "Authorization: Bearer $CRON_SECRET"

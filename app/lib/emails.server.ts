@@ -8,13 +8,10 @@ import {
   buildAdminPaymentAfterVoidEmail,
   buildAdminResponseEmail,
   buildCheckoutEmail,
-  buildExpirationReminderEmail,
   buildOfferReadyEmail,
   buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   offerIsAllExactPlants,
-  payableInvoiceUrl,
-  adminSubscribedToEmail,
   type ResponseSummaryItem,
 } from "./portal";
 import { formatCustomerDateTime } from "./customer-time";
@@ -354,24 +351,23 @@ export async function notifyNewRequest(shop: string, requestId: string) {
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_new_request")) {
-    return;
-  }
-
   const plantNames = request.items.map((item) => item.plantName);
-  const admin = buildAdminNewRequestEmail({
-    requestNumber: request.requestNumber,
-    customerName: request.customer,
-    customerEmail: request.email,
-    plantNames,
-  });
-  await queueEmail({
-    shop,
-    requestId,
-    toEmail: adminEmail,
-    ...admin,
-    templateKey: "admin_new_request",
-  });
+
+  if (adminEmail && settings.adminEmailNewRequest) {
+    const admin = buildAdminNewRequestEmail({
+      requestNumber: request.requestNumber,
+      customerName: request.customer,
+      customerEmail: request.email,
+      plantNames,
+    });
+    await queueEmail({
+      shop,
+      requestId,
+      toEmail: adminEmail,
+      ...admin,
+      templateKey: "admin_new_request",
+    });
+  }
 }
 
 export async function notifyOfferReady(shop: string, requestId: string, appUrl: string) {
@@ -380,6 +376,19 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
 
   const offerLink = customerLinksForShop(shop, appUrl).requestDetail(request.id);
   const timeZone = await getCustomerTimeZone(shop, request.email);
+  const availableItems = request.items
+    .filter((item) => item.availability === "available")
+    .map((item) => ({
+      name: item.offeredName || item.plantName,
+      notes: item.customerFacingNotes,
+    }));
+  const unavailableItems = request.items
+    .filter((item) => item.availability === "not_available")
+    .map((item) => ({
+      name: item.offeredName || item.plantName,
+      reason: item.unavailableReason,
+      notes: item.customerFacingNotes,
+    }));
   const email = buildOfferReadyEmail({
     customerName: request.customer,
     requestNumber: request.requestNumber,
@@ -389,6 +398,8 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
     ),
     offerLink,
     allExactPlants: offerIsAllExactPlants(request.items),
+    availableItems,
+    unavailableItems,
   });
   return queueEmail({
     shop,
@@ -399,6 +410,12 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
   });
 }
 
+/**
+ * Manual recovery only. The happy path does not email a checkout link —
+ * Accept/Reject happens first, then the portal shows the invoice URL, and
+ * Shopify sends the paid-order confirmation. Admin "Send payment link
+ * (manual recovery)" is the only caller, and it is a human action.
+ */
 export async function notifyCheckoutLink(
   shop: string,
   requestId: string,
@@ -487,9 +504,7 @@ export async function notifyAdminResponse(
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_response")) {
-    return;
-  }
+  if (!adminEmail || !settings.adminEmailCustomerResponse) return;
 
   const email = buildAdminResponseEmail({
     requestNumber: request.requestNumber,
@@ -526,9 +541,7 @@ export async function notifyAdminPaymentAfterVoid(
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail || !adminSubscribedToEmail(settings, "admin_payment_after_void")) {
-    return;
-  }
+  if (!adminEmail || !settings.adminEmailPaymentAfterVoid) return;
 
   const email = buildAdminPaymentAfterVoidEmail({
     requestNumber: request.requestNumber,
@@ -544,72 +557,16 @@ export async function notifyAdminPaymentAfterVoid(
   });
 }
 
+/**
+ * Automatic expiration reminders would be a second portal customer email
+ * after offer_ready. The happy path is offer_ready plus Shopify's own
+ * paid-order confirmation, so this is a no-op. Failed offer_ready rows are
+ * retried by the outbox sweep; a missing payment link is recovered with the
+ * admin "Send payment link (manual recovery)" action.
+ */
 export async function notifyExpirationReminders(shop: string, appUrl: string) {
-  const links = customerLinksForShop(shop, appUrl);
-  const soon = new Date();
-  soon.setHours(soon.getHours() + 24);
-  const now = new Date();
-
-  const pending = await prisma.plantRequest.findMany({
-    where: {
-      shop,
-      status: "Pending",
-      paidAt: null,
-      offer: {
-        expiresAt: { gt: now, lte: soon },
-      },
-      // Pending is set when the offer is sent and nothing moves it when the
-      // customer answers, so without this the last nudge before the hold lapses
-      // also goes to customers who rejected every plant on the offer.
-      OR: [
-        { response: null },
-        { response: { items: { some: { choice: "accept" } } } },
-      ],
-    },
-    include: {
-      offer: true,
-      draftOrder: true,
-      emails: { select: { templateKey: true } },
-      response: { select: { items: { select: { choice: true } } } },
-    },
-  });
-
-  for (const request of pending) {
-    const alreadySent = request.emails.some(
-      (email) => email.templateKey === "expiration_reminder",
-    );
-    if (alreadySent || !request.offer) continue;
-
-    const accepted =
-      request.response?.items.some((item) => item.choice === "accept") ?? false;
-
-    const email = buildExpirationReminderEmail({
-      customerName: request.customerName,
-      requestNumber: request.requestNumber,
-      expiresAt: formatCustomerDateTime(
-        request.offer.expiresAt,
-        await getCustomerTimeZone(shop, request.customerEmail),
-      ),
-      offerLink: links.requestDetail(request.id),
-      // A customer who has already accepted needs to pay, not to review the
-      // offer again; sending them here without the link they need wastes the
-      // one reminder they get.
-      invoiceUrl: accepted
-        ? payableInvoiceUrl({
-            invoiceUrl: request.draftOrder?.invoiceUrl,
-            voidedAt: request.draftOrder?.voidedAt,
-            expiresAtIso: request.offer.expiresAt.toISOString(),
-          }) ?? undefined
-        : undefined,
-    });
-    await queueEmail({
-      shop,
-      requestId: request.id,
-      toEmail: request.customerEmail,
-      ...email,
-      templateKey: "expiration_reminder",
-    });
-  }
+  void shop;
+  void appUrl;
 }
 
 /**

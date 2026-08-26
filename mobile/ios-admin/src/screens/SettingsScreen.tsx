@@ -9,18 +9,15 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
+import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
 
-type Props = {
-  apiUrl: string;
-  token: string;
-  onSignOut: () => void;
-};
-
-export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
+export function SettingsScreen() {
+  const { apiUrl, token, signOut } = useSession();
   const [warning, setWarning] = useState("");
   const [email, setEmail] = useState("");
   const [newRequestEmail, setNewRequestEmail] = useState(true);
@@ -95,6 +92,7 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
   }
 
   return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
     <ScrollView contentContainerStyle={styles.page}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.muted}>
@@ -146,10 +144,11 @@ export function SettingsScreen({ apiUrl, token, onSignOut }: Props) {
       <Pressable style={styles.secondary} disabled={loading} onPress={() => void save("reset")}>
         <Text style={styles.secondaryLabel}>Reset warning to default</Text>
       </Pressable>
-      <Pressable style={styles.secondary} onPress={onSignOut}>
+      <Pressable style={styles.secondary} onPress={() => void signOut()}>
         <Text style={styles.secondaryLabel}>Sign out</Text>
       </Pressable>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 

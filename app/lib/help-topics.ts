@@ -162,11 +162,11 @@ export const HELP_TOPICS: HelpTopic[] = [
       "email delivery",
     ],
     summary:
-      "Offer ready and one consolidated answer summary to the customer, plus an expiry reminder; UPT picks which admin emails to receive in Settings.",
+      "One automatic portal email to the customer — the admin response when the offer is sent — plus Shopify's paid-order confirmation if they pay; admin types are independently toggleable.",
     detail: [
-      "UPT's mailbox is opt-in under Settings → Admin emails: a new request, one summary per customer response, and payment after a voided invoice. Never one per item, and never for admin-side status changes, analytics or expiry maintenance — Shopify's own paid-order notification covers ordinary payment.",
-      "The customer is not emailed when they submit a request. They get an offer-ready mail that says UPT has responded and links to the offer without claiming payment is due, and a single confirmation covering their whole answer: accepted and declined items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain no-payment-needed line when nothing was. Shopify is not asked to send its own draft-order invoice.",
-      "One expiration reminder goes out before the hold ends, and only to customers who either never answered or accepted something. A customer who declined every plant is not chased.",
+      "UPT's mailbox gets two events only: a new request, and one summary per customer response. Never one per item, and never for admin-side status changes, analytics, expiry maintenance or ordinary payment — Shopify's own paid-order notification covers that. A third admin mail fires only when money arrives after the invoice was already voided. Each of those three is a Settings toggle; a legal compliance data-request mail is not.",
+      "The customer is not emailed when they submit a request. They get one admin-response mail when the offer is sent. That response summarises available and unavailable items, includes notes and the hold deadline when plants are available, and links to the offer without claiming payment is due. Accept/Reject still happens in the portal; a Draft Order is created only after they accept. Closing a No Payment Needed request does not send another email. A response with nothing purchasable also sends that one email and closes the request immediately.",
+      "If the customer pays, Shopify's own paid-order confirmation is the last customer email. The portal does not send a payment confirmation, a checkout-link email, or an expiration reminder on the happy path. `checkout_link` is only the admin's manual recovery action.",
       "Delivery needs `RESEND_API_KEY`. Without it messages stay in the outbox with status `preview` and nothing is attempted. `failed` is a different state and means Resend refused the send — an unverified `EMAIL_FROM` domain is the likely first cause, and it must not be described as leaving messages in `preview`.",
       "Every customer-facing link in an email is a storefront app-proxy URL. A link to the app's own origin carries no signed identity and renders 'Request not available'.",
     ],
@@ -175,7 +175,7 @@ export const HELP_TOPICS: HelpTopic[] = [
         path: HANDOFF_DOC,
         locator: "Emails",
         quote:
-          "UPT's mailbox is opt-in under Settings → Admin emails",
+          "UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response`",
       },
       {
         path: HANDOFF_DOC,

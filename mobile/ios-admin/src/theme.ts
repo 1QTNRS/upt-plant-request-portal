@@ -6,4 +6,6 @@ export const THEME = {
   white: "#ffffff",
   muted: "#4a5c52",
   line: "#c9d9d0",
+  disabledFill: "#e4eee8",
+  disabledText: "#8a9a92",
 };

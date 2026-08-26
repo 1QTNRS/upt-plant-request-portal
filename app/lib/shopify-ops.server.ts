@@ -854,9 +854,11 @@ async function createClaimedDraftOrder(
   const grantedHold = admin ? Boolean(reservedUntil) : wantedHold;
   const holdEndsAt = reservedUntil ?? reserveInventoryUntil;
 
-  // Recorded as soon as Shopify has a draft: losing the reference would let a
-  // retry create a second one for the same request. Do not email Shopify's
-  // invoice — the portal already sends the customer their pay link.
+  // Recorded as soon as Shopify returns the draft: losing the reference would
+  // let a retry create a second one for the same request. The portal never
+  // calls draftOrderInvoiceSend — Shopify's automatic invoice email is not
+  // wanted; invoiceUrl from draftOrderCreate is the checkout link the portal
+  // shows after Accept, and a human recovery action can email it.
   await saveDraftOrderReference(shop, input.requestId, {
     shopifyDraftOrderGid,
     invoiceUrl,

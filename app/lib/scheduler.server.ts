@@ -79,14 +79,13 @@ export async function shopsWithPortalData(): Promise<string[]> {
 }
 
 /**
- * Flips unpaid offers past their hold to Expired, retries email nobody received
- * and emails a reminder for offers expiring within 24 hours.
+ * Flips unpaid offers past their hold to Expired and retries email nobody
+ * received. Automatic expiration reminders are no longer sent: they would be
+ * a fourth customer email on the happy path.
  *
  * `expireOverdueOffers` also runs from request loaders, so it stays the source
  * of truth for status; this only guarantees it happens without someone opening
- * a page. Reminder emails are only ever sent from here, and
- * `notifyExpirationReminders` skips a request that already has one, so running
- * this more often than once a day is harmless.
+ * a page.
  */
 export async function runOfferMaintenance(
   appUrl = process.env.SHOPIFY_APP_URL ?? "",

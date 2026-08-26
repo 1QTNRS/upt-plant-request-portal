@@ -844,6 +844,11 @@ describe("asking Shopify to hold the stock", () => {
 
     const draft = await getDraftOrder(merchantShop, requestId);
     assert.deepEqual(draft?.reserveInventoryUntil, reservedUntil);
+    assert.equal(draft?.invoiceUrl, INVOICE_URL);
+    assert.ok(
+      !calls.some((call) => call.operation === "SendPlantRequestInvoice"),
+      "the portal must not ask Shopify to email the draft-order invoice",
+    );
   });
 
   it("re-reads the stock before reserving, and refuses when it has gone", async () => {

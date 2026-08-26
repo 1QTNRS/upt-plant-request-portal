@@ -280,18 +280,16 @@ describe("a failed draft order is not presented as a confirmed order", () => {
     assert.equal(response?.items[0].choice, "accept");
     assert.equal(await getDraftOrder(merchantShop, created.id), null);
 
-    const confirmation = await prisma.emailMessage.findFirstOrThrow({
-      where: { shop: merchantShop, requestId: created.id, templateKey: "confirmation" },
-    });
-    assert.ok(
-      !confirmation.bodyText.includes("Checkout / payment link"),
-      "there is no link to put in it",
-    );
     assert.equal(
       await prisma.emailMessage.count({
-        where: { shop: merchantShop, requestId: created.id, templateKey: "checkout_link" },
+        where: {
+          shop: merchantShop,
+          requestId: created.id,
+          templateKey: { in: ["confirmation", "checkout_link"] },
+        },
       }),
       0,
+      "Accept does not send a customer confirmation or checkout email",
     );
   });
 
@@ -407,10 +405,11 @@ describe("the admin can create a missing payment link", () => {
 });
 
 /**
- * The stored status stays Pending until something closes or expires the
- * request. Closing a declined request must not take its Exact Plants out of
- * the EXACT PLANTS review queue — `exactPlantReleaseReason` still returns
- * `customer_declined` on a Closed unpaid request.
+ * A purchasable offer stays Pending until something closes or expires it.
+ * An offer with nothing to buy closes immediately. Closing a declined
+ * request must not take its Exact Plants out of the EXACT PLANTS review
+ * queue — `exactPlantReleaseReason` still returns `customer_declined` on a
+ * Closed unpaid request.
  */
 describe("what the customer is told is owed", () => {
   before(purge);
@@ -491,9 +490,9 @@ describe("what the customer is told is owed", () => {
     const requestId = await nothingAvailable();
     const request = await getRequest(shop, requestId);
 
-    assert.equal(request?.status, "Pending");
+    assert.equal(request?.status, "Closed");
     assert.equal(request?.hasPayableItems, false);
-    assert.equal(labelOf(request), "No Payment Needed");
+    assert.equal(labelOf(request), "Closed");
   });
 
   it("carries the same answer into the customer's own request list", async () => {
@@ -1203,7 +1202,7 @@ describe("what a submitted response puts in the outbox", () => {
       orderBy: { createdAt: "asc" },
     });
 
-  it("sends one customer email and one admin email when plants are accepted", async () => {
+  it("emails UPT once when plants are accepted, and does not email the customer again", async () => {
     const { requestId, first, second } = await offeredRequest();
     await handleCustomerOfferAction({
       shop,
@@ -1218,18 +1217,13 @@ describe("what a submitted response puts in the outbox", () => {
 
     const emails = await emailsFor(requestId);
     assert.deepEqual(
-      emails.map((email) => email.templateKey).sort(),
-      ["admin_response", "confirmation"],
-      "no separate checkout-link email, and never one per item",
+      emails.map((email) => email.templateKey),
+      ["admin_response"],
+      "EMAIL 2 already went out at offer send; Accept does not add customer mail",
     );
 
-    const summary = emails.find((email) => email.templateKey === "confirmation")!;
     const draft = await getDraftOrder(shop, requestId);
-    assert.match(summary.bodyText, /Accepted:\n- Monstera Albo — \$250\.00/);
-    assert.match(summary.bodyText, /Declined:\n- Hoya Callistophylla — \$70\.00/);
-    assert.match(summary.bodyText, /FedEx Priority Overnight Upgrade: kept/);
-    assert.ok(summary.bodyText.includes(draft!.invoiceUrl!));
-    assert.equal(summary.toEmail, "alex.rivera@example.com");
+    assert.ok(draft?.invoiceUrl, "the payment URL is still created for the portal");
 
     const admin = emails.find((email) => email.templateKey === "admin_response")!;
     assert.equal(admin.toEmail, "upt@example.com");
@@ -1237,7 +1231,7 @@ describe("what a submitted response puts in the outbox", () => {
     assert.match(admin.subject, /1 of 2 item\(s\) accepted/);
   });
 
-  it("still sends exactly one of each when everything is declined", async () => {
+  it("still emails UPT once when everything is declined, with no customer mail", async () => {
     const { requestId, first, second } = await offeredRequest();
     await handleCustomerOfferAction({
       shop,
@@ -1252,14 +1246,10 @@ describe("what a submitted response puts in the outbox", () => {
 
     const emails = await emailsFor(requestId);
     assert.deepEqual(
-      emails.map((email) => email.templateKey).sort(),
-      ["admin_response", "confirmation"],
+      emails.map((email) => email.templateKey),
+      ["admin_response"],
     );
-
-    const summary = emails.find((email) => email.templateKey === "confirmation")!;
-    assert.match(summary.subject, /no payment needed/i);
-    assert.doesNotMatch(summary.bodyText, /FedEx/);
-    assert.doesNotMatch(summary.bodyText, /invoice|checkout/i);
+    assert.equal(await getDraftOrder(shop, requestId), null);
 
     const admin = emails.find((email) => email.templateKey === "admin_response")!;
     assert.match(admin.subject, /every item declined/);
@@ -1284,11 +1274,10 @@ describe("what a submitted response puts in the outbox", () => {
 
     assert.equal("alreadySubmitted" in again ? again.alreadySubmitted : null, true);
     const emails = await emailsFor(requestId);
-    assert.equal(emails.length, 2);
-    assert.deepEqual(
-      emails.map((email) => email.idempotencyKey).sort(),
-      [`admin_response:${requestId}`, `confirmation:${requestId}`],
-    );
+    assert.equal(emails.length, 1);
+    assert.deepEqual(emails.map((email) => email.idempotencyKey), [
+      `admin_response:${requestId}`,
+    ]);
   });
 
   it("tells UPT nothing about an offer nobody has answered", async () => {

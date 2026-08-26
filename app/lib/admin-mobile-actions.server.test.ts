@@ -127,6 +127,48 @@ describe("admin mobile request actions", () => {
     assert.equal(incomplete.request?.sentOffer?.shippingFeeOverride, undefined);
   });
 
+  it("reorders uploaded photos through the same function as the website", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      shopifyCustomerId: "demo-customer-alex",
+      items: [{ plantName: "Philodendron White Princess" }],
+    });
+    const token = (await createAdminMobileToken(shop, "iPhone")).token;
+    const itemId = created.items[0].id;
+    await jsonAction(token, created.id, {
+      intent: "add-photo-url",
+      itemId,
+      photoUrl: "https://cdn.example.com/white-princess-a.jpg",
+    });
+    const second = await jsonAction(token, created.id, {
+      intent: "add-photo-url",
+      itemId,
+      photoUrl: "https://cdn.example.com/white-princess-b.jpg",
+    });
+    const before = (await second.json()) as {
+      request: { items: Array<{ photos: Array<{ id: string; url: string }>; price: number }> };
+    };
+    const ids = before.request.items[0].photos.map((photo) => photo.id);
+    assert.equal(ids.length, 2);
+
+    const reordered = await jsonAction(token, created.id, {
+      intent: "reorder-photos",
+      itemId,
+      photoIds: [ids[1], ids[0]],
+    });
+    const after = (await reordered.json()) as {
+      ok: boolean;
+      request: { items: Array<{ photos: Array<{ id: string }>; price: number }> };
+    };
+    assert.equal(after.ok, true);
+    assert.deepEqual(
+      after.request.items[0].photos.map((photo) => photo.id),
+      [ids[1], ids[0]],
+    );
+    assert.equal(after.request.items[0].price, before.request.items[0].price);
+  });
+
   it("freezes an ADD ON amount on send-offer the same way the website does", async () => {
     const created = await submitCustomerRequest(shop, {
       name: "Alex Rivera",

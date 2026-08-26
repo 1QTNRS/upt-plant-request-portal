@@ -33,7 +33,9 @@ import {
   parseRequestNumber,
   getOfferHoldMessage,
   getOfferUrgencyMessage,
+  ADMIN_NO_PURCHASABLE_ITEMS_REASON,
   incompleteOfferItems,
+  itemsHavePurchasableOffer,
   normalizePrice,
   normalizeQuantity,
   normalizeRequestStatus,
@@ -1054,6 +1056,7 @@ export async function sendOffer(
   );
   if (problems.length > 0) throw new OfferIncompleteError(problems);
 
+  const purchasable = itemsHavePurchasableOffer(request.items);
   const sentAt = new Date();
   const expiresAt = new Date(sentAt);
   expiresAt.setDate(expiresAt.getDate() + expirationDays);
@@ -1066,7 +1069,9 @@ export async function sendOffer(
         expiresAt,
         expirationDays,
         offerLink: customerLinksForShop(shop).requestDetail(requestId),
-        shippingFeeOverride: options?.shippingFeeOverride ?? null,
+        shippingFeeOverride: purchasable
+          ? options?.shippingFeeOverride ?? null
+          : null,
         items: {
           create: request.items.map((item) => {
             const fulfillment = resolveFulfillmentType(item);
@@ -1122,19 +1127,33 @@ export async function sendOffer(
       });
     }
 
-    await tx.plantRequest.update({
-      where: { id: requestId },
-      data: { status: "Pending" },
-    });
-
-    await tx.statusEvent.create({
-      data: {
-        requestId,
-        fromStatus: "New",
-        toStatus: "Pending",
-        reason: `Offer sent (${expirationDays} days)`,
-      },
-    });
+    if (purchasable) {
+      await tx.plantRequest.update({
+        where: { id: requestId },
+        data: { status: "Pending" },
+      });
+      await tx.statusEvent.create({
+        data: {
+          requestId,
+          fromStatus: "New",
+          toStatus: "Pending",
+          reason: `Offer sent (${expirationDays} days)`,
+        },
+      });
+    } else {
+      await tx.plantRequest.update({
+        where: { id: requestId },
+        data: { status: "Closed", closedAt: sentAt },
+      });
+      await tx.statusEvent.create({
+        data: {
+          requestId,
+          fromStatus: "New",
+          toStatus: "Closed",
+          reason: ADMIN_NO_PURCHASABLE_ITEMS_REASON,
+        },
+      });
+    }
   });
 
   return getRequest(shop, requestId);

@@ -47,6 +47,7 @@ import {
   getDisplayRequestNumber,
   incompleteOfferItems,
   offerReadinessMessage,
+  sendOfferHoldControlsEnabled,
   parseShippingFeeOverride,
   payableInvoiceUrl,
   requestStatusTone,
@@ -1339,6 +1340,7 @@ function SendOfferSection({
   const sending =
     navigation.state !== "idle" &&
     navigation.formData?.get("intent") === "send-offer";
+  const holdControlsOn = sendOfferHoldControlsEnabled(items);
 
   if (sentOffer) {
     const delivered = offerEmail?.status === "sent";
@@ -1357,9 +1359,9 @@ function SendOfferSection({
           <s-stack direction="block" gap="base">
             <s-banner tone="critical">
               <s-text>
-                The offer is live but the offer-ready email has not reached the
-                customer. They have no idea it is waiting, and the hold is
-                already running. The Emails section below has the reason.
+                {holdControlsOn
+                  ? "The offer is live but the offer-ready email has not reached the customer. They have no idea it is waiting, and the hold is already running. The Emails section below has the reason."
+                  : "The response is recorded but the offer-ready email has not reached the customer. The Emails section below has the reason."}
               </s-text>
             </s-banner>
             <Form method="post">
@@ -1384,6 +1386,7 @@ function SendOfferSection({
                   fallback={sentOffer.sentAt}
                 />
               </s-stack>
+              {holdControlsOn ? (
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">Expires</s-text>
                 <ViewerLocalTime
@@ -1391,11 +1394,14 @@ function SendOfferSection({
                   fallback={sentOffer.expiresAt}
                 />
               </s-stack>
+              ) : null}
+              {holdControlsOn ? (
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">Expiration window</s-text>
                 <s-text>{sentOffer.expirationDays} days</s-text>
               </s-stack>
-              {sentOffer.shippingFeeOverride !== undefined ? (
+              ) : null}
+              {holdControlsOn && sentOffer.shippingFeeOverride !== undefined ? (
                 <s-stack direction="block" gap="small">
                   <s-text color="subdued">ADD ON</s-text>
                   <s-text>
@@ -1447,7 +1453,7 @@ function SendOfferSection({
             </s-stack>
           </s-banner>
         ) : null}
-        {hasExistingOrder ? (
+        {hasExistingOrder && holdControlsOn ? (
           <s-banner tone="info">
             <s-text>
               This customer said they have an existing order. You can set an
@@ -1455,6 +1461,22 @@ function SendOfferSection({
             </s-text>
           </s-banner>
         ) : null}
+        {!holdControlsOn ? (
+          <s-banner tone="info">
+            <s-text>
+              Nothing on this request is purchasable. Send Offer notifies the
+              customer and closes the request. Expiration and ADD ON do not
+              apply.
+            </s-text>
+          </s-banner>
+        ) : null}
+        <div
+          style={{
+            opacity: holdControlsOn ? 1 : 0.45,
+            pointerEvents: holdControlsOn ? "auto" : "none",
+          }}
+          aria-disabled={holdControlsOn ? undefined : true}
+        >
         <s-paragraph>
           Choose how long the customer has to review and accept this offer.
         </s-paragraph>
@@ -1463,6 +1485,7 @@ function SendOfferSection({
             <button
               key={option.days}
               type="button"
+              disabled={!holdControlsOn}
               onClick={() => setExpirationDays(option.days)}
               style={{
                 padding: "8px 16px",
@@ -1471,7 +1494,7 @@ function SendOfferSection({
                 background: expirationDays === option.days ? "#002910" : "#fff",
                 color: expirationDays === option.days ? "#fff" : "inherit",
                 font: "inherit",
-                cursor: "pointer",
+                cursor: holdControlsOn ? "pointer" : "not-allowed",
               }}
             >
               {option.label}
@@ -1492,6 +1515,7 @@ function SendOfferSection({
             type="text"
             inputMode="decimal"
             autoComplete="off"
+            disabled={!holdControlsOn}
             placeholder="Leave blank so they choose at checkout"
             style={shippingOverrideInputStyle}
           />
@@ -1501,6 +1525,7 @@ function SendOfferSection({
           including 0. Leave blank so the customer can choose a store shipping
           rate at checkout.
         </s-text>
+        </div>
         <s-button
           variant="primary"
           type="submit"
@@ -1621,16 +1646,16 @@ function PaymentLinkSection({
     <s-stack direction="block" gap="base">
       <s-banner tone="critical">
         <s-text>
-          This customer accepted plants but Shopify never created their invoice,
-          so the confirmation email went out without a checkout link. Resend the
-          payment link and confirmation email only to recover that failure — it
-          is not how invoices are normally sent.
+          This customer accepted plants but Shopify never created their invoice.
+          The portal does not email a payment link in the normal flow. Use this
+          only as a manual recovery if they cannot see checkout on the request
+          page.
         </s-text>
       </s-banner>
       <Form method="post">
         <input type="hidden" name="intent" value="create-payment-link" />
         <s-button variant="primary" type="submit">
-          Resend payment link / confirmation email
+          Send payment link (manual recovery)
         </s-button>
       </Form>
     </s-stack>

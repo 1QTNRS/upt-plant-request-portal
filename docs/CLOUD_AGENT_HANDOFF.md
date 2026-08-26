@@ -35,8 +35,8 @@ Implemented end-to-end in app code:
 - Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created. **Dismiss from EXACT PLANTS** (confirmation required) removes an eligible, not-yet-listed queue item without creating a product or deleting history; `exactPlantDismissedAt` plus `Admin Dismissed from EXACT PLANTS` keep it out of later queue refreshes. Already-listed products cannot be dismissed or deleted this way. The admin queue is a collapsible **sortable table** (photo lightbox, Request # link, eligibility, listing status, price, date, actions). Eligibility rules are unchanged.
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
-- Settings: FedEx warning text and admin notification email
-- Email outbox rows for admin new-request (if subscribed), offer ready, confirmation, checkout, expiration reminder. Customers are not emailed a request-received confirmation. Shopify is not asked to send its draft-order invoice.
+- Settings: FedEx warning text, admin notification email, and per-type Admin Email Notification toggles
+- Email outbox rows for admin new-request and offer ready; `checkout_link` only as a manual admin recovery; `request_received`, `confirmation` and expiration reminders are no longer sent automatically
 - Admin override **Close Entire Request** (confirmation required; writes `Admin Override Close`; voids an unpaid Draft Order; declined Exact Plants stay EXACT PLANTS-eligible; Grower's Choice stays excluded)
 - Admin-only **Open Draft Order in Shopify** on request detail when a live GID exists; voided drafts show the void timestamp instead of a live link
 - Customer request-detail support note on New / Pending only (`support@unsolicitedplanttalks.com`), pointing customers back to the portal for ordinary tracking
@@ -59,7 +59,7 @@ Demo seed (`ensureShopSeeded`) creates `REQ1`–`REQ7` sample requests plus `REQ
 | Shopify Files photo upload | Code complete; waits for `fileStatus: READY`. **Not yet run against a live store** |
 | EXACT PLANTS product create + collection + Online Store/POS publish | Code complete and schema-validated. **Not yet run against a live store** |
 | Email delivery | Outbox + Resend client with retries, error reporting and an hourly redelivery sweep; without `RESEND_API_KEY` messages stay `preview`, and with a key but an unverified sending domain Resend returns 403 and the row becomes `failed`. Production logs a warning per undelivered message, and the admin request page shows the outbox |
-| Expiration reminders | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Verified end to end |
+| Offer maintenance | Scheduled via `POST /cron/offer-maintenance`, guarded by `CRON_SECRET`. Expires holds, voids unpaid invoices, redelivers failed outbox rows. Automatic expiration reminders are not sent |
 | Privacy/compliance webhooks | All three mandatory topics subscribed and implemented |
 | Deployment | **Render** is the chosen target: `render.yaml` declares the PostgreSQL database, the Docker web service and the offer-maintenance cron job. Multi-stage `Dockerfile` built and booted against PostgreSQL; `/healthz` probe; CI runs the suite against both providers |
 | Unused `app/lib/sample-*.ts`, `item-*.ts`, `customer-*-submissions.ts` localStorage modules | Leftover prototype. **Active routes do not import them.** Do not resurrect them as the source of truth |
@@ -400,11 +400,18 @@ Do not pass `changeFromQuantity: null` to skip the check.
 
 ### Emails
 
-Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message). Templates exist for received, admin notify, offer ready, confirmation, admin response, checkout, expiration reminder, plus `compliance_data_request`.
+Queued in `EmailMessage`. Delivered through Resend when `RESEND_API_KEY` is set; otherwise status `preview` (and production logs a warning per undelivered message).
 
-Volume is deliberately small. Customers are not emailed when they submit a request. They get `offer_ready` when UPT responds (it links to the offer and must not claim payment is due before they have read it), then a single `confirmation` covering their whole answer — accepted and rejected items with prices and notes, the FedEx outcome, one checkout link when anything was accepted, and a plain "no payment needed" when nothing was. `checkout_link` survives as the admin's manual recovery action on the request page. Shopify's `draftOrderInvoiceSend` is not used; the app already mails the pay link.
+Volume is deliberately small. The customer gets one automatic portal email, plus Shopify's own mail if they pay:
 
-UPT's mailbox is opt-in under Settings → Admin emails. The available events are `admin_new_request`, `admin_response` (one concise mail per submitted answer, never one per item), and `admin_payment_after_void`. Never for admin-side status changes, analytics, or expiry maintenance. Shopify's own paid-order notification covers ordinary payment.
+1. `offer_ready` — the one admin-response email, queued when the offer is sent. It summarises available and unavailable items, includes customer-facing notes and the hold deadline when plants are available, and links to the storefront offer. It must not claim payment is due and must not include a checkout URL: Accept/Reject happens first, and a Draft Order is created only for accepted plants. When nothing is purchasable, this same email is the thank-you / response-complete message and `sendOffer` closes the request immediately (`Admin response contained no purchasable items`).
+2. Shopify's own paid-order confirmation — only if checkout succeeds. The portal does **not** send a customer payment email. Automatic `request_received`, `confirmation`, `checkout_link`, and `expiration_reminder` messages are not sent.
+
+`checkout_link` survives only as the admin's manual "Send payment link (manual recovery)" action on the request page. It is never an automatic happy-path email. A human retry of a failed outbox row is the same recovery idea.
+
+UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response` — one concise mail per submitted answer, never one per item, never for admin-side status changes, analytics, expiry maintenance or ordinary payment (Shopify's own paid-order notification covers that). A third admin template, `admin_payment_after_void`, is the urgent conflict when money arrives after the invoice was already voided. Each of those three is independently toggleable in Settings → Admin Email Notifications (`adminEmailNewRequest`, `adminEmailCustomerResponse`, `adminEmailPaymentAfterVoid`; all default on). Turning a toggle off does not stop the underlying request, Accept/Reject, Draft Order, or Close. `compliance_data_request` is a legal webhook response and is not toggleable.
+
+The portal never calls `draftOrderInvoiceSend`. `draftOrderCreate` still returns `invoiceUrl` (and `reserveInventoryUntil`) so checkout and inventory reservation keep working without Shopify emailing its own invoice.
 
 `preview` and `failed` are different states with different causes: `preview` means no `RESEND_API_KEY`, so nothing was attempted; `failed` means Resend refused the send — a 403 for an unverified `EMAIL_FROM` domain is the likely first one. Do not describe an unverified domain as leaving messages in `preview`.
 
@@ -414,9 +421,9 @@ Nothing is lost once a send fails:
 - `runOfferMaintenance` sweeps `queued` / `failed` / `preview` rows oldest-first, bounded per run and by `EmailMessage.attempts` (`MAX_DELIVERY_ATTEMPTS`), which is roughly a day of hourly retries.
 - Every send carries `Idempotency-Key: EmailMessage.id`, which Resend honours for 24 hours, so a retry after a lost reply cannot put a second copy in the customer's inbox. Resend's own message id is stored in `providerMessageId`.
 - The Resend `fetch` has a 10 second `AbortSignal.timeout`. Without it a hung `api.resend.com` held the customer's own form POST open for the whole retry loop, for a plant request that was already committed.
-- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "Resend payment link / confirmation email" recovery action (shown only after a live Shopify invoice miss). `bodyText` is deliberately not sent to the browser: it contains payment links.
+- The admin request detail page renders the outbox for the request with a per-message retry, a resend for the offer-ready email, and a "Send payment link (manual recovery)" action (shown only after a live Shopify invoice miss). `bodyText` is deliberately not sent to the browser: it contains payment links.
 
-The expiration reminder goes only to customers who either never answered or accepted something — never to one who rejected every plant — and an accepted-but-unpaid reminder leads with the recorded `DraftOrderReference.invoiceUrl` rather than inviting them to review an offer they already answered.
+Automatic expiration reminders are no longer sent. They would be a second portal customer email after `offer_ready`. Failed `offer_ready` rows are retried by the outbox sweep; a missing payment link is recovered with the admin action.
 
 Customer-facing links in emails are storefront proxy URLs
 (`https://{shop}/apps/plant-requests/...`) built by `customerLinksForShop`. A link
@@ -1033,7 +1040,7 @@ shows a critical banner, and one admin email is sent.
 6. FedEx upgrade is a separate product, checked by default, warning from Settings, **excluded from plant analytics**. Never create an EXACT PLANTS listing for FedEx.
 7. Draft orders only for **accepted** plants (plus FedEx if selected). A Grower's Choice line sells the real Shopify `variantId`, never a custom line item; an exact plant has no product in Shopify yet and stays custom. New drafts set `DraftOrderInput.allowDiscountCodesInCheckout` so customers can enter a store discount code at invoice checkout. Do not omit it: Shopify defaults the box off. Already-issued drafts are unchanged.
 7a. Linking a listing reserves nothing. Stock is held only when the customer accepts and the draft order is created, only through `DraftOrderInput.reserveInventoryUntil`, and only until the offer's own payment deadline. Never oversell and never silently drop an item: if the stock has gone, create nothing and tell the admin which plant. Every inventory operation stays idempotent — a recorded reference, the Shopify tag lookup and the creation claim are all load-bearing.
-8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired.
+8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired. An admin response with zero purchasable items is **New → Closed** immediately (`Admin response contained no purchasable items`); it is not a customer decline, a payment, or an expiration, and it creates no Draft Order.
 9. **Declined item** means: UPT marked Available, UPT created an **exact-plant** offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available, and it is **not** a rejected Grower's Choice item — that plant already has its own Shopify product, and an EXACT PLANTS listing is one physical plant with one unit of tracked stock.
 9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and keeps historical reasons distinct: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`, and `unclaimed_after_close` when a request closed with the plant still unclaimed (admin override before a response, or customer Close Request after decline-all). Do not rewrite admin override or customer close as a customer decline. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, never for Grower's Choice, never once the request is **paid**, and never after `exactPlantDismissedAt`. Being `Closed` is not itself disqualifying: see decision 1 below.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.
