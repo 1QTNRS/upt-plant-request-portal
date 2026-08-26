@@ -229,10 +229,11 @@ export const NOTHING_TO_PAY_LABEL = "No Payment Needed";
 export const OFFER_READY_LABEL = "Offer Ready for Review";
 
 /**
- * Pending is stored from the moment the offer is sent and nothing revises it,
- * so the label — not the status — is what has to tell a customer where they
- * stand: an offer waiting to be read, money owed on what they accepted, or
- * nothing to pay because they declined it all or nothing was available.
+ * Pending is stored from the moment the offer is sent. Accepting plants leaves
+ * it Pending until payment or expiry; declining every purchasable plant closes
+ * it immediately. While it is still Pending the label — not the status — is
+ * what has to tell a customer where they stand: an offer waiting to be read,
+ * or money owed on what they accepted.
  *
  * With neither flag supplied the label never claims money is owed. A request
  * only reaches Pending by having an offer, so a caller that knows nothing about
@@ -1420,7 +1421,7 @@ export const INVOICE_VOIDED_BY_ADMIN_REASON =
 export const ADMIN_NO_PURCHASABLE_ITEMS_REASON =
   "Admin response contained no purchasable items";
 
-/** The customer closed a No Payment Needed request after declining everything. */
+/** The customer declined every purchasable plant, so the request closed. */
 export const CUSTOMER_CLOSED_REQUEST_REASON = "Customer Closed Request";
 
 /** A leftover payable invoice was deleted because the customer closed the request. */

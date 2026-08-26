@@ -234,6 +234,13 @@ export function ThemeStyles() {
         color: ${THEME.white} !important;
         border-color: ${THEME.darkGreen} !important;
       }
+      /* Shop themes paint button color and -webkit-text-fill-color dark.
+         Inline styles lose to those !important rules; primary actions on
+         dark green must keep a white label. */
+      .upt-customer-surface button.upt-primary-action {
+        color: ${THEME.white} !important;
+        -webkit-text-fill-color: ${THEME.white} !important;
+      }
       a, s-link { color: ${THEME.darkGreen}; }
     `}</style>
   );

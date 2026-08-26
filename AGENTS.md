@@ -80,7 +80,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 
 ### Business rules to preserve
 
-- Statuses stored: New / Pending / Closed / Expired. Customer labels are derived by `formatCustomerStatusLabel`: Pending and unanswered is **Offer Ready for Review**, answered with something payable is **Needs Payment**, and nothing payable is **No Payment Needed**. Labels change, stored statuses do not.
+- Statuses stored: New / Pending / Closed / Expired. Customer labels are derived by `formatCustomerStatusLabel`: Pending and unanswered is **Offer Ready for Review**, answered with something payable is **Needs Payment**, and nothing payable is **No Payment Needed**. Labels change, stored statuses do not. Rejecting every purchasable plant closes the request immediately (`Customer Closed Request`); do not leave those requests Pending while the declined plants go to EXACT PLANTS.
 - An Available item needs an exact plant photo, a price and a weight before its offer can be sent; `sendOffer` refuses and names what is missing. Customer-facing notes stay optional.
 - Admin email is only ever two events: a new request, and one summary per customer response. The customer gets one consolidated email per response.
 - No quantity field on the customer form; quantity is 1. No Budget in the active customer workflow.
