@@ -176,7 +176,8 @@ export function countAcceptedPurchasableChoices(
 
 /**
  * Whether every purchasable plant on the offer was rejected (or there were
- * none to accept). Used by the customer Close Request gate.
+ * none to accept). Used to auto-close the request and by the leftover
+ * Close Request gate.
  */
 export function declinedAllPurchasableItems(input: {
   offerItems: Array<{ availability?: string; sourceItemId?: string; id?: string }>;
@@ -198,7 +199,8 @@ export function declinedAllPurchasableItems(input: {
 
 /**
  * Customer Close Request is only for a submitted decline-all (or
- * all-unavailable) answer that reached No Payment Needed.
+ * all-unavailable) answer. Submit now closes those immediately; this gate
+ * remains for a leftover Pending request and for the already-Closed void retry.
  *
  * Reviewing the offer with nothing selected yet is not enough, and an accepted
  * plant — or anything still payable — must stay open until paid, expired, or

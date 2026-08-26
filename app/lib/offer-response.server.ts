@@ -319,11 +319,12 @@ export async function adminOverrideCloseRequest(input: {
 
 /**
  * Customer Close Request after a submitted decline-all (or all-unavailable)
- * answer that reached No Payment Needed.
+ * answer. Decline-all now closes on submit; this remains the leftover path
+ * (and the retry that voids a stale invoice on an already-Closed request).
  *
  * History stays put. Unclaimed Exact Plants stay eligible under
  * `exactPlantReleaseReason`; Grower's Choice stays excluded. A leftover
- * payable Draft Order is voided so No Payment Needed cannot keep an invoice.
+ * payable Draft Order is voided so a closed decline-all cannot keep an invoice.
  */
 export async function customerCloseRequest(input: {
   shop: string;
@@ -349,10 +350,18 @@ export async function customerCloseRequest(input: {
     }),
   });
 
+  if (request.status === "Closed") {
+    await voidUnpaidDraftOrder(
+      input.shop,
+      input.requestId,
+      input.admin,
+      new Date(),
+      { reason: INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON },
+    );
+    return { ok: true, closed: true };
+  }
+
   if (!canClose) {
-    if (request.status === "Closed") {
-      return { ok: true, closed: true };
-    }
     return {
       ok: false,
       error:
@@ -360,13 +369,11 @@ export async function customerCloseRequest(input: {
     };
   }
 
-  if (request.status !== "Closed") {
-    await closeRequest(
-      input.shop,
-      input.requestId,
-      CUSTOMER_CLOSED_REQUEST_REASON,
-    );
-  }
+  await closeRequest(
+    input.shop,
+    input.requestId,
+    CUSTOMER_CLOSED_REQUEST_REASON,
+  );
 
   await voidUnpaidDraftOrder(
     input.shop,
@@ -512,11 +519,19 @@ export async function handleCustomerOfferAction(input: {
   if (accepted.length === 0) {
     // No draft order and no extra customer email: they already received the
     // admin-response mail (EMAIL 2) when the offer was sent. UPT still gets
-    // one admin_response when that toggle is on.
+    // one admin_response when that toggle is on. Declining every purchasable
+    // plant (or having none to accept) closes the request immediately — the
+    // same tidy-up as a zero-availability sendOffer — so it does not sit in
+    // Pending / No Payment Needed while the declined plants go to EXACT PLANTS.
     await notifyAdminResponse(input.shop, {
       requestId: input.requestId,
       acceptedCount: 0,
       rejectedCount: rejected.length,
+    });
+    await customerCloseRequest({
+      shop: input.shop,
+      requestId: input.requestId,
+      admin: input.admin,
     });
     return { ok: true as const, draftOrderFailed: false };
   }

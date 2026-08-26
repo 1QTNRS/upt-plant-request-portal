@@ -39,12 +39,12 @@ export const HELP_TOPICS: HelpTopic[] = [
       "how a request moves",
     ],
     summary:
-      "Submitted as New, Pending once the offer is sent, then Closed by payment or Expired by the hold running out.",
+      "Submitted as New, Pending once the offer is sent, then Closed by payment or by declining everything, or Expired by the hold running out.",
     detail: [
       "The customer submits a request with a plant name and optional notes. There is no quantity field — quantity is always 1 — and no budget field. The request is stored New and numbered `REQ1`, `REQ2`, and so on.",
       "An admin works the request: for each plant, Not Available with a reason, an exact plant with a photo, price and weight, or a Grower's Choice line linked to existing store stock. Sending the offer stores Pending, freezes the offer snapshot and starts a 3, 5 or 7 day hold.",
       "The customer answers each Available plant with Accept or Reject. Nothing is pre-selected and an unanswered plant is refused rather than defaulted, because a pre-checked Accept turns an unread offer into a purchase for anyone who just presses Submit. Accepting creates one draft order for the accepted plants, plus FedEx if it was kept.",
-      "Payment closes the request and marks the accepted items Sold. If the hold ends unpaid the request becomes Expired instead. A request where nothing could be paid for can be closed by the customer or by the admin.",
+      "Payment closes the request and marks the accepted items Sold. If the hold ends unpaid the request becomes Expired instead. Rejecting every purchasable plant closes the request immediately; a leftover No Payment Needed request can still be closed by the customer or the admin.",
       "The stored statuses are only New, Pending, Closed and Expired. Everything a customer reads on a Pending request is a label derived from it.",
     ],
     citations: [
@@ -165,7 +165,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       "One automatic portal email to the customer — the admin response when the offer is sent — plus Shopify's paid-order confirmation if they pay; admin types are independently toggleable.",
     detail: [
       "UPT's mailbox gets two events only: a new request, and one summary per customer response. Never one per item, and never for admin-side status changes, analytics, expiry maintenance or ordinary payment — Shopify's own paid-order notification covers that. A third admin mail fires only when money arrives after the invoice was already voided. Each of those three is a Settings toggle; a legal compliance data-request mail is not.",
-      "The customer is not emailed when they submit a request. They get one admin-response mail when the offer is sent. That response summarises available and unavailable items, includes notes and the hold deadline when plants are available, and links to the offer without claiming payment is due. Accept/Reject still happens in the portal; a Draft Order is created only after they accept. Closing a No Payment Needed request does not send another email. A response with nothing purchasable also sends that one email and closes the request immediately.",
+      "The customer is not emailed when they submit a request. They get one admin-response mail when the offer is sent. That response summarises available and unavailable items, includes notes and the hold deadline when plants are available, and links to the offer without claiming payment is due. Accept/Reject still happens in the portal; a Draft Order is created only after they accept. Closing a No Payment Needed request does not send another email. A response with nothing purchasable, or a customer who rejects every purchasable plant, also sends that one admin email and closes the request immediately.",
       "If the customer pays, Shopify's own paid-order confirmation is the last customer email. The portal does not send a payment confirmation, a checkout-link email, or an expiration reminder on the happy path. `checkout_link` is only the admin's manual recovery action.",
       "Delivery needs `RESEND_API_KEY`. Without it messages stay in the outbox with status `preview` and nothing is attempted. `failed` is a different state and means Resend refused the send — an unverified `EMAIL_FROM` domain is the likely first cause, and it must not be described as leaving messages in `preview`.",
       "Every customer-facing link in an email is a storefront app-proxy URL. A link to the app's own origin carries no signed identity and renders 'Request not available'.",

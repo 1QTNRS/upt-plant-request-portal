@@ -21,6 +21,7 @@ import {
   type StockVariantCandidate,
   type StoredFulfillmentType,
 } from "./growers-choice";
+import { declinedAllPurchasableItems } from "./customer-portal";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
@@ -34,6 +35,7 @@ import {
   getOfferHoldMessage,
   getOfferUrgencyMessage,
   ADMIN_NO_PURCHASABLE_ITEMS_REASON,
+  CUSTOMER_CLOSED_REQUEST_REASON,
   incompleteOfferItems,
   itemsHavePurchasableOffer,
   normalizePrice,
@@ -314,6 +316,9 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
 /**
  * Flips Pending requests whose hold has run out to Expired.
  *
+ * Also closes leftover decline-all Pending requests first, so a customer who
+ * rejected every plant does not expire later as if they still owed money.
+ *
  * Called from every request loader, every list, the analytics page and the
  * hourly cron, so several sweeps overlap constantly — a single admin page load
  * fires more than one. Each request is therefore claimed with a conditional
@@ -325,7 +330,84 @@ export function toPlantRequest(request: RequestWithRelations): PlantRequest {
  * the critical path of a user's page load, and it is slowest exactly when the
  * backlog is largest, which is the first page load after a quiet period.
  */
+/**
+ * Closes Pending requests whose customer already rejected every purchasable
+ * plant (or had none to accept). Those used to sit in No Payment Needed until
+ * someone pressed Close Request; declined Exact Plants still reached the
+ * queue, but the request itself stayed open.
+ *
+ * Claimed the same way as expiry so overlapping loaders do not write two
+ * close events. Runs before expiry so a decline-all whose hold has also
+ * lapsed becomes Closed, not Expired.
+ */
+export async function closePendingDeclineAllRequests(shop: string): Promise<number> {
+  const pending = await prisma.plantRequest.findMany({
+    where: {
+      shop,
+      status: "Pending",
+      paidAt: null,
+      response: {
+        is: {
+          items: { none: { choice: "accept" } },
+        },
+      },
+    },
+    select: {
+      id: true,
+      offer: {
+        select: {
+          items: { select: { requestItemId: true, availability: true } },
+        },
+      },
+      response: {
+        select: {
+          items: { select: { requestItemId: true, choice: true } },
+        },
+      },
+    },
+  });
+
+  const eligible = pending.filter((request) =>
+    declinedAllPurchasableItems({
+      offerItems: (request.offer?.items ?? []).map((item) => ({
+        availability: item.availability,
+        sourceItemId: item.requestItemId,
+        id: item.requestItemId,
+      })),
+      responseItems: (request.response?.items ?? []).map((item) => ({
+        sourceItemId: item.requestItemId,
+        choice: item.choice,
+      })),
+    }),
+  );
+  if (eligible.length === 0) return 0;
+
+  const now = new Date();
+  const claimed: string[] = [];
+  for (const request of eligible) {
+    const { count } = await prisma.plantRequest.updateMany({
+      where: { id: request.id, shop, status: "Pending", paidAt: null },
+      data: { status: "Closed", closedAt: now },
+    });
+    if (count === 1) claimed.push(request.id);
+  }
+
+  if (claimed.length > 0) {
+    await prisma.statusEvent.createMany({
+      data: claimed.map((requestId) => ({
+        requestId,
+        fromStatus: "Pending",
+        toStatus: "Closed",
+        reason: CUSTOMER_CLOSED_REQUEST_REASON,
+      })),
+    });
+  }
+
+  return claimed.length;
+}
+
 export async function expireOverdueOffers(shop: string, now = new Date()): Promise<number> {
+  await closePendingDeclineAllRequests(shop);
   const pending = await prisma.plantRequest.findMany({
     where: {
       shop,

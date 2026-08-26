@@ -84,8 +84,8 @@ export async function shopsWithPortalData(): Promise<string[]> {
  * a fourth customer email on the happy path.
  *
  * `expireOverdueOffers` also runs from request loaders, so it stays the source
- * of truth for status; this only guarantees it happens without someone opening
- * a page.
+ * of truth for status (including leftover decline-all closes); this only
+ * guarantees it happens without someone opening a page.
  */
 export async function runOfferMaintenance(
   appUrl = process.env.SHOPIFY_APP_URL ?? "",

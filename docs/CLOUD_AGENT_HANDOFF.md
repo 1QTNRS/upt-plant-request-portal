@@ -572,9 +572,12 @@ The page also has to stop offering what it cannot deliver:
   the plant is an EXACT PLANTS candidate for public sale.
 - A **closed** request never shows a checkout link, and a paid one confirms the
   payment instead (`requestPaid` / `paidAt` from `loadCustomerOfferPage`).
-- An answer that left nothing payable always has a **Close Request** action,
-  whether the customer rejected everything or UPT had nothing available. The
-  admin request page offers the same action through `closeDeclinedRequest`,
+- An answer that left nothing payable **closes the request immediately**
+  (`Customer Closed Request`), whether the customer rejected everything or UPT
+  had nothing available. A leftover Pending decline-all is swept on the next
+  request load. The Close Request button remains only for that leftover, and
+  its label is white on dark green (`primaryButtonStyle` / `WebkitTextFillColor`).
+  The admin request page offers the same close through `closeDeclinedRequest`,
   which refuses while anything is accepted and creates no draft order.
 - A customer who accepted nothing still opens the request and reads the frozen
   offer back: plant name, the price and customer-facing notes they were shown,
@@ -1039,7 +1042,7 @@ shows a critical banner, and one admin email is sent.
 6. FedEx upgrade is a separate product, checked by default, warning from Settings, **excluded from plant analytics**. Never create an EXACT PLANTS listing for FedEx.
 7. Draft orders only for **accepted** plants (plus FedEx if selected). A Grower's Choice line sells the real Shopify `variantId`, never a custom line item; an exact plant has no product in Shopify yet and stays custom. New drafts set `DraftOrderInput.allowDiscountCodesInCheckout` so customers can enter a store discount code at invoice checkout. Do not omit it: Shopify defaults the box off. Already-issued drafts are unchanged.
 7a. Linking a listing reserves nothing. Stock is held only when the customer accepts and the draft order is created, only through `DraftOrderInput.reserveInventoryUntil`, and only until the offer's own payment deadline. Never oversell and never silently drop an item: if the stock has gone, create nothing and tell the admin which plant. Every inventory operation stays idempotent — a recorded reference, the Shopify tag lookup and the creation claim are all load-bearing.
-8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired. An admin response with zero purchasable items is **New → Closed** immediately (`Admin response contained no purchasable items`); it is not a customer decline, a payment, or an expiration, and it creates no Draft Order.
+8. Payment (`orders/paid`) → Closed. Unpaid hold end → Expired. An admin response with zero purchasable items is **New → Closed** immediately (`Admin response contained no purchasable items`); it is not a customer decline, a payment, or an expiration, and it creates no Draft Order. A customer who rejects every purchasable plant is **Pending → Closed** immediately (`Customer Closed Request`); declined Exact Plants stay EXACT PLANTS-eligible.
 9. **Declined item** means: UPT marked Available, UPT created an **exact-plant** offer, customer was given Accept/Reject, customer chose **Reject**. This is **not** UPT Not Available, and it is **not** a rejected Grower's Choice item — that plant already has its own Shopify product, and an EXACT PLANTS listing is one physical plant with one unit of tracked stock.
 9a. An **expired unpaid offer** releases its Available plants too, by the same admin-approved path. `exactPlantReleaseReason` is the single rule and keeps historical reasons distinct: `customer_declined`, `accepted_unpaid_expired`, `never_responded_expired`, and `unclaimed_after_close` when a request closed with the plant still unclaimed (admin override before a response, or customer Close Request after decline-all). Do not rewrite admin override or customer close as a customer decline. A plant is only ever released when it is promised to nobody — never while a hold is live, never for UPT Not Available, never for Grower's Choice, never once the request is **paid**, and never after `exactPlantDismissedAt`. Being `Closed` is not itself disqualifying: see decision 1 below.
 10. **Never auto-publish declined items.** Save the rejection; wait for admin review + explicit approve.

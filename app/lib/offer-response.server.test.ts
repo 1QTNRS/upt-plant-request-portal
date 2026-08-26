@@ -20,6 +20,7 @@ import {
   formatCustomerStatusLabel,
 } from "./portal";
 import {
+  closePendingDeclineAllRequests,
   closeRequest,
   expireOverdueOffers,
   getCustomerResponse,
@@ -29,6 +30,7 @@ import {
   listRequests,
   markRequestPaid,
   parseDraftOrderLineItems,
+  saveCustomerResponse,
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
@@ -467,7 +469,7 @@ describe("what the customer is told is owed", () => {
     assert.equal(labelOf(request), "Needs Payment");
   });
 
-  it("stops asking for payment once every plant was rejected", async () => {
+  it("closes the request once every plant was rejected", async () => {
     const { requestId, first, second } = await offeredRequest();
     await handleCustomerOfferAction({
       shop,
@@ -481,9 +483,16 @@ describe("what the customer is told is owed", () => {
     });
 
     const request = await getRequest(shop, requestId);
-    assert.equal(request?.status, "Pending", "the declined plant stays reviewable");
+    assert.equal(request?.status, "Closed", "decline-all does not stay Pending");
+    assert.ok(request?.closedAt);
     assert.equal(request?.hasPayableItems, false);
-    assert.equal(labelOf(request), "No Payment Needed");
+    assert.equal(labelOf(request), "Closed");
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: CUSTOMER_CLOSED_REQUEST_REASON },
+      }),
+      1,
+    );
   });
 
   it("never asks for payment on an offer with nothing available", async () => {
@@ -515,12 +524,13 @@ describe("what the customer is told is owed", () => {
 
     assert.equal(row?.hasPayableItems, false);
     assert.equal(row?.hasResponded, true);
+    assert.equal(row?.status, "Closed");
     assert.equal(
       formatCustomerStatusLabel(row!.status, {
         hasPayableItems: row!.hasPayableItems,
         hasResponded: row!.hasResponded,
       }),
-      "No Payment Needed",
+      "Closed",
       "the list and the detail page must say the same thing",
     );
   });
@@ -986,6 +996,70 @@ describe("customer Close Request after decline-all", () => {
       }),
       1,
     );
+  });
+
+  it("sweeps a leftover Pending decline-all that never pressed Close Request", async () => {
+    const { requestId, first, second, missing } = await offeredRequest();
+    await saveCustomerResponse(shop, {
+      requestId,
+      fedexUpgradeSelected: false,
+      fedexUpgradePrice: 15,
+      items: [
+        {
+          offerItemId: "a",
+          sourceItemId: first.id,
+          plantName: first.plantName,
+          choice: "reject",
+          fulfillmentType: "exact_plant",
+          price: 250,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "",
+          photoUrls: [],
+        },
+        {
+          offerItemId: "b",
+          sourceItemId: second.id,
+          plantName: second.plantName,
+          choice: "reject",
+          fulfillmentType: "exact_plant",
+          price: 70,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "",
+          photoUrls: [],
+        },
+        {
+          offerItemId: "c",
+          sourceItemId: missing.id,
+          plantName: missing.plantName,
+          choice: "unavailable",
+          fulfillmentType: "exact_plant",
+          price: 0,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "",
+          photoUrls: [],
+          unavailableReason: "not in our current inventory",
+        },
+      ],
+    });
+
+    const leftover = await prisma.plantRequest.findFirstOrThrow({
+      where: { id: requestId, shop },
+    });
+    assert.equal(leftover.status, "Pending", "save alone must not close");
+
+    assert.equal(await closePendingDeclineAllRequests(shop), 1);
+    const request = await getRequest(shop, requestId);
+    assert.equal(request?.status, "Closed");
+    assert.equal(
+      await prisma.statusEvent.count({
+        where: { requestId, reason: CUSTOMER_CLOSED_REQUEST_REASON },
+      }),
+      1,
+    );
+    assert.equal(await closePendingDeclineAllRequests(shop), 0);
   });
 });
 

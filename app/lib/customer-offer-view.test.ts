@@ -429,6 +429,11 @@ describe("a request with nothing to pay for still has a way out", () => {
 
     assert.match(html, /No checkout link was created/);
     assert.match(html, /value="close-request"/);
+    assert.match(
+      html,
+      /-webkit-text-fill-color:#ffffff/,
+      "dark green Close Request must paint its label white against the shop theme",
+    );
     assert.ok(
       !html.includes("Back to My Requests"),
       "Close Request replaces the bottom Back link after decline-all",

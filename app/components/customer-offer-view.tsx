@@ -112,13 +112,11 @@ function CloseRequestButton({
         type="submit"
         name="intent"
         value="close-request"
-        style={{
-          ...buttonStyle,
-          fontWeight: prominent ? 600 : 400,
-          background: prominent ? "#002910" : "#ffffff",
-          color: prominent ? "#ffffff" : "inherit",
-          borderColor: prominent ? "#002910" : "#c9cccf",
-        }}
+        style={
+          prominent
+            ? primaryButtonStyle
+            : buttonStyle
+        }
       >
         Close Request
       </button>
@@ -224,7 +222,8 @@ export function CustomerOfferView({
       (rejectedItems.length >= purchasable.length &&
         acceptedItems.length === 0));
   // A closed request has nothing left to collect: paid through `orders/paid`,
-  // or closed by the customer once they had rejected everything.
+  // or closed once they had rejected everything. Close Request remains only
+  // for a leftover Pending decline-all that has not been swept yet.
   const hasCheckoutLink = Boolean(invoiceUrl) && !requestClosed;
   const holdEnded = isOfferExpired(offer.expiresAtIso) && !requestClosed;
   const showSupportNote = shouldRenderCustomerSupportNote({
