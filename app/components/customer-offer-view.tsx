@@ -112,6 +112,7 @@ function CloseRequestButton({
         type="submit"
         name="intent"
         value="close-request"
+        className={prominent ? "upt-primary-action" : undefined}
         style={
           prominent
             ? primaryButtonStyle
@@ -588,6 +589,7 @@ export function CustomerOfferView({
                   name="intent"
                   value="submit-response"
                   data-offer-submit
+                  className="upt-primary-action"
                   style={primaryButtonStyle}
                 >
                   Submit
@@ -691,6 +693,7 @@ export function CustomerOfferView({
                   name="intent"
                   value="submit-response"
                   data-offer-submit
+                  className="upt-primary-action"
                   style={primaryButtonStyle}
                 >
                   Submit
