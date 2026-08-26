@@ -1534,12 +1534,18 @@ export function buildAdminNewRequestEmail(input: {
   };
 }
 
+export type OfferReadyItemSummary = {
+  name: string;
+  notes?: string;
+  reason?: string;
+};
+
 /**
- * Announces that UPT has answered the request, and nothing more.
+ * The one customer email for the admin's response.
  *
- * The customer has not seen the offer yet, so this must not talk about payment:
- * they may decline every plant, and telling them money is due before they have
- * read what is on offer is both wrong and a reason not to open it.
+ * Accept/Reject still happens in the portal, so this must not talk about
+ * payment or invent a checkout URL — a valid Draft Order does not exist until
+ * the customer accepts plants. The offer link is how they reach that flow.
  */
 export function buildOfferReadyEmail(input: {
   customerName: string;
@@ -1547,21 +1553,68 @@ export function buildOfferReadyEmail(input: {
   expiresAt: string;
   offerLink: string;
   allExactPlants?: boolean;
+  availableItems?: OfferReadyItemSummary[];
+  unavailableItems?: OfferReadyItemSummary[];
 }): { subject: string; bodyText: string } {
+  const available = input.availableItems ?? [];
+  const unavailable = input.unavailableItems ?? [];
+  const hasAvailable = available.length > 0;
+  const hasItemSummary = available.length > 0 || unavailable.length > 0;
+
+  const lines = [
+    `Hi ${input.customerName || "there"},`,
+    "",
+    hasAvailable
+      ? `UPT has responded to your plant request ${input.requestNumber}. Your personal offer is ready to review, and you decide which plants you want.`
+      : `UPT has responded to your plant request ${input.requestNumber}.`,
+  ];
+
+  if (hasAvailable) {
+    lines.push("");
+    lines.push("Available:");
+    for (const item of available) {
+      const notes = item.notes?.trim();
+      lines.push(notes ? `- ${item.name} — ${notes}` : `- ${item.name}`);
+    }
+  }
+
+  if (unavailable.length > 0) {
+    lines.push("");
+    lines.push(hasAvailable ? "Unavailable:" : "None of the requested plants are available:");
+    for (const item of unavailable) {
+      const reason = item.reason?.trim();
+      const notes = item.notes?.trim();
+      const detail = [reason, notes].filter(Boolean).join(" — ");
+      lines.push(detail ? `- ${item.name} (${detail})` : `- ${item.name}`);
+    }
+  }
+
+  if (hasAvailable) {
+    lines.push("");
+    lines.push(getOfferHoldMessage(input.expiresAt, input.allExactPlants ?? true));
+    lines.push("");
+    lines.push("Review your offer:");
+    lines.push(input.offerLink);
+  } else if (hasItemSummary) {
+    lines.push("");
+    lines.push("No payment is needed. Thank you for requesting with Unsolicited Plant Talks.");
+    lines.push("");
+    lines.push("View your request:");
+    lines.push(input.offerLink);
+  } else {
+    lines.push(getOfferHoldMessage(input.expiresAt, input.allExactPlants ?? true));
+    lines.push("");
+    lines.push("Review your offer:");
+    lines.push(input.offerLink);
+  }
+
+  lines.push("");
+  lines.push("Thank you,");
+  lines.push("Unsolicited Plant Talks");
+
   return {
     subject: `UPT has responded to your plant request (${input.requestNumber})`,
-    bodyText: [
-      `Hi ${input.customerName || "there"},`,
-      "",
-      `UPT has responded to your plant request ${input.requestNumber}. Your personal offer is ready to review, and you decide which plants you want.`,
-      getOfferHoldMessage(input.expiresAt, input.allExactPlants ?? true),
-      "",
-      "Review your offer:",
-      input.offerLink,
-      "",
-      "Thank you,",
-      "Unsolicited Plant Talks",
-    ].join("\n"),
+    bodyText: lines.join("\n"),
   };
 }
 

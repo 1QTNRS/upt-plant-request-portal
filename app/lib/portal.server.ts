@@ -396,6 +396,9 @@ export async function updateShopSettings(
   data: {
     fedexRemovalWarning?: string;
     adminNotificationEmail?: string;
+    adminEmailNewRequest?: boolean;
+    adminEmailCustomerResponse?: boolean;
+    adminEmailPaymentAfterVoid?: boolean;
     fedexVariantGid?: string | null;
     fedexUpgradePrice?: number;
   },
@@ -412,6 +415,15 @@ export async function updateShopSettings(
         : {}),
       ...(data.adminNotificationEmail !== undefined
         ? { adminNotificationEmail: data.adminNotificationEmail.trim() }
+        : {}),
+      ...(data.adminEmailNewRequest !== undefined
+        ? { adminEmailNewRequest: data.adminEmailNewRequest }
+        : {}),
+      ...(data.adminEmailCustomerResponse !== undefined
+        ? { adminEmailCustomerResponse: data.adminEmailCustomerResponse }
+        : {}),
+      ...(data.adminEmailPaymentAfterVoid !== undefined
+        ? { adminEmailPaymentAfterVoid: data.adminEmailPaymentAfterVoid }
         : {}),
       ...(data.fedexVariantGid !== undefined
         ? { fedexVariantGid: data.fedexVariantGid }

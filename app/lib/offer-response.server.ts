@@ -37,7 +37,6 @@ import {
 import {
   notifyAdminResponse,
   notifyCheckoutLink,
-  notifyResponseSummary,
 } from "./emails.server";
 import {
   createDraftOrderForRequest,
@@ -399,8 +398,7 @@ export async function handleCustomerOfferAction(input: {
   }
 
   // An offer is answered once. Re-posting (double click, refresh, retry) must
-  // not overwrite the recorded choices, create a second draft order, or resend
-  // the confirmation and checkout emails.
+  // not overwrite the recorded choices or create a second draft order.
   const alreadyAnswered = await getCustomerResponse(input.shop, input.requestId);
   if (alreadyAnswered) {
     return { ok: true as const, alreadySubmitted: true as const };
@@ -510,23 +508,11 @@ export async function handleCustomerOfferAction(input: {
 
   const accepted = saved.items.filter((item) => item.choice === "accept");
   const rejected = saved.items.filter((item) => item.choice === "reject");
-  const summaryItem = (item: (typeof saved.items)[number]) => ({
-    plantName: item.plantName,
-    price: item.price,
-    customerNotes: item.customerNotes,
-    fulfillmentType: item.fulfillmentType,
-  });
 
   if (accepted.length === 0) {
-    // No draft order, no payment link, no FedEx charge — but the customer and
-    // UPT both still get their one email about the answer.
-    await notifyResponseSummary(input.shop, {
-      requestId: input.requestId,
-      acceptedItems: [],
-      rejectedItems: rejected.map(summaryItem),
-      fedexSelected: false,
-      fedexPrice: saved.fedexUpgradePrice,
-    });
+    // No draft order and no extra customer email: they already received the
+    // admin-response mail (EMAIL 2) when the offer was sent. UPT still gets
+    // one admin_response when that toggle is on.
     await notifyAdminResponse(input.shop, {
       requestId: input.requestId,
       acceptedCount: 0,
@@ -572,14 +558,9 @@ export async function handleCustomerOfferAction(input: {
     );
   }
 
-  await notifyResponseSummary(input.shop, {
-    requestId: input.requestId,
-    acceptedItems: accepted.map(summaryItem),
-    rejectedItems: rejected.map(summaryItem),
-    fedexSelected: fedexUpgradeSelected,
-    fedexPrice: saved.fedexUpgradePrice,
-    invoiceUrl: draft?.invoiceUrl,
-  });
+  // The customer already has EMAIL 2 (offer_ready). Payment lives on the
+  // portal after Accept; Shopify sends the paid-order confirmation. A
+  // missing invoice is recovered by the admin "Resend payment link" action.
   await notifyAdminResponse(input.shop, {
     requestId: input.requestId,
     acceptedCount: accepted.length,

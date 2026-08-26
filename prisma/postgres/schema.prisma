@@ -42,6 +42,12 @@ model ShopSettings {
   fedexUpgradePrice       Float    @default(15)
   fedexUpgradeLabel       String   @default("FedEx Priority Overnight Upgrade")
   adminNotificationEmail  String   @default("")
+  /// Portal notification: admin_new_request. Off does not stop request create.
+  adminEmailNewRequest    Boolean  @default(true)
+  /// Portal notification: admin_response. Off does not stop Accept/Reject.
+  adminEmailCustomerResponse Boolean @default(true)
+  /// Portal notification: admin_payment_after_void. Off does not stop Close.
+  adminEmailPaymentAfterVoid Boolean @default(true)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

@@ -696,9 +696,9 @@ export const GLOSSARY: GlossaryEntry[] = [
     summary:
       "The 3, 5 or 7 day window, chosen when the offer is sent, that the offered plants are held for.",
     detail: [
-      "The admin picks 3, 5 or 7 days at send. The resulting `expiresAt` is the deadline everywhere it matters: the hold sentence on the offer page, the expiration reminder, the Shopify stock reservation on a Grower's Choice draft order, and the moment `expireOverdueOffers` sets the request Expired.",
+      "The admin picks 3, 5 or 7 days at send. The resulting `expiresAt` is the deadline everywhere it matters: the hold sentence on the offer page, the Shopify stock reservation on a Grower's Choice draft order, and the moment `expireOverdueOffers` sets the request Expired.",
       "Sending the offer freezes a snapshot of it — name, price, weight, photos, notes, availability, fulfilment route and the linked product and variant titles. Those are never edited afterwards and never re-read from Shopify: a merchant renaming or repricing a product must not rewrite what the customer answered or what they are billed.",
-      "One reminder is sent before the hold ends, and only to customers who either never answered or accepted something. A customer who rejected every plant is not chased.",
+      "Automatic expiration reminders are no longer sent. They would be a fourth customer email on the happy path.",
     ],
     citations: [
       {
@@ -716,7 +716,7 @@ export const GLOSSARY: GlossaryEntry[] = [
         path: HANDOFF,
         locator: "Emails",
         quote:
-          "The expiration reminder goes only to customers who either never answered or accepted something",
+          "Automatic expiration reminders are no longer sent",
       },
     ],
     seeAlso: ["expired", "pending", "growers-choice"],

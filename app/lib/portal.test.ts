@@ -837,6 +837,42 @@ describe("the offer-ready email", () => {
     assert.match(mixed.bodyText, /These plants are being held/);
     assert.doesNotMatch(mixed.bodyText, /exact/i);
   });
+
+  it("summarises available and unavailable plants without a payment link", () => {
+    const summarised = buildOfferReadyEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+      offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+      availableItems: [{ name: "Monstera Albo", notes: "Rooted cutting." }],
+      unavailableItems: [
+        { name: "Missing Fern", reason: "not in our current inventory" },
+      ],
+    });
+    assert.match(summarised.bodyText, /Available:\n- Monstera Albo — Rooted cutting\./);
+    assert.match(
+      summarised.bodyText,
+      /Unavailable:\n- Missing Fern \(not in our current inventory\)/,
+    );
+    assert.doesNotMatch(summarised.bodyText, /payment|invoice|checkout/i);
+  });
+
+  it("thanks the customer when nothing is available and still has no payment link", () => {
+    const none = buildOfferReadyEmail({
+      customerName: "Alex Rivera",
+      requestNumber: "REQ1",
+      expiresAt: "Aug 26, 2026, 10:02 PM UTC",
+      offerLink: "https://shop.example.com/apps/plant-requests/requests/req-1",
+      availableItems: [],
+      unavailableItems: [
+        { name: "Missing Fern", reason: "not in our current inventory" },
+      ],
+    });
+    assert.match(none.bodyText, /None of the requested plants are available/);
+    assert.match(none.bodyText, /No payment is needed/);
+    assert.doesNotMatch(none.bodyText, /being held/);
+    assert.doesNotMatch(none.bodyText, /payment|invoice|checkout/i);
+  });
 });
 
 describe("naming what is on offer", () => {

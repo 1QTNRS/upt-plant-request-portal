@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
 import prisma from "../db.server";
-import { customerLinksForShop } from "./customer-links.server";
 import {
   listEmailsForRequest,
   notifyExpirationReminders,
@@ -13,7 +12,6 @@ import {
   type EmailSender,
 } from "./emails.server";
 import {
-  saveCustomerResponse,
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
@@ -86,12 +84,6 @@ async function offeredRequest(options?: { expiresInHours?: number }) {
   }
 
   return created;
-}
-
-function outboxRow(requestId: string, templateKey: string) {
-  return prisma.emailMessage.findFirstOrThrow({
-    where: { shop, requestId, templateKey },
-  });
 }
 
 describe("a message Resend refused is not lost", () => {
@@ -382,57 +374,17 @@ describe("the offer-ready email can be sent again", () => {
   });
 });
 
-describe("the expiration reminder reaches the right customers", () => {
+describe("automatic expiration reminders are not sent", () => {
   before(async () => {
     await purge();
     await ensureShopSettings(shop);
   });
   after(purge);
 
-  beforeEach(async () => {
-    await prisma.plantRequest.deleteMany({ where: { shop } });
-    await prisma.emailMessage.deleteMany({ where: { shop } });
-  });
-
-  it("reminds a customer who has not answered yet", async () => {
+  it("queues nothing even when a hold is about to lapse", async () => {
     const created = await offeredRequest({ expiresInHours: 6 });
 
     await notifyExpirationReminders(shop, APP_URL);
-
-    const reminder = await outboxRow(created.id, "expiration_reminder");
-    assert.match(reminder.subject, /expires soon/);
-    assert.match(reminder.bodyText, /Review your offer/);
-    // Built by the shared helper, which is what keeps a customer-facing link on
-    // the storefront app proxy rather than on the app's own origin.
-    assert.ok(
-      reminder.bodyText.includes(
-        customerLinksForShop(shop, APP_URL).requestDetail(created.id),
-      ),
-    );
-  });
-
-  it("does not nag a customer who rejected every plant", async () => {
-    const created = await offeredRequest({ expiresInHours: 6 });
-    await saveCustomerResponse(shop, {
-      requestId: created.id,
-      fedexUpgradeSelected: false,
-      fedexUpgradePrice: 15,
-      items: [
-        {
-          offerItemId: "offer-1",
-          sourceItemId: created.items[0].id,
-          plantName: "Monstera Albo",
-          choice: "reject",
-          fulfillmentType: "exact_plant" as const,
-          price: 250,
-          quantity: 1,
-          lineRevenue: 0,
-          customerNotes: "",
-          photoUrls: [],
-        },
-      ],
-    });
-
     await notifyExpirationReminders(shop, APP_URL);
 
     assert.equal(
@@ -440,62 +392,7 @@ describe("the expiration reminder reaches the right customers", () => {
         where: { shop, requestId: created.id, templateKey: "expiration_reminder" },
       }),
       0,
-      "the offer they declined is not something to remind them about",
-    );
-  });
-
-  it("leads with the payment link for a customer who accepted and has not paid", async () => {
-    const created = await offeredRequest({ expiresInHours: 6 });
-    await saveCustomerResponse(shop, {
-      requestId: created.id,
-      fedexUpgradeSelected: true,
-      fedexUpgradePrice: 15,
-      items: [
-        {
-          offerItemId: "offer-1",
-          sourceItemId: created.items[0].id,
-          plantName: "Monstera Albo",
-          choice: "accept",
-          fulfillmentType: "exact_plant" as const,
-          price: 250,
-          quantity: 1,
-          lineRevenue: 250,
-          customerNotes: "",
-          photoUrls: [],
-        },
-      ],
-    });
-    await prisma.draftOrderReference.create({
-      data: {
-        requestId: created.id,
-        shopifyDraftOrderGid: "gid://shopify/DraftOrder/1",
-        invoiceUrl: "https://shop.example.com/invoices/abc123",
-      },
-    });
-
-    await notifyExpirationReminders(shop, APP_URL);
-
-    const reminder = await outboxRow(created.id, "expiration_reminder");
-    assert.match(reminder.subject, /complete payment/i);
-    const body = reminder.bodyText;
-    assert.ok(
-      body.indexOf("https://shop.example.com/invoices/abc123") <
-        body.indexOf("Your offer:"),
-      "the payment link must come before the offer link",
-    );
-  });
-
-  it("still sends only one reminder per request", async () => {
-    const created = await offeredRequest({ expiresInHours: 6 });
-
-    await notifyExpirationReminders(shop, APP_URL);
-    await notifyExpirationReminders(shop, APP_URL);
-
-    assert.equal(
-      await prisma.emailMessage.count({
-        where: { shop, requestId: created.id, templateKey: "expiration_reminder" },
-      }),
-      1,
+      "a reminder would be a fourth customer email on the happy path",
     );
   });
 });
