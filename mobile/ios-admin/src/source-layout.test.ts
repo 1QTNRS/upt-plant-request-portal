@@ -45,6 +45,10 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /overflow: "visible"/);
     assert.match(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
     assert.match(detail, /ui\.expirationDays/);
+    assert.match(detail, /sendOfferHoldControlsEnabled/);
+    const viewer = read("src/components/PhotoViewer.tsx");
+    assert.match(viewer, /shouldDismissPhotoViewer/);
+    assert.match(viewer, /shouldCapturePhotoViewerDismiss/);
     assert.doesNotMatch(editor, /height: 160/);
   });
 

@@ -9,7 +9,6 @@ import {
   buildAdminResponseEmail,
   buildCheckoutEmail,
   buildOfferReadyEmail,
-  buildRequestReceivedEmail,
   buildResponseSummaryEmail,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   offerIsAllExactPlants,
@@ -354,19 +353,6 @@ export async function notifyNewRequest(shop: string, requestId: string) {
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
   const plantNames = request.items.map((item) => item.plantName);
 
-  const customerEmail = buildRequestReceivedEmail({
-    customerName: request.customer,
-    requestNumber: request.requestNumber,
-    plantNames,
-  });
-  await queueEmail({
-    shop,
-    requestId,
-    toEmail: request.email,
-    ...customerEmail,
-    templateKey: "request_received",
-  });
-
   if (adminEmail && settings.adminEmailNewRequest) {
     const admin = buildAdminNewRequestEmail({
       requestNumber: request.requestNumber,
@@ -427,8 +413,8 @@ export async function notifyOfferReady(shop: string, requestId: string, appUrl: 
 /**
  * Manual recovery only. The happy path does not email a checkout link —
  * Accept/Reject happens first, then the portal shows the invoice URL, and
- * Shopify sends the paid-order confirmation. Admin "Resend payment link"
- * is the only automatic-looking caller, and it is a human action.
+ * Shopify sends the paid-order confirmation. Admin "Send payment link
+ * (manual recovery)" is the only caller, and it is a human action.
  */
 export async function notifyCheckoutLink(
   shop: string,
@@ -576,11 +562,11 @@ export async function notifyAdminPaymentAfterVoid(
 }
 
 /**
- * Automatic expiration reminders would be a fourth customer email on the
- * happy path (received → admin response → reminder → Shopify payment mail).
- * The portal hard-caps automatic customer mail at three, so this is a no-op.
- * Failed offer_ready rows are retried by the outbox sweep; a missing payment
- * link is recovered with the admin "Resend payment link" action.
+ * Automatic expiration reminders would be a second portal customer email
+ * after offer_ready. The happy path is offer_ready plus Shopify's own
+ * paid-order confirmation, so this is a no-op. Failed offer_ready rows are
+ * retried by the outbox sweep; a missing payment link is recovered with the
+ * admin "Send payment link (manual recovery)" action.
  */
 export async function notifyExpirationReminders(shop: string, appUrl: string) {
   void shop;

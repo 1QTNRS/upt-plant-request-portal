@@ -96,4 +96,6 @@ export const ui = StyleSheet.create({
     marginTop: 16,
     marginBottom: 12,
   },
+  holdControls: { opacity: 1 },
+  holdControlsOff: { opacity: 0.4 },
 });

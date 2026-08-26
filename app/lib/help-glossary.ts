@@ -102,8 +102,8 @@ export const GLOSSARY: GlossaryEntry[] = [
     summary:
       "The stored status of a request whose offer has been sent and has neither been paid for nor run out.",
     detail: [
-      "Sending the offer sets Pending, and nothing revises it while the offer is live. Answering the offer does not change the stored status: a customer who has accepted, one who has declined everything and one who has not opened the offer are all Pending.",
-      "Four things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. A request where nothing is owed can be closed — by the customer's Close Request button on an offer where nothing was available or where they declined everything, or by the admin closing a request whose customer declined every item. And an admin can override-close any still-open request with `adminOverrideCloseRequest`.",
+      "Sending an offer that still has something to buy sets Pending, and nothing revises it while that offer is live. Answering the offer does not change the stored status: a customer who has accepted, one who has declined everything and one who has not opened the offer are all Pending.",
+      "Four things leave Pending. Payment closes the request through the `orders/paid` webhook. The hold ending unpaid makes it Expired. A request where nothing is owed can be closed — by the customer's Close Request button after they declined everything, or by the admin closing a request whose customer declined every item. And an admin can override-close any still-open request with `adminOverrideCloseRequest`. An offer with nothing purchasable never becomes Pending: `sendOffer` writes Closed immediately with `Admin response contained no purchasable items`.",
       "A customer is never shown the word Pending. `formatCustomerStatusLabel` derives one of three labels from it instead: Offer Ready for Review, Needs Payment or No Payment Needed.",
     ],
     citations: [
@@ -140,7 +140,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "The stored status of a finished request: paid for, or closed because nothing was owed.",
     detail: [
       "`orders/paid` closes a paid request and marks its accepted items Sold. A redelivery of the webhook for an already-paid request is ignored rather than appending a second status event.",
-      "A request can also be closed with nothing paid. The customer gets a Close Request button only after they have submitted a decline-all (or all-unavailable) offer response and the request is in No Payment Needed. Reviewing the offer with nothing selected does not show it. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires. `adminOverrideCloseRequest` is the separate admin-only path that can end any still-open request; it writes `Admin Override Close`, keeps history, and voids an unpaid Draft Order rather than leaving a payable invoice behind.",
+      "A request can also be closed with nothing paid. `sendOffer` closes immediately when the admin response has no purchasable items and writes `Admin response contained no purchasable items` — that is not a customer decline, a payment, or an expiration. The customer gets a Close Request button only after they have submitted a decline-all offer response and the request is in No Payment Needed. Reviewing the offer with nothing selected does not show it. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires. `adminOverrideCloseRequest` is the separate admin-only path that can end any still-open request; it writes `Admin Override Close`, keeps history, and voids an unpaid Draft Order rather than leaving a payable invoice behind.",
       "Closing does not withdraw an unclaimed exact plant from the EXACT PLANTS queue. `exactPlantReleaseReason` returns `customer_declined` when they rejected the plant, or `unclaimed_after_close` when the request closed with the plant still unclaimed. Closed means paid or means the customer wanted nothing, and the second kind holds precisely the plants that queue exists for.",
     ],
     citations: [
@@ -259,7 +259,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "`formatCustomerStatusLabel` returns it whenever the request is Pending and `hasPayableItems` is explicitly false, before it looks at whether the customer has answered.",
       "`offerHasPayableItems` decides that. An offer with no Available item is unpayable whatever the customer says, and an answer that accepted nothing is unpayable too. An offer nobody has answered yet is still payable, because the customer can accept until the hold ends.",
       "It is a label on a Pending request, not a status of its own, and it is not the No-Payment Rate on the analytics page.",
-      "The matching email leads with the same fact: a customer who accepted nothing is told no payment is needed, and no checkout link is created.",
+      "The customer is not emailed again when they decline everything. Payment, if any, lives on the request page; Shopify's own paid-order confirmation covers a later checkout.",
     ],
     citations: [
       {

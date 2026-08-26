@@ -249,6 +249,23 @@ export function formatCustomerStatusLabel(
   return status;
 }
 
+/** True when at least one item on the upcoming offer can be bought. */
+export function itemsHavePurchasableOffer(
+  items: Array<{ availability?: string | null }>,
+): boolean {
+  return items.some((item) => item.availability === "available");
+}
+
+/**
+ * Expiration, ADD ON and other payment-hold controls only apply when something
+ * can be bought. The Send Offer button itself stays available either way.
+ */
+export function sendOfferHoldControlsEnabled(
+  items: Array<{ availability?: string | null }>,
+): boolean {
+  return itemsHavePurchasableOffer(items);
+}
+
 /**
  * Whether anything on a sent offer can still be paid for.
  *
@@ -1398,6 +1415,10 @@ export const ADMIN_OVERRIDE_CLOSE_REASON = "Admin Override Close";
 /** The unpaid invoice was deleted because an admin override closed the request. */
 export const INVOICE_VOIDED_BY_ADMIN_REASON =
   "Invoice voided after admin override close";
+
+/** Admin sent a response with nothing the customer can buy. */
+export const ADMIN_NO_PURCHASABLE_ITEMS_REASON =
+  "Admin response contained no purchasable items";
 
 /** The customer closed a No Payment Needed request after declining everything. */
 export const CUSTOMER_CLOSED_REQUEST_REASON = "Customer Closed Request";

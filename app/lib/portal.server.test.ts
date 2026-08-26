@@ -528,6 +528,45 @@ describe("an offer is refused until every Available plant is complete", () => {
     assert.equal(offered?.status, "Pending");
   });
 
+  it("closes immediately when the response has nothing purchasable", async () => {
+    const created = await request(["Missing Fern"]);
+    await updateRequestItem(readyShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "not_available",
+      unavailableReason: "not in our current inventory",
+    });
+
+    const offered = await sendOffer(readyShop, created.id, 3, {
+      shippingFeeOverride: 12,
+    });
+    assert.equal(offered?.status, "Closed");
+    assert.ok(offered?.closedAt);
+    assert.ok(offered?.sentOffer);
+    assert.equal(offered?.sentOffer?.shippingFeeOverride, undefined);
+    assert.equal(offered?.items[0].availability, "not_available");
+    assert.equal(offered?.items[0].itemStatus, "Unavailable");
+
+    const events = await prisma.statusEvent.findMany({
+      where: { requestId: created.id },
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].fromStatus, "New");
+    assert.equal(events[0].toStatus, "Closed");
+    assert.equal(
+      events[0].reason,
+      "Admin response contained no purchasable items",
+    );
+
+    const retry = await sendOffer(readyShop, created.id, 5);
+    assert.equal(retry, null);
+    assert.equal(
+      await prisma.statusEvent.count({ where: { requestId: created.id } }),
+      1,
+    );
+    assert.equal((await getRequest(readyShop, created.id))?.status, "Closed");
+  });
+
   it("sends an item that has no customer-facing notes", async () => {
     // Notes are optional. A plant with nothing to disclose is still offerable.
     const created = await request(["Anthurium Warocqueanum"]);

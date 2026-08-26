@@ -153,8 +153,8 @@ async function createDraftOrderFromSnapshot(input: {
 }
 
 /**
- * Creates the draft order and emails the payment link for a request the
- * customer has already accepted.
+ * Creates the draft order and, only when a human asks, emails the payment
+ * link for a request the customer has already accepted.
  *
  * The customer's own submission is otherwise the only caller of
  * `createDraftOrderForRequest`, and re-submitting an answered offer returns
@@ -558,9 +558,10 @@ export async function handleCustomerOfferAction(input: {
     );
   }
 
-  // The customer already has EMAIL 2 (offer_ready). Payment lives on the
-  // portal after Accept; Shopify sends the paid-order confirmation. A
-  // missing invoice is recovered by the admin "Resend payment link" action.
+  // The customer already has the one portal email (offer_ready). Payment
+  // lives on the portal after Accept; Shopify sends the paid-order
+  // confirmation. A missing invoice is recovered by the admin "Send payment
+  // link (manual recovery)" action.
   await notifyAdminResponse(input.shop, {
     requestId: input.requestId,
     acceptedCount: accepted.length,

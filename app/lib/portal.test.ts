@@ -44,7 +44,9 @@ import {
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
+  itemsHavePurchasableOffer,
   offerHasPayableItems,
+  sendOfferHoldControlsEnabled,
   offerIsAllExactPlants,
   offerReadinessMessage,
   parseRequestNumber,
@@ -155,6 +157,25 @@ describe("status mapping", () => {
         hasResponded: false,
       }),
       "Expired",
+    );
+  });
+
+  it("enables Send Offer hold controls only when something is purchasable", () => {
+    assert.equal(
+      itemsHavePurchasableOffer([{ availability: "not_available" }]),
+      false,
+    );
+    assert.equal(
+      sendOfferHoldControlsEnabled([{ availability: "not_available" }]),
+      false,
+    );
+    assert.equal(
+      sendOfferHoldControlsEnabled([
+        { availability: "not_available" },
+        { availability: "available" },
+      ]),
+      true,
+      "one Available item turns expiration and ADD ON back on",
     );
   });
 

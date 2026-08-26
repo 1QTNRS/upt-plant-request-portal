@@ -12,7 +12,6 @@ import {
   notifyOfferReady,
 } from "./emails.server";
 import {
-  adminOverrideCloseRequest,
   createPaymentLinkForRequest,
   handleCustomerOfferAction,
 } from "./offer-response.server";
@@ -138,8 +137,8 @@ describe("admin email notification toggles", () => {
       await prisma.emailMessage.count({
         where: { shop, requestId: created.id, templateKey: "request_received" },
       }),
-      1,
-      "the customer confirmation is not an admin toggle",
+      0,
+      "submitting a request does not email the customer",
     );
 
     await notifyAdminResponse(shop, {
@@ -222,13 +221,43 @@ describe("the Settings page exposes the admin email toggles", () => {
   });
 });
 
+describe("the Send Offer box when nothing is purchasable", () => {
+  it("greys out hold controls and keeps Send Offer usable", async () => {
+    const source = await readFile(
+      path.join(import.meta.dirname, "..", "routes", "app.requests.$id.tsx"),
+      "utf8",
+    );
+    assert.match(source, /sendOfferHoldControlsEnabled/);
+    assert.match(source, /Nothing on this request is purchasable/);
+    assert.match(source, /opacity: holdControlsOn \? 1 : 0\.45/);
+    assert.match(source, /disabled=\{!holdControlsOn\}/);
+    assert.match(
+      source,
+      /Send Offer stays disabled until they[\s\S]*Send Offer/,
+    );
+    assert.match(source, /Send payment link \(manual recovery\)/);
+  });
+});
+
 describe("customer email count on the happy path with payment", () => {
   before(purge);
   after(purge);
 
-  it("sends request received and one admin-response email, then no portal payment mail", async () => {
+  it("creates the request without a customer email, then one admin-response email", async () => {
     await seedAdminEmail();
     const created = await submitAndNotify({ plants: ["Monstera Albo"] });
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: {
+          shop,
+          requestId: created.id,
+          toEmail: "alex.rivera@example.com",
+        },
+      }),
+      0,
+      "submitting a request does not email the customer",
+    );
+
     await updateRequestItem(shop, {
       requestId: created.id,
       itemId: created.items[0].id,
@@ -238,7 +267,8 @@ describe("customer email count on the happy path with payment", () => {
       customerFacingNotes: "Rooted cutting.",
       photoUrls: ["https://cdn.example.com/albo.jpg"],
     });
-    await sendOffer(shop, created.id, 3);
+    const sent = await sendOffer(shop, created.id, 3);
+    assert.equal(sent?.status, "Pending");
     await notifyOfferReady(shop, created.id, APP_URL);
 
     const result = await handleCustomerOfferAction({
@@ -269,19 +299,11 @@ describe("customer email count on the happy path with payment", () => {
     const customer = await customerTemplates(created.id);
     assert.deepEqual(
       customer.map((email) => email.templateKey),
-      ["request_received", "offer_ready"],
-    );
-    assert.equal(
-      customer.filter((email) => email.templateKey === "request_received").length,
-      1,
-    );
-    assert.equal(
-      customer.filter((email) => email.templateKey === "offer_ready").length,
-      1,
+      ["offer_ready"],
     );
     const offer = customer.find((email) => email.templateKey === "offer_ready")!;
     assert.match(offer.bodyText, /Available:\n- Monstera Albo — Rooted cutting\./);
-    assert.doesNotMatch(offer.bodyText, /payment|invoice|checkout/i);
+    assert.doesNotMatch(offer.bodyText, /invoice|checkout/i);
 
     assert.equal(
       await prisma.emailMessage.count({
@@ -289,12 +311,20 @@ describe("customer email count on the happy path with payment", () => {
           shop,
           requestId: created.id,
           toEmail: "alex.rivera@example.com",
-          templateKey: { in: ["confirmation", "checkout_link", "expiration_reminder"] },
+          templateKey: {
+            in: [
+              "request_received",
+              "confirmation",
+              "checkout_link",
+              "expiration_reminder",
+            ],
+          },
         },
       }),
       0,
       "no extra automatic portal customer emails after Accept or payment",
     );
+    assert.equal((await getRequest(shop, created.id))?.status, "Closed");
   });
 });
 
@@ -302,7 +332,7 @@ describe("customer email count when no payment is needed", () => {
   before(purge);
   after(purge);
 
-  it("stops at request received plus the admin-response summary", async () => {
+  it("does not email after Accept/Reject or Close Request", async () => {
     await seedAdminEmail();
     const created = await submitAndNotify({
       plants: ["Monstera Albo", "Hoya"],
@@ -340,7 +370,7 @@ describe("customer email count when no payment is needed", () => {
     const customer = await customerTemplates(created.id);
     assert.deepEqual(
       customer.map((email) => email.templateKey),
-      ["request_received", "offer_ready"],
+      ["offer_ready"],
     );
     assert.equal(await getDraftOrder(shop, created.id), null);
     assert.equal(
@@ -360,7 +390,7 @@ describe("customer email count when the response is unavailable-only", () => {
   before(purge);
   after(purge);
 
-  it("sends a thank-you admin-response email with no payment link", async () => {
+  it("sends one thank-you admin-response email and closes immediately", async () => {
     await seedAdminEmail();
     const created = await submitAndNotify({ plants: ["Missing Fern"] });
     await updateRequestItem(shop, {
@@ -369,19 +399,25 @@ describe("customer email count when the response is unavailable-only", () => {
       availability: "not_available",
       unavailableReason: "not in our current inventory",
     });
-    await sendOffer(shop, created.id, 3);
+    const sent = await sendOffer(shop, created.id, 3);
+    assert.equal(sent?.status, "Closed");
+    assert.ok(sent?.sentOffer);
     await notifyOfferReady(shop, created.id, APP_URL);
-    const closed = await adminOverrideCloseRequest({
-      shop,
-      requestId: created.id,
-      confirmed: true,
+    await notifyOfferReady(shop, created.id, APP_URL);
+
+    const events = await prisma.statusEvent.findMany({
+      where: { requestId: created.id },
     });
-    assert.equal(closed.ok, true);
+    assert.deepEqual(
+      events.map((event) => event.reason),
+      ["Admin response contained no purchasable items"],
+    );
+    assert.doesNotMatch(events[0].reason, /decline|payment|expir/i);
 
     const customer = await customerTemplates(created.id);
     assert.deepEqual(
       customer.map((email) => email.templateKey),
-      ["request_received", "offer_ready"],
+      ["offer_ready"],
     );
     const offer = customer.find((email) => email.templateKey === "offer_ready")!;
     assert.match(offer.bodyText, /None of the requested plants are available/);
@@ -389,6 +425,7 @@ describe("customer email count when the response is unavailable-only", () => {
     assert.match(offer.bodyText, /No payment is needed/);
     assert.doesNotMatch(offer.bodyText, /invoice|checkout/i);
     assert.equal(await getDraftOrder(shop, created.id), null);
+    assert.equal((await getRequest(shop, created.id))?.status, "Closed");
   });
 });
 
@@ -396,7 +433,7 @@ describe("customer email idempotency", () => {
   before(purge);
   after(purge);
 
-  it("does not duplicate request received, offer ready, or admin response", async () => {
+  it("does not duplicate offer ready or admin response", async () => {
     await seedAdminEmail();
     const created = await submitAndNotify({ plants: ["Monstera Albo"] });
     await notifyNewRequest(shop, created.id);
@@ -448,11 +485,10 @@ describe("customer email idempotency", () => {
       `admin_payment_after_void:${created.id}`,
       `admin_response:${created.id}`,
       `offer_ready:${created.id}`,
-      `request_received:${created.id}`,
     ]);
   });
 
-  it("keeps a manual payment-link resend on its own idempotency key", async () => {
+  it("keeps a manual payment-link recovery on its own idempotency key", async () => {
     await seedAdminEmail();
     const created = await submitAndNotify({ plants: ["Monstera Albo"] });
     await updateRequestItem(shop, {
@@ -532,7 +568,7 @@ describe("expired invoice recovery does not send a Shopify invoice email", () =>
     const customer = await customerTemplates(created.id, merchantShop);
     assert.deepEqual(
       customer.map((email) => email.templateKey),
-      ["request_received", "offer_ready"],
+      ["offer_ready"],
     );
     assert.equal(
       await prisma.emailMessage.count({

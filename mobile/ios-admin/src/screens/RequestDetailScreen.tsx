@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
+import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
 import { THEME } from "../theme";
@@ -93,6 +94,8 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     );
   }
 
+  const holdControlsOn = sendOfferHoldControlsEnabled(detail.items);
+
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
     <KeyboardAvoidingView
@@ -136,10 +139,16 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           <Text style={ui.cardTitle}>Send offer</Text>
           {detail.sentOffer ? (
             <>
-              <Text style={ui.muted}>
-                Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
-              </Text>
-              {detail.sentOffer.shippingFeeOverride !== undefined ? (
+              {holdControlsOn ? (
+                <Text style={ui.muted}>
+                  Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
+                </Text>
+              ) : (
+                <Text style={ui.muted}>
+                  Response sent. Nothing was purchasable — the request is closed.
+                </Text>
+              )}
+              {holdControlsOn && detail.sentOffer.shippingFeeOverride !== undefined ? (
                 <Text style={ui.muted}>
                   ADD ON ${detail.sentOffer.shippingFeeOverride.toFixed(2)}
                 </Text>
@@ -152,18 +161,29 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                   {problem.itemName} is missing {problem.missing.join(", ")}.
                 </Text>
               ))}
-              {detail.hasExistingOrder ? (
+              {!holdControlsOn ? (
+                <Text style={ui.muted}>
+                  Nothing on this request is purchasable. Send offer notifies the
+                  customer and closes the request. Expiration and ADD ON do not apply.
+                </Text>
+              ) : null}
+              {detail.hasExistingOrder && holdControlsOn ? (
                 <Text style={ui.muted}>
                   This customer said they have an existing order. You can set an ADD ON
                   amount below if you are combining shipments.
                 </Text>
               ) : null}
+              <View
+                style={[ui.holdControls, !holdControlsOn && ui.holdControlsOff]}
+                pointerEvents={holdControlsOn ? "auto" : "none"}
+              >
               <View style={ui.expirationDays}>
                 {[3, 5, 7].map((days) => (
                   <Pressable
                     key={days}
                     style={[ui.chip, expirationDays === days && ui.chipOn]}
                     onPress={() => setExpirationDays(days)}
+                    disabled={!holdControlsOn}
                   >
                     <Text style={[ui.chipLabel, expirationDays === days && ui.chipLabelOn]}>
                       {days} days
@@ -178,12 +198,14 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                 placeholder="Leave blank so they choose at checkout"
                 placeholderTextColor={THEME.muted}
                 keyboardType="decimal-pad"
-                style={ui.input}
+                editable={holdControlsOn}
+                style={[ui.input, !holdControlsOn && ui.inputDisabled]}
               />
               <Text style={ui.muted}>
                 Optional. Sets a custom ADD ON amount on the draft-order invoice, including
                 0. Leave blank so the customer can choose a store shipping rate at checkout.
               </Text>
+              </View>
               <Pressable
                 style={[ui.button, !detail.canSendOffer && ui.buttonDisabled]}
                 disabled={!detail.canSendOffer || loading}
@@ -191,7 +213,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                   void runAction({
                     intent: "send-offer",
                     expirationDays,
-                    shippingFeeOverride,
+                    shippingFeeOverride: holdControlsOn ? shippingFeeOverride : "",
                   })
                 }
               >
