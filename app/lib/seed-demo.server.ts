@@ -1,6 +1,7 @@
 import prisma from "../db.server";
 import { isDemoDataEnabled } from "./environment.server";
 import {
+  CUSTOMER_CLOSED_REQUEST_REASON,
   DEFAULT_FEDEX_REMOVAL_WARNING,
   DEFAULT_UNAVAILABLE_REASON,
   GLOBAL_REQUEST_SEQUENCE_YEAR,
@@ -226,8 +227,9 @@ const SEED_REQUESTS: SeedRequest[] = [
     requestNumber: "REQ8",
     customerName: "Alex Rivera",
     email: "alex.rivera@example.com",
-    status: "Pending",
+    status: "Closed",
     submittedAt: daysAgo(2),
+    closedAt: daysAgo(1),
     expirationDays: 5,
     items: [
       {
@@ -443,7 +445,9 @@ export async function ensureShopSeeded(shop: string): Promise<void> {
                   {
                     fromStatus: "Pending",
                     toStatus: "Closed",
-                    reason: seed.paidAt ? "Payment completed" : "Manually closed",
+                    reason: seed.paidAt
+                      ? "Payment completed"
+                      : CUSTOMER_CLOSED_REQUEST_REASON,
                     createdAt: seed.closedAt ?? sentAt,
                   },
                 ]

@@ -71,21 +71,21 @@ describe("plant request persistence", () => {
   it("filters the dashboard list by stored status without changing stat counts", async () => {
     const requests = await listRequests(shop);
     const stats = summarizeAdminDashboardStats(requests);
-    const pendingAlex = filterAdminDashboardRequests(
+    const pendingJames = filterAdminDashboardRequests(
       requests,
-      "Alex Rivera",
+      "James Chen",
       "Pending",
     );
-    assert.ok(pendingAlex.length > 0);
-    assert.ok(pendingAlex.every((request) => request.status === "Pending"));
+    assert.ok(pendingJames.length > 0);
+    assert.ok(pendingJames.every((request) => request.status === "Pending"));
     assert.ok(
-      pendingAlex.every((request) => request.customer === "Alex Rivera"),
+      pendingJames.every((request) => request.customer === "James Chen"),
     );
     assert.equal(
       summarizeAdminDashboardStats(requests).pending,
       stats.pending,
     );
-    assert.ok(stats.pending >= pendingAlex.length);
+    assert.ok(stats.pending >= pendingJames.length);
     assert.ok(stats.newRequests + stats.pending + stats.closed + stats.expired >= requests.length);
   });
 
