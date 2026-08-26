@@ -225,15 +225,19 @@ describe("the Settings page exposes the admin email toggles", () => {
       path.join(import.meta.dirname, "..", "routes", "app.settings.tsx"),
       "utf8",
     );
-    assert.match(source, /submittingIntent === "save"/);
-    assert.match(source, /submittingIntent === "save-admin-emails"/);
+    assert.match(source, /const fedexFetcher = useFetcher/);
+    assert.match(source, /const emailFetcher = useFetcher/);
+    assert.match(source, /<fedexFetcher\.Form method="post">/);
+    assert.match(source, /<emailFetcher\.Form method="post">/);
+    assert.match(source, /savingFedex = fedexFetcher\.state !== "idle"/);
+    assert.match(source, /savingEmails = emailFetcher\.state !== "idle"/);
     assert.match(source, /\{\.\.\.\(savingFedex \? \{ loading: true \} : \{\}\)\}/);
     assert.match(source, /\{\.\.\.\(savingEmails \? \{ loading: true \} : \{\}\)\}/);
     assert.equal(
       (source.match(/navigation\.state !== "idle" \? \{ loading: true \}/g) || [])
         .length,
       0,
-      "a shared idle check makes Save settings spin when email notifications save",
+      "a shared navigation idle check makes Save settings spin when email notifications save",
     );
   });
 });

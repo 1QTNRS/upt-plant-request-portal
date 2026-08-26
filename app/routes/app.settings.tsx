@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, useActionData, useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import {
@@ -91,12 +91,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function Settings() {
   const settings = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
-  const submittingIntent = String(navigation.formData?.get("intent") || "");
-  const savingFedex =
-    navigation.state !== "idle" && submittingIntent === "save";
-  const savingEmails =
-    navigation.state !== "idle" && submittingIntent === "save-admin-emails";
+  const fedexFetcher = useFetcher<typeof action>();
+  const emailFetcher = useFetcher<typeof action>();
+  const savingFedex = fedexFetcher.state !== "idle";
+  const savingEmails = emailFetcher.state !== "idle";
+  const fedexResult =
+    fedexFetcher.state === "idle" && fedexFetcher.data?.saved
+      ? fedexFetcher.data
+      : null;
+  const emailResult =
+    emailFetcher.state === "idle" && emailFetcher.data?.saved
+      ? emailFetcher.data
+      : null;
   const [draft, setDraft] = useState(settings.fedexRemovalWarning);
   const [adminEmail, setAdminEmail] = useState(settings.adminNotificationEmail);
   const [emailNewRequest, setEmailNewRequest] = useState(settings.adminEmailNewRequest);
@@ -123,17 +129,20 @@ export default function Settings() {
 
   return (
     <s-page heading="Settings">
-      {actionData?.saved && (
+      {fedexResult ? (
         <s-banner tone="success">
           <s-text>
-            {actionData.reset
+            {fedexResult.reset
               ? "FedEx warning message reset to the default."
-              : actionData.section === "emails"
-                ? "Email notifications saved."
-                : "Settings saved."}
+              : "Settings saved."}
           </s-text>
         </s-banner>
-      )}
+      ) : null}
+      {emailResult ? (
+        <s-banner tone="success">
+          <s-text>Email notifications saved.</s-text>
+        </s-banner>
+      ) : null}
 
       {settings.missingSecrets.length > 0 ? (
         <s-section heading="Setup required">
@@ -175,7 +184,7 @@ export default function Settings() {
             {settings.fedexProductHandle})
           </s-text>
 
-          <Form method="post">
+          <fedexFetcher.Form method="post">
             <s-stack direction="block" gap="base">
               <input type="hidden" name="intent" value="save" />
               <label htmlFor="fedex-removal-warning">
@@ -208,13 +217,13 @@ export default function Settings() {
                 </s-button>
               </s-stack>
             </s-stack>
-          </Form>
-          <Form method="post">
+          </fedexFetcher.Form>
+          <fedexFetcher.Form method="post">
             <input type="hidden" name="intent" value="reset" />
             <s-button variant="secondary" type="submit">
               Reset warning to default
             </s-button>
-          </Form>
+          </fedexFetcher.Form>
         </s-stack>
       </s-section>
 
@@ -226,7 +235,7 @@ export default function Settings() {
             payment action. Shopify compliance emails and the customer&apos;s
             own request/offer emails are not controlled here.
           </s-paragraph>
-          <Form method="post">
+          <emailFetcher.Form method="post">
             <s-stack direction="block" gap="base">
               <input type="hidden" name="intent" value="save-admin-emails" />
               <s-text-field
@@ -288,7 +297,7 @@ export default function Settings() {
                 </s-button>
               </s-stack>
             </s-stack>
-          </Form>
+          </emailFetcher.Form>
         </s-stack>
       </s-section>
 
