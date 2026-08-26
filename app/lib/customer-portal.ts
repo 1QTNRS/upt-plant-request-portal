@@ -1,5 +1,10 @@
 import type { PlantLine } from "../components/customer-request-portal";
 import { customerPortalRelativeLinks } from "./app-proxy";
+import {
+  MAX_NOTE_LENGTH,
+  MAX_PLANT_NAME_LENGTH,
+  MAX_PLANT_ROWS,
+} from "./customer-form-limits";
 
 /**
  * Pure parts of the customer portal: how many plant rows a form has, and where
@@ -7,11 +12,11 @@ import { customerPortalRelativeLinks } from "./app-proxy";
  * without pulling in the Shopify app instance.
  */
 
-export const MAX_PLANT_ROWS = 20;
-
-/** Anything longer than this is a paste accident, and it has to fit in a URL. */
-export const MAX_NOTE_LENGTH = 500;
-export const MAX_PLANT_NAME_LENGTH = 120;
+export {
+  MAX_NOTE_LENGTH,
+  MAX_PLANT_NAME_LENGTH,
+  MAX_PLANT_ROWS,
+} from "./customer-form-limits";
 
 type FieldSource = Pick<FormData, "get">;
 

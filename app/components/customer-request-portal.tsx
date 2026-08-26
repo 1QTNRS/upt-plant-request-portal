@@ -1,5 +1,5 @@
 
-import { MAX_PLANT_ROWS } from "../lib/customer-portal";
+import { MAX_PLANT_ROWS } from "../lib/customer-form-limits";
 import {
   computeTimeRemaining,
   customerStatusTone,

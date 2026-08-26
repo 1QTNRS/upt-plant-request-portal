@@ -802,6 +802,12 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /data-plant-remove/);
     assert.match(source, /data-item-count/);
     assert.match(source, /data-max-rows=\{MAX_PLANT_ROWS\}/);
+    assert.match(source, /from "\.\.\/lib\/customer-form-limits"/);
+    assert.doesNotMatch(
+      source,
+      /from "\.\.\/lib\/customer-portal"/,
+      "importing customer-portal.ts pulls node:crypto into the browser bundle",
+    );
     assert.match(source, /defaultValue=\{String\(plantLines\.length\)\}/);
     const theme = readFileSync(
       path.join(REPO_ROOT, "app", "components", "theme.tsx"),
