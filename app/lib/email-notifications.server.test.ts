@@ -219,6 +219,23 @@ describe("the Settings page exposes the admin email toggles", () => {
     assert.match(source, /name="adminEmailPaymentAfterVoid"/);
     assert.match(source, /intent" value="save-admin-emails"/);
   });
+
+  it("does not put both Settings save buttons into a loading state", async () => {
+    const source = await readFile(
+      path.join(import.meta.dirname, "..", "routes", "app.settings.tsx"),
+      "utf8",
+    );
+    assert.match(source, /submittingIntent === "save"/);
+    assert.match(source, /submittingIntent === "save-admin-emails"/);
+    assert.match(source, /\{\.\.\.\(savingFedex \? \{ loading: true \} : \{\}\)\}/);
+    assert.match(source, /\{\.\.\.\(savingEmails \? \{ loading: true \} : \{\}\)\}/);
+    assert.equal(
+      (source.match(/navigation\.state !== "idle" \? \{ loading: true \}/g) || [])
+        .length,
+      0,
+      "a shared idle check makes Save settings spin when email notifications save",
+    );
+  });
 });
 
 describe("the Send Offer box when nothing is purchasable", () => {

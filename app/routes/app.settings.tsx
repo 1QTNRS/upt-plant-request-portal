@@ -66,7 +66,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await updateShopSettings(shop, {
       fedexRemovalWarning: DEFAULT_FEDEX_REMOVAL_WARNING,
     });
-    return { saved: true, reset: true };
+    return { saved: true, reset: true, section: "fedex" as const };
   }
 
   if (intent === "save-admin-emails") {
@@ -76,7 +76,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       adminEmailCustomerResponse: form.get("adminEmailCustomerResponse") === "on",
       adminEmailPaymentAfterVoid: form.get("adminEmailPaymentAfterVoid") === "on",
     });
-    return { saved: true, reset: false };
+    return { saved: true, reset: false, section: "emails" as const };
   }
 
   await updateShopSettings(shop, {
@@ -85,13 +85,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       ? { adminNotificationEmail: String(form.get("adminNotificationEmail") || "") }
       : {}),
   });
-  return { saved: true, reset: false };
+  return { saved: true, reset: false, section: "fedex" as const };
 };
 
 export default function Settings() {
   const settings = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
+  const submittingIntent = String(navigation.formData?.get("intent") || "");
+  const savingFedex =
+    navigation.state !== "idle" && submittingIntent === "save";
+  const savingEmails =
+    navigation.state !== "idle" && submittingIntent === "save-admin-emails";
   const [draft, setDraft] = useState(settings.fedexRemovalWarning);
   const [adminEmail, setAdminEmail] = useState(settings.adminNotificationEmail);
   const [emailNewRequest, setEmailNewRequest] = useState(settings.adminEmailNewRequest);
@@ -123,7 +128,9 @@ export default function Settings() {
           <s-text>
             {actionData.reset
               ? "FedEx warning message reset to the default."
-              : "Settings saved."}
+              : actionData.section === "emails"
+                ? "Email notifications saved."
+                : "Settings saved."}
           </s-text>
         </s-banner>
       )}
@@ -195,7 +202,7 @@ export default function Settings() {
                 <s-button
                   variant="primary"
                   type="submit"
-                  {...(navigation.state !== "idle" ? { loading: true } : {})}
+                  {...(savingFedex ? { loading: true } : {})}
                 >
                   Save settings
                 </s-button>
@@ -275,7 +282,7 @@ export default function Settings() {
                 <s-button
                   variant="primary"
                   type="submit"
-                  {...(navigation.state !== "idle" ? { loading: true } : {})}
+                  {...(savingEmails ? { loading: true } : {})}
                 >
                   Save email notifications
                 </s-button>
