@@ -26,6 +26,7 @@ import type {
   MainTabParamList,
   RequestsStackParamList,
 } from "./src/screens/navigation-types";
+import { TAB_BAR_CONTENT_HEIGHT } from "./src/item-editor";
 import { THEME } from "./src/theme";
 import { ui } from "./src/ui";
 
@@ -72,8 +73,9 @@ function MainTabs() {
   const tabBarStyle = {
     backgroundColor: THEME.darkGreen,
     borderTopColor: THEME.darkGreen,
-    height: 52 + insets.bottom,
-    paddingBottom: insets.bottom,
+    height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
+    paddingTop: 12,
+    paddingBottom: insets.bottom + 10,
   };
 
   return (
@@ -83,8 +85,9 @@ function MainTabs() {
         tabBarActiveTintColor: THEME.yellow,
         tabBarInactiveTintColor: THEME.white,
         tabBarStyle,
-        tabBarLabelStyle: { fontWeight: "700", fontSize: 12 },
-        tabBarIconStyle: { display: "none" },
+        tabBarLabelStyle: { fontWeight: "700", fontSize: 12, marginBottom: 0 },
+        tabBarItemStyle: { justifyContent: "center", paddingVertical: 6 },
+        tabBarIconStyle: { display: "none", height: 0, marginTop: 0 },
       }}
     >
       <Tabs.Screen

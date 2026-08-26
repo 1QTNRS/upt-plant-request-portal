@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
-  ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
 import * as ImagePicker from "expo-image-picker";
 
 import { apiPost, apiUploadPhoto } from "../api";
@@ -17,6 +15,8 @@ import {
   offerFieldsEnabled,
   routeLabel,
   routeOf,
+  showsExactPlantFields,
+  showsStockSearch,
   STOCK_DROPDOWN_MAX_HEIGHT,
   stockDropdownOpen,
 } from "../item-editor";
@@ -24,6 +24,7 @@ import { THEME } from "../theme";
 import type { ActionResult, FulfillmentRoute, RequestItem, StockCandidate } from "../types";
 import { UNAVAILABLE_REASONS } from "../types";
 import { ui } from "../ui";
+import { PhotoStrip, type StripPhoto } from "./PhotoStrip";
 import { PhotoViewer } from "./PhotoViewer";
 
 type Props = {
@@ -34,6 +35,7 @@ type Props = {
   requestId: string;
   onResult: (result: ActionResult) => void;
   onError: (message: string) => void;
+  onStockDropdownChange?: (open: boolean) => void;
 };
 
 export function ItemEditor({
@@ -44,9 +46,12 @@ export function ItemEditor({
   requestId,
   onResult,
   onError,
+  onStockDropdownChange,
 }: Props) {
   const route = routeOf(item);
   const fieldsOn = canEditItems && offerFieldsEnabled(route);
+  const exactFields = canEditItems && showsExactPlantFields(route);
+  const stockMode = showsStockSearch(route);
   const photos = itemPhotos(item);
 
   const [offeredName, setOfferedName] = useState(item.offeredName);
@@ -69,6 +74,19 @@ export function ItemEditor({
     setWeightText(String(item.weightLbs ?? ""));
     setNotes(item.customerFacingNotes);
   }, [item.id]);
+
+  const dropdownVisible = stockDropdownOpen(
+    stockFocused,
+    stockTerm,
+    stockResults.length > 0,
+    stockLoading,
+    stockClosed,
+  );
+
+  useEffect(() => {
+    onStockDropdownChange?.(dropdownVisible);
+    return () => onStockDropdownChange?.(false);
+  }, [dropdownVisible, onStockDropdownChange]);
 
   async function act(body: Record<string, unknown>, options?: { silent?: boolean }) {
     if (!options?.silent) setBusy(true);
@@ -119,9 +137,6 @@ export function ItemEditor({
     await act({
       intent: "update-item",
       itemId: item.id,
-      offeredName,
-      price: Number(priceText) || 0,
-      weightLbs: Number(weightText) || 0,
       customerFacingNotes: notes,
       ...(route === "not_available"
         ? {
@@ -129,6 +144,13 @@ export function ItemEditor({
             unavailableReason: item.unavailableReason || UNAVAILABLE_REASONS[3],
           }
         : { availability: "available", fulfillmentType: route }),
+      ...(exactFields
+        ? {
+            offeredName,
+            price: Number(priceText) || 0,
+            weightLbs: Number(weightText) || 0,
+          }
+        : {}),
     });
   }
 
@@ -139,10 +161,7 @@ export function ItemEditor({
     }
     setStockLoading(true);
     try {
-      await act(
-        { intent: "search-stock", itemId: item.id, term },
-        { silent: true },
-      );
+      await act({ intent: "search-stock", itemId: item.id, term }, { silent: true });
     } finally {
       setStockLoading(false);
     }
@@ -191,50 +210,33 @@ export function ItemEditor({
     }
   }
 
-  const dropdownVisible = stockDropdownOpen(
-    stockFocused,
-    stockTerm,
-    stockResults.length > 0,
-    stockLoading,
-    stockClosed,
-  );
+  function persistPhotoOrder(next: StripPhoto[]) {
+    const ids = next.filter((photo) => photo.id !== "linked-stock").map((photo) => photo.id);
+    if (ids.length < 2) return;
+    void act(
+      { intent: "reorder-photos", itemId: item.id, photoIds: ids },
+      { silent: true },
+    );
+  }
 
   return (
     <View style={ui.card}>
       <View style={styles.identity}>
-        {photos.length > 0 ? (
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator={false}
-            style={styles.thumbs}
-            contentContainerStyle={styles.thumbRow}
-          >
-            {photos.map((photo, index) => (
-              <View key={photo.id} style={styles.thumbWrap}>
-                <Pressable onPress={() => setViewerIndex(index)}>
-                  <Image source={{ uri: photo.url }} style={styles.thumb} />
-                </Pressable>
-                {canEditItems && route === "exact_plant" && photo.id !== "linked-stock" ? (
-                  <Pressable
-                    style={styles.thumbRemove}
-                    onPress={() =>
-                      void act({
-                        intent: "remove-photo",
-                        itemId: item.id,
-                        photoId: photo.id,
-                      })
-                    }
-                  >
-                    <Text style={styles.thumbRemoveLabel}>✕</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ))}
-          </ScrollView>
-        ) : null}
+        <PhotoStrip
+          photos={photos}
+          canEdit={canEditItems && route === "exact_plant"}
+          onPreview={setViewerIndex}
+          onRemove={(photoId) =>
+            void act({ intent: "remove-photo", itemId: item.id, photoId })
+          }
+          onReorder={persistPhotoOrder}
+        />
         <View style={styles.identityText}>
-          <Text style={ui.cardTitle}>{offeredName || item.plantName}</Text>
+          <Text style={ui.cardTitle}>
+            {stockMode && item.linkedStock
+              ? item.linkedStock.productTitle
+              : offeredName || item.plantName}
+          </Text>
           <Text style={ui.muted}>Requested: {item.plantName}</Text>
         </View>
       </View>
@@ -263,7 +265,89 @@ export function ItemEditor({
         <Text style={ui.cardMeta}>{routeLabel(route)}</Text>
       )}
 
-      {canEditItems ? (
+      {stockMode ? (
+        <View style={styles.stockWrap} pointerEvents={fieldsOn ? "auto" : "none"}>
+          {canEditItems ? (
+            <>
+              <TextInput
+                value={stockTerm}
+                onChangeText={onStockTerm}
+                editable={fieldsOn}
+                placeholder="Search live website stock"
+                placeholderTextColor={THEME.muted}
+                style={[ui.input, styles.stockInput, !fieldsOn && ui.inputDisabled]}
+                onFocus={() => setStockFocused(true)}
+                onBlur={() => setStockFocused(false)}
+                returnKeyType="search"
+                onSubmitEditing={() => void searchStock(stockTerm)}
+              />
+              {dropdownVisible ? (
+                <View style={styles.dropdown}>
+                  {stockLoading ? (
+                    <ActivityIndicator color={THEME.darkGreen} style={styles.dropdownStatus} />
+                  ) : null}
+                  {!stockLoading && stockResults.length === 0 ? (
+                    <Text style={styles.dropdownEmpty}>No matching website stock.</Text>
+                  ) : (
+                    <GestureScrollView
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="always"
+                      keyboardDismissMode="none"
+                      style={styles.dropdownList}
+                    >
+                      {stockResults.map((candidate) => (
+                        <Pressable
+                          key={candidate.variantGid}
+                          style={styles.dropdownRow}
+                          onPress={() => {
+                            setStockClosed(true);
+                            void act({
+                              intent: "link-stock",
+                              itemId: item.id,
+                              variantGid: candidate.variantGid,
+                            });
+                          }}
+                        >
+                          <Text style={ui.cardTitle}>
+                            {candidate.productTitle} · {candidate.variantTitle}
+                          </Text>
+                          <Text style={ui.muted}>
+                            ${candidate.price.toFixed(2)}
+                            {candidate.unlinkableReason ? ` · ${candidate.unlinkableReason}` : ""}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </GestureScrollView>
+                  )}
+                </View>
+              ) : null}
+            </>
+          ) : null}
+          {item.linkedStock ? (
+            <View style={styles.linkedStock}>
+              <Text style={ui.muted}>
+                Linked: {item.linkedStock.productTitle} · {item.linkedStock.variantTitle}
+              </Text>
+              <Text style={ui.muted}>
+                ${Number(item.linkedStock.price ?? item.price).toFixed(2)}
+                {item.linkedStock.weightLbs != null ? ` · ${item.linkedStock.weightLbs} lb` : ""}
+              </Text>
+              {canEditItems ? (
+                <Pressable
+                  disabled={!fieldsOn}
+                  onPress={() => void act({ intent: "unlink-stock", itemId: item.id })}
+                >
+                  <Text style={ui.link}>Unlink listing</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={ui.muted}>No store listing linked yet.</Text>
+          )}
+        </View>
+      ) : null}
+
+      {exactFields ? (
         <>
           <Text style={ui.label}>Offered name</Text>
           <TextInput
@@ -294,6 +378,11 @@ export function ItemEditor({
               />
             </View>
           </View>
+        </>
+      ) : null}
+
+      {canEditItems ? (
+        <>
           <Text style={ui.label}>Customer-facing notes</Text>
           <TextInput
             value={notes}
@@ -305,11 +394,11 @@ export function ItemEditor({
             <Text style={ui.buttonLabel}>Save item</Text>
           </Pressable>
         </>
-      ) : (
+      ) : !stockMode ? (
         <Text style={ui.cardMeta}>
           ${item.price.toFixed(2)} · {item.weightLbs} lb
         </Text>
-      )}
+      ) : null}
 
       {route === "not_available" && canEditItems ? (
         <View style={styles.reasons}>
@@ -339,116 +428,37 @@ export function ItemEditor({
         <Text style={ui.muted}>Reason: {item.unavailableReason}</Text>
       ) : null}
 
-      {route === "exact_plant" ? (
+      {route === "exact_plant" && canEditItems ? (
         <View style={styles.block}>
-          {canEditItems ? (
-            <>
-              <Pressable
-                style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
-                disabled={!fieldsOn}
-                onPress={() => void pickPhoto()}
-              >
-                <Text style={ui.secondaryLabel}>Add photo from library</Text>
-              </Pressable>
-              <TextInput
-                value={photoUrl}
-                onChangeText={setPhotoUrl}
-                editable={fieldsOn}
-                placeholder="Or paste a photo URL"
-                placeholderTextColor={THEME.muted}
-                autoCapitalize="none"
-                style={[ui.input, !fieldsOn && ui.inputDisabled]}
-              />
-              <Pressable
-                style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
-                disabled={!fieldsOn}
-                onPress={() =>
-                  void act({
-                    intent: "add-photo-url",
-                    itemId: item.id,
-                    photoUrl,
-                  })
-                }
-              >
-                <Text style={ui.secondaryLabel}>Add photo URL</Text>
-              </Pressable>
-            </>
-          ) : null}
-        </View>
-      ) : null}
-
-      {route === "growers_choice" ? (
-        <View style={styles.block}>
-          {item.linkedStock ? (
-            <Text style={ui.muted}>
-              Linked: {item.linkedStock.productTitle} · {item.linkedStock.variantTitle}
-            </Text>
-          ) : (
-            <Text style={ui.muted}>No store listing linked yet.</Text>
-          )}
-          {canEditItems && item.linkedStock ? (
-            <Pressable
-              disabled={!fieldsOn}
-              onPress={() => void act({ intent: "unlink-stock", itemId: item.id })}
-            >
-              <Text style={ui.link}>Unlink listing</Text>
-            </Pressable>
-          ) : null}
-          {canEditItems ? (
-            <View style={styles.stockWrap} pointerEvents={fieldsOn ? "auto" : "none"}>
-              <TextInput
-                value={stockTerm}
-                onChangeText={onStockTerm}
-                editable={fieldsOn}
-                placeholder="Search live website stock"
-                placeholderTextColor={THEME.muted}
-                style={[ui.input, styles.stockInput, !fieldsOn && ui.inputDisabled]}
-                onFocus={() => setStockFocused(true)}
-                onBlur={() => setStockFocused(false)}
-                returnKeyType="search"
-                onSubmitEditing={() => void searchStock(stockTerm)}
-              />
-              {dropdownVisible ? (
-                <View style={styles.dropdown}>
-                  {stockLoading ? (
-                    <ActivityIndicator color={THEME.darkGreen} style={styles.dropdownStatus} />
-                  ) : null}
-                  {!stockLoading && stockResults.length === 0 ? (
-                    <Text style={styles.dropdownEmpty}>No matching website stock.</Text>
-                  ) : (
-                    <ScrollView
-                      nestedScrollEnabled
-                      keyboardShouldPersistTaps="handled"
-                      style={styles.dropdownList}
-                    >
-                      {stockResults.map((candidate) => (
-                        <Pressable
-                          key={candidate.variantGid}
-                          style={styles.dropdownRow}
-                          onPress={() => {
-                            setStockClosed(true);
-                            void act({
-                              intent: "link-stock",
-                              itemId: item.id,
-                              variantGid: candidate.variantGid,
-                            });
-                          }}
-                        >
-                          <Text style={ui.cardTitle}>
-                            {candidate.productTitle} · {candidate.variantTitle}
-                          </Text>
-                          <Text style={ui.muted}>
-                            ${candidate.price.toFixed(2)}
-                            {candidate.unlinkableReason ? ` · ${candidate.unlinkableReason}` : ""}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  )}
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+          <Pressable
+            style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
+            disabled={!fieldsOn}
+            onPress={() => void pickPhoto()}
+          >
+            <Text style={ui.secondaryLabel}>Add photo from library</Text>
+          </Pressable>
+          <TextInput
+            value={photoUrl}
+            onChangeText={setPhotoUrl}
+            editable={fieldsOn}
+            placeholder="Or paste a photo URL"
+            placeholderTextColor={THEME.muted}
+            autoCapitalize="none"
+            style={[ui.input, !fieldsOn && ui.inputDisabled]}
+          />
+          <Pressable
+            style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
+            disabled={!fieldsOn}
+            onPress={() =>
+              void act({
+                intent: "add-photo-url",
+                itemId: item.id,
+                photoUrl,
+              })
+            }
+          >
+            <Text style={ui.secondaryLabel}>Add photo URL</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -465,35 +475,19 @@ export function ItemEditor({
   );
 }
 
-const styles = StyleSheet.create({
-  identity: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
-  thumbs: { flexGrow: 0, maxWidth: 168 },
-  thumbRow: { alignItems: "center", gap: 6, paddingRight: 4 },
-  thumbWrap: { position: "relative" },
-  thumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: THEME.mint },
-  thumbRemove: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: THEME.darkGreen,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thumbRemoveLabel: { color: THEME.white, fontSize: 10, fontWeight: "700" },
+const styles = {
+  identity: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, marginBottom: 8 },
   identityText: { flex: 1, minWidth: 0 },
   reasons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
     gap: 8,
     marginTop: 16,
     marginBottom: 8,
   },
   block: { marginTop: 8 },
-  stockWrap: { marginTop: 8, zIndex: 2 },
-  stockInput: { marginBottom: 0 },
+  stockWrap: { marginTop: 4, marginBottom: 8, zIndex: 2 },
+  stockInput: { marginBottom: 0, marginTop: 4 },
   dropdown: {
     borderWidth: 1,
     borderColor: THEME.line,
@@ -502,7 +496,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 10,
     backgroundColor: THEME.white,
     maxHeight: STOCK_DROPDOWN_MAX_HEIGHT,
-    overflow: "hidden",
+    overflow: "hidden" as const,
   },
   dropdownList: { maxHeight: STOCK_DROPDOWN_MAX_HEIGHT },
   dropdownStatus: { padding: 12 },
@@ -513,5 +507,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: THEME.line,
   },
+  linkedStock: { marginTop: 10, gap: 4 },
   busy: { marginTop: 8 },
-});
+};

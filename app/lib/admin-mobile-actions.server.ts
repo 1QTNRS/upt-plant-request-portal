@@ -28,6 +28,7 @@ import {
   listInternalNotes,
   OfferIncompleteError,
   removeItemPhoto,
+  reorderItemPhotos,
   sendOffer,
   unlinkExistingStock,
   updateRequestItem,
@@ -79,6 +80,17 @@ function hasField(body: Record<string, unknown>, key: string): boolean {
 
 function asString(body: Record<string, unknown>, key: string): string {
   return String(body[key] ?? "");
+}
+
+function asStringList(body: Record<string, unknown>, key: string): string[] {
+  const value = body[key];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 function asOptionalNumber(body: Record<string, unknown>, key: string): number | undefined {
@@ -225,6 +237,11 @@ export async function handleMobileAdminRequestAction(input: {
 
     if (intent === "remove-photo") {
       await removeItemPhoto(shop, requestId, itemId, asString(fields, "photoId"));
+      return withUpdatedRequest(shop, requestId);
+    }
+
+    if (intent === "reorder-photos") {
+      await reorderItemPhotos(shop, requestId, itemId, asStringList(fields, "photoIds"));
       return withUpdatedRequest(shop, requestId);
     }
 
