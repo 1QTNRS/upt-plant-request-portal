@@ -1,3 +1,5 @@
+import type { NavigatorScreenParams } from "@react-navigation/native";
+
 export type RequestsStackParamList = {
   RequestList: undefined;
   RequestDetail: { requestId: string };
@@ -9,7 +11,7 @@ export type ExactPlantsStackParamList = {
 };
 
 export type MainTabParamList = {
-  Requests: undefined;
-  ExactPlants: undefined;
+  Requests: NavigatorScreenParams<RequestsStackParamList> | undefined;
+  ExactPlants: NavigatorScreenParams<ExactPlantsStackParamList> | undefined;
   Settings: undefined;
 };

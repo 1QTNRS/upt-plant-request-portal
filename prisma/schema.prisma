@@ -54,6 +54,10 @@ model ShopSettings {
   adminEmailCustomerResponse Boolean @default(true)
   /// Portal notification: admin_payment_after_void. Off does not stop Close.
   adminEmailPaymentAfterVoid Boolean @default(true)
+  /// iOS push: new customer request. Independent of adminEmailNewRequest.
+  adminPushNewRequest Boolean @default(true)
+  /// iOS push: customer Accept/Reject. Independent of adminEmailCustomerResponse.
+  adminPushItemStatusUpdate Boolean @default(true)
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -110,6 +114,7 @@ model PlantRequest {
   shopifyOrder          ShopifyOrderReference?
   statusEvents          StatusEvent[]
   emails                EmailMessage[]
+  pushMessages          AdminPushMessage[]
   internalNotes         RequestInternalNote[]
 
   @@unique([shop, requestNumber])
@@ -477,13 +482,39 @@ model RequestInternalNote {
  * deleting the row.
  */
 model AdminMobileToken {
-  id         String    @id @default(cuid())
-  shop       String
-  label      String
-  tokenHash  String    @unique
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-  revokedAt  DateTime?
+  id            String    @id @default(cuid())
+  shop          String
+  label         String
+  tokenHash     String    @unique
+  /// Expo push token for this authorized device. Null until the phone
+  /// registers, and cleared on revoke or DeviceNotRegistered.
+  expoPushToken String?
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
 
   @@index([shop, revokedAt])
+}
+
+/**
+ * One admin iOS push per event. Idempotency is (shop, kind:requestId), so a
+ * retry or double submit cannot notify the phones twice.
+ */
+model AdminPushMessage {
+  id             String    @id @default(cuid())
+  shop           String
+  requestId      String?
+  request        PlantRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  kind           String
+  title          String
+  body           String
+  status         String    @default("queued")
+  error          String?
+  createdAt      DateTime  @default(now())
+  sentAt         DateTime?
+  attempts       Int       @default(0)
+  idempotencyKey String?
+
+  @@unique([shop, idempotencyKey])
+  @@index([shop, status])
 }

@@ -165,6 +165,9 @@ export type ShopSettings = {
   adminEmailNewRequest: boolean;
   adminEmailCustomerResponse: boolean;
   adminEmailPaymentAfterVoid: boolean;
+  adminPushNewRequest: boolean;
+  adminPushItemStatusUpdate: boolean;
+  registeredPushDevices: number;
   fedexProductHandle: string;
   fedexProductSku: string;
 };

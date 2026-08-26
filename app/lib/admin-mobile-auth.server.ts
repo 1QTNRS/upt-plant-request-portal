@@ -75,7 +75,7 @@ export async function revokeAdminMobileToken(
 ): Promise<boolean> {
   const result = await prisma.adminMobileToken.updateMany({
     where: { id: tokenId, shop, revokedAt: null },
-    data: { revokedAt: new Date() },
+    data: { revokedAt: new Date(), expoPushToken: null },
   });
   return result.count > 0;
 }

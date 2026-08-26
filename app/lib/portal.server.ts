@@ -483,6 +483,8 @@ export async function updateShopSettings(
     adminEmailNewRequest?: boolean;
     adminEmailCustomerResponse?: boolean;
     adminEmailPaymentAfterVoid?: boolean;
+    adminPushNewRequest?: boolean;
+    adminPushItemStatusUpdate?: boolean;
     fedexVariantGid?: string | null;
     fedexUpgradePrice?: number;
   },
@@ -508,6 +510,12 @@ export async function updateShopSettings(
         : {}),
       ...(data.adminEmailPaymentAfterVoid !== undefined
         ? { adminEmailPaymentAfterVoid: data.adminEmailPaymentAfterVoid }
+        : {}),
+      ...(data.adminPushNewRequest !== undefined
+        ? { adminPushNewRequest: data.adminPushNewRequest }
+        : {}),
+      ...(data.adminPushItemStatusUpdate !== undefined
+        ? { adminPushItemStatusUpdate: data.adminPushItemStatusUpdate }
         : {}),
       ...(data.fedexVariantGid !== undefined
         ? { fedexVariantGid: data.fedexVariantGid }

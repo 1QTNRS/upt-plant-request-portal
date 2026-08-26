@@ -71,6 +71,7 @@ Submitting the landing-page "Shop domain" login form issues a 302 redirect to `h
 - Both Render services **must** auto-deploy `main` (`render.yaml` `branch: main`, `autoDeployTrigger: checksPass`). If the dashboard still tracks a leftover working branch, that is a Render Blueprint sync — not a reason to build a second deploy system. See `docs/AUTOMATED_DELIVERY.md`.
 - The dev store contradicts Shopify's own docs in several places (null `Publication.catalog`, POS handle `pos`, missing `Shop.domainsPaginated`). The handoff has the table; check it before trusting a deprecation notice.
 - The Help glossary (`help-glossary.ts`, `help-topics.ts`) is content in code, and every entry quotes the file it is grounded in. `help-content.test.ts` reads those files and fails when a quote has moved, so **changing a business rule breaks the entry that describes it** — update the entry rather than the quote. Answers must come from that content; the assistant refuses what is not in it.
+- iOS admin push tokens live on `AdminMobileToken.expoPushToken`. Never log the full token. Revoke clears it. Push toggles (`adminPushNewRequest`, `adminPushItemStatusUpdate`) are independent of admin email toggles.
 
 ### Security invariants
 

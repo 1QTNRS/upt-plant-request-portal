@@ -15,6 +15,11 @@ import {
   type ResponseSummaryItem,
 } from "./portal";
 import { formatCustomerDateTime } from "./customer-time";
+import {
+  notifyItemStatusUpdatePush,
+  notifyNewRequestPush,
+  type AdminPushSender,
+} from "./admin-push.server";
 import { getCustomerTimeZone, getRequest, getShopSettings } from "./portal.server";
 
 /**
@@ -344,7 +349,11 @@ export async function redeliverEmailMessage(
   return deliverEmail(message, options.sender);
 }
 
-export async function notifyNewRequest(shop: string, requestId: string) {
+export async function notifyNewRequest(
+  shop: string,
+  requestId: string,
+  options: { pushSender?: AdminPushSender } = {},
+) {
   const request = await getRequest(shop, requestId);
   if (!request) return;
 
@@ -368,6 +377,8 @@ export async function notifyNewRequest(shop: string, requestId: string) {
       templateKey: "admin_new_request",
     });
   }
+
+  await notifyNewRequestPush(shop, requestId, { sender: options.pushSender });
 }
 
 export async function notifyOfferReady(shop: string, requestId: string, appUrl: string) {
@@ -496,7 +507,12 @@ export async function notifyResponseSummary(
  */
 export async function notifyAdminResponse(
   shop: string,
-  input: { requestId: string; acceptedCount: number; rejectedCount: number },
+  input: {
+    requestId: string;
+    acceptedCount: number;
+    rejectedCount: number;
+    pushSender?: AdminPushSender;
+  },
 ) {
   const request = await getRequest(shop, input.requestId);
   if (!request) return;
@@ -504,22 +520,29 @@ export async function notifyAdminResponse(
   const settings = await getShopSettings(shop);
   const adminEmail =
     settings.adminNotificationEmail || process.env.UPT_ADMIN_EMAIL || "";
-  if (!adminEmail || !settings.adminEmailCustomerResponse) return;
+  if (adminEmail && settings.adminEmailCustomerResponse) {
+    const email = buildAdminResponseEmail({
+      requestNumber: request.requestNumber,
+      customerName: request.customer,
+      customerEmail: request.email,
+      acceptedCount: input.acceptedCount,
+      rejectedCount: input.rejectedCount,
+    });
 
-  const email = buildAdminResponseEmail({
-    requestNumber: request.requestNumber,
-    customerName: request.customer,
-    customerEmail: request.email,
+    await queueEmail({
+      shop,
+      requestId: input.requestId,
+      toEmail: adminEmail,
+      ...email,
+      templateKey: "admin_response",
+    });
+  }
+
+  await notifyItemStatusUpdatePush(shop, {
+    requestId: input.requestId,
     acceptedCount: input.acceptedCount,
     rejectedCount: input.rejectedCount,
-  });
-
-  return queueEmail({
-    shop,
-    requestId: input.requestId,
-    toEmail: adminEmail,
-    ...email,
-    templateKey: "admin_response",
+    sender: input.pushSender,
   });
 }
 

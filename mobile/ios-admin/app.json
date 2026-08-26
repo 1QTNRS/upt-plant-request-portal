@@ -14,7 +14,13 @@
       "package": "com.unsolicitedplanttalks.admin"
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
     ]
   }
 }
