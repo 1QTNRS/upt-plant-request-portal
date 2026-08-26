@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import {
   NavigationContainer,
+  createNavigationContainerRef,
   getFocusedRouteNameFromRoute,
   type Route,
 } from "@react-navigation/native";
+import * as Notifications from "expo-notifications";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
@@ -21,6 +23,8 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { RequestDetailScreen } from "./src/screens/RequestDetailScreen";
 import { RequestListScreen } from "./src/screens/RequestListScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { resolveAdminPushDeepLink } from "./src/push";
+import { notificationRequestId, registerAdminPush } from "./src/register-push";
 import type {
   ExactPlantsStackParamList,
   MainTabParamList,
@@ -34,6 +38,29 @@ import { ui } from "./src/ui";
 const DEFAULT_API_URL = "https://upt-plant-request-portal.onrender.com";
 const TOKEN_KEY = "upt_admin_token";
 const URL_KEY = "upt_admin_api_url";
+
+const navigationRef = createNavigationContainerRef<MainTabParamList>();
+
+const linking = {
+  prefixes: ["uptadmin://"],
+  config: {
+    screens: {
+      Requests: {
+        screens: {
+          RequestDetail: "request/:requestId",
+        },
+      },
+    },
+  },
+};
+
+function openRequestDetail(requestId: string) {
+  if (!navigationRef.isReady()) return;
+  navigationRef.navigate("Requests", {
+    screen: "RequestDetail",
+    params: { requestId },
+  });
+}
 
 const RequestsStack = createNativeStackNavigator<RequestsStackParamList>();
 const ExactPlantsStack = createNativeStackNavigator<ExactPlantsStackParamList>();
@@ -128,6 +155,7 @@ export default function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [token, setToken] = useState("");
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -149,6 +177,39 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!signedIn || !token) return;
+    void registerAdminPush(apiUrl, token).catch(() => {
+      // Permission denied or a missing Expo project id must not block the app.
+    });
+  }, [signedIn, apiUrl, token]);
+
+  useEffect(() => {
+    function consume(requestId: string | null) {
+      const resolved = resolveAdminPushDeepLink({ signedIn, requestId });
+      if (resolved.openRequestId) {
+        openRequestDetail(resolved.openRequestId);
+        setPendingRequestId(null);
+        return;
+      }
+      if (resolved.pendingRequestId) setPendingRequestId(resolved.pendingRequestId);
+    }
+
+    if (signedIn && pendingRequestId) {
+      consume(pendingRequestId);
+    }
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      consume(notificationRequestId(response));
+    });
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      consume(notificationRequestId(response));
+      void Notifications.clearLastNotificationResponseAsync();
+    });
+    return () => sub.remove();
+  }, [signedIn, pendingRequestId]);
 
   const session = useMemo(
     () => ({
@@ -187,7 +248,7 @@ export default function App() {
           />
         ) : (
           <SessionContext.Provider value={session}>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef} linking={linking}>
               <MainTabs />
             </NavigationContainer>
           </SessionContext.Provider>

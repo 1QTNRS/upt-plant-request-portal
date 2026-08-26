@@ -84,4 +84,17 @@ describe("iOS admin source layout", () => {
     assert.match(app, /insets\.bottom/);
     assert.doesNotMatch(app, /fontSize: 12/);
   });
+
+  it("registers push after sign-in and keeps deep links behind auth", () => {
+    const app = read("App.tsx");
+    const settings = read("src/screens/SettingsScreen.tsx");
+    assert.match(app, /registerAdminPush/);
+    assert.match(app, /createNavigationContainerRef/);
+    assert.match(app, /uptadmin:\/\//);
+    assert.match(app, /resolveAdminPushDeepLink/);
+    assert.match(settings, /iOS Push Notifications/);
+    assert.match(settings, /save-admin-push/);
+    assert.match(settings, /New Request/);
+    assert.match(settings, /Item Status Update/);
+  });
 });

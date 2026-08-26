@@ -35,7 +35,7 @@ Implemented end-to-end in app code:
 - Declined exact-plant listing review: customer reject is saved **without** publishing; admin must review and approve before any Shopify product is created. **Dismiss from EXACT PLANTS** (confirmation required) removes an eligible, not-yet-listed queue item without creating a product or deleting history; `exactPlantDismissedAt` plus `Admin Dismissed from EXACT PLANTS` keep it out of later queue refreshes. Already-listed products cannot be dismissed or deleted this way. The admin queue is a collapsible **sortable table** (photo lightbox, Request # link, eligibility, listing status, price, date, actions). Eligibility rules are unchanged.
 - After admin approval: one Shopify product per declined item, EXACT PLANTS collection, Online Store + POS only, idempotent retries, **Listed** status + product link
 - Analytics from the database (FedEx excluded from plant revenue/counts)
-- Settings: FedEx warning text, admin notification email, and per-type Admin Email Notification toggles
+- Settings: FedEx warning text, admin notification email, per-type Admin Email Notification toggles, and independent iOS Push Notification toggles (New Request, Item Status Update)
 - Email outbox rows for admin new-request and offer ready; `checkout_link` only as a manual admin recovery; `request_received`, `confirmation` and expiration reminders are no longer sent automatically
 - Admin override **Close Entire Request** (confirmation required; writes `Admin Override Close`; voids an unpaid Draft Order; declined Exact Plants stay EXACT PLANTS-eligible; Grower's Choice stays excluded)
 - Admin-only **Open Draft Order in Shopify** on request detail when a live GID exists; voided drafts show the void timestamp instead of a live link
@@ -105,6 +105,7 @@ SQLite migrations (`prisma/migrations/`):
    route it was created under, and every other column is nullable
 9. `20260824190000_admin_mobile_tokens` — `AdminMobileToken` for the iOS admin app
 10. `20260825183000_admin_email_subscriptions` — Settings checkboxes for which admin emails to receive
+11. `20260826223000_admin_ios_push_notifications` — `ShopSettings.adminPushNewRequest` / `adminPushItemStatusUpdate`, `AdminMobileToken.expoPushToken`, `AdminPushMessage` outbox
 
 PostgreSQL migrations (`prisma/postgres/migrations/`) started as a single squashed
 `20260820120000_init`, since production starts from an empty database; later
@@ -112,7 +113,7 @@ migrations are added under both directories.
 
 Shop-scoped models (multi-tenant by `shop` string):
 
-- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email, and which admin emails are subscribed. Live FedEx listing is SKU `UPTUPGTOFED1236S`
+- `ShopSettings` — FedEx warning, product handle/variant GID, upgrade price/label, admin email, which admin emails are subscribed, and independent iOS push toggles. Live FedEx listing is SKU `UPTUPGTOFED1236S`
 - `RequestNumberSequence` — still keyed by `(shop, year)`; live numbering uses `year = 0` (`GLOBAL_REQUEST_SEQUENCE_YEAR`) for a shop-wide counter
 - `CustomerProfile` — unique `(shop, email)`
 - `PlantRequest` — statuses stored as `New` / `Pending` / `Closed` / `Expired`
@@ -127,7 +128,8 @@ Shop-scoped models (multi-tenant by `shop` string):
 - `CanonicalPlant` — unique `(shop, canonicalKey)`; the identity analytics group on. `displayName` is the first spelling the shop saw
 - `PlantNameAlias` — unique `(shop, aliasKey)`; one customer spelling → one `CanonicalPlant`. `source` is `deterministic` or `admin_confirmed`
 - `PlantIdentitySuggestion` — unique `(shop, aliasKey, suggestedCanonicalPlantId)`; a medium-confidence match awaiting Same Plant / Keep Separate. `status` is `open` \| `confirmed` \| `rejected`
-- `AdminMobileToken` — hashed device tokens for the iOS admin app. Plaintext is shown once on create; revoke sets `revokedAt`
+- `AdminMobileToken` — hashed device tokens for the iOS admin app. Plaintext is shown once on create; revoke sets `revokedAt` and clears `expoPushToken`
+- `AdminPushMessage` — idempotent iOS admin push outbox (`new_request:{requestId}`, `item_status:{requestId}`). Does not store Expo tokens
 
 Item statuses: `Requested` | `Sourced` | `Offered` | `Sold` | `Unavailable` | `Listed`.
 
@@ -410,6 +412,8 @@ Volume is deliberately small. The customer gets one automatic portal email, plus
 `checkout_link` survives only as the admin's manual "Send payment link (manual recovery)" action on the request page. It is never an automatic happy-path email. A human retry of a failed outbox row is the same recovery idea.
 
 UPT's mailbox gets exactly two events: `admin_new_request` and `admin_response` — one concise mail per submitted answer, never one per item, never for admin-side status changes, analytics, expiry maintenance or ordinary payment (Shopify's own paid-order notification covers that). A third admin template, `admin_payment_after_void`, is the urgent conflict when money arrives after the invoice was already voided. Each of those three is independently toggleable in Settings → Admin Email Notifications (`adminEmailNewRequest`, `adminEmailCustomerResponse`, `adminEmailPaymentAfterVoid`; all default on). Turning a toggle off does not stop the underlying request, Accept/Reject, Draft Order, or Close. `compliance_data_request` is a legal webhook response and is not toggleable.
+
+Authorized iPhones can get two independent pushes from Settings → iOS Push Notifications (`adminPushNewRequest`, `adminPushItemStatusUpdate`; default on). New Request is one push (`New plant request` / `REQ1234 from Customer Name`). Item Status Update is one consolidated push for the customer's Accept/Reject answer (`REQ1234: 2 accepted, 3 rejected`), never one per plant. Push prefs do not change email prefs. Revoking a device token clears its Expo token and stops future pushes to that phone. Expo tokens live only on `AdminMobileToken` and are never shown customer-side.
 
 The portal never calls `draftOrderInvoiceSend`. `draftOrderCreate` still returns `invoiceUrl` (and `reserveInventoryUntil`) so checkout and inventory reservation keep working without Shopify emailing its own invoice.
 
@@ -1088,7 +1092,10 @@ the web request page uses (`update-item`, stock search/link, photos,
 send offer, internal notes, close declined, admin override close).
 `GET/POST /api/mobile/admin/exact-plants` reviews, approves, and
 dismisses through `exact-plants.server`. `GET/POST /api/mobile/admin/settings`
-saves the FedEx warning and admin email through `updateShopSettings`.
+saves the FedEx warning, admin email, and iOS push toggles through `updateShopSettings`.
+`POST /api/mobile/admin/push-token` stores an Expo push token on the
+authenticated `AdminMobileToken` after the phone grants notification
+permission.
 All of those call existing portal / Shopify helpers. The phone uses the
 shop's offline Admin session for Shopify writes — never its own
 credentials.

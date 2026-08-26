@@ -23,8 +23,12 @@ export function SettingsScreen() {
   const [newRequestEmail, setNewRequestEmail] = useState(true);
   const [customerResponseEmail, setCustomerResponseEmail] = useState(true);
   const [paymentAfterVoidEmail, setPaymentAfterVoidEmail] = useState(true);
+  const [pushNewRequest, setPushNewRequest] = useState(true);
+  const [pushItemStatus, setPushItemStatus] = useState(true);
+  const [registeredPushDevices, setRegisteredPushDevices] = useState(0);
   const [sku, setSku] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingPush, setSavingPush] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
@@ -42,6 +46,9 @@ export function SettingsScreen() {
       setNewRequestEmail(settings.adminEmailNewRequest);
       setCustomerResponseEmail(settings.adminEmailCustomerResponse);
       setPaymentAfterVoidEmail(settings.adminEmailPaymentAfterVoid);
+      setPushNewRequest(settings.adminPushNewRequest);
+      setPushItemStatus(settings.adminPushItemStatusUpdate);
+      setRegisteredPushDevices(settings.registeredPushDevices);
       setSku(settings.fedexProductSku);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load settings.");
@@ -82,6 +89,9 @@ export function SettingsScreen() {
       setNewRequestEmail(result.adminEmailNewRequest);
       setCustomerResponseEmail(result.adminEmailCustomerResponse);
       setPaymentAfterVoidEmail(result.adminEmailPaymentAfterVoid);
+      setPushNewRequest(result.adminPushNewRequest);
+      setPushItemStatus(result.adminPushItemStatusUpdate);
+      setRegisteredPushDevices(result.registeredPushDevices);
       setSku(result.fedexProductSku);
       setSaved(result.reset ? "FedEx warning reset to the default." : "Settings saved.");
     } catch (caught) {
@@ -96,8 +106,8 @@ export function SettingsScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.muted}>
-        FedEx warning and admin email only. Create or revoke a device token on the
-        website Settings page. Analytics stays on the website.
+        FedEx warning, admin emails, and iOS push toggles. Create or revoke a
+        device token on the website Settings page. Analytics stays on the website.
       </Text>
       {loading && !warning ? <ActivityIndicator color={THEME.darkGreen} /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -140,6 +150,68 @@ export function SettingsScreen() {
       ))}
       <Pressable style={styles.button} disabled={loading} onPress={() => void save("save")}>
         <Text style={styles.buttonLabel}>{loading ? "Saving…" : "Save settings"}</Text>
+      </Pressable>
+
+      <Text style={styles.label}>iOS Push Notifications</Text>
+      <Text style={styles.muted}>
+        Separate from admin emails.{" "}
+        {registeredPushDevices === 0
+          ? "No iOS admin device is currently registered for push."
+          : registeredPushDevices === 1
+            ? "1 iOS admin device is registered for push."
+            : `${registeredPushDevices} iOS admin devices are registered for push.`}
+      </Text>
+      {(
+        [
+          ["New Request", pushNewRequest, setPushNewRequest],
+          ["Item Status Update", pushItemStatus, setPushItemStatus],
+        ] as const
+      ).map(([label, value, setValue]) => (
+        <View key={label} style={styles.toggleRow}>
+          <Text style={styles.toggleLabel}>{label}</Text>
+          <Switch
+            value={value}
+            onValueChange={setValue}
+            trackColor={{ true: THEME.darkGreen }}
+          />
+        </View>
+      ))}
+      <Pressable
+        style={styles.button}
+        disabled={savingPush}
+        onPress={() => {
+          setSavingPush(true);
+          setError(null);
+          setSaved(null);
+          void apiPostJson<ShopSettings & { ok: boolean; error?: string }>(
+            apiUrl,
+            token,
+            "/api/mobile/admin/settings",
+            {
+              intent: "save-admin-push",
+              adminPushNewRequest: pushNewRequest,
+              adminPushItemStatusUpdate: pushItemStatus,
+            },
+          )
+            .then((result) => {
+              if (!result.ok) {
+                setError(result.error || "Could not save push settings.");
+                return;
+              }
+              setPushNewRequest(result.adminPushNewRequest);
+              setPushItemStatus(result.adminPushItemStatusUpdate);
+              setRegisteredPushDevices(result.registeredPushDevices);
+              setSaved("iOS push notifications saved.");
+            })
+            .catch((caught) => {
+              setError(caught instanceof Error ? caught.message : "Could not save push settings.");
+            })
+            .finally(() => setSavingPush(false));
+        }}
+      >
+        <Text style={styles.buttonLabel}>
+          {savingPush ? "Saving…" : "Save push notifications"}
+        </Text>
       </Pressable>
       <Pressable style={styles.secondary} disabled={loading} onPress={() => void save("reset")}>
         <Text style={styles.secondaryLabel}>Reset warning to default</Text>
