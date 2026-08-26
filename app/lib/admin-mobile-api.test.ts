@@ -253,7 +253,8 @@ describe("iOS admin API payloads", () => {
       path.join(import.meta.dirname, "shopify-ops.server.ts"),
       "utf8",
     );
-    assert.doesNotMatch(shopifyOps, /draftOrderInvoiceSend/);
+    assert.match(shopifyOps, /portal never[\s\S]*calls draftOrderInvoiceSend/);
+    assert.doesNotMatch(shopifyOps, /draftOrderInvoiceSend\s*\(/);
     assert.doesNotMatch(shopifyOps, /SendPlantRequestInvoice/);
   });
 
