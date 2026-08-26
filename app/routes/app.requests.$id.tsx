@@ -1358,9 +1358,9 @@ function SendOfferSection({
           <s-stack direction="block" gap="base">
             <s-banner tone="critical">
               <s-text>
-                The offer is live but the offer-ready email has not reached the
-                customer. They have no idea it is waiting, and the hold is
-                already running. The Emails section below has the reason.
+                {holdControlsOn
+                  ? "The offer is live but the offer-ready email has not reached the customer. They have no idea it is waiting, and the hold is already running. The Emails section below has the reason."
+                  : "The response is recorded but the offer-ready email has not reached the customer. The Emails section below has the reason."}
               </s-text>
             </s-banner>
             <Form method="post">
