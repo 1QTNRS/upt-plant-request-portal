@@ -7,6 +7,7 @@ import type {
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+import { countRegisteredPushDevices } from "../lib/admin-push.server";
 import {
   createAdminMobileToken,
   listAdminMobileTokens,
@@ -26,12 +27,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   await ensureShopSeeded(shop);
   const settings = await getShopSettings(shop);
   const mobileTokens = await listAdminMobileTokens(shop);
+  const registeredPushDevices = await countRegisteredPushDevices(shop);
   return {
     fedexRemovalWarning: settings.fedexRemovalWarning,
     adminNotificationEmail: settings.adminNotificationEmail,
     adminEmailNewRequest: settings.adminEmailNewRequest,
     adminEmailCustomerResponse: settings.adminEmailCustomerResponse,
     adminEmailPaymentAfterVoid: settings.adminEmailPaymentAfterVoid,
+    adminPushNewRequest: settings.adminPushNewRequest,
+    adminPushItemStatusUpdate: settings.adminPushItemStatusUpdate,
+    registeredPushDevices,
     fedexProductHandle: settings.fedexProductHandle,
     missingSecrets: missingProductionSecrets(),
     mobileTokens: mobileTokens.map((token) => ({
@@ -82,6 +87,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: true, reset: false, section: "emails" as const };
   }
 
+  if (intent === "save-admin-push") {
+    await updateShopSettings(shop, {
+      adminPushNewRequest: form.get("adminPushNewRequest") === "on",
+      adminPushItemStatusUpdate: form.get("adminPushItemStatusUpdate") === "on",
+    });
+    return { saved: true, reset: false, section: "push" as const };
+  }
+
   await updateShopSettings(shop, {
     fedexRemovalWarning: String(form.get("fedexRemovalWarning") || ""),
     ...(form.has("adminNotificationEmail")
@@ -100,6 +113,8 @@ export default function Settings() {
     navigation.state !== "idle" && submittingIntent === "save";
   const savingEmails =
     navigation.state !== "idle" && submittingIntent === "save-admin-emails";
+  const savingPush =
+    navigation.state !== "idle" && submittingIntent === "save-admin-push";
   const [draft, setDraft] = useState(settings.fedexRemovalWarning);
   const [adminEmail, setAdminEmail] = useState(settings.adminNotificationEmail);
   const [emailNewRequest, setEmailNewRequest] = useState(settings.adminEmailNewRequest);
@@ -109,6 +124,10 @@ export default function Settings() {
   const [emailPaymentAfterVoid, setEmailPaymentAfterVoid] = useState(
     settings.adminEmailPaymentAfterVoid,
   );
+  const [pushNewRequest, setPushNewRequest] = useState(settings.adminPushNewRequest);
+  const [pushItemStatus, setPushItemStatus] = useState(
+    settings.adminPushItemStatusUpdate,
+  );
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
@@ -116,11 +135,15 @@ export default function Settings() {
     setEmailNewRequest(settings.adminEmailNewRequest);
     setEmailCustomerResponse(settings.adminEmailCustomerResponse);
     setEmailPaymentAfterVoid(settings.adminEmailPaymentAfterVoid);
+    setPushNewRequest(settings.adminPushNewRequest);
+    setPushItemStatus(settings.adminPushItemStatusUpdate);
   }, [
     settings.adminEmailCustomerResponse,
     settings.adminEmailNewRequest,
     settings.adminEmailPaymentAfterVoid,
     settings.adminNotificationEmail,
+    settings.adminPushItemStatusUpdate,
+    settings.adminPushNewRequest,
     settings.fedexRemovalWarning,
   ]);
 
@@ -133,7 +156,9 @@ export default function Settings() {
               ? "FedEx warning message reset to the default."
               : actionData.section === "emails"
                 ? "Email notifications saved."
-                : "Settings saved."}
+                : actionData.section === "push"
+                  ? "iOS push notifications saved."
+                  : "Settings saved."}
           </s-text>
         </s-banner>
       )}
@@ -288,6 +313,63 @@ export default function Settings() {
                   {...(savingEmails ? { loading: true } : {})}
                 >
                   Save email notifications
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </Form>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="iOS Push Notifications">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Separate from admin emails. These reach authorized iPhone admin
+            devices that have allowed notifications. Turning a type off does
+            not stop the underlying request or Accept/Reject.
+          </s-paragraph>
+          <s-text color="subdued">
+            {settings.registeredPushDevices === 0
+              ? "No iOS admin device is currently registered for push notifications."
+              : settings.registeredPushDevices === 1
+                ? "1 iOS admin device is registered for push notifications."
+                : `${settings.registeredPushDevices} iOS admin devices are registered for push notifications.`}
+          </s-text>
+          <Form method="post">
+            <s-stack direction="block" gap="base">
+              <input type="hidden" name="intent" value="save-admin-push" />
+              <label
+                htmlFor="admin-push-new-request"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="admin-push-new-request"
+                  type="checkbox"
+                  name="adminPushNewRequest"
+                  checked={pushNewRequest}
+                  onChange={(event) => setPushNewRequest(event.currentTarget.checked)}
+                />
+                <s-text>New Request</s-text>
+              </label>
+              <label
+                htmlFor="admin-push-item-status"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="admin-push-item-status"
+                  type="checkbox"
+                  name="adminPushItemStatusUpdate"
+                  checked={pushItemStatus}
+                  onChange={(event) => setPushItemStatus(event.currentTarget.checked)}
+                />
+                <s-text>Item Status Update</s-text>
+              </label>
+              <s-stack direction="inline" gap="small">
+                <s-button
+                  variant="primary"
+                  type="submit"
+                  {...(savingPush ? { loading: true } : {})}
+                >
+                  Save push notifications
                 </s-button>
               </s-stack>
             </s-stack>
