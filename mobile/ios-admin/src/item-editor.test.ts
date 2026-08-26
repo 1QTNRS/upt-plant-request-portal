@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  itemEditorSections,
   itemPhotos,
   offerFieldsEnabled,
+  reorderPhotos,
   routeOf,
+  showsExactPlantFields,
+  showsStockSearch,
   stockDropdownOpen,
+  THUMB_PAD,
+  THUMB_REMOVE_SIZE,
+  THUMB_SIZE,
 } from "./item-editor";
 import type { RequestItem } from "./types";
 
@@ -56,6 +63,38 @@ describe("item editor rules", () => {
       ),
       [{ id: "linked-stock", url: "https://cdn.example/stock.jpg" }],
     );
+  });
+
+  it("reorders photos without changing other fields", () => {
+    const photos = item().photos;
+    const next = reorderPhotos(photos, 0, 1);
+    assert.deepEqual(
+      next.map((photo) => photo.id),
+      ["p2", "p1"],
+    );
+    assert.equal(item().price, 250);
+    assert.equal(item().weightLbs, 8);
+    assert.equal(item().customerFacingNotes, "scar");
+  });
+
+  it("hides Exact Plant fields in Link Stock and keeps them for Exact Plant", () => {
+    assert.equal(showsExactPlantFields("exact_plant"), true);
+    assert.equal(showsExactPlantFields("growers_choice"), false);
+    assert.equal(showsStockSearch("growers_choice"), true);
+    assert.deepEqual(itemEditorSections("growers_choice"), [
+      "fulfillment",
+      "stock-search",
+      "linked-stock",
+      "customer-facing-notes",
+      "save-item",
+    ]);
+    assert.ok(itemEditorSections("growers_choice").indexOf("stock-search") <
+      itemEditorSections("growers_choice").indexOf("customer-facing-notes"));
+    assert.ok(!itemEditorSections("growers_choice").includes("offered-name"));
+    assert.ok(itemEditorSections("exact_plant").includes("offered-name"));
+    assert.ok(itemEditorSections("exact_plant").includes("price"));
+    assert.ok(THUMB_SIZE > 48);
+    assert.ok(THUMB_PAD + THUMB_REMOVE_SIZE > THUMB_REMOVE_SIZE);
   });
 
   it("keeps the stock dropdown attached to the input", () => {

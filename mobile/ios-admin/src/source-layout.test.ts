@@ -31,21 +31,45 @@ describe("iOS admin source layout", () => {
 
   it("keeps stock results in an attached dropdown and compact photos", () => {
     const editor = read("src/components/ItemEditor.tsx");
+    const strip = read("src/components/PhotoStrip.tsx");
+    const detail = read("src/screens/RequestDetailScreen.tsx");
     assert.match(editor, /styles\.dropdown/);
     assert.match(editor, /STOCK_DROPDOWN_MAX_HEIGHT/);
-    assert.match(editor, /styles\.thumbs/);
+    assert.match(editor, /GestureScrollView/);
+    assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
-    assert.doesNotMatch(editor, /styles\.photo/);
+    assert.match(editor, /setViewerIndex/);
+    assert.match(editor, /reorder-photos/);
+    assert.match(strip, /THUMB_SIZE/);
+    assert.match(strip, /paddingTop: THUMB_PAD/);
+    assert.match(strip, /overflow: "visible"/);
+    assert.match(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
+    assert.match(detail, /ui\.expirationDays/);
     assert.doesNotMatch(editor, /height: 160/);
   });
 
-  it("uses native stack swipe-back and a dark green tab bar", () => {
+  it("puts Link Stock search directly under fulfillment buttons", () => {
+    const editor = read("src/components/ItemEditor.tsx");
+    const fulfillment = editor.indexOf('(["exact_plant", "growers_choice", "not_available"]');
+    const search = editor.indexOf("Search live website stock");
+    const notes = editor.lastIndexOf("Customer-facing notes");
+    const offered = editor.indexOf("Offered name");
+    assert.ok(fulfillment > -1 && search > fulfillment);
+    assert.ok(notes > search);
+    assert.ok(offered > search);
+    assert.match(editor, /showsExactPlantFields/);
+    assert.match(editor, /linkedStock\.productTitle/);
+  });
+
+  it("uses native stack swipe-back and a taller centered tab bar", () => {
     const app = read("App.tsx");
     assert.match(app, /createNativeStackNavigator/);
     assert.match(app, /gestureEnabled: true/);
     assert.match(app, /fullScreenGestureEnabled: false/);
     assert.match(app, /backgroundColor: THEME\.darkGreen/);
     assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
+    assert.match(app, /TAB_BAR_CONTENT_HEIGHT/);
+    assert.match(app, /justifyContent: "center"/);
     assert.match(app, /insets\.bottom/);
   });
 });

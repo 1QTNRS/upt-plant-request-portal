@@ -89,4 +89,11 @@ export const ui = StyleSheet.create({
   chipLabel: { color: THEME.darkGreen, fontWeight: "600" },
   chipLabelOn: { color: THEME.white },
   filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  expirationDays: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16,
+    marginBottom: 12,
+  },
 });

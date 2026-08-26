@@ -33,6 +33,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const [shippingFeeOverride, setShippingFeeOverride] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
+  const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -100,8 +101,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     >
       <ScrollView
         contentContainerStyle={ui.page}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
+        scrollEnabled={!stockDropdownOpen}
       >
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={ui.link}>← Requests</Text>
@@ -126,6 +128,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             requestId={detail.id}
             onResult={applyResult}
             onError={setError}
+            onStockDropdownChange={setStockDropdownOpen}
           />
         ))}
 
@@ -155,7 +158,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                   amount below if you are combining shipments.
                 </Text>
               ) : null}
-              <View style={ui.filters}>
+              <View style={ui.expirationDays}>
                 {[3, 5, 7].map((days) => (
                   <Pressable
                     key={days}
