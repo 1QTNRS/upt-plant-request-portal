@@ -124,10 +124,13 @@ export function ItemEditor({
     };
   }, [item.id]);
 
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+
   useEffect(() => {
     draftRef.current = { offeredName, priceText, weightText, customerFacingNotes: notes };
-    onDraftChange?.(item.id, draftRef.current);
-  }, [offeredName, priceText, weightText, notes, item.id, onDraftChange]);
+    onDraftChangeRef.current?.(item.id, draftRef.current);
+  }, [offeredName, priceText, weightText, notes, item.id]);
 
   const dropdownVisible = stockDropdownOpen(
     stockFocused,
@@ -137,10 +140,13 @@ export function ItemEditor({
     stockClosed,
   );
 
+  const onStockDropdownChangeRef = useRef(onStockDropdownChange);
+  onStockDropdownChangeRef.current = onStockDropdownChange;
+
   useEffect(() => {
-    onStockDropdownChange?.(dropdownVisible);
-    return () => onStockDropdownChange?.(false);
-  }, [dropdownVisible, onStockDropdownChange]);
+    onStockDropdownChangeRef.current?.(dropdownVisible);
+    return () => onStockDropdownChangeRef.current?.(false);
+  }, [dropdownVisible]);
 
   async function act(
     body: Record<string, unknown>,
@@ -235,16 +241,19 @@ export function ItemEditor({
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
+  const registerFlushRef = useRef(registerFlush);
+  registerFlushRef.current = registerFlush;
+
   useEffect(() => {
     mountedRef.current = true;
-    registerFlush?.(item.id, () => persistDraftRef.current({ flush: true }));
+    registerFlushRef.current?.(item.id, () => persistDraftRef.current({ flush: true }));
     return () => {
       mountedRef.current = false;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       void persistDraftRef.current({ flush: true, silentUi: true });
-      registerFlush?.(item.id, null);
+      registerFlushRef.current?.(item.id, null);
     };
-  }, [item.id, registerFlush]);
+  }, [item.id]);
 
   async function setRoute(next: FulfillmentRoute) {
     await persistDraftRef.current({ flush: true });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,7 +14,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
-import { applyItemDraft, requestLooksSendable, type ItemDraft } from "../item-autosave";
+import {
+  applyItemDraft,
+  draftsEqual,
+  requestLooksSendable,
+  type ItemDraft,
+} from "../item-autosave";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
@@ -70,10 +75,17 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     if (result.request) setDetail(result.request);
   }
 
-  function registerFlush(itemId: string, flush: (() => Promise<boolean>) | null) {
+  const registerFlush = useCallback((itemId: string, flush: (() => Promise<boolean>) | null) => {
     if (flush) flushers.current.set(itemId, flush);
     else flushers.current.delete(itemId);
-  }
+  }, []);
+
+  const onDraftChange = useCallback((itemId: string, draft: ItemDraft) => {
+    setDrafts((current) => {
+      if (draftsEqual(current[itemId], draft)) return current;
+      return { ...current, [itemId]: draft };
+    });
+  }, []);
 
   async function flushPendingSaves() {
     const results = await Promise.all(
@@ -150,9 +162,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             onResult={applyResult}
             onError={setError}
             onStockDropdownChange={setStockDropdownOpen}
-            onDraftChange={(itemId, draft) =>
-              setDrafts((current) => ({ ...current, [itemId]: draft }))
-            }
+            onDraftChange={onDraftChange}
             registerFlush={registerFlush}
           />
         ))}

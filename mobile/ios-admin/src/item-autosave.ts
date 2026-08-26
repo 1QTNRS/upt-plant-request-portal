@@ -28,6 +28,17 @@ export function parseDecimalInput(text: string): ParsedDecimal {
   return { ok: true, value, complete: true };
 }
 
+export function draftsEqual(left?: ItemDraft | null, right?: ItemDraft | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.offeredName === right.offeredName &&
+    left.priceText === right.priceText &&
+    left.weightText === right.weightText &&
+    left.customerFacingNotes === right.customerFacingNotes
+  );
+}
+
 export function draftEqualsSaved(draft: ItemDraft, item: RequestItem): boolean {
   return (
     draft.offeredName === item.offeredName &&
