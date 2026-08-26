@@ -9,9 +9,16 @@ import {
   THUMB_SIZE,
   reorderPhotos,
 } from "../item-editor";
+import {
+  canPreviewPhoto,
+  canReorderPhoto,
+  showsProgressBar,
+  showsRetry,
+  type EditorPhoto,
+} from "../photo-upload";
 import { THEME } from "../theme";
 
-export type StripPhoto = { id: string; url: string };
+export type StripPhoto = EditorPhoto;
 
 type Props = {
   photos: StripPhoto[];
@@ -19,11 +26,19 @@ type Props = {
   onPreview: (index: number) => void;
   onRemove?: (photoId: string) => void;
   onReorder?: (photos: StripPhoto[]) => void;
+  onRetry?: (photoId: string) => void;
 };
 
 const SLOT = THUMB_SIZE + THUMB_GAP;
 
-export function PhotoStrip({ photos, canEdit, onPreview, onRemove, onReorder }: Props) {
+export function PhotoStrip({
+  photos,
+  canEdit,
+  onPreview,
+  onRemove,
+  onReorder,
+  onRetry,
+}: Props) {
   const [order, setOrder] = useState(photos);
   const orderRef = useRef(photos);
   const draggedId = useRef<string | null>(null);
@@ -53,7 +68,7 @@ export function PhotoStrip({ photos, canEdit, onPreview, onRemove, onReorder }: 
     >
       {order.map((photo, index) => {
         const pan = Gesture.Pan()
-          .enabled(canEdit && Boolean(onReorder) && photo.id !== "linked-stock")
+          .enabled(canEdit && Boolean(onReorder) && canReorderPhoto(photo))
           .activateAfterLongPress(220)
           .runOnJS(true)
           .onStart(() => {
@@ -83,11 +98,35 @@ export function PhotoStrip({ photos, canEdit, onPreview, onRemove, onReorder }: 
           <GestureDetector key={photo.id} gesture={pan}>
             <View style={styles.thumbWrap}>
               <Pressable
-                onPress={() => onPreview(index)}
+                onPress={() => {
+                  if (canPreviewPhoto(photo)) onPreview(index);
+                }}
                 accessibilityRole="imagebutton"
-                accessibilityLabel="Preview photo"
+                accessibilityLabel={
+                  canPreviewPhoto(photo) ? "Preview photo" : "Photo still uploading"
+                }
               >
                 <Image source={{ uri: photo.url }} style={styles.thumb} />
+                {showsProgressBar(photo) ? (
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: THUMB_SIZE * Math.max(0.08, Math.min(photo.progress, 1)) },
+                      ]}
+                    />
+                  </View>
+                ) : null}
+                {showsRetry(photo) ? (
+                  <Pressable
+                    style={styles.retry}
+                    onPress={() => onRetry?.(photo.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry photo upload"
+                  >
+                    <Text style={styles.retryLabel}>Retry</Text>
+                  </Pressable>
+                ) : null}
               </Pressable>
               {canEdit && onRemove && photo.id !== "linked-stock" ? (
                 <Pressable
@@ -129,6 +168,32 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: THEME.mint,
   },
+  progressTrack: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 4,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 4,
+    backgroundColor: THEME.yellow,
+  },
+  retry: {
+    position: "absolute",
+    left: 4,
+    right: 4,
+    bottom: 6,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 6,
+    alignItems: "center",
+    paddingVertical: 3,
+  },
+  retryLabel: { color: THEME.white, fontSize: 11, fontWeight: "700" },
   remove: {
     position: "absolute",
     top: -6,

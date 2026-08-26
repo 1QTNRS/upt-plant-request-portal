@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
+import { applyItemDraft, requestLooksSendable, type ItemDraft } from "../item-autosave";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
@@ -35,6 +36,8 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
   const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+  const flushers = useRef(new Map<string, () => Promise<boolean>>());
 
   useEffect(() => {
     void (async () => {
@@ -67,6 +70,18 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     if (result.request) setDetail(result.request);
   }
 
+  function registerFlush(itemId: string, flush: (() => Promise<boolean>) | null) {
+    if (flush) flushers.current.set(itemId, flush);
+    else flushers.current.delete(itemId);
+  }
+
+  async function flushPendingSaves() {
+    const results = await Promise.all(
+      [...flushers.current.values()].map((flush) => flush()),
+    );
+    return results.every(Boolean);
+  }
+
   async function runAction(body: Record<string, unknown>) {
     if (!detail) return;
     setError(null);
@@ -95,6 +110,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   }
 
   const holdControlsOn = sendOfferHoldControlsEnabled(detail.items);
+  const draftedItems = detail.items.map((item) => applyItemDraft(item, drafts[item.id]));
+  const canSendOffer =
+    detail.status === "New" && (detail.canSendOffer || requestLooksSendable(draftedItems));
 
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
@@ -132,6 +150,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             onResult={applyResult}
             onError={setError}
             onStockDropdownChange={setStockDropdownOpen}
+            onDraftChange={(itemId, draft) =>
+              setDrafts((current) => ({ ...current, [itemId]: draft }))
+            }
+            registerFlush={registerFlush}
           />
         ))}
 
@@ -156,11 +178,13 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             </>
           ) : (
             <>
-              {detail.offerProblems.map((problem) => (
-                <Text key={problem.itemName} style={ui.error}>
-                  {problem.itemName} is missing {problem.missing.join(", ")}.
-                </Text>
-              ))}
+              {!requestLooksSendable(draftedItems)
+                ? detail.offerProblems.map((problem) => (
+                    <Text key={problem.itemName} style={ui.error}>
+                      {problem.itemName} is missing {problem.missing.join(", ")}.
+                    </Text>
+                  ))
+                : null}
               {!holdControlsOn ? (
                 <Text style={ui.muted}>
                   Nothing on this request is purchasable. Send offer notifies the
@@ -207,14 +231,28 @@ export function RequestDetailScreen({ navigation, route }: Props) {
               </Text>
               </View>
               <Pressable
-                style={[ui.button, !detail.canSendOffer && ui.buttonDisabled]}
-                disabled={!detail.canSendOffer || loading}
+                style={[ui.button, !canSendOffer && ui.buttonDisabled]}
+                disabled={!canSendOffer || loading}
                 onPress={() =>
-                  void runAction({
-                    intent: "send-offer",
-                    expirationDays,
-                    shippingFeeOverride: holdControlsOn ? shippingFeeOverride : "",
-                  })
+                  void (async () => {
+                    setLoading(true);
+                    try {
+                      const flushed = await flushPendingSaves();
+                      if (!flushed) {
+                        setError(
+                          "Couldn’t save the latest item values. Retry, then send the offer.",
+                        );
+                        return;
+                      }
+                      await runAction({
+                        intent: "send-offer",
+                        expirationDays,
+                        shippingFeeOverride: holdControlsOn ? shippingFeeOverride : "",
+                      });
+                    } finally {
+                      setLoading(false);
+                    }
+                  })()
                 }
               >
                 <Text style={ui.buttonLabel}>Send offer</Text>
