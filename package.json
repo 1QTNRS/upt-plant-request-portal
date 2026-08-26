@@ -26,7 +26,7 @@
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
     "pretest": "npm run prisma:generate",
-    "test": "tsx --test --test-concurrency=1 app/lib/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 app/lib/*.test.ts mobile/ios-admin/src/*.test.ts",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:e2e:dev-store": "playwright test --config=playwright.dev-store.config.ts"
   },

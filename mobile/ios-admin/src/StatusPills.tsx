@@ -2,17 +2,6 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { THEME } from "./theme";
 
-export const STATUS_FILTERS = [
-  { value: "All", label: "All" },
-  { value: "New", label: "New" },
-  { value: "Pending", label: "Pending" },
-  { value: "Expired", label: "Expired" },
-  { value: "Closed", label: "Closed" },
-  { value: "ExistingOrder", label: "Existing Order" },
-] as const;
-
-export type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
-
 function pillColors(status: string) {
   if (status === "Closed") {
     return { backgroundColor: THEME.darkGreen, color: THEME.white, borderColor: THEME.darkGreen };

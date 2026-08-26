@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
+import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type {
   ExactPlantActionResult,
@@ -18,6 +22,8 @@ import type {
   ExactPlantReview,
   ExactPlantRow,
 } from "../types";
+import { ui } from "../ui";
+import type { ExactPlantsStackParamList } from "./navigation-types";
 
 const FILTERS: ExactPlantFilter[] = [
   "all",
@@ -35,16 +41,111 @@ const FILTER_LABELS: Record<ExactPlantFilter, string> = {
   dismissed: "Dismissed",
 };
 
-type Props = {
-  apiUrl: string;
-  token: string;
-  onOpenRequest: (requestId: string) => void;
-};
+type ListProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlantsList">;
 
-export function ExactPlantsScreen({ apiUrl, token, onOpenRequest }: Props) {
+export function ExactPlantsScreen({ navigation }: ListProps) {
+  const { apiUrl, token } = useSession();
   const [filter, setFilter] = useState<ExactPlantFilter>("not_yet_listed");
   const [counts, setCounts] = useState<Record<ExactPlantFilter, number> | null>(null);
   const [items, setItems] = useState<ExactPlantRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadQueue = useCallback(
+    async (nextFilter = filter, mode: "initial" | "refresh" = "initial") => {
+      setError(null);
+      if (mode === "refresh") setRefreshing(true);
+      else setLoading(true);
+      try {
+        const payload = await apiGet<{
+          counts: Record<ExactPlantFilter, number>;
+          items: ExactPlantRow[];
+        }>(apiUrl, token, `/api/mobile/admin/exact-plants?listing=${nextFilter}`);
+        setCounts(payload.counts);
+        setItems(payload.items);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not load EXACT PLANTS.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [apiUrl, filter, token],
+  );
+
+  useEffect(() => {
+    void loadQueue(filter, "initial");
+  }, [filter, loadQueue]);
+
+  return (
+    <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
+      <Text style={ui.title}>EXACT PLANTS</Text>
+      <Text style={ui.muted}>
+        Review declined or expired exact plants. Nothing goes live until you approve.
+      </Text>
+      <View style={ui.filters}>
+        {FILTERS.map((value) => (
+          <Pressable
+            key={value}
+            style={[ui.chip, filter === value && ui.chipOn]}
+            onPress={() => setFilter(value)}
+          >
+            <Text style={[ui.chipLabel, filter === value && ui.chipLabelOn]}>
+              {FILTER_LABELS[value]}
+              {counts ? ` (${counts[value]})` : ""}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {error ? <Text style={ui.error}>{error}</Text> : null}
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void loadQueue(filter, "refresh")}
+            tintColor={THEME.darkGreen}
+          />
+        }
+      >
+        {loading && items.length === 0 ? <ActivityIndicator color={THEME.darkGreen} /> : null}
+        {items.map((row) => (
+          <Pressable
+            key={row.requestItemId}
+            style={ui.card}
+            onPress={() =>
+              row.listingStatus === "dismissed"
+                ? navigation.getParent()?.navigate("Requests", {
+                    screen: "RequestDetail",
+                    params: { requestId: row.requestId },
+                  })
+                : navigation.navigate("ExactPlantsReview", { itemId: row.requestItemId })
+            }
+          >
+            {row.photoUrl ? <Image source={{ uri: row.photoUrl }} style={styles.photo} /> : null}
+            <Text style={ui.cardTitle}>{row.title}</Text>
+            <Text style={ui.cardMeta}>
+              {row.requestNumber} · {row.listingLabel}
+            </Text>
+            <Text style={ui.muted}>
+              {row.releaseLabel} · ${row.price.toFixed(2)} · {row.weightLbs} lb
+            </Text>
+            {row.lastError ? <Text style={ui.error}>{row.lastError}</Text> : null}
+          </Pressable>
+        ))}
+        {!loading && items.length === 0 ? (
+          <Text style={ui.muted}>No exact plants match this filter.</Text>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+type ReviewProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlantsReview">;
+
+export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
+  const { apiUrl, token } = useSession();
+  const { itemId } = route.params;
   const [review, setReview] = useState<ExactPlantReview | null>(null);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
@@ -53,28 +154,6 @@ export function ExactPlantsScreen({ apiUrl, token, onOpenRequest }: Props) {
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function loadQueue(nextFilter = filter) {
-    setError(null);
-    setLoading(true);
-    try {
-      const payload = await apiGet<{
-        counts: Record<ExactPlantFilter, number>;
-        items: ExactPlantRow[];
-      }>(apiUrl, token, `/api/mobile/admin/exact-plants?listing=${nextFilter}`);
-      setCounts(payload.counts);
-      setItems(payload.items);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load EXACT PLANTS.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadQueue();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
 
   function applyReview(next: ExactPlantReview) {
     setReview(next);
@@ -85,23 +164,25 @@ export function ExactPlantsScreen({ apiUrl, token, onOpenRequest }: Props) {
     setConfirmDismiss(false);
   }
 
-  async function openReview(itemId: string) {
-    setError(null);
-    setLoading(true);
-    try {
-      applyReview(
-        await apiGet<ExactPlantReview>(
-          apiUrl,
-          token,
-          `/api/mobile/admin/exact-plants/${itemId}`,
-        ),
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load that plant.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    void (async () => {
+      setError(null);
+      setLoading(true);
+      try {
+        applyReview(
+          await apiGet<ExactPlantReview>(
+            apiUrl,
+            token,
+            `/api/mobile/admin/exact-plants/${itemId}`,
+          ),
+        );
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not load that plant.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [apiUrl, itemId, token]);
 
   async function runAction(body: Record<string, unknown>) {
     if (!review) return;
@@ -120,10 +201,7 @@ export function ExactPlantsScreen({ apiUrl, token, onOpenRequest }: Props) {
         return;
       }
       if (result.review) applyReview(result.review);
-      else {
-        setReview(null);
-        await loadQueue();
-      }
+      else navigation.goBack();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save.");
     } finally {
@@ -131,257 +209,133 @@ export function ExactPlantsScreen({ apiUrl, token, onOpenRequest }: Props) {
     }
   }
 
-  if (review) {
-    return (
-      <ScrollView contentContainerStyle={styles.page}>
-        <Pressable
-          onPress={() => {
-            setReview(null);
-            void loadQueue();
-          }}
-        >
-          <Text style={styles.link}>← EXACT PLANTS</Text>
-        </Pressable>
-        <Text style={styles.title}>{review.listed ? "Listed" : "Review listing"}</Text>
-        <Text style={styles.cardMeta}>{review.releaseLabel}</Text>
-        {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        {review.listed ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{review.draft.title}</Text>
-            <Text style={styles.muted}>
-              ${review.draft.price.toFixed(2)} · {review.draft.weightLbs} lb
-            </Text>
-            <Pressable onPress={() => onOpenRequest(review.requestId)}>
-              <Text style={styles.link}>Open the request</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.muted}>
-              Nothing is published until you approve. Customer notes stay off the listing.
-            </Text>
-            <Text style={styles.label}>Product title</Text>
-            <TextInput value={title} onChangeText={setTitle} style={styles.input} />
-            <View style={styles.row}>
-              <View style={styles.half}>
-                <Text style={styles.label}>Price</Text>
-                <TextInput
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                  style={styles.input}
-                />
-              </View>
-              <View style={styles.half}>
-                <Text style={styles.label}>Weight (lb)</Text>
-                <TextInput
-                  value={weightLbs}
-                  onChangeText={setWeightLbs}
-                  keyboardType="decimal-pad"
-                  style={styles.input}
-                />
-              </View>
-            </View>
-            {photoUrls.map((url, index) => (
-              <View key={`${url}-${index}`} style={styles.photoRow}>
-                <Image source={{ uri: url }} style={styles.thumb} />
-                <Pressable
-                  onPress={() =>
-                    setPhotoUrls((current) =>
-                      current.filter((_, photoIndex) => photoIndex !== index),
-                    )
-                  }
-                >
-                  <Text style={styles.link}>Remove</Text>
-                </Pressable>
-              </View>
-            ))}
-            {review.canList ? (
-              <Pressable
-                style={styles.button}
-                disabled={loading}
-                onPress={() =>
-                  void runAction({
-                    intent: "create-listing",
-                    title,
-                    price,
-                    weightLbs,
-                    photoUrls,
-                  })
-                }
-              >
-                <Text style={styles.buttonLabel}>
-                  {review.listing?.status === "failed"
-                    ? "Retry EXACT PLANTS listing"
-                    : "Approve and create listing"}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        )}
-
-        {review.canDismiss ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Dismiss from EXACT PLANTS</Text>
-            <Text style={styles.muted}>
-              Removes this plant from the queue. No Shopify product is created. History stays.
-            </Text>
-            {confirmDismiss ? (
-              <Pressable
-                style={styles.danger}
-                onPress={() =>
-                  void runAction({
-                    intent: "dismiss-exact-plant",
-                    confirmed: "true",
-                  })
-                }
-              >
-                <Text style={styles.buttonLabel}>Confirm dismiss</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={styles.secondary}
-                onPress={() => void runAction({ intent: "dismiss-exact-plant" })}
-              >
-                <Text style={styles.secondaryLabel}>Dismiss from EXACT PLANTS</Text>
-              </Pressable>
-            )}
-          </View>
-        ) : null}
-      </ScrollView>
-    );
-  }
-
   return (
-    <View style={styles.screen}>
-      <Text style={styles.title}>EXACT PLANTS</Text>
-      <Text style={styles.muted}>
-        Review declined or expired exact plants. Nothing goes live until you approve.
-      </Text>
-      <View style={styles.filters}>
-        {FILTERS.map((value) => (
+    <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
+    <ScrollView contentContainerStyle={ui.page} keyboardShouldPersistTaps="handled">
+      <Pressable onPress={() => navigation.goBack()}>
+        <Text style={ui.link}>← EXACT PLANTS</Text>
+      </Pressable>
+      <Text style={ui.title}>{review?.listed ? "Listed" : "Review listing"}</Text>
+      {review ? <Text style={ui.cardMeta}>{review.releaseLabel}</Text> : null}
+      {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
+      {error ? <Text style={ui.error}>{error}</Text> : null}
+
+      {review?.listed ? (
+        <View style={ui.card}>
+          <Text style={ui.cardTitle}>{review.draft.title}</Text>
+          <Text style={ui.muted}>
+            ${review.draft.price.toFixed(2)} · {review.draft.weightLbs} lb
+          </Text>
           <Pressable
-            key={value}
-            style={[styles.chip, filter === value && styles.chipOn]}
-            onPress={() => {
-              setFilter(value);
-              void loadQueue(value);
-            }}
-          >
-            <Text style={[styles.chipLabel, filter === value && styles.chipLabelOn]}>
-              {FILTER_LABELS[value]}
-              {counts ? ` (${counts[value]})` : ""}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ScrollView>
-        {loading && items.length === 0 ? <ActivityIndicator color={THEME.darkGreen} /> : null}
-        {items.map((row) => (
-          <Pressable
-            key={row.requestItemId}
-            style={styles.card}
             onPress={() =>
-              row.listingStatus === "dismissed"
-                ? onOpenRequest(row.requestId)
-                : void openReview(row.requestItemId)
+              navigation.getParent()?.navigate("Requests", {
+                screen: "RequestDetail",
+                params: { requestId: review.requestId },
+              })
             }
           >
-            {row.photoUrl ? <Image source={{ uri: row.photoUrl }} style={styles.photo} /> : null}
-            <Text style={styles.cardTitle}>{row.title}</Text>
-            <Text style={styles.cardMeta}>
-              {row.requestNumber} · {row.listingLabel}
-            </Text>
-            <Text style={styles.muted}>
-              {row.releaseLabel} · ${row.price.toFixed(2)} · {row.weightLbs} lb
-            </Text>
-            {row.lastError ? <Text style={styles.error}>{row.lastError}</Text> : null}
+            <Text style={ui.link}>Open the request</Text>
           </Pressable>
-        ))}
-        {!loading && items.length === 0 ? (
-          <Text style={styles.muted}>No exact plants match this filter.</Text>
-        ) : null}
-      </ScrollView>
-    </View>
+        </View>
+      ) : review ? (
+        <View style={ui.card}>
+          <Text style={ui.muted}>
+            Nothing is published until you approve. Customer notes stay off the listing.
+          </Text>
+          <Text style={ui.label}>Product title</Text>
+          <TextInput value={title} onChangeText={setTitle} style={ui.input} />
+          <View style={ui.row}>
+            <View style={ui.flexItem}>
+              <Text style={ui.label}>Price</Text>
+              <TextInput
+                value={price}
+                onChangeText={setPrice}
+                keyboardType="decimal-pad"
+                style={ui.input}
+              />
+            </View>
+            <View style={ui.flexItem}>
+              <Text style={ui.label}>Weight (lb)</Text>
+              <TextInput
+                value={weightLbs}
+                onChangeText={setWeightLbs}
+                keyboardType="decimal-pad"
+                style={ui.input}
+              />
+            </View>
+          </View>
+          {photoUrls.map((url, index) => (
+            <View key={`${url}-${index}`} style={styles.photoRow}>
+              <Image source={{ uri: url }} style={styles.thumb} />
+              <Pressable
+                onPress={() =>
+                  setPhotoUrls((current) =>
+                    current.filter((_, photoIndex) => photoIndex !== index),
+                  )
+                }
+              >
+                <Text style={ui.link}>Remove</Text>
+              </Pressable>
+            </View>
+          ))}
+          {review.canList ? (
+            <Pressable
+              style={ui.button}
+              disabled={loading}
+              onPress={() =>
+                void runAction({
+                  intent: "create-listing",
+                  title,
+                  price,
+                  weightLbs,
+                  photoUrls,
+                })
+              }
+            >
+              <Text style={ui.buttonLabel}>
+                {review.listing?.status === "failed"
+                  ? "Retry EXACT PLANTS listing"
+                  : "Approve and create listing"}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {review?.canDismiss ? (
+        <View style={ui.card}>
+          <Text style={ui.cardTitle}>Dismiss from EXACT PLANTS</Text>
+          <Text style={ui.muted}>
+            Removes this plant from the queue. No Shopify product is created. History stays.
+          </Text>
+          {confirmDismiss ? (
+            <Pressable
+              style={ui.danger}
+              onPress={() =>
+                void runAction({
+                  intent: "dismiss-exact-plant",
+                  confirmed: "true",
+                })
+              }
+            >
+              <Text style={ui.buttonLabel}>Confirm dismiss</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={ui.secondary}
+              onPress={() => void runAction({ intent: "dismiss-exact-plant" })}
+            >
+              <Text style={ui.secondaryLabel}>Dismiss from EXACT PLANTS</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+    </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 16 },
-  page: { padding: 16, gap: 12 },
-  title: {
-    color: THEME.darkGreen,
-    fontSize: 28,
-    fontWeight: "700",
-    fontFamily: "Georgia",
-    marginBottom: 8,
-  },
-  muted: { color: THEME.muted, lineHeight: 20, marginBottom: 8 },
-  label: { color: THEME.darkGreen, fontWeight: "600", marginTop: 8 },
-  input: {
-    backgroundColor: THEME.white,
-    borderColor: THEME.line,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    color: THEME.darkGreen,
-    marginBottom: 8,
-  },
-  button: {
-    backgroundColor: THEME.darkGreen,
-    minHeight: 48,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  buttonLabel: { color: THEME.white, fontWeight: "700" },
-  secondary: {
-    borderColor: THEME.darkGreen,
-    borderWidth: 1,
-    minHeight: 44,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-    backgroundColor: THEME.white,
-  },
-  secondaryLabel: { color: THEME.darkGreen, fontWeight: "700" },
-  danger: {
-    backgroundColor: "#8e1f0b",
-    minHeight: 48,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  link: { color: THEME.darkGreen, fontWeight: "600" },
-  error: { color: "#8e1f0b", marginBottom: 8 },
-  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
-  chip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: THEME.line,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: THEME.white,
-  },
-  chipOn: { backgroundColor: THEME.darkGreen, borderColor: THEME.darkGreen },
-  chipLabel: { color: THEME.darkGreen, fontWeight: "600" },
-  chipLabelOn: { color: THEME.white },
-  card: {
-    backgroundColor: THEME.white,
-    borderColor: THEME.line,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-  },
-  cardTitle: { color: THEME.darkGreen, fontWeight: "700", fontSize: 16 },
-  cardMeta: { color: THEME.darkGreen, marginTop: 4, marginBottom: 4 },
   photo: { width: "100%", height: 140, borderRadius: 10, marginBottom: 8 },
   thumb: { width: 72, height: 72, borderRadius: 8 },
   photoRow: {
@@ -390,6 +344,4 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  row: { flexDirection: "row", gap: 8 },
-  half: { flex: 1 },
 });
