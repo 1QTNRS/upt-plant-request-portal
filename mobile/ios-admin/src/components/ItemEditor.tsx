@@ -11,6 +11,14 @@ import * as ImagePicker from "expo-image-picker";
 
 import { apiPost, apiUploadPhoto } from "../api";
 import {
+  AUTOSAVE_DEBOUNCE_MS,
+  autosaveLabel,
+  draftToSavePayload,
+  shouldDebounceSave,
+  type AutosaveStatus,
+  type ItemDraft,
+} from "../item-autosave";
+import {
   itemPhotos,
   offerFieldsEnabled,
   routeLabel,
@@ -20,11 +28,22 @@ import {
   STOCK_DROPDOWN_MAX_HEIGHT,
   stockDropdownOpen,
 } from "../item-editor";
+import { itemNoteLines } from "../item-notes";
+import {
+  canPreviewPhoto,
+  canReorderPhoto,
+  mergeEditorPhotos,
+  orderedPhotoIdsAfterUpload,
+  PHOTO_UPLOAD_CONCURRENCY,
+  photosFromPickerAssets,
+  runPool,
+  type EditorPhoto,
+} from "../photo-upload";
 import { THEME } from "../theme";
 import type { ActionResult, FulfillmentRoute, RequestItem, StockCandidate } from "../types";
 import { UNAVAILABLE_REASONS } from "../types";
 import { ui } from "../ui";
-import { PhotoStrip, type StripPhoto } from "./PhotoStrip";
+import { PhotoStrip } from "./PhotoStrip";
 import { PhotoViewer } from "./PhotoViewer";
 
 type Props = {
@@ -36,6 +55,8 @@ type Props = {
   onResult: (result: ActionResult) => void;
   onError: (message: string) => void;
   onStockDropdownChange?: (open: boolean) => void;
+  onDraftChange?: (itemId: string, draft: ItemDraft) => void;
+  registerFlush?: (itemId: string, flush: (() => Promise<boolean>) | null) => void;
 };
 
 export function ItemEditor({
@@ -47,12 +68,14 @@ export function ItemEditor({
   onResult,
   onError,
   onStockDropdownChange,
+  onDraftChange,
+  registerFlush,
 }: Props) {
   const route = routeOf(item);
   const fieldsOn = canEditItems && offerFieldsEnabled(route);
   const exactFields = canEditItems && showsExactPlantFields(route);
   const stockMode = showsStockSearch(route);
-  const photos = itemPhotos(item);
+  const noteLines = itemNoteLines(item);
 
   const [offeredName, setOfferedName] = useState(item.offeredName);
   const [priceText, setPriceText] = useState(String(item.price ?? ""));
@@ -66,14 +89,45 @@ export function ItemEditor({
   const [stockClosed, setStockClosed] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [autosave, setAutosave] = useState<AutosaveStatus>("idle");
+  const [pendingPhotos, setPendingPhotos] = useState<EditorPhoto[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortedKeys = useRef(new Set<string>());
+  const persistInFlight = useRef<Promise<boolean> | null>(null);
+  const persistDraftRef = useRef<(options?: { flush?: boolean; silentUi?: boolean }) => Promise<boolean>>(
+    async () => true,
+  );
+  const mountedRef = useRef(true);
+  const draftRef = useRef<ItemDraft>({
+    offeredName: item.offeredName,
+    priceText: String(item.price ?? ""),
+    weightText: String(item.weightLbs ?? ""),
+    customerFacingNotes: item.customerFacingNotes,
+  });
+  const itemRef = useRef(item);
+  itemRef.current = item;
+
+  const photos = mergeEditorPhotos(itemPhotos(item), pendingPhotos);
+  const readyPhotos = photos.filter(canPreviewPhoto);
 
   useEffect(() => {
     setOfferedName(item.offeredName);
     setPriceText(String(item.price ?? ""));
     setWeightText(String(item.weightLbs ?? ""));
     setNotes(item.customerFacingNotes);
+    draftRef.current = {
+      offeredName: item.offeredName,
+      priceText: String(item.price ?? ""),
+      weightText: String(item.weightLbs ?? ""),
+      customerFacingNotes: item.customerFacingNotes,
+    };
   }, [item.id]);
+
+  useEffect(() => {
+    draftRef.current = { offeredName, priceText, weightText, customerFacingNotes: notes };
+    onDraftChange?.(item.id, draftRef.current);
+  }, [offeredName, priceText, weightText, notes, item.id, onDraftChange]);
 
   const dropdownVisible = stockDropdownOpen(
     stockFocused,
@@ -88,7 +142,10 @@ export function ItemEditor({
     return () => onStockDropdownChange?.(false);
   }, [dropdownVisible, onStockDropdownChange]);
 
-  async function act(body: Record<string, unknown>, options?: { silent?: boolean }) {
+  async function act(
+    body: Record<string, unknown>,
+    options?: { silent?: boolean; skipResult?: boolean },
+  ) {
     if (!options?.silent) setBusy(true);
     try {
       const result = await apiPost(
@@ -98,24 +155,99 @@ export function ItemEditor({
         body,
       );
       if (!result.ok) {
-        onError(result.error || "That action failed.");
+        if (mountedRef.current) onError(result.error || "That action failed.");
         return result;
       }
       if (result.stockSearch) {
         setStockResults(result.stockSearch.results);
         setStockClosed(false);
       }
-      if (result.request) onResult(result);
+      if (result.request && !options?.skipResult) onResult(result);
       return result;
     } catch (caught) {
-      onError(caught instanceof Error ? caught.message : "Could not save.");
+      if (mountedRef.current) {
+        onError(caught instanceof Error ? caught.message : "Could not save.");
+      }
       return undefined;
     } finally {
       if (!options?.silent) setBusy(false);
     }
   }
 
+  async function persistDraft(options?: { flush?: boolean; silentUi?: boolean }): Promise<boolean> {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (persistInFlight.current) {
+      await persistInFlight.current;
+    }
+    const run = (async () => {
+      if (!options?.flush && !shouldDebounceSave(draftRef.current)) return true;
+      const current = itemRef.current;
+      const payload = draftToSavePayload(draftRef.current);
+      const same =
+        payload.offeredName === current.offeredName &&
+        payload.customerFacingNotes === current.customerFacingNotes &&
+        payload.price === current.price &&
+        payload.weightLbs === current.weightLbs;
+      if (same) return true;
+      if (!options?.silentUi && mountedRef.current) setAutosave("saving");
+      const result = await act(
+        {
+          intent: "update-item",
+          itemId: current.id,
+          customerFacingNotes: payload.customerFacingNotes,
+          ...(route === "not_available"
+            ? {
+                availability: "not_available",
+                unavailableReason: current.unavailableReason || UNAVAILABLE_REASONS[3],
+              }
+            : { availability: "available", fulfillmentType: route }),
+          ...(route === "exact_plant"
+            ? {
+                offeredName: payload.offeredName,
+                price: payload.price,
+                weightLbs: payload.weightLbs,
+              }
+            : {}),
+        },
+        { silent: true, skipResult: options?.silentUi },
+      );
+      if (mountedRef.current && !options?.silentUi) {
+        setAutosave(result?.ok ? "saved" : "failed");
+      }
+      return Boolean(result?.ok);
+    })();
+    persistInFlight.current = run;
+    try {
+      return await run;
+    } finally {
+      if (persistInFlight.current === run) persistInFlight.current = null;
+    }
+  }
+  persistDraftRef.current = persistDraft;
+
+  function scheduleAutosave() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void persistDraftRef.current();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    mountedRef.current = true;
+    registerFlush?.(item.id, () => persistDraftRef.current({ flush: true }));
+    return () => {
+      mountedRef.current = false;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      void persistDraftRef.current({ flush: true, silentUi: true });
+      registerFlush?.(item.id, null);
+    };
+  }, [item.id, registerFlush]);
+
   async function setRoute(next: FulfillmentRoute) {
+    await persistDraftRef.current({ flush: true });
     await act(
       next === "not_available"
         ? {
@@ -131,27 +263,6 @@ export function ItemEditor({
             fulfillmentType: next,
           },
     );
-  }
-
-  async function saveItem() {
-    await act({
-      intent: "update-item",
-      itemId: item.id,
-      customerFacingNotes: notes,
-      ...(route === "not_available"
-        ? {
-            availability: "not_available",
-            unavailableReason: item.unavailableReason || UNAVAILABLE_REASONS[3],
-          }
-        : { availability: "available", fulfillmentType: route }),
-      ...(exactFields
-        ? {
-            offeredName,
-            price: Number(priceText) || 0,
-            weightLbs: Number(weightText) || 0,
-          }
-        : {}),
-    });
   }
 
   async function searchStock(term: string) {
@@ -176,6 +287,55 @@ export function ItemEditor({
     }, 300);
   }
 
+  function patchPending(clientKey: string, patch: Partial<EditorPhoto>) {
+    setPendingPhotos((current) =>
+      current.map((photo) => (photo.clientKey === clientKey ? { ...photo, ...patch } : photo)),
+    );
+  }
+
+  async function uploadOne(photo: EditorPhoto): Promise<string | undefined> {
+    if (!photo.file || !photo.clientKey) return undefined;
+    if (abortedKeys.current.has(photo.clientKey)) return undefined;
+    const signal = { aborted: false };
+    const watch = setInterval(() => {
+      if (abortedKeys.current.has(photo.clientKey!)) signal.aborted = true;
+    }, 120);
+    const beforeIds = new Set(itemPhotos(itemRef.current).map((entry) => entry.id));
+    try {
+      const result = await apiUploadPhoto(
+        apiUrl,
+        token,
+        `/api/mobile/admin/requests/${requestId}`,
+        item.id,
+        photo.file,
+        {
+          uploadKey: photo.clientKey,
+          signal,
+          onProgress: (progress) => patchPending(photo.clientKey!, { progress }),
+        },
+      );
+      if (abortedKeys.current.has(photo.clientKey)) return undefined;
+      if (!result.ok) {
+        patchPending(photo.clientKey, { status: "failed" });
+        onError(result.error || "Could not upload that photo.");
+        return undefined;
+      }
+      const added = result.request?.items
+        .find((entry) => entry.id === itemRef.current.id)
+        ?.photos.find((entry) => !beforeIds.has(entry.id));
+      setPendingPhotos((current) => current.filter((entry) => entry.clientKey !== photo.clientKey));
+      if (result.request) onResult(result);
+      return added?.id;
+    } catch (caught) {
+      if (abortedKeys.current.has(photo.clientKey)) return undefined;
+      patchPending(photo.clientKey, { status: "failed" });
+      onError(caught instanceof Error ? caught.message : "Could not upload that photo.");
+      return undefined;
+    } finally {
+      clearInterval(watch);
+    }
+  }
+
   async function pickPhoto() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -185,38 +345,44 @@ export function ItemEditor({
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
+      allowsMultipleSelection: true,
+      orderedSelection: true,
     });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
-    setBusy(true);
-    try {
-      const result = await apiUploadPhoto(
-        apiUrl,
-        token,
-        `/api/mobile/admin/requests/${requestId}`,
-        item.id,
-        {
-          uri: asset.uri,
-          name: asset.fileName || "plant.jpg",
-          type: asset.mimeType || "image/jpeg",
-        },
-      );
-      if (!result.ok) onError(result.error || "Could not upload that photo.");
-      else if (result.request) onResult(result);
-    } catch (caught) {
-      onError(caught instanceof Error ? caught.message : "Could not upload that photo.");
-    } finally {
-      setBusy(false);
+    if (picked.canceled || picked.assets.length === 0) return;
+    const next = photosFromPickerAssets(picked.assets);
+    setPendingPhotos((current) => [...current, ...next]);
+    const uploadedByKey = new Map<string, string>();
+    await runPool(next, PHOTO_UPLOAD_CONCURRENCY, async (photo) => {
+      const uploadedId = await uploadOne(photo);
+      if (uploadedId && photo.clientKey) uploadedByKey.set(photo.clientKey, uploadedId);
+    });
+    const uploadedIds = [...uploadedByKey.values()];
+    if (uploadedIds.length === 0) return;
+    const keptIds = itemPhotos(itemRef.current)
+      .filter((photo) => photo.id !== "linked-stock" && !uploadedIds.includes(photo.id))
+      .map((photo) => photo.id);
+    const ordered = orderedPhotoIdsAfterUpload(
+      keptIds,
+      next.map((photo) => photo.clientKey || ""),
+      uploadedByKey,
+    );
+    if (ordered.length > 1) {
+      void act({ intent: "reorder-photos", itemId: item.id, photoIds: ordered }, { silent: true });
     }
   }
 
-  function persistPhotoOrder(next: StripPhoto[]) {
-    const ids = next.filter((photo) => photo.id !== "linked-stock").map((photo) => photo.id);
+  async function retryPhoto(photoId: string) {
+    const photo = pendingPhotos.find((entry) => entry.id === photoId);
+    if (!photo?.file || !photo.clientKey) return;
+    abortedKeys.current.delete(photo.clientKey);
+    patchPending(photo.clientKey, { status: "uploading", progress: 0 });
+    await uploadOne({ ...photo, status: "uploading", progress: 0 });
+  }
+
+  function persistPhotoOrder(next: EditorPhoto[]) {
+    const ids = next.filter(canReorderPhoto).map((photo) => photo.id);
     if (ids.length < 2) return;
-    void act(
-      { intent: "reorder-photos", itemId: item.id, photoIds: ids },
-      { silent: true },
-    );
+    void act({ intent: "reorder-photos", itemId: item.id, photoIds: ids }, { silent: true });
   }
 
   return (
@@ -225,11 +391,22 @@ export function ItemEditor({
         <PhotoStrip
           photos={photos}
           canEdit={canEditItems && route === "exact_plant"}
-          onPreview={setViewerIndex}
-          onRemove={(photoId) =>
-            void act({ intent: "remove-photo", itemId: item.id, photoId })
-          }
+          onPreview={(index) => {
+            const photo = photos[index];
+            if (!photo || !canPreviewPhoto(photo)) return;
+            setViewerIndex(readyPhotos.findIndex((entry) => entry.id === photo.id));
+          }}
+          onRemove={(photoId) => {
+            const pending = pendingPhotos.find((photo) => photo.id === photoId);
+            if (pending?.clientKey) {
+              abortedKeys.current.add(pending.clientKey);
+              setPendingPhotos((current) => current.filter((photo) => photo.id !== photoId));
+              return;
+            }
+            void act({ intent: "remove-photo", itemId: item.id, photoId });
+          }}
           onReorder={persistPhotoOrder}
+          onRetry={(photoId) => void retryPhoto(photoId)}
         />
         <View style={styles.identityText}>
           <Text style={ui.cardTitle}>
@@ -240,10 +417,8 @@ export function ItemEditor({
           <Text style={ui.muted}>Requested: {item.plantName}</Text>
         </View>
       </View>
-      {item.customerRequestNotes ? (
-        <Text style={ui.muted}>Customer: {item.customerRequestNotes}</Text>
-      ) : null}
-      {item.adminNotes ? <Text style={ui.muted}>Admin: {item.adminNotes}</Text> : null}
+      {noteLines.customer ? <Text style={ui.muted}>Customer: {noteLines.customer}</Text> : null}
+      {noteLines.admin ? <Text style={ui.muted}>Admin: {noteLines.admin}</Text> : null}
 
       {canEditItems ? (
         <View style={ui.filters}>
@@ -352,29 +527,43 @@ export function ItemEditor({
           <Text style={ui.label}>Offered name</Text>
           <TextInput
             value={offeredName}
-            onChangeText={setOfferedName}
+            onChangeText={(text) => {
+              setOfferedName(text);
+              scheduleAutosave();
+            }}
             editable={fieldsOn}
             style={[ui.input, !fieldsOn && ui.inputDisabled]}
+            onBlur={() => void persistDraftRef.current({ flush: true })}
           />
           <View style={ui.row}>
             <View style={ui.flexItem}>
               <Text style={ui.label}>Price</Text>
               <TextInput
                 value={priceText}
-                onChangeText={setPriceText}
+                onChangeText={(text) => {
+                  setPriceText(text);
+                  scheduleAutosave();
+                }}
                 editable={fieldsOn}
                 keyboardType="decimal-pad"
+                selectTextOnFocus
                 style={[ui.input, !fieldsOn && ui.inputDisabled]}
+                onBlur={() => void persistDraftRef.current({ flush: true })}
               />
             </View>
             <View style={ui.flexItem}>
               <Text style={ui.label}>Weight (lb)</Text>
               <TextInput
                 value={weightText}
-                onChangeText={setWeightText}
+                onChangeText={(text) => {
+                  setWeightText(text);
+                  scheduleAutosave();
+                }}
                 editable={fieldsOn}
                 keyboardType="decimal-pad"
+                selectTextOnFocus
                 style={[ui.input, !fieldsOn && ui.inputDisabled]}
+                onBlur={() => void persistDraftRef.current({ flush: true })}
               />
             </View>
           </View>
@@ -386,13 +575,25 @@ export function ItemEditor({
           <Text style={ui.label}>Customer-facing notes</Text>
           <TextInput
             value={notes}
-            onChangeText={setNotes}
+            onChangeText={(text) => {
+              setNotes(text);
+              scheduleAutosave();
+            }}
             multiline
             style={[ui.input, ui.multiline]}
+            onBlur={() => void persistDraftRef.current({ flush: true })}
           />
-          <Pressable style={ui.button} onPress={() => void saveItem()}>
-            <Text style={ui.buttonLabel}>Save item</Text>
-          </Pressable>
+          {autosaveLabel(autosave) ? (
+            <Pressable
+              disabled={autosave !== "failed"}
+              onPress={() => void persistDraftRef.current({ flush: true })}
+            >
+              <Text style={autosave === "failed" ? ui.error : ui.muted}>
+                {autosaveLabel(autosave)}
+                {autosave === "failed" ? " · Retry" : ""}
+              </Text>
+            </Pressable>
+          ) : null}
         </>
       ) : !stockMode ? (
         <Text style={ui.cardMeta}>
@@ -435,7 +636,7 @@ export function ItemEditor({
             disabled={!fieldsOn}
             onPress={() => void pickPhoto()}
           >
-            <Text style={ui.secondaryLabel}>Add photo from library</Text>
+            <Text style={ui.secondaryLabel}>Upload Photos</Text>
           </Pressable>
           <TextInput
             value={photoUrl}
@@ -466,7 +667,7 @@ export function ItemEditor({
 
       {viewerIndex !== null ? (
         <PhotoViewer
-          photos={photos}
+          photos={readyPhotos}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
         />

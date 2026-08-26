@@ -149,7 +149,11 @@ export function toMobileAdminRequestDetail(
       weightLbs: item.weightLbs,
       customerRequestNotes: item.customerRequestNotes,
       customerFacingNotes: item.customerFacingNotes,
-      adminNotes: item.adminNotes,
+      adminNotes:
+        item.adminNotes.trim() &&
+        item.adminNotes.trim() !== (item.customerRequestNotes ?? "").trim()
+          ? item.adminNotes
+          : "",
       photoUrls: item.photoUrls,
       photos: item.photos,
       linkedStock: item.linkedStock

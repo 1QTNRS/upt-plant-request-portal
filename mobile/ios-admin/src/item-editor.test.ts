@@ -86,7 +86,7 @@ describe("item editor rules", () => {
       "stock-search",
       "linked-stock",
       "customer-facing-notes",
-      "save-item",
+      "autosave",
     ]);
     assert.ok(itemEditorSections("growers_choice").indexOf("stock-search") <
       itemEditorSections("growers_choice").indexOf("customer-facing-notes"));

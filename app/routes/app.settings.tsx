@@ -26,6 +26,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     fedexRemovalWarning: settings.fedexRemovalWarning,
     adminNotificationEmail: settings.adminNotificationEmail,
+    adminEmailNewRequest: settings.adminEmailNewRequest,
+    adminEmailCustomerResponse: settings.adminEmailCustomerResponse,
+    adminEmailPaymentAfterVoid: settings.adminEmailPaymentAfterVoid,
     fedexProductHandle: settings.fedexProductHandle,
     missingSecrets: missingProductionSecrets(),
     mobileTokens: mobileTokens.map((token) => ({
@@ -66,9 +69,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: true, reset: true };
   }
 
+  if (intent === "save-admin-emails") {
+    await updateShopSettings(shop, {
+      adminNotificationEmail: String(form.get("adminNotificationEmail") || ""),
+      adminEmailNewRequest: form.get("adminEmailNewRequest") === "on",
+      adminEmailCustomerResponse: form.get("adminEmailCustomerResponse") === "on",
+      adminEmailPaymentAfterVoid: form.get("adminEmailPaymentAfterVoid") === "on",
+    });
+    return { saved: true, reset: false };
+  }
+
   await updateShopSettings(shop, {
     fedexRemovalWarning: String(form.get("fedexRemovalWarning") || ""),
-    adminNotificationEmail: String(form.get("adminNotificationEmail") || ""),
+    ...(form.has("adminNotificationEmail")
+      ? { adminNotificationEmail: String(form.get("adminNotificationEmail") || "") }
+      : {}),
   });
   return { saved: true, reset: false };
 };
@@ -79,11 +94,27 @@ export default function Settings() {
   const navigation = useNavigation();
   const [draft, setDraft] = useState(settings.fedexRemovalWarning);
   const [adminEmail, setAdminEmail] = useState(settings.adminNotificationEmail);
+  const [emailNewRequest, setEmailNewRequest] = useState(settings.adminEmailNewRequest);
+  const [emailCustomerResponse, setEmailCustomerResponse] = useState(
+    settings.adminEmailCustomerResponse,
+  );
+  const [emailPaymentAfterVoid, setEmailPaymentAfterVoid] = useState(
+    settings.adminEmailPaymentAfterVoid,
+  );
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
     setAdminEmail(settings.adminNotificationEmail);
-  }, [settings.adminNotificationEmail, settings.fedexRemovalWarning]);
+    setEmailNewRequest(settings.adminEmailNewRequest);
+    setEmailCustomerResponse(settings.adminEmailCustomerResponse);
+    setEmailPaymentAfterVoid(settings.adminEmailPaymentAfterVoid);
+  }, [
+    settings.adminEmailCustomerResponse,
+    settings.adminEmailNewRequest,
+    settings.adminEmailPaymentAfterVoid,
+    settings.adminNotificationEmail,
+    settings.fedexRemovalWarning,
+  ]);
 
   return (
     <s-page heading="Settings">
@@ -130,9 +161,7 @@ export default function Settings() {
         <s-stack direction="block" gap="base">
           <s-paragraph>
             This message is shown to customers when they try to remove the FedEx
-            Priority Overnight upgrade on their offer page. It is also included
-            in the confirmation email and approval summary if the upgrade is
-            removed.
+            Priority Overnight upgrade on their offer page.
           </s-paragraph>
           <s-text color="subdued">
             FedEx listing SKU: {FEDEX_PRODUCT_SKU} (handle fallback:{" "}
@@ -162,12 +191,6 @@ export default function Settings() {
                   resize: "vertical",
                 }}
               />
-              <s-text-field
-                name="adminNotificationEmail"
-                label="Admin notification email"
-                value={adminEmail}
-                onChange={(event) => setAdminEmail(event.currentTarget.value)}
-              />
               <s-stack direction="inline" gap="small">
                 <s-button
                   variant="primary"
@@ -184,6 +207,80 @@ export default function Settings() {
             <s-button variant="secondary" type="submit">
               Reset warning to default
             </s-button>
+          </Form>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Admin Email Notifications">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Choose which portal emails reach the admin notification address.
+            Turning a type off does not stop the underlying request, offer, or
+            payment action. Shopify compliance emails and the customer&apos;s
+            own request/offer emails are not controlled here.
+          </s-paragraph>
+          <Form method="post">
+            <s-stack direction="block" gap="base">
+              <input type="hidden" name="intent" value="save-admin-emails" />
+              <s-text-field
+                name="adminNotificationEmail"
+                label="Admin notification email"
+                value={adminEmail}
+                onChange={(event) => setAdminEmail(event.currentTarget.value)}
+              />
+              <label
+                htmlFor="admin-email-new-request"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="admin-email-new-request"
+                  type="checkbox"
+                  name="adminEmailNewRequest"
+                  checked={emailNewRequest}
+                  onChange={(event) => setEmailNewRequest(event.currentTarget.checked)}
+                />
+                <s-text>New request submitted</s-text>
+              </label>
+              <label
+                htmlFor="admin-email-customer-response"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="admin-email-customer-response"
+                  type="checkbox"
+                  name="adminEmailCustomerResponse"
+                  checked={emailCustomerResponse}
+                  onChange={(event) =>
+                    setEmailCustomerResponse(event.currentTarget.checked)
+                  }
+                />
+                <s-text>Customer responded to an offer</s-text>
+              </label>
+              <label
+                htmlFor="admin-email-payment-after-void"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="admin-email-payment-after-void"
+                  type="checkbox"
+                  name="adminEmailPaymentAfterVoid"
+                  checked={emailPaymentAfterVoid}
+                  onChange={(event) =>
+                    setEmailPaymentAfterVoid(event.currentTarget.checked)
+                  }
+                />
+                <s-text>Important payment/conflict alerts</s-text>
+              </label>
+              <s-stack direction="inline" gap="small">
+                <s-button
+                  variant="primary"
+                  type="submit"
+                  {...(navigation.state !== "idle" ? { loading: true } : {})}
+                >
+                  Save email notifications
+                </s-button>
+              </s-stack>
+            </s-stack>
           </Form>
         </s-stack>
       </s-section>

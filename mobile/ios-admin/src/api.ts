@@ -66,19 +66,49 @@ export async function apiUploadPhoto(
   path: string,
   itemId: string,
   file: { uri: string; name: string; type: string },
+  options?: {
+    uploadKey?: string;
+    onProgress?: (progress: number) => void;
+    signal?: { aborted: boolean };
+  },
 ): Promise<ActionResult> {
   const form = new FormData();
   form.append("intent", "upload-photo");
   form.append("itemId", itemId);
-  form.append("uploadKey", `${itemId}-${Date.now()}`);
+  form.append("uploadKey", options?.uploadKey || `${itemId}-${Date.now()}`);
   form.append("photo", file as unknown as Blob);
-  const response = await fetch(`${apiUrl.replace(/\/+$/, "")}${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
+
+  return await new Promise<ActionResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${apiUrl.replace(/\/+$/, "")}${path}`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        options?.onProgress?.(event.loaded / event.total);
+      }
+    };
+    xhr.onerror = () => reject(new Error("Could not upload that photo."));
+    xhr.onabort = () => reject(new Error("Upload cancelled."));
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        reject(new Error("That device token was rejected. Create a new one in Settings."));
+        return;
+      }
+      try {
+        resolve(JSON.parse(xhr.responseText) as ActionResult);
+      } catch {
+        reject(new Error("Could not upload that photo."));
+      }
+    };
+    if (options?.signal) {
+      const timer = setInterval(() => {
+        if (options.signal?.aborted) {
+          clearInterval(timer);
+          xhr.abort();
+        }
+      }, 120);
+      xhr.onloadend = () => clearInterval(timer);
+    }
+    xhr.send(form);
   });
-  if (response.status === 401) {
-    throw new Error("That device token was rejected. Create a new one in Settings.");
-  }
-  return (await response.json()) as ActionResult;
 }

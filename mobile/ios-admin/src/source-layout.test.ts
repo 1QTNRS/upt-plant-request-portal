@@ -17,6 +17,10 @@ describe("iOS admin source layout", () => {
     assert.doesNotMatch(app, /function ItemEditor/);
     assert.match(editor, /useState\(String\(item\.price/);
     assert.match(editor, /editable=\{fieldsOn\}/);
+    assert.match(editor, /selectTextOnFocus/);
+    assert.doesNotMatch(editor, /Save item/);
+    assert.match(editor, /Upload Photos/);
+    assert.match(editor, /allowsMultipleSelection/);
   });
 
   it("combines request counts with filters and pull-to-refresh", () => {
@@ -45,6 +49,10 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /overflow: "visible"/);
     assert.match(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
     assert.match(detail, /ui\.expirationDays/);
+    assert.match(detail, /sendOfferHoldControlsEnabled/);
+    const viewer = read("src/components/PhotoViewer.tsx");
+    assert.match(viewer, /shouldDismissPhotoViewer/);
+    assert.match(viewer, /shouldCapturePhotoViewerDismiss/);
     assert.doesNotMatch(editor, /height: 160/);
   });
 
@@ -63,6 +71,8 @@ describe("iOS admin source layout", () => {
 
   it("uses native stack swipe-back and a taller centered tab bar", () => {
     const app = read("App.tsx");
+    assert.match(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /tabBarPosition="bottom"/);
     assert.match(app, /createNativeStackNavigator/);
     assert.match(app, /gestureEnabled: true/);
     assert.match(app, /fullScreenGestureEnabled: false/);

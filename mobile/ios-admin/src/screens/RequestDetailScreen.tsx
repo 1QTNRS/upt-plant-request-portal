@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,6 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
+import { applyItemDraft, requestLooksSendable, type ItemDraft } from "../item-autosave";
+import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
 import { THEME } from "../theme";
@@ -34,6 +36,8 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
   const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+  const flushers = useRef(new Map<string, () => Promise<boolean>>());
 
   useEffect(() => {
     void (async () => {
@@ -66,6 +70,18 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     if (result.request) setDetail(result.request);
   }
 
+  function registerFlush(itemId: string, flush: (() => Promise<boolean>) | null) {
+    if (flush) flushers.current.set(itemId, flush);
+    else flushers.current.delete(itemId);
+  }
+
+  async function flushPendingSaves() {
+    const results = await Promise.all(
+      [...flushers.current.values()].map((flush) => flush()),
+    );
+    return results.every(Boolean);
+  }
+
   async function runAction(body: Record<string, unknown>) {
     if (!detail) return;
     setError(null);
@@ -92,6 +108,11 @@ export function RequestDetailScreen({ navigation, route }: Props) {
       </SafeAreaView>
     );
   }
+
+  const holdControlsOn = sendOfferHoldControlsEnabled(detail.items);
+  const draftedItems = detail.items.map((item) => applyItemDraft(item, drafts[item.id]));
+  const canSendOffer =
+    detail.status === "New" && (detail.canSendOffer || requestLooksSendable(draftedItems));
 
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
@@ -129,6 +150,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             onResult={applyResult}
             onError={setError}
             onStockDropdownChange={setStockDropdownOpen}
+            onDraftChange={(itemId, draft) =>
+              setDrafts((current) => ({ ...current, [itemId]: draft }))
+            }
+            registerFlush={registerFlush}
           />
         ))}
 
@@ -136,10 +161,16 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           <Text style={ui.cardTitle}>Send offer</Text>
           {detail.sentOffer ? (
             <>
-              <Text style={ui.muted}>
-                Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
-              </Text>
-              {detail.sentOffer.shippingFeeOverride !== undefined ? (
+              {holdControlsOn ? (
+                <Text style={ui.muted}>
+                  Sent for {detail.sentOffer.expirationDays} days. Frozen after send.
+                </Text>
+              ) : (
+                <Text style={ui.muted}>
+                  Response sent. Nothing was purchasable — the request is closed.
+                </Text>
+              )}
+              {holdControlsOn && detail.sentOffer.shippingFeeOverride !== undefined ? (
                 <Text style={ui.muted}>
                   ADD ON ${detail.sentOffer.shippingFeeOverride.toFixed(2)}
                 </Text>
@@ -147,23 +178,36 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             </>
           ) : (
             <>
-              {detail.offerProblems.map((problem) => (
-                <Text key={problem.itemName} style={ui.error}>
-                  {problem.itemName} is missing {problem.missing.join(", ")}.
+              {!requestLooksSendable(draftedItems)
+                ? detail.offerProblems.map((problem) => (
+                    <Text key={problem.itemName} style={ui.error}>
+                      {problem.itemName} is missing {problem.missing.join(", ")}.
+                    </Text>
+                  ))
+                : null}
+              {!holdControlsOn ? (
+                <Text style={ui.muted}>
+                  Nothing on this request is purchasable. Send offer notifies the
+                  customer and closes the request. Expiration and ADD ON do not apply.
                 </Text>
-              ))}
-              {detail.hasExistingOrder ? (
+              ) : null}
+              {detail.hasExistingOrder && holdControlsOn ? (
                 <Text style={ui.muted}>
                   This customer said they have an existing order. You can set an ADD ON
                   amount below if you are combining shipments.
                 </Text>
               ) : null}
+              <View
+                style={[ui.holdControls, !holdControlsOn && ui.holdControlsOff]}
+                pointerEvents={holdControlsOn ? "auto" : "none"}
+              >
               <View style={ui.expirationDays}>
                 {[3, 5, 7].map((days) => (
                   <Pressable
                     key={days}
                     style={[ui.chip, expirationDays === days && ui.chipOn]}
                     onPress={() => setExpirationDays(days)}
+                    disabled={!holdControlsOn}
                   >
                     <Text style={[ui.chipLabel, expirationDays === days && ui.chipLabelOn]}>
                       {days} days
@@ -178,21 +222,37 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                 placeholder="Leave blank so they choose at checkout"
                 placeholderTextColor={THEME.muted}
                 keyboardType="decimal-pad"
-                style={ui.input}
+                editable={holdControlsOn}
+                style={[ui.input, !holdControlsOn && ui.inputDisabled]}
               />
               <Text style={ui.muted}>
                 Optional. Sets a custom ADD ON amount on the draft-order invoice, including
                 0. Leave blank so the customer can choose a store shipping rate at checkout.
               </Text>
+              </View>
               <Pressable
-                style={[ui.button, !detail.canSendOffer && ui.buttonDisabled]}
-                disabled={!detail.canSendOffer || loading}
+                style={[ui.button, !canSendOffer && ui.buttonDisabled]}
+                disabled={!canSendOffer || loading}
                 onPress={() =>
-                  void runAction({
-                    intent: "send-offer",
-                    expirationDays,
-                    shippingFeeOverride,
-                  })
+                  void (async () => {
+                    setLoading(true);
+                    try {
+                      const flushed = await flushPendingSaves();
+                      if (!flushed) {
+                        setError(
+                          "Couldn’t save the latest item values. Retry, then send the offer.",
+                        );
+                        return;
+                      }
+                      await runAction({
+                        intent: "send-offer",
+                        expirationDays,
+                        shippingFeeOverride: holdControlsOn ? shippingFeeOverride : "",
+                      });
+                    } finally {
+                      setLoading(false);
+                    }
+                  })()
                 }
               >
                 <Text style={ui.buttonLabel}>Send offer</Text>

@@ -13,6 +13,7 @@ import {
   sendOffer,
   submitCustomerRequest,
   updateRequestItem,
+  updateShopSettings,
 } from "./portal.server";
 import { ensureShopSeeded, ensureShopSettings } from "./seed-demo.server";
 import { DEMO_SHOP } from "./shop";
@@ -211,7 +212,10 @@ describe("outbound email is deduplicated", () => {
     await wipe(shop);
   });
 
-  it("queues one message per template even when the notifier runs twice", async () => {
+  it("does not queue a customer request-received email, and dedupes admin mail", async () => {
+    await updateShopSettings(shop, {
+      adminNotificationEmail: "upt-notify@example.com",
+    });
     const created = await submitCustomerRequest(shop, {
       name: "Test Buyer",
       email: "buyer@example.com",
@@ -221,11 +225,17 @@ describe("outbound email is deduplicated", () => {
     await notifyNewRequest(shop, created.id);
     await notifyNewRequest(shop, created.id);
 
-    const messages = await prisma.emailMessage.findMany({
-      where: { shop, requestId: created.id, templateKey: "request_received" },
+    assert.equal(
+      await prisma.emailMessage.count({
+        where: { shop, requestId: created.id, templateKey: "request_received" },
+      }),
+      0,
+    );
+    const admin = await prisma.emailMessage.findMany({
+      where: { shop, requestId: created.id, templateKey: "admin_new_request" },
     });
-    assert.equal(messages.length, 1);
-    assert.equal(messages[0].idempotencyKey, `request_received:${created.id}`);
+    assert.equal(admin.length, 1);
+    assert.equal(admin[0].idempotencyKey, `admin_new_request:${created.id}`);
   });
 });
 

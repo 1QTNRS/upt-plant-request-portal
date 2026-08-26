@@ -34,6 +34,7 @@ function request(overrides: Partial<PlantRequest> = {}): PlantRequest {
         fulfillmentType: "exact_plant",
         price: 250,
         weightLbs: 8,
+        customerRequestNotes: "Climbing, please",
         adminNotes: "internal only",
         customerFacingNotes: "One older leaf has a small scar.",
         photoPreviewUrl: "",
@@ -97,6 +98,7 @@ describe("iOS admin API payloads", () => {
   it("keeps admin notes and photos on the detail payload", () => {
     const detail = toMobileAdminRequestDetail(request());
     assert.equal(detail.requestNumber, "REQ12");
+    assert.equal(detail.items[0].customerRequestNotes, "Climbing, please");
     assert.equal(detail.items[0].adminNotes, "internal only");
     assert.deepEqual(detail.items[0].photoUrls, ["https://cdn.shopify.com/albo.jpg"]);
     assert.deepEqual(detail.items[0].photos, []);
@@ -124,6 +126,22 @@ describe("iOS admin API payloads", () => {
     );
     assert.equal(detail.hasExistingOrder, true);
     assert.equal(detail.sentOffer?.shippingFeeOverride, 12.5);
+  });
+
+  it("does not copy a customer note into the admin note on the phone", () => {
+    const detail = toMobileAdminRequestDetail(
+      request({
+        items: [
+          {
+            ...request().items[0],
+            customerRequestNotes: "Climbing, please",
+            adminNotes: "Climbing, please",
+          },
+        ],
+      }),
+    );
+    assert.equal(detail.items[0].customerRequestNotes, "Climbing, please");
+    assert.equal(detail.items[0].adminNotes, "");
   });
 
   it("lets a complete New request be sent from the phone", () => {

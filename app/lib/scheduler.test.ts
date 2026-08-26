@@ -97,7 +97,7 @@ describe("maintenance reporting", () => {
   });
   after(purge);
 
-  it("counts reminders queued and reminders delivered apart", async () => {
+  it("still sweeps the shop and does not queue expiration reminders", async () => {
     const created = await submitCustomerRequest(shop, {
       name: "Alex Rivera",
       email: "alex.rivera@example.com",
@@ -126,17 +126,13 @@ describe("maintenance reporting", () => {
     const entry = result.shops.find((row) => row.shop === shop);
 
     assert.ok(entry, "the shop must appear in the run");
-    assert.equal(entry.remindersQueued, 1);
-    // Nothing was delivered: RESEND_API_KEY is unset, so the row is `preview`.
-    // Counting rows alone reported this run as having reminded someone.
+    assert.equal(entry.remindersQueued, 0);
     assert.equal(entry.remindersSent, 0);
     assert.equal(
-      (
-        await prisma.emailMessage.findFirstOrThrow({
-          where: { shop, templateKey: "expiration_reminder" },
-        })
-      ).status,
-      "preview",
+      await prisma.emailMessage.count({
+        where: { shop, templateKey: "expiration_reminder" },
+      }),
+      0,
     );
   });
 });

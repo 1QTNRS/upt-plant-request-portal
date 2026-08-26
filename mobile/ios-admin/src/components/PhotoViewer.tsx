@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
+  Animated,
   Dimensions,
   FlatList,
   Image,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,11 @@ import {
   View,
 } from "react-native";
 
+import {
+  normalizedSwipeVelocity,
+  shouldCapturePhotoViewerDismiss,
+  shouldDismissPhotoViewer,
+} from "../photo-viewer";
 import { THEME } from "../theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -25,10 +32,58 @@ type Props = {
 
 export function PhotoViewer({ photos, index, onClose }: Props) {
   const [current, setCurrent] = useState(index);
+  const zoomScaleRef = useRef(1);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          shouldCapturePhotoViewerDismiss(
+            zoomScaleRef.current,
+            gesture.dx,
+            gesture.dy,
+            gesture.numberActiveTouches,
+          ),
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) dragY.setValue(gesture.dy);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (
+            shouldDismissPhotoViewer({
+              zoomScale: zoomScaleRef.current,
+              translationX: gesture.dx,
+              translationY: gesture.dy,
+              velocityY: normalizedSwipeVelocity(gesture.vy),
+              numberActiveTouches: 1,
+            })
+          ) {
+            onCloseRef.current();
+            return;
+          }
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [dragY],
+  );
 
   return (
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <Animated.View
+        style={[styles.backdrop, { transform: [{ translateY: dragY }] }]}
+        {...panResponder.panHandlers}
+      >
         <View style={styles.topBar}>
           <Text style={styles.count}>
             {current + 1} of {photos.length}
@@ -61,6 +116,13 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
               showsHorizontalScrollIndicator={false}
               showsVerticalScrollIndicator={false}
               centerContent
+              scrollEventThrottle={16}
+              onScroll={(event) => {
+                const scale = event.nativeEvent.zoomScale;
+                if (typeof scale === "number" && Number.isFinite(scale)) {
+                  zoomScaleRef.current = scale;
+                }
+              }}
             >
               <Image
                 source={{ uri: item.url }}
@@ -71,7 +133,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
             </ScrollView>
           )}
         />
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

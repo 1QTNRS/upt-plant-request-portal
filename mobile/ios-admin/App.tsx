@@ -7,7 +7,7 @@ import {
   getFocusedRouteNameFromRoute,
   type Route,
 } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
@@ -27,6 +27,7 @@ import type {
   RequestsStackParamList,
 } from "./src/screens/navigation-types";
 import { TAB_BAR_CONTENT_HEIGHT } from "./src/item-editor";
+import { tabSwipeEnabled } from "./src/tab-swipe";
 import { THEME } from "./src/theme";
 import { ui } from "./src/ui";
 
@@ -36,7 +37,7 @@ const URL_KEY = "upt_admin_api_url";
 
 const RequestsStack = createNativeStackNavigator<RequestsStackParamList>();
 const ExactPlantsStack = createNativeStackNavigator<ExactPlantsStackParamList>();
-const Tabs = createBottomTabNavigator<MainTabParamList>();
+const Tabs = createMaterialTopTabNavigator<MainTabParamList>();
 
 const stackScreenOptions = {
   headerShown: false,
@@ -80,36 +81,43 @@ function MainTabs() {
 
   return (
     <Tabs.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: THEME.yellow,
-        tabBarInactiveTintColor: THEME.white,
-        tabBarStyle,
-        tabBarLabelStyle: { fontWeight: "700", fontSize: 12, marginBottom: 0 },
-        tabBarItemStyle: { justifyContent: "center", paddingVertical: 6 },
-        tabBarIconStyle: { display: "none", height: 0, marginTop: 0 },
+      tabBarPosition="bottom"
+      screenOptions={({ route }) => {
+        const visible = tabBarVisible(route);
+        const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
+        return {
+          lazy: true,
+          swipeEnabled: tabSwipeEnabled(focused) && visible,
+          tabBarActiveTintColor: THEME.yellow,
+          tabBarInactiveTintColor: THEME.white,
+          tabBarStyle: visible ? tabBarStyle : { display: "none", height: 0 },
+          tabBarLabelStyle: {
+            fontWeight: "700",
+            fontSize: 12,
+            marginBottom: 0,
+            textTransform: "none",
+          },
+          tabBarItemStyle: { justifyContent: "center", paddingVertical: 6 },
+          tabBarIndicatorStyle: { backgroundColor: THEME.yellow, height: 3 },
+          tabBarPressColor: "transparent",
+          tabBarBounces: false,
+        };
       }}
     >
       <Tabs.Screen
         name="Requests"
         component={RequestsNavigator}
-        options={({ route }) => ({
-          title: "Requests",
-          tabBarStyle: tabBarVisible(route) ? tabBarStyle : { display: "none" },
-        })}
+        options={{ title: "Requests" }}
       />
       <Tabs.Screen
         name="ExactPlants"
         component={ExactPlantsNavigator}
-        options={({ route }) => ({
-          title: "EXACT PLANTS",
-          tabBarStyle: tabBarVisible(route) ? tabBarStyle : { display: "none" },
-        })}
+        options={{ title: "EXACT PLANTS" }}
       />
       <Tabs.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: "Settings", tabBarStyle }}
+        options={{ title: "Settings" }}
       />
     </Tabs.Navigator>
   );

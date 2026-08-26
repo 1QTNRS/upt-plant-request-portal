@@ -46,11 +46,11 @@ export function itemEditorSections(route: FulfillmentRoute): string[] {
       "stock-search",
       "linked-stock",
       "customer-facing-notes",
-      "save-item",
+      "autosave",
     ];
   }
   if (route === "not_available") {
-    return ["fulfillment", "customer-facing-notes", "save-item", "unavailability-reasons"];
+    return ["fulfillment", "customer-facing-notes", "autosave", "unavailability-reasons"];
   }
   return [
     "fulfillment",
@@ -58,7 +58,7 @@ export function itemEditorSections(route: FulfillmentRoute): string[] {
     "price",
     "weight",
     "customer-facing-notes",
-    "save-item",
+    "autosave",
   ];
 }
 
