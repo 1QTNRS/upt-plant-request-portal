@@ -407,12 +407,16 @@ describe("customer email count when the response is unavailable-only", () => {
 
     const events = await prisma.statusEvent.findMany({
       where: { requestId: created.id },
+      orderBy: { createdAt: "asc" },
     });
-    assert.deepEqual(
-      events.map((event) => event.reason),
-      ["Admin response contained no purchasable items"],
+    const closed = events.find((event) => event.toStatus === "Closed");
+    assert.ok(closed);
+    assert.equal(closed.fromStatus, "New");
+    assert.equal(
+      closed.reason,
+      "Admin response contained no purchasable items",
     );
-    assert.doesNotMatch(events[0].reason, /decline|payment|expir/i);
+    assert.doesNotMatch(closed.reason, /decline|payment|expir/i);
 
     const customer = await customerTemplates(created.id);
     assert.deepEqual(

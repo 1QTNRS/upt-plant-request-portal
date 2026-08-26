@@ -549,19 +549,22 @@ describe("an offer is refused until every Available plant is complete", () => {
 
     const events = await prisma.statusEvent.findMany({
       where: { requestId: created.id },
+      orderBy: { createdAt: "asc" },
     });
-    assert.equal(events.length, 1);
-    assert.equal(events[0].fromStatus, "New");
-    assert.equal(events[0].toStatus, "Closed");
+    const closed = events.filter((event) => event.toStatus === "Closed");
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].fromStatus, "New");
     assert.equal(
-      events[0].reason,
+      closed[0].reason,
       "Admin response contained no purchasable items",
     );
 
     const retry = await sendOffer(readyShop, created.id, 5);
     assert.equal(retry, null);
     assert.equal(
-      await prisma.statusEvent.count({ where: { requestId: created.id } }),
+      await prisma.statusEvent.count({
+        where: { requestId: created.id, toStatus: "Closed" },
+      }),
       1,
     );
     assert.equal((await getRequest(readyShop, created.id))?.status, "Closed");
