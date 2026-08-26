@@ -1,5 +1,10 @@
 import type { PlantLine } from "../components/customer-request-portal";
 import { customerPortalRelativeLinks } from "./app-proxy";
+import {
+  MAX_NOTE_LENGTH,
+  MAX_PLANT_NAME_LENGTH,
+  MAX_PLANT_ROWS,
+} from "./customer-form-limits";
 
 /**
  * Pure parts of the customer portal: how many plant rows a form has, and where
@@ -7,11 +12,11 @@ import { customerPortalRelativeLinks } from "./app-proxy";
  * without pulling in the Shopify app instance.
  */
 
-export const MAX_PLANT_ROWS = 20;
-
-/** Anything longer than this is a paste accident, and it has to fit in a URL. */
-export const MAX_NOTE_LENGTH = 500;
-export const MAX_PLANT_NAME_LENGTH = 120;
+export {
+  MAX_NOTE_LENGTH,
+  MAX_PLANT_NAME_LENGTH,
+  MAX_PLANT_ROWS,
+} from "./customer-form-limits";
 
 type FieldSource = Pick<FormData, "get">;
 
@@ -46,11 +51,12 @@ export function readPlantLines(fields: FieldSource): PlantLine[] {
 
 /**
  * The rows to render, taken from the query string that the add and remove
- * buttons navigate to.
+ * buttons navigate to when JavaScript is blocked.
  *
- * Those buttons submit the form with GET rather than POST: a GET is the same
- * request shape as the page load the storefront already serves, and the browser
- * puts everything the customer typed into the query string for us.
+ * Those buttons stay GET submits so a blocked script still works: a GET is the
+ * same request shape as the page load the storefront already serves, and the
+ * browser puts everything the customer typed into the query string. When the
+ * plant-rows enhance script runs it intercepts the click and never navigates.
  */
 export function plantLinesFromQuery(search: URLSearchParams): PlantLine[] | null {
   const adding = search.has("addPlant");

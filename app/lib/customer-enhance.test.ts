@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   CUSTOMER_LIGHTBOX_SCRIPT,
   CUSTOMER_PAGED_LIST_SCRIPT,
+  CUSTOMER_PLANT_ROWS_SCRIPT,
   CUSTOMER_TIME_SCRIPT,
   FEDEX_WARNING_SCRIPT,
 } from "../components/customer-enhance";
@@ -31,6 +32,22 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /setTimeout\(scan/);
     assert.match(CUSTOMER_PAGED_LIST_SCRIPT, /scrollTo/);
     assert.doesNotMatch(CUSTOMER_PAGED_LIST_SCRIPT, /\?page=/);
+  });
+
+  it("adds and removes plant rows without changing the URL", () => {
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /data-plant-rows/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /data-plant-add/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /data-plant-remove/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /data-item-count/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /data-max-rows/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /preventDefault/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /cloneNode\(true\)/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /plantName-/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /notes-/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /__uptPlantRows/);
+    assert.match(CUSTOMER_PLANT_ROWS_SCRIPT, /addEventListener\(\s*"click"/);
+    assert.doesNotMatch(CUSTOMER_PLANT_ROWS_SCRIPT, /addPlant=/);
+    assert.doesNotMatch(CUSTOMER_PLANT_ROWS_SCRIPT, /location\.|history\./);
   });
 
   it("opens a customer photo lightbox with swipe and previous/next", () => {

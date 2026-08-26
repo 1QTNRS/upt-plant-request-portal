@@ -476,12 +476,13 @@ Rules for `app/routes/customer*`:
    never matches and the visitor is treated as signed out. Post to a real route
    (`customer.submit.tsx`) instead.
 
-6. **Prefer GET for anything that only changes the form's shape.** "Add another
-   plant" and "Remove plant" submit the form with `formMethod="get"` to the
-   portal path: the browser puts the typed values in the query string and the
-   page re-renders with one more (or one fewer) row. This is a readability
-   choice, not a workaround: those round-trips carry no side effects, so a URL
-   the customer can reload is the right shape for them.
+6. **Add and remove plant rows in place.** "Add another plant" and "Remove
+   plant" stay `type="submit"` with `formMethod="get"` so a blocked script
+   still works (typed values go in the query string, the page re-renders).
+   The inline plant-rows enhance script intercepts those clicks, clones or
+   drops a row, renumbers `plantName-N` / `notes-N`, and updates `itemCount`
+   without navigating. Do not put this in React state — the storefront never
+   hydrates. Cap is `MAX_PLANT_ROWS` (20).
 7. Signed-out storefront pages use a real `<a href>` to
    `/customer_authentication/login?return_to=` with a **relative**
    `/apps/plant-requests` path (or `/apps/plant-requests/requests/:id` on a

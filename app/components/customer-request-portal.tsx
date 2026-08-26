@@ -1,4 +1,5 @@
 
+import { MAX_PLANT_ROWS } from "../lib/customer-form-limits";
 import {
   computeTimeRemaining,
   customerStatusTone,
@@ -78,14 +79,15 @@ export function CustomerRequestPortal({
   loginHref?: string | null;
   formAction?: string;
   /**
-   * Where the add and remove buttons navigate to with GET. The storefront page
-   * itself, so the customer never leaves it.
+   * Where the add and remove buttons navigate to with GET when JavaScript is
+   * blocked. The storefront page itself, so the customer never leaves it.
    */
   browseAction?: string;
   /**
-   * Rows come from the server. Adding and removing a row is a form submission
-   * rather than client state, because an app proxy page serves its assets from
-   * the shop's domain and so never hydrates.
+   * Rows come from the server (or the GET fallback query string). Adding and
+   * removing a row is done in place by the plant-rows enhance script. The
+   * buttons stay GET submits so a blocked script still works — an app proxy
+   * page never hydrates, so this cannot be React state.
    */
   plantLines?: PlantLine[];
   canSubmit?: boolean;
@@ -151,10 +153,14 @@ export function CustomerRequestPortal({
 
       <form method="post" action={formAction}>
         <input type="hidden" name="customerTimeZone" defaultValue="" />
-        <section className="upt-card">
+        <section
+          className="upt-card"
+          data-plant-rows
+          data-max-rows={MAX_PLANT_ROWS}
+        >
           <h2 className="upt-card-title">Plants requested</h2>
           {plantLines.map((line, index) => (
-            <div key={index} className="upt-plant-card">
+            <div key={index} className="upt-plant-card" data-plant-row>
               <label>
                 <span>Plant Name</span>
                 <input
@@ -174,27 +180,32 @@ export function CustomerRequestPortal({
                   style={{ ...themeFieldStyle, resize: "vertical" }}
                 />
               </label>
-              {plantLines.length > 1 ? (
-                <button
-                  type="submit"
-                  name="removePlant"
-                  value={String(index)}
-                  formMethod="get"
-                  formAction={browseAction}
-                  formNoValidate
-                  style={{ ...secondaryButtonStyle, marginTop: 12 }}
-                >
-                  Remove plant
-                </button>
-              ) : null}
+              <button
+                type="submit"
+                name="removePlant"
+                value={String(index)}
+                formMethod="get"
+                formAction={browseAction}
+                formNoValidate
+                data-plant-remove
+                hidden={plantLines.length <= 1}
+                style={{ ...secondaryButtonStyle, marginTop: 12 }}
+              >
+                Remove plant
+              </button>
             </div>
           ))}
-          <input type="hidden" name="itemCount" value={plantLines.length} />
+          <input
+            type="hidden"
+            name="itemCount"
+            defaultValue={String(plantLines.length)}
+            data-item-count
+          />
           {/*
-            formMethod="get" turns this into a navigation rather than a POST:
-            the browser puts the typed values in the query string, the page
-            re-renders with one more row, and the customer stays on the same
-            storefront URL.
+            GET is the no-JavaScript fallback: the browser puts typed values in
+            the query string and the page re-renders with one more row. When
+            the plant-rows enhance script runs it intercepts the click and
+            populates the row in place.
           */}
           <button
             type="submit"
@@ -203,6 +214,8 @@ export function CustomerRequestPortal({
             formMethod="get"
             formAction={browseAction}
             formNoValidate
+            data-plant-add
+            hidden={plantLines.length >= MAX_PLANT_ROWS}
             style={themePrimaryButtonStyle}
           >
             <span aria-hidden="true">+</span>
