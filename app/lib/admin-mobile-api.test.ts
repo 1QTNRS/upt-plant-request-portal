@@ -227,20 +227,20 @@ describe("iOS admin API payloads", () => {
   });
 
   it("puts EXACT PLANTS and Settings on the iPhone app tabs", () => {
-    const app = readFileSync(
-      path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "App.tsx"),
+    const iosRoot = path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin");
+    const app = readFileSync(path.join(iosRoot, "App.tsx"), "utf8");
+    const list = readFileSync(path.join(iosRoot, "src", "screens", "RequestListScreen.tsx"), "utf8");
+    const detail = readFileSync(
+      path.join(iosRoot, "src", "screens", "RequestDetailScreen.tsx"),
       "utf8",
     );
-    const iosPackage = readFileSync(
-      path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "package.json"),
-      "utf8",
-    );
-    assert.match(app, /exact-plants/);
+    const iosPackage = readFileSync(path.join(iosRoot, "package.json"), "utf8");
+    assert.match(app, /ExactPlants/);
     assert.match(app, /ExactPlantsScreen/);
     assert.match(app, /SettingsScreen/);
-    assert.match(app, /StatusPills/);
-    assert.match(app, /shippingFeeOverride/);
-    assert.match(app, /Existing order:/);
+    assert.match(list, /StatusPills/);
+    assert.match(detail, /shippingFeeOverride/);
+    assert.match(detail, /Existing order:/);
     assert.match(iosPackage, /"expo": "~54\./);
     assert.doesNotMatch(iosPackage, /"expo": "~52\./);
   });
