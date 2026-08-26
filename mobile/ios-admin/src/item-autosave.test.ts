@@ -7,6 +7,7 @@ import {
   applyItemDraft,
   AUTOSAVE_DEBOUNCE_MS,
   autosaveLabel,
+  draftsEqual,
   draftToSavePayload,
   itemLooksSendable,
   parseDecimalInput,
@@ -112,6 +113,20 @@ describe("item autosave", () => {
     assert.doesNotMatch(detail, /Save item/);
     assert.match(editor, /persistDraftRef\.current\(\{ flush: true/);
     assert.match(editor, /\[item\.id\]/);
+    assert.match(editor, /onDraftChangeRef\.current/);
+    assert.match(detail, /draftsEqual/);
+    assert.doesNotMatch(editor, /notes, item\.id, onDraftChange/);
+  });
+
+  it("does not treat an identical draft callback as a state change", () => {
+    const draft = {
+      offeredName: "Monstera Albo",
+      priceText: "120",
+      weightText: "2",
+      customerFacingNotes: "",
+    };
+    assert.equal(draftsEqual(draft, { ...draft }), true);
+    assert.equal(draftsEqual(draft, { ...draft, priceText: "125" }), false);
   });
 
   it("surfaces a failed autosave", () => {

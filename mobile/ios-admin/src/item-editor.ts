@@ -28,6 +28,7 @@ export const THUMB_GAP = 8;
 export const THUMB_PAD = 10;
 export const THUMB_REMOVE_SIZE = 22;
 export const TAB_BAR_CONTENT_HEIGHT = 64;
+export const TAB_BAR_LABEL_FONT_SIZE = 15;
 
 export function reorderPhotos<T>(items: T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) {

@@ -69,6 +69,49 @@ export function showsRetry(photo: Pick<EditorPhoto, "status">): boolean {
   return photo.status === "failed";
 }
 
+export function stripPhotoChanged(
+  current: Pick<EditorPhoto, "id" | "url" | "status" | "progress">,
+  next: Pick<EditorPhoto, "id" | "url" | "status" | "progress">,
+): boolean {
+  return (
+    current.id !== next.id ||
+    current.url !== next.url ||
+    current.status !== next.status ||
+    current.progress !== next.progress
+  );
+}
+
+export function shouldReplaceStripOrder(
+  current: Array<Pick<EditorPhoto, "id" | "url" | "status" | "progress">>,
+  next: Array<Pick<EditorPhoto, "id" | "url" | "status" | "progress">>,
+): boolean {
+  if (current === next) return false;
+  if (current.length !== next.length) return true;
+  return current.some((photo, index) => stripPhotoChanged(photo, next[index]));
+}
+
+export function mountPhotoStrip(
+  propsList: Array<{ photos: EditorPhoto[] }>,
+): { setStateCalls: number; renderCount: number; order: EditorPhoto[] } {
+  const initial = propsList[0]?.photos ?? [];
+  let order = initial;
+  let setStateCalls = 0;
+  let renderCount = 0;
+  const limit = Math.max(propsList.length * 4, 50);
+  for (const props of propsList) {
+    renderCount += 1;
+    if (setStateCalls > limit) {
+      throw new Error("Maximum update depth exceeded");
+    }
+    if (shouldReplaceStripOrder(order, props.photos)) {
+      setStateCalls += 1;
+      order = props.photos;
+      renderCount += 1;
+    }
+  }
+  return { setStateCalls, renderCount, order };
+}
+
 export function orderedPhotoIdsAfterUpload(
   keptIds: string[],
   pickedClientKeys: string[],

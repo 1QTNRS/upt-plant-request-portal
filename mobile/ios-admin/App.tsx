@@ -26,7 +26,7 @@ import type {
   MainTabParamList,
   RequestsStackParamList,
 } from "./src/screens/navigation-types";
-import { TAB_BAR_CONTENT_HEIGHT } from "./src/item-editor";
+import { TAB_BAR_CONTENT_HEIGHT, TAB_BAR_LABEL_FONT_SIZE } from "./src/item-editor";
 import { tabSwipeEnabled } from "./src/tab-swipe";
 import { THEME } from "./src/theme";
 import { ui } from "./src/ui";
@@ -93,7 +93,7 @@ function MainTabs() {
           tabBarStyle: visible ? tabBarStyle : { display: "none", height: 0 },
           tabBarLabelStyle: {
             fontWeight: "700",
-            fontSize: 12,
+            fontSize: TAB_BAR_LABEL_FONT_SIZE,
             marginBottom: 0,
             textTransform: "none",
           },

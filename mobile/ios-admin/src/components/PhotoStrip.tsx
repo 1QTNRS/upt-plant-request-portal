@@ -12,6 +12,7 @@ import {
 import {
   canPreviewPhoto,
   canReorderPhoto,
+  shouldReplaceStripOrder,
   showsProgressBar,
   showsRetry,
   type EditorPhoto,
@@ -45,8 +46,10 @@ export function PhotoStrip({
   const startIndex = useRef(0);
 
   useEffect(() => {
-    setOrder(photos);
+    if (draggedId.current) return;
+    if (!shouldReplaceStripOrder(orderRef.current, photos)) return;
     orderRef.current = photos;
+    setOrder(photos);
   }, [photos]);
 
   function move(from: number, to: number) {

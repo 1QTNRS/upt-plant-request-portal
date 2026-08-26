@@ -79,7 +79,9 @@ describe("iOS admin source layout", () => {
     assert.match(app, /backgroundColor: THEME\.darkGreen/);
     assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
     assert.match(app, /TAB_BAR_CONTENT_HEIGHT/);
+    assert.match(app, /TAB_BAR_LABEL_FONT_SIZE/);
     assert.match(app, /justifyContent: "center"/);
     assert.match(app, /insets\.bottom/);
+    assert.doesNotMatch(app, /fontSize: 12/);
   });
 });

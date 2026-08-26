@@ -10,6 +10,7 @@ import {
   showsExactPlantFields,
   showsStockSearch,
   stockDropdownOpen,
+  TAB_BAR_LABEL_FONT_SIZE,
   THUMB_PAD,
   THUMB_REMOVE_SIZE,
   THUMB_SIZE,
@@ -95,6 +96,8 @@ describe("item editor rules", () => {
     assert.ok(itemEditorSections("exact_plant").includes("price"));
     assert.ok(THUMB_SIZE > 48);
     assert.ok(THUMB_PAD + THUMB_REMOVE_SIZE > THUMB_REMOVE_SIZE);
+    assert.ok(TAB_BAR_LABEL_FONT_SIZE >= 14);
+    assert.ok(TAB_BAR_LABEL_FONT_SIZE <= 16);
   });
 
   it("keeps the stock dropdown attached to the input", () => {
