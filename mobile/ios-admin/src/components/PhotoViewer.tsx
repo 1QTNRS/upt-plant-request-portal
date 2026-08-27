@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
+  FlatList,
   Image,
   Modal,
   Pressable,
@@ -10,7 +11,6 @@ import {
   View,
 } from "react-native";
 import {
-  FlatList,
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
@@ -22,8 +22,10 @@ import {
   clampPhotoViewerZoom,
   normalizedSwipeVelocity,
   photoViewerDismissTranslateY,
-  photoViewerImagePanEnabled,
+  photoViewerImageTransform,
   photoViewerPagingEnabled,
+  photoViewerShouldPanImage,
+  resetPhotoViewerImageTransform,
   shouldDismissPhotoViewer,
 } from "../photo-viewer";
 import { THEME } from "../theme";
@@ -39,17 +41,18 @@ type Props = {
 };
 
 export function PhotoViewer({ photos, index, onClose }: Props) {
+  const mountId = useRef(`pv-${Date.now()}-${index}`).current;
   const [current, setCurrent] = useState(index);
   const [pagingEnabled, setPagingEnabled] = useState(true);
+  const [imageOffset, setImageOffset] = useState(resetPhotoViewerImageTransform);
   const zoomScaleRef = useRef(1);
   const pinchBaseRef = useRef(1);
   const imagePanStart = useRef({ x: 0, y: 0 });
+  const imageOffsetRef = useRef(imageOffset);
+  imageOffsetRef.current = imageOffset;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dragY = useRef(new Animated.Value(0)).current;
-  const imageScale = useRef(new Animated.Value(1)).current;
-  const imageX = useRef(new Animated.Value(0)).current;
-  const imageY = useRef(new Animated.Value(0)).current;
   const sheetOpacity = useMemo(
     () =>
       dragY.interpolate({
@@ -60,18 +63,38 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
     [dragY],
   );
 
+  const resetImage = useRef(() => {
+    zoomScaleRef.current = 1;
+    pinchBaseRef.current = 1;
+    imagePanStart.current = { x: 0, y: 0 };
+    setImageOffset(resetPhotoViewerImageTransform());
+    setPagingEnabled(true);
+    dragY.setValue(0);
+  }).current;
+
+  const closeViewer = () => {
+    resetImage();
+    onCloseRef.current();
+  };
+
+  useEffect(() => {
+    resetImage();
+  }, [resetImage]);
+
   const applyZoomRef = useRef<(scale: number) => void>(() => undefined);
   applyZoomRef.current = (scale: number) => {
     const next = clampPhotoViewerZoom(scale);
     zoomScaleRef.current = next;
-    imageScale.setValue(next);
     const paging = photoViewerPagingEnabled(next);
     setPagingEnabled((was) => (was === paging ? was : paging));
     if (paging) {
       imagePanStart.current = { x: 0, y: 0 };
-      imageX.setValue(0);
-      imageY.setValue(0);
+      setImageOffset(resetPhotoViewerImageTransform());
+      return;
     }
+    setImageOffset((prev) =>
+      photoViewerImageTransform(next, prev.translateX, prev.translateY),
+    );
   };
 
   const composed = useMemo(() => {
@@ -82,6 +105,12 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
       })
       .onUpdate((event) => {
         applyZoomRef.current(pinchBaseRef.current * event.scale);
+      })
+      .onEnd(() => {
+        if (photoViewerPagingEnabled(zoomScaleRef.current)) {
+          imagePanStart.current = { x: 0, y: 0 };
+          setImageOffset(resetPhotoViewerImageTransform());
+        }
       });
 
     const pan = Gesture.Pan().maxPointers(1).runOnJS(true);
@@ -94,33 +123,49 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
     pan
       .onBegin(() => {
         dragY.stopAnimation();
+        imagePanStart.current = {
+          x: imageOffsetRef.current.translateX,
+          y: imageOffsetRef.current.translateY,
+        };
       })
       .onUpdate((event) => {
-        if (photoViewerImagePanEnabled(zoomScaleRef.current)) {
-          imageX.setValue(imagePanStart.current.x + event.translationX);
-          imageY.setValue(imagePanStart.current.y + event.translationY);
+        const pointers = event.numberOfPointers ?? 1;
+        if (photoViewerShouldPanImage(zoomScaleRef.current, pointers)) {
+          setImageOffset(
+            photoViewerImageTransform(
+              zoomScaleRef.current,
+              imagePanStart.current.x + event.translationX,
+              imagePanStart.current.y + event.translationY,
+            ),
+          );
           return;
         }
+        if (pointers !== 1) return;
         dragY.setValue(photoViewerDismissTranslateY(event.translationY));
       })
       .onEnd((event) => {
+        const pointers = event.numberOfPointers ?? 1;
         if (
           shouldDismissPhotoViewer({
             zoomScale: zoomScaleRef.current,
             translationX: event.translationX,
             translationY: event.translationY,
             velocityY: normalizedSwipeVelocity(event.velocityY),
-            numberActiveTouches: 1,
+            numberActiveTouches: pointers,
           })
         ) {
+          resetImage();
           onCloseRef.current();
           return;
         }
-        if (photoViewerImagePanEnabled(zoomScaleRef.current)) {
-          imagePanStart.current = {
-            x: imagePanStart.current.x + event.translationX,
-            y: imagePanStart.current.y + event.translationY,
-          };
+        if (photoViewerShouldPanImage(zoomScaleRef.current, pointers)) {
+          const next = photoViewerImageTransform(
+            zoomScaleRef.current,
+            imagePanStart.current.x + event.translationX,
+            imagePanStart.current.y + event.translationY,
+          );
+          imagePanStart.current = { x: next.translateX, y: next.translateY };
+          setImageOffset(next);
           return;
         }
         Animated.spring(dragY, {
@@ -130,10 +175,16 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
       });
 
     return Gesture.Simultaneous(pinch, pan);
-  }, [dragY, imageScale, imageX, imageY, pagingEnabled]);
+  }, [dragY, pagingEnabled, resetImage]);
+
+  const rendered = photoViewerImageTransform(
+    imageOffset.scale,
+    imageOffset.translateX,
+    imageOffset.translateY,
+  );
 
   return (
-    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={closeViewer}>
       <GestureHandlerRootView style={styles.root}>
         <Animated.View
           style={[
@@ -145,7 +196,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
             <Text style={styles.count}>
               {current + 1} of {photos.length}
             </Text>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button">
+            <Pressable onPress={closeViewer} hitSlop={12} accessibilityRole="button">
               <Text style={styles.close}>Close</Text>
             </Pressable>
           </View>
@@ -158,6 +209,10 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
                 directionalLockEnabled
                 scrollEnabled={pagingEnabled}
                 initialScrollIndex={index}
+                removeClippedSubviews={false}
+                windowSize={Math.max(photos.length, 1)}
+                maxToRenderPerBatch={Math.max(photos.length, 1)}
+                initialNumToRender={Math.max(photos.length, 1)}
                 getItemLayout={(_, photoIndex) => ({
                   length: SCREEN_WIDTH,
                   offset: SCREEN_WIDTH * photoIndex,
@@ -169,28 +224,25 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
                   applyZoomRef.current(1);
                   dragY.setValue(0);
                 }}
-                keyExtractor={(photo) => photo.id}
+                keyExtractor={(photo) => `${mountId}-${photo.id}`}
                 renderItem={({ item }) => (
-                  <View style={styles.page}>
-                    <Animated.View
+                  <View style={styles.page} collapsable={false}>
+                    <Image
+                      key={`${mountId}-${item.id}`}
+                      source={{ uri: item.url }}
                       style={[
-                        styles.imageWrap,
+                        styles.image,
                         {
                           transform: [
-                            { translateX: imageX },
-                            { translateY: imageY },
-                            { scale: imageScale },
+                            { translateX: rendered.translateX },
+                            { translateY: rendered.translateY },
+                            { scale: rendered.scale },
                           ],
                         },
                       ]}
-                    >
-                      <Image
-                        source={{ uri: item.url }}
-                        style={styles.image}
-                        resizeMode="contain"
-                        accessibilityLabel="Request item photo"
-                      />
-                    </Animated.View>
+                      resizeMode="contain"
+                      accessibilityLabel="Request item photo"
+                    />
                   </View>
                 )}
               />
@@ -217,12 +269,6 @@ const styles = StyleSheet.create({
   close: { color: THEME.white, fontWeight: "700", fontSize: 16 },
   list: { flex: 1 },
   page: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT - 90,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imageWrap: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT - 90,
     alignItems: "center",

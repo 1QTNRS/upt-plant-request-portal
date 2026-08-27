@@ -107,6 +107,7 @@ export function ItemEditor({
   const [stockClosed, setStockClosed] = useState(false);
   const [changingStock, setChangingStock] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerSession, setViewerSession] = useState(0);
   const [busy, setBusy] = useState(false);
   const [autosave, setAutosave] = useState<AutosaveStatus>("idle");
   const [pendingPhotos, setPendingPhotos] = useState<EditorPhoto[]>([]);
@@ -512,6 +513,7 @@ export function ItemEditor({
           onPreview={(index) => {
             const photo = photos[index];
             if (!photo || !canPreviewPhoto(photo)) return;
+            setViewerSession((session) => session + 1);
             setViewerIndex(readyPhotos.findIndex((entry) => entry.id === photo.id));
           }}
           onRemove={(photoId) => {
@@ -819,6 +821,7 @@ export function ItemEditor({
 
       {viewerIndex !== null ? (
         <PhotoViewer
+          key={`photo-viewer-${viewerSession}`}
           photos={readyPhotos}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
