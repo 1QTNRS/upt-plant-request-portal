@@ -50,6 +50,9 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /registerStockDismiss/);
     assert.match(editor, /styles\.stockHit/);
     assert.match(editor, /stopPropagation/);
+    assert.match(editor, /consumeStockSearchTouch/);
+    assert.match(detail, /applyStockOutsideTouch/);
+    assert.match(detail, /onStockSearchTouch/);
     assert.match(editor, /nestedScrollEnabled/);
     assert.match(editor, /keyboardShouldPersistTaps="always"/);
     assert.match(editor, /keyboardDismissMode="none"/);

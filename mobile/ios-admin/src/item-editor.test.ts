@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  applyStockOutsideTouch,
   itemEditorSections,
   itemPhotos,
   offerFieldsEnabled,
@@ -145,5 +146,20 @@ describe("item editor rules", () => {
     assert.equal(requestPageScrollEnabledWhileStockOpen(), true);
     assert.equal(requestPageKeyboardShouldPersistTaps(), "handled");
     assert.equal(requestPageKeyboardDismissMode(), "on-drag");
+  });
+
+  it("does not dismiss when the same touch landed on the stock search", () => {
+    assert.equal(
+      applyStockOutsideTouch({ dropdownOpen: true, consumedByStockSearch: false }),
+      "dismiss",
+    );
+    assert.equal(
+      applyStockOutsideTouch({ dropdownOpen: true, consumedByStockSearch: true }),
+      "ignore",
+    );
+    assert.equal(
+      applyStockOutsideTouch({ dropdownOpen: false, consumedByStockSearch: false }),
+      "ignore",
+    );
   });
 });

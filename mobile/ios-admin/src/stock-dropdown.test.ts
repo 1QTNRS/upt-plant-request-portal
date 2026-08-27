@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
+  applyStockOutsideTouch,
   requestPageKeyboardDismissMode,
   requestPageKeyboardShouldPersistTaps,
   requestPageScrollEnabledWhileStockOpen,
@@ -43,8 +44,15 @@ describe("Link Stock dropdown dismiss", () => {
       false,
     );
     assert.match(detail, /onTouchStart=\{dismissStockSearches\}/);
+    assert.match(detail, /applyStockOutsideTouch/);
+    assert.match(detail, /consumeStockSearchTouch/);
+    assert.match(editor, /consumeStockSearchTouch/);
     assert.match(editor, /stopPropagation/);
     assert.match(editor, /styles\.stockHit/);
+    assert.equal(
+      applyStockOutsideTouch({ dropdownOpen: true, consumedByStockSearch: false }),
+      "dismiss",
+    );
   });
 
   it("lets the keyboard dismiss on an outside tap", () => {
@@ -86,6 +94,10 @@ describe("Link Stock dropdown dismiss", () => {
   it("still selects an in-stock result", () => {
     assert.equal(stockSearchConsumesOutsidePress("result"), true);
     assert.equal(shouldDismissStockSearch("result"), false);
+    assert.equal(
+      applyStockOutsideTouch({ dropdownOpen: true, consumedByStockSearch: true }),
+      "ignore",
+    );
     assert.match(editor, /intent: "link-stock"/);
     assert.match(editor, /setStockClosed\(true\)/);
     assert.match(editor, /canSelectStockCandidate/);

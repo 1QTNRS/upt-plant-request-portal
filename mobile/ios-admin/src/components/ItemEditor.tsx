@@ -61,6 +61,7 @@ type Props = {
   onResult: (result: ActionResult) => void;
   onError: (message: string) => void;
   onStockDropdownChange?: (open: boolean, itemId: string) => void;
+  onStockSearchTouch?: () => void;
   onDraftChange?: (itemId: string, draft: ItemDraft) => void;
   registerFlush?: (itemId: string, flush: (() => Promise<boolean>) | null) => void;
   registerStockDismiss?: (itemId: string, dismiss: (() => void) | null) => void;
@@ -75,6 +76,7 @@ export function ItemEditor({
   onResult,
   onError,
   onStockDropdownChange,
+  onStockSearchTouch,
   onDraftChange,
   registerFlush,
   registerStockDismiss,
@@ -150,6 +152,12 @@ export function ItemEditor({
 
   const onStockDropdownChangeRef = useRef(onStockDropdownChange);
   onStockDropdownChangeRef.current = onStockDropdownChange;
+  const onStockSearchTouchRef = useRef(onStockSearchTouch);
+  onStockSearchTouchRef.current = onStockSearchTouch;
+
+  function consumeStockSearchTouch() {
+    onStockSearchTouchRef.current?.();
+  }
 
   useEffect(() => {
     onStockDropdownChangeRef.current?.(dropdownVisible, item.id);
@@ -502,7 +510,10 @@ export function ItemEditor({
           {canEditItems ? (
             <Pressable
               style={styles.stockHit}
-              onTouchStart={(event) => event.stopPropagation()}
+              onTouchStart={(event) => {
+                consumeStockSearchTouch();
+                event.stopPropagation();
+              }}
             >
               <TextInput
                 value={stockTerm}
@@ -531,6 +542,7 @@ export function ItemEditor({
                       nestedScrollEnabled
                       keyboardShouldPersistTaps="always"
                       keyboardDismissMode="none"
+                      onTouchStart={consumeStockSearchTouch}
                       style={styles.dropdownList}
                     >
                       {stockResults.map((candidate) => {

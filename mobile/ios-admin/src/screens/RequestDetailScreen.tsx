@@ -21,6 +21,7 @@ import {
   requestLooksSendable,
   type ItemDraft,
 } from "../item-autosave";
+import { applyStockOutsideTouch } from "../item-editor";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
@@ -45,6 +46,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const flushers = useRef(new Map<string, () => Promise<boolean>>());
   const stockDismissers = useRef(new Map<string, () => void>());
   const stockOpenIds = useRef(new Set<string>());
+  const stockTouchConsumed = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -100,10 +102,28 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     else stockOpenIds.current.delete(itemId);
   }, []);
 
+  const consumeStockSearchTouch = useCallback(() => {
+    stockTouchConsumed.current = true;
+  }, []);
+
   const dismissStockSearches = useCallback(() => {
-    if (stockOpenIds.current.size === 0) return;
-    for (const dismiss of stockDismissers.current.values()) dismiss();
-    Keyboard.dismiss();
+    if (stockOpenIds.current.size === 0 && !stockTouchConsumed.current) return;
+    // ScrollView onTouchStart can beat the stock hit box. Wait one tick so a
+    // tap on the input, results, or dropdown scroll can claim the touch.
+    queueMicrotask(() => {
+      const consumed = stockTouchConsumed.current;
+      stockTouchConsumed.current = false;
+      if (
+        applyStockOutsideTouch({
+          dropdownOpen: stockOpenIds.current.size > 0,
+          consumedByStockSearch: consumed,
+        }) === "ignore"
+      ) {
+        return;
+      }
+      for (const dismiss of stockDismissers.current.values()) dismiss();
+      Keyboard.dismiss();
+    });
   }, []);
 
   const onDraftChange = useCallback((itemId: string, draft: ItemDraft) => {
@@ -188,6 +208,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             onResult={applyResult}
             onError={setError}
             onStockDropdownChange={onStockDropdownChange}
+            onStockSearchTouch={consumeStockSearchTouch}
             onDraftChange={onDraftChange}
             registerFlush={registerFlush}
             registerStockDismiss={registerStockDismiss}

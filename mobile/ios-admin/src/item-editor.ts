@@ -118,6 +118,16 @@ export function stockDropdownAfterOutsideDismiss(): { focused: boolean; closed: 
   return { focused: false, closed: true };
 }
 
+/** ScrollView onTouchStart can fire before or after the stock hit box. */
+export function applyStockOutsideTouch(input: {
+  dropdownOpen: boolean;
+  consumedByStockSearch: boolean;
+}): "dismiss" | "ignore" {
+  if (!input.dropdownOpen) return "ignore";
+  if (input.consumedByStockSearch) return "ignore";
+  return "dismiss";
+}
+
 export function stockDropdownAfterFulfillmentChange(): {
   focused: boolean;
   closed: boolean;
