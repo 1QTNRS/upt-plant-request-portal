@@ -84,3 +84,64 @@ export function stockDropdownOpen(
   if (!focused && !hasResults && !loading) return false;
   return term.trim().length > 0 || loading || hasResults;
 }
+
+/** Page scroll stays on while the dropdown is open so the request is never trapped. */
+export function requestPageScrollEnabledWhileStockOpen(): boolean {
+  return true;
+}
+
+export function requestPageKeyboardShouldPersistTaps(): "handled" {
+  return "handled";
+}
+
+export function requestPageKeyboardDismissMode(): "on-drag" {
+  return "on-drag";
+}
+
+export type StockSearchPressTarget =
+  | "input"
+  | "dropdown"
+  | "result"
+  | "outside"
+  | "fulfillment"
+  | "page-control";
+
+export function stockSearchConsumesOutsidePress(target: StockSearchPressTarget): boolean {
+  return target === "input" || target === "dropdown" || target === "result";
+}
+
+export function shouldDismissStockSearch(target: StockSearchPressTarget): boolean {
+  return target === "outside" || target === "fulfillment" || target === "page-control";
+}
+
+export function stockDropdownAfterOutsideDismiss(): { focused: boolean; closed: boolean } {
+  return { focused: false, closed: true };
+}
+
+/** ScrollView onTouchStart can fire before or after the stock hit box. */
+export function applyStockOutsideTouch(input: {
+  dropdownOpen: boolean;
+  consumedByStockSearch: boolean;
+}): "dismiss" | "ignore" {
+  if (!input.dropdownOpen) return "ignore";
+  if (input.consumedByStockSearch) return "ignore";
+  return "dismiss";
+}
+
+export function stockDropdownAfterFulfillmentChange(): {
+  focused: boolean;
+  closed: boolean;
+  term: string;
+  resultsCleared: boolean;
+} {
+  return { focused: false, closed: true, term: "", resultsCleared: true };
+}
+
+export function stockDropdownAfterNavigateAway(): {
+  focused: boolean;
+  closed: boolean;
+  term: string;
+  resultsCleared: boolean;
+} {
+  return { focused: false, closed: true, term: "", resultsCleared: true };
+}

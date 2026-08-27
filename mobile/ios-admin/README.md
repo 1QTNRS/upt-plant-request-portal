@@ -50,13 +50,13 @@ Profiles: `development` (dev client), `preview` (internal), `production` (autoIn
 | File | Required | Purpose |
 | --- | --- | --- |
 | `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.json`. Do not commit a fake placeholder. |
-| `mobile/ios-admin/assets/splash-icon.png` | Optional | Logo on the **native** splash (solid `#002910` until you add this). After adding it, set `splash.image` / the `expo-splash-screen` plugin `image` to `./assets/splash-icon.png`. |
-| `mobile/ios-admin/assets/brand-mark.png` | Optional | In-app intro mark. After adding it, set `APP_INTRO_BRAND_MARK` in `src/app-intro-assets.ts` to `require("../assets/brand-mark.png")`. Until then the intro uses a "Request Portal" wordmark. |
+| `mobile/ios-admin/assets/splash-icon.png` | **Yes** for a visible logo | Centered logo on the **native** splash and the in-app intro. Background is always `#002910`. Replace the committed transparent PNG with the real mark (no text). |
+| `mobile/ios-admin/assets/brand-mark.png` | Unused | Intro uses `splash-icon.png` so both frames match. |
 
 ### Native splash vs in-app intro
 
-- **Native splash** (`expo-splash-screen`): static `#002910`. Fast. Used by a real EAS / dev-client binary.
-- **In-app intro** (`AppIntro`): ~1.1s fade/scale after the native splash. Skipped when a saved `upt_admin_` session is being restored. No network. Respects Reduce Motion (finishes immediately).
+- **Native splash** (`expo-splash-screen`): `#002910`, `./assets/splash-icon.png`, `imageWidth: 260`, `resizeMode: contain`. Used by a real EAS / dev-client binary.
+- **In-app intro** (`AppIntro`): same background and the same splash-icon, ~1.1s fade/scale, logo only (no "Request Portal" text). Skipped when a saved `upt_admin_` session is being restored. No network. Respects Reduce Motion (finishes immediately). The native splash stays up until this view mounts so there is no white flash.
 
 ### Expo Go differences
 

@@ -21,12 +21,12 @@ describe("first Apple build config", () => {
         version: string;
         owner: string;
         icon: string;
-        splash: { backgroundColor: string };
+        splash: { backgroundColor: string; image: string; imageWidth: number; resizeMode: string };
         extra: { eas: { projectId: string } };
         ios: {
           bundleIdentifier: string;
           icon: string;
-          splash: { backgroundColor: string };
+          splash: { backgroundColor: string; image: string; imageWidth: number; resizeMode: string };
           infoPlist: { NSAppTransportSecurity: { NSAllowsArbitraryLoads: boolean } };
         };
         plugins: unknown[];
@@ -47,7 +47,20 @@ describe("first Apple build config", () => {
     assert.equal(app.expo.icon, "./assets/icon.png");
     assert.equal(app.expo.ios.icon, "./assets/icon.png");
     assert.equal(app.expo.splash.backgroundColor, "#002910");
+    assert.equal(app.expo.splash.image, "./assets/splash-icon.png");
+    assert.equal(app.expo.splash.imageWidth, 260);
+    assert.equal(app.expo.splash.resizeMode, "contain");
     assert.equal(app.expo.ios.splash.backgroundColor, "#002910");
+    assert.equal(app.expo.ios.splash.image, "./assets/splash-icon.png");
+    assert.equal(app.expo.ios.splash.imageWidth, 260);
+    assert.equal(app.expo.ios.splash.resizeMode, "contain");
+    const splashPlugin = app.expo.plugins.find(
+      (plugin) => Array.isArray(plugin) && plugin[0] === "expo-splash-screen",
+    ) as [string, { backgroundColor: string; image: string; imageWidth: number; resizeMode: string }];
+    assert.equal(splashPlugin[1].backgroundColor, "#002910");
+    assert.equal(splashPlugin[1].image, "./assets/splash-icon.png");
+    assert.equal(splashPlugin[1].imageWidth, 260);
+    assert.equal(splashPlugin[1].resizeMode, "contain");
     assert.equal(app.expo.ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads, false);
     assert.equal(eas.cli.appVersionSource, "remote");
     assert.equal(eas.build.production.autoIncrement, true);

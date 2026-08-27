@@ -1100,8 +1100,15 @@ First Apple-build config (do not change Expo identity): owner
 **Request Portal**, version **1.0.0**, production EAS `autoIncrement` for
 build numbers. App icon path is `mobile/ios-admin/assets/icon.png`
 (1024×1024 — owner provides the file; do not invent a placeholder).
-Native splash is static `#002910`. In-app intro is JS-only and skipped
-when restoring a saved session. Camera permission is not requested yet.
+Native splash and the in-app intro both use `#002910` plus
+`./assets/splash-icon.png` (260px, contain, logo only — no
+"Request Portal" wordmark). The native splash stays up until AppIntro
+mounts so there is no white frame. Intro is JS-only and skipped when
+restoring a saved session. Settings saves merge into the open form and
+keep a reserved Saving…/Saved slot so the screen does not remount or
+lose scroll. Link Stock search dismisses on an outside tap or
+fulfillment change without locking the request page. Camera permission
+is not requested yet.
 
 **Shipped:** `GET /api/mobile/admin/session`, request list, request
 detail, and `POST /api/mobile/admin/requests/:id` for the same intents

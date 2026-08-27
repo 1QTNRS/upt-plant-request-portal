@@ -60,9 +60,11 @@ type Props = {
   requestId: string;
   onResult: (result: ActionResult) => void;
   onError: (message: string) => void;
-  onStockDropdownChange?: (open: boolean) => void;
+  onStockDropdownChange?: (open: boolean, itemId: string) => void;
+  onStockSearchTouch?: () => void;
   onDraftChange?: (itemId: string, draft: ItemDraft) => void;
   registerFlush?: (itemId: string, flush: (() => Promise<boolean>) | null) => void;
+  registerStockDismiss?: (itemId: string, dismiss: (() => void) | null) => void;
 };
 
 export function ItemEditor({
@@ -74,8 +76,10 @@ export function ItemEditor({
   onResult,
   onError,
   onStockDropdownChange,
+  onStockSearchTouch,
   onDraftChange,
   registerFlush,
+  registerStockDismiss,
 }: Props) {
   const route = routeOf(item);
   const fieldsOn = canEditItems && offerFieldsEnabled(route);
@@ -148,11 +152,49 @@ export function ItemEditor({
 
   const onStockDropdownChangeRef = useRef(onStockDropdownChange);
   onStockDropdownChangeRef.current = onStockDropdownChange;
+  const onStockSearchTouchRef = useRef(onStockSearchTouch);
+  onStockSearchTouchRef.current = onStockSearchTouch;
+
+  function consumeStockSearchTouch() {
+    onStockSearchTouchRef.current?.();
+  }
 
   useEffect(() => {
-    onStockDropdownChangeRef.current?.(dropdownVisible);
-    return () => onStockDropdownChangeRef.current?.(false);
-  }, [dropdownVisible]);
+    onStockDropdownChangeRef.current?.(dropdownVisible, item.id);
+    return () => onStockDropdownChangeRef.current?.(false, item.id);
+  }, [dropdownVisible, item.id]);
+
+  function dismissStockSearch() {
+    setStockClosed(true);
+    setStockFocused(false);
+  }
+
+  const dismissStockSearchRef = useRef(dismissStockSearch);
+  dismissStockSearchRef.current = dismissStockSearch;
+
+  const registerStockDismissRef = useRef(registerStockDismiss);
+  registerStockDismissRef.current = registerStockDismiss;
+
+  useEffect(() => {
+    registerStockDismissRef.current?.(item.id, () => dismissStockSearchRef.current());
+    return () => {
+      dismissStockSearchRef.current();
+      registerStockDismissRef.current?.(item.id, null);
+    };
+  }, [item.id]);
+
+  useEffect(() => {
+    if (stockMode) return;
+    setStockClosed(true);
+    setStockFocused(false);
+    setStockTerm("");
+    setStockResults([]);
+    setStockLoading(false);
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  }, [stockMode]);
 
   async function act(
     body: Record<string, unknown>,
@@ -262,6 +304,14 @@ export function ItemEditor({
   }, [item.id]);
 
   async function setRoute(next: FulfillmentRoute) {
+    dismissStockSearch();
+    setStockTerm("");
+    setStockResults([]);
+    setStockLoading(false);
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
     await persistDraftRef.current({ flush: true });
     await act(
       next === "not_available"
@@ -458,7 +508,13 @@ export function ItemEditor({
       {stockMode ? (
         <View style={styles.stockWrap} pointerEvents={fieldsOn ? "auto" : "none"}>
           {canEditItems ? (
-            <>
+            <Pressable
+              style={styles.stockHit}
+              onTouchStart={(event) => {
+                consumeStockSearchTouch();
+                event.stopPropagation();
+              }}
+            >
               <TextInput
                 value={stockTerm}
                 onChangeText={onStockTerm}
@@ -466,7 +522,10 @@ export function ItemEditor({
                 placeholder="Search live website stock"
                 placeholderTextColor={THEME.muted}
                 style={[ui.input, styles.stockInput, !fieldsOn && ui.inputDisabled]}
-                onFocus={() => setStockFocused(true)}
+                onFocus={() => {
+                  setStockClosed(false);
+                  setStockFocused(true);
+                }}
                 onBlur={() => setStockFocused(false)}
                 returnKeyType="search"
                 onSubmitEditing={() => void searchStock(stockTerm)}
@@ -483,6 +542,7 @@ export function ItemEditor({
                       nestedScrollEnabled
                       keyboardShouldPersistTaps="always"
                       keyboardDismissMode="none"
+                      onTouchStart={consumeStockSearchTouch}
                       style={styles.dropdownList}
                     >
                       {stockResults.map((candidate) => {
@@ -523,7 +583,7 @@ export function ItemEditor({
                   )}
                 </View>
               ) : null}
-            </>
+            </Pressable>
           ) : null}
           {item.linkedStock ? (
             <View style={styles.linkedStock}>
@@ -715,6 +775,7 @@ const styles = {
   },
   block: { marginTop: 8 },
   stockWrap: { marginTop: 4, marginBottom: 8, zIndex: 2 },
+  stockHit: { zIndex: 2 },
   stockInput: { marginBottom: 0, marginTop: 4 },
   dropdown: {
     borderWidth: 1,

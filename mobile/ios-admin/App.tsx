@@ -193,10 +193,13 @@ export default function App() {
 
   useEffect(() => {
     if (sessionKind === "unknown") return;
+    // Fresh launches keep the native splash up until AppIntro mounts (same
+    // #002910 + logo) so there is no white frame in between.
+    if (shouldPlayAppIntro({ sessionKind }) && !introDone) return;
     void SplashScreen.hideAsync().catch(() => {
       // Already hidden in Expo Go or after a fast restore.
     });
-  }, [sessionKind]);
+  }, [sessionKind, introDone]);
 
   useEffect(() => {
     if (!signedIn || !token) return;
@@ -254,8 +257,10 @@ export default function App() {
   const darkLaunch = sessionKind === "unknown" || playIntro || !ready;
 
   return (
-    <GestureHandlerRootView style={ui.flex}>
-      <SafeAreaProvider>
+    <GestureHandlerRootView
+      style={[ui.flex, { backgroundColor: APP_INTRO_BACKGROUND }]}
+    >
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: APP_INTRO_BACKGROUND }}>
         <StatusBar style={darkLaunch ? "light" : "dark"} />
         {sessionKind === "unknown" ? (
           <View style={[ui.flex, { backgroundColor: APP_INTRO_BACKGROUND }]} />

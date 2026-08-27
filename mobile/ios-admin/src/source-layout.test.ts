@@ -46,6 +46,17 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /styles\.inStock/);
     assert.match(editor, /STOCK_SEARCH_NO_STOCK_COLOR/);
     assert.match(editor, /disabled=\{!selectable\}/);
+    assert.match(editor, /dismissStockSearch/);
+    assert.match(editor, /registerStockDismiss/);
+    assert.match(editor, /styles\.stockHit/);
+    assert.match(editor, /stopPropagation/);
+    assert.match(editor, /consumeStockSearchTouch/);
+    assert.match(detail, /applyStockOutsideTouch/);
+    assert.match(detail, /onStockSearchTouch/);
+    assert.match(editor, /nestedScrollEnabled/);
+    assert.match(editor, /keyboardShouldPersistTaps="always"/);
+    assert.match(editor, /keyboardDismissMode="none"/);
+    assert.match(editor, /intent: "link-stock"/);
     assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
     assert.match(editor, /setViewerIndex/);
@@ -53,7 +64,13 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /THUMB_SIZE/);
     assert.match(strip, /paddingTop: THUMB_PAD/);
     assert.match(strip, /overflow: "visible"/);
-    assert.match(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
+    assert.doesNotMatch(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
+    assert.match(detail, /keyboardShouldPersistTaps="handled"/);
+    assert.match(detail, /keyboardDismissMode="on-drag"/);
+    assert.match(detail, /dismissStockSearches/);
+    assert.match(detail, /registerStockDismiss/);
+    assert.match(detail, /onTouchStart=\{dismissStockSearches\}/);
+    assert.match(detail, /Keyboard\.dismiss/);
     assert.match(detail, /ui\.expirationDays/);
     assert.match(detail, /sendOfferHoldControlsEnabled/);
     const viewer = read("src/components/PhotoViewer.tsx");
@@ -107,11 +124,18 @@ describe("iOS admin source layout", () => {
 
   it("plays a skippable in-app intro after the native splash", () => {
     const app = read("App.tsx");
+    const intro = read("src/AppIntro.tsx");
     const login = read("src/screens/LoginScreen.tsx");
     assert.match(app, /preventAutoHideAsync/);
     assert.match(app, /AppIntro/);
     assert.match(app, /shouldPlayAppIntro/);
     assert.match(app, /sessionKind/);
+    assert.match(app, /APP_INTRO_BACKGROUND/);
+    assert.match(intro, /APP_INTRO_SPLASH_ICON/);
+    assert.match(intro, /APP_INTRO_LOGO_WIDTH/);
+    assert.match(intro, /hideAsync/);
+    assert.doesNotMatch(intro, /Request Portal/);
+    assert.doesNotMatch(intro, /wordmark/);
     assert.match(login, /Request Portal/);
     assert.doesNotMatch(login, /UPT Admin/);
   });

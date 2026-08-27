@@ -9,6 +9,8 @@
     "icon": "./assets/icon.png",
     "owner": "unsolicited-plant-talks",
     "splash": {
+      "image": "./assets/splash-icon.png",
+      "imageWidth": 260,
       "resizeMode": "contain",
       "backgroundColor": "#002910"
     },
@@ -17,6 +19,8 @@
       "bundleIdentifier": "com.unsolicitedplanttalks.admin",
       "icon": "./assets/icon.png",
       "splash": {
+        "image": "./assets/splash-icon.png",
+        "imageWidth": 260,
         "resizeMode": "contain",
         "backgroundColor": "#002910"
       },
@@ -45,6 +49,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#002910",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 260,
           "resizeMode": "contain"
         }
       ],
