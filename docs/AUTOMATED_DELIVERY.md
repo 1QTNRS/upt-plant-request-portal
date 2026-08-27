@@ -41,9 +41,16 @@ Uncertain diffs (including an empty file list) are **high-risk**.
 
 UI refinements, responsive/mobile fixes, wording, dashboard filters/sorting,
 photo UX, visual navigation, non-destructive bug fixes, additional automated
-tests, and other changes that do **not** materially alter payments, inventory
-integrity, authentication, customer isolation, production resources, or
-destructive data behavior.
+tests, **iOS admin UI/UX in `mobile/ios-admin` that does not change auth,
+tokens, API URL, or EAS identity**, and other changes that do **not**
+materially alter payments, inventory integrity, authentication, customer
+isolation, production resources, or destructive data behavior.
+
+Routine iOS batches are autonomous: implement, test (`tsc`, `npm test`,
+`expo-doctor`, `expo install --check`, iOS export), open/update the PR, wait
+for CI, and Squash & Merge when the classifier says `routine`. After merge,
+tell the owner only how to refresh Expo Go. See **Request Portal iOS standing
+workflow** in [AGENTS.md](../AGENTS.md).
 
 ### High-risk (owner approval required)
 

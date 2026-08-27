@@ -14,6 +14,52 @@ Do **not** rebuild the UPT Plant Request Portal. Continue from the Prisma-backed
 
 This repo is the **UPT Plant Request Portal** on the Shopify App Template (React Router) — an embedded Shopify admin app (React Router v7 SSR + Vite) that uses **Prisma** for session storage and portal data. `DATABASE_URL` selects the provider: **SQLite** for local development (the default when it is unset), **PostgreSQL** in production.
 
+### Request Portal iOS standing workflow
+
+Routine iOS UI/UX work is autonomous. Primary tree: `mobile/ios-admin`. Do not wait
+for the owner between implementation steps unless a listed stop condition applies.
+
+1. Read the requested batch.
+2. Inspect the existing implementation.
+3. Implement all requested changes.
+4. Add or update tests.
+5. Run `cd mobile/ios-admin && npx tsc --noEmit && npm test`, then `npx expo-doctor`,
+   `npx expo install --check`, and an iOS export/bundle validation
+   (`npx expo export --platform ios`).
+6. Fix failures and rerun until green.
+7. Create or update the PR.
+8. Wait for GitHub CI.
+9. Investigate CI failures yourself.
+10. If required checks are green and the PR is mergeable:
+    - routine iOS-only changes may be Squash & Merged automatically
+      (`docs/AUTOMATED_DELIVERY.md` / `pr-risk.ts`)
+    - high-risk or shared-backend changes stop for owner approval
+11. After a routine merge, tell the owner only how to refresh Expo locally.
+
+Stop and ask only for: a real business/product decision; production data that
+could be destroyed; auth/security; payment/Draft Order; inventory architecture;
+destructive migrations; production Shopify mappings; customer privacy/isolation;
+or an ambiguous merge conflict that needs owner judgment.
+
+Do not change EAS identity, bundle ID, Expo project ID, API URL, or
+`upt_admin_` token behavior unless the owner explicitly asks.
+
+Current design constants (do not invent replacements):
+
+- dark green / bottom nav: `#002910`
+- light mint page background: `#d6ece2`
+- bottom nav labels/icons: white; selected tab: yellow
+- display name: **Request Portal**
+- bundle ID: `com.unsolicitedplanttalks.admin`
+- scheme: `uptadmin`
+- Expo owner: `unsolicited-plant-talks`
+- Expo project ID: `2c4abfc0-98d5-462b-abd0-8ecba3deeeed`
+- production API: `https://upt-plant-request-portal.onrender.com`
+
+After each completed iOS batch, report only: what changed, root causes, tests,
+PR/merge status, whether Expo needs a refresh, and manual checks that genuinely
+need the owner's eyes.
+
 ### Services / commands
 
 There is a single web service. Standard commands live in `package.json` scripts; notable ones:
