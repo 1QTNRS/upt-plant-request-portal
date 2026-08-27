@@ -6,10 +6,18 @@ import {
   itemPhotos,
   offerFieldsEnabled,
   reorderPhotos,
+  requestPageKeyboardDismissMode,
+  requestPageKeyboardShouldPersistTaps,
+  requestPageScrollEnabledWhileStockOpen,
   routeOf,
+  shouldDismissStockSearch,
   showsExactPlantFields,
   showsStockSearch,
+  stockDropdownAfterFulfillmentChange,
+  stockDropdownAfterNavigateAway,
+  stockDropdownAfterOutsideDismiss,
   stockDropdownOpen,
+  stockSearchConsumesOutsidePress,
   TAB_BAR_LABEL_FONT_SIZE,
   THUMB_PAD,
   THUMB_REMOVE_SIZE,
@@ -105,5 +113,37 @@ describe("item editor rules", () => {
     assert.equal(stockDropdownOpen(true, "albo", true, false, false), true);
     assert.equal(stockDropdownOpen(true, "albo", true, false, true), false);
     assert.equal(stockDropdownOpen(false, "", false, false, false), false);
+  });
+
+  it("opens during search and closes on outside tap without selecting a result", () => {
+    assert.equal(stockDropdownOpen(true, "albo", true, false, false), true);
+    const dismissed = stockDropdownAfterOutsideDismiss();
+    assert.equal(stockDropdownOpen(dismissed.focused, "albo", true, false, dismissed.closed), false);
+    assert.equal(shouldDismissStockSearch("outside"), true);
+    assert.equal(shouldDismissStockSearch("page-control"), true);
+    assert.equal(shouldDismissStockSearch("input"), false);
+    assert.equal(shouldDismissStockSearch("dropdown"), false);
+    assert.equal(shouldDismissStockSearch("result"), false);
+    assert.equal(stockSearchConsumesOutsidePress("input"), true);
+    assert.equal(stockSearchConsumesOutsidePress("dropdown"), true);
+    assert.equal(stockSearchConsumesOutsidePress("result"), true);
+    assert.equal(stockSearchConsumesOutsidePress("outside"), false);
+  });
+
+  it("closes on fulfillment change and resets when leaving the request", () => {
+    assert.equal(shouldDismissStockSearch("fulfillment"), true);
+    const switched = stockDropdownAfterFulfillmentChange();
+    assert.equal(stockDropdownOpen(switched.focused, "albo", true, false, switched.closed), false);
+    assert.equal(switched.term, "");
+    assert.equal(switched.resultsCleared, true);
+    const left = stockDropdownAfterNavigateAway();
+    assert.equal(stockDropdownOpen(left.focused, "albo", true, false, left.closed), false);
+    assert.equal(left.resultsCleared, true);
+  });
+
+  it("keeps the request page scrollable and lets the keyboard dismiss outside search", () => {
+    assert.equal(requestPageScrollEnabledWhileStockOpen(), true);
+    assert.equal(requestPageKeyboardShouldPersistTaps(), "handled");
+    assert.equal(requestPageKeyboardDismissMode(), "on-drag");
   });
 });

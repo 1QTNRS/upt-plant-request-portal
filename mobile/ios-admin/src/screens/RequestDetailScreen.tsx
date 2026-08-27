@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -40,9 +41,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const [shippingFeeOverride, setShippingFeeOverride] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const [confirmOverride, setConfirmOverride] = useState(false);
-  const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
   const flushers = useRef(new Map<string, () => Promise<boolean>>());
+  const stockDismissers = useRef(new Map<string, () => void>());
+  const stockOpenIds = useRef(new Set<string>());
 
   useEffect(() => {
     void (async () => {
@@ -66,6 +68,14 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     })();
   }, [apiUrl, requestId, token]);
 
+  useEffect(() => {
+    return () => {
+      for (const dismiss of stockDismissers.current.values()) dismiss();
+      stockDismissers.current.clear();
+      stockOpenIds.current.clear();
+    };
+  }, [requestId]);
+
   function applyResult(result: ActionResult) {
     if (!result.ok) {
       setError(result.error || "That action failed.");
@@ -78,6 +88,22 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const registerFlush = useCallback((itemId: string, flush: (() => Promise<boolean>) | null) => {
     if (flush) flushers.current.set(itemId, flush);
     else flushers.current.delete(itemId);
+  }, []);
+
+  const registerStockDismiss = useCallback((itemId: string, dismiss: (() => void) | null) => {
+    if (dismiss) stockDismissers.current.set(itemId, dismiss);
+    else stockDismissers.current.delete(itemId);
+  }, []);
+
+  const onStockDropdownChange = useCallback((open: boolean, itemId: string) => {
+    if (open) stockOpenIds.current.add(itemId);
+    else stockOpenIds.current.delete(itemId);
+  }, []);
+
+  const dismissStockSearches = useCallback(() => {
+    if (stockOpenIds.current.size === 0) return;
+    for (const dismiss of stockDismissers.current.values()) dismiss();
+    Keyboard.dismiss();
   }, []);
 
   const onDraftChange = useCallback((itemId: string, draft: ItemDraft) => {
@@ -134,9 +160,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     >
       <ScrollView
         contentContainerStyle={ui.page}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        scrollEnabled={!stockDropdownOpen}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onTouchStart={dismissStockSearches}
       >
         <Pressable onPress={() => navigation.goBack()}>
           <Text style={ui.link}>← Requests</Text>
@@ -161,9 +187,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             requestId={detail.id}
             onResult={applyResult}
             onError={setError}
-            onStockDropdownChange={setStockDropdownOpen}
+            onStockDropdownChange={onStockDropdownChange}
             onDraftChange={onDraftChange}
             registerFlush={registerFlush}
+            registerStockDismiss={registerStockDismiss}
           />
         ))}
 
