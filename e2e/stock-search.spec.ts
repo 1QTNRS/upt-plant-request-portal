@@ -8,7 +8,7 @@ test.describe("Link Stock search", () => {
     await expect(page.getByText("Sarah Mitchell").first()).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByText("REQ1", { exact: true }).first().click();
+    await page.locator(".upt-wide-only").getByText("View items").click();
     await expect(page.getByText("Monstera Deliciosa")).toBeVisible({
       timeout: 15_000,
     });
