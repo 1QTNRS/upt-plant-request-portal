@@ -54,9 +54,16 @@ export function shouldBlockLibraryPicker(_permission: PhotoLibraryPermission | n
   return false;
 }
 
+export function pickerAssetLooksLikeHeic(asset: PickerAsset): boolean {
+  const mime = (asset.mimeType || "").toLowerCase();
+  const name = asset.fileName || "";
+  return mime.includes("heic") || mime.includes("heif") || /\.hei[cf]$/i.test(name);
+}
+
 export function normalizedImageMime(asset: PickerAsset): string {
   const mime = (asset.mimeType || "").toLowerCase();
   const name = asset.fileName || "";
+  if (pickerAssetLooksLikeHeic(asset)) return "image/heic";
   if (mime === "image/png" || /\.png$/i.test(name)) return "image/png";
   if (mime === "image/webp" || /\.webp$/i.test(name)) return "image/webp";
   if (mime === "image/gif" || /\.gif$/i.test(name)) return "image/gif";
@@ -68,10 +75,22 @@ export function uploadFileFromPickerAsset(
   index: number,
 ): { uri: string; name: string; type: string } {
   const type = normalizedImageMime(asset);
-  const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : type === "image/gif" ? "gif" : "jpg";
+  const ext =
+    type === "image/png" ? "png" : type === "image/webp" ? "webp" : type === "image/gif" ? "gif" : type === "image/heic" ? "heic" : "jpg";
   const rawBase = (asset.fileName || `plant-${index + 1}`).replace(/\.[^.]+$/, "");
   const base = rawBase.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || `plant-${index + 1}`;
   return { uri: asset.uri, name: `${base}.${ext}`, type };
+}
+
+export async function shopifyJpegFromPickerAsset(
+  asset: PickerAsset,
+  index: number,
+  manipulate: (uri: string) => Promise<{ uri: string }>,
+): Promise<{ uri: string; name: string; type: string }> {
+  const saved = await manipulate(asset.uri);
+  const rawBase = (asset.fileName || `plant-${index + 1}`).replace(/\.[^.]+$/, "");
+  const base = rawBase.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || `plant-${index + 1}`;
+  return { uri: saved.uri, name: `${base}.jpg`, type: "image/jpeg" };
 }
 
 export function photosFromPickerAssets(assets: PickerAsset[]): EditorPhoto[] {
@@ -86,6 +105,21 @@ export function photosFromPickerAssets(assets: PickerAsset[]): EditorPhoto[] {
       file: uploadFileFromPickerAsset(asset, index),
     };
   });
+}
+
+export async function photosReadyForShopifyUpload(
+  assets: PickerAsset[],
+  manipulate: (uri: string) => Promise<{ uri: string }>,
+): Promise<EditorPhoto[]> {
+  const photos = photosFromPickerAssets(assets);
+  await Promise.all(
+    photos.map(async (photo, index) => {
+      const asset = assets[index];
+      if (!asset || !photo.file) return;
+      photo.file = await shopifyJpegFromPickerAsset(asset, index, manipulate);
+    }),
+  );
+  return photos;
 }
 
 export function photoPickerErrorMessage(error: unknown): string {

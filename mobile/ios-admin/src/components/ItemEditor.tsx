@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { ScrollView as GestureScrollView } from "react-native-gesture-handler";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 
 import { apiPost, apiUploadPhoto } from "../api";
@@ -47,7 +48,7 @@ import {
   orderedPhotoIdsAfterUpload,
   PHOTO_UPLOAD_CONCURRENCY,
   photoPickerErrorMessage,
-  photosFromPickerAssets,
+  photosReadyForShopifyUpload,
   pickPlantPhotos,
   runPool,
   type EditorPhoto,
@@ -461,7 +462,12 @@ export function ItemEditor({
       return;
     }
     if (picked.canceled) return;
-    const next = photosFromPickerAssets(picked.assets);
+    const next = await photosReadyForShopifyUpload(picked.assets, (uri) =>
+      ImageManipulator.manipulateAsync(uri, [], {
+        compress: 0.8,
+        format: ImageManipulator.SaveFormat.JPEG,
+      }),
+    );
     setPendingPhotos((current) => [...current, ...next]);
     const uploadedByKey = new Map<string, string>();
     await runPool(next, PHOTO_UPLOAD_CONCURRENCY, async (photo) => {

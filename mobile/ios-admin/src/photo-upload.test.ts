@@ -10,6 +10,8 @@ import {
   mergeEditorPhotos,
   normalizedImageMime,
   orderedPhotoIdsAfterUpload,
+  pickerAssetLooksLikeHeic,
+  photosReadyForShopifyUpload,
   PHOTO_LIBRARY_DENIED_MESSAGE,
   PHOTO_UPLOAD_CONCURRENCY,
   photoPickerErrorMessage,
@@ -125,20 +127,37 @@ describe("multi-photo picker and progress", () => {
     assert.match(editor, /photoPickerErrorMessage/);
   });
 
-  it("sends HEIC library photos as JPEG so Shopify Files will accept them", () => {
+  it("does not relabel HEIC bytes as JPEG until they are actually converted", async () => {
     const heic = uploadFileFromPickerAsset(
       { uri: "file:///IMG_1.HEIC", fileName: "IMG_1.HEIC", mimeType: "image/heic" },
       0,
     );
-    assert.equal(heic.type, "image/jpeg");
-    assert.equal(heic.name, "IMG_1.jpg");
+    assert.equal(pickerAssetLooksLikeHeic({ uri: heic.uri, fileName: "IMG_1.HEIC", mimeType: "image/heic" }), true);
+    assert.equal(heic.type, "image/heic");
+    assert.equal(heic.name, "IMG_1.heic");
     assert.equal(normalizedImageMime({ uri: "file:///a.jpg", mimeType: "image/jpg" }), "image/jpeg");
     assert.equal(normalizedImageMime({ uri: "file:///a.png", mimeType: "image/png" }), "image/png");
-    const pending = photosFromPickerAssets([
-      { uri: "file:///leaf.HEIC", fileName: "leaf.HEIC", mimeType: "image/heif" },
-    ]);
-    assert.equal(pending[0].file?.type, "image/jpeg");
-    assert.equal(pending[0].file?.name, "leaf.jpg");
+
+    let manipulated = 0;
+    const ready = await photosReadyForShopifyUpload(
+      [{ uri: "file:///leaf.HEIC", fileName: "leaf.HEIC", mimeType: "image/heif" }],
+      async (uri) => {
+        manipulated += 1;
+        assert.equal(uri, "file:///leaf.HEIC");
+        return { uri: "file:///leaf-converted.jpg" };
+      },
+    );
+    assert.equal(manipulated, 1);
+    assert.equal(ready[0].file?.type, "image/jpeg");
+    assert.equal(ready[0].file?.name, "leaf.jpg");
+    assert.equal(ready[0].file?.uri, "file:///leaf-converted.jpg");
+    const editor = readFileSync(
+      path.join(import.meta.dirname, "components", "ItemEditor.tsx"),
+      "utf8",
+    );
+    assert.match(editor, /photosReadyForShopifyUpload/);
+    assert.match(editor, /ImageManipulator\.manipulateAsync/);
+    assert.match(editor, /SaveFormat\.JPEG/);
   });
 
   it("opens the picker first and only asks for permission after a launch failure", async () => {
