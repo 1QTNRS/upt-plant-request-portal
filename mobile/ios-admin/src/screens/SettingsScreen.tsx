@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,60 +11,70 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
+import {
+  mergeSettingsForm,
+  settingsFeedbackLabel,
+  settingsFormFromShop,
+  type SettingsFormState,
+} from "../settings-form";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
 
+const EMPTY_FORM: SettingsFormState = {
+  warning: "",
+  email: "",
+  newRequestEmail: true,
+  customerResponseEmail: true,
+  paymentAfterVoidEmail: true,
+  pushNewRequest: true,
+  pushItemStatus: true,
+  registeredPushDevices: 0,
+  sku: "",
+};
+
 export function SettingsScreen() {
   const { apiUrl, token, signOut } = useSession();
-  const [warning, setWarning] = useState("");
-  const [email, setEmail] = useState("");
-  const [newRequestEmail, setNewRequestEmail] = useState(true);
-  const [customerResponseEmail, setCustomerResponseEmail] = useState(true);
-  const [paymentAfterVoidEmail, setPaymentAfterVoidEmail] = useState(true);
-  const [pushNewRequest, setPushNewRequest] = useState(true);
-  const [pushItemStatus, setPushItemStatus] = useState(true);
-  const [registeredPushDevices, setRegisteredPushDevices] = useState(0);
-  const [sku, setSku] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<SettingsFormState>(EMPTY_FORM);
+  const [hydrated, setHydrated] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [savingPush, setSavingPush] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  async function load() {
-    setError(null);
-    setLoading(true);
-    try {
-      const settings = await apiGet<ShopSettings>(
-        apiUrl,
-        token,
-        "/api/mobile/admin/settings",
-      );
-      setWarning(settings.fedexRemovalWarning);
-      setEmail(settings.adminNotificationEmail);
-      setNewRequestEmail(settings.adminEmailNewRequest);
-      setCustomerResponseEmail(settings.adminEmailCustomerResponse);
-      setPaymentAfterVoidEmail(settings.adminEmailPaymentAfterVoid);
-      setPushNewRequest(settings.adminPushNewRequest);
-      setPushItemStatus(settings.adminPushItemStatusUpdate);
-      setRegisteredPushDevices(settings.registeredPushDevices);
-      setSku(settings.fedexProductSku);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load settings.");
-    } finally {
-      setLoading(false);
-    }
+  function applyServer(settings: ShopSettings) {
+    setForm((current) => mergeSettingsForm(current, settingsFormFromShop(settings)));
   }
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    void (async () => {
+      setError(null);
+      try {
+        const settings = await apiGet<ShopSettings>(
+          apiUrl,
+          token,
+          "/api/mobile/admin/settings",
+        );
+        if (cancelled) return;
+        applyServer(settings);
+      } catch (caught) {
+        if (cancelled) return;
+        setError(caught instanceof Error ? caught.message : "Could not load settings.");
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   async function save(intent: "save" | "reset") {
     setError(null);
     setSaved(null);
-    setLoading(true);
+    setSaving(true);
     try {
       const result = await apiPostJson<ShopSettings & { ok: boolean; reset?: boolean; error?: string }>(
         apiUrl,
@@ -73,33 +82,33 @@ export function SettingsScreen() {
         "/api/mobile/admin/settings",
         {
           intent,
-          fedexRemovalWarning: warning,
-          adminNotificationEmail: email,
-          adminEmailNewRequest: newRequestEmail,
-          adminEmailCustomerResponse: customerResponseEmail,
-          adminEmailPaymentAfterVoid: paymentAfterVoidEmail,
+          fedexRemovalWarning: form.warning,
+          adminNotificationEmail: form.email,
+          adminEmailNewRequest: form.newRequestEmail,
+          adminEmailCustomerResponse: form.customerResponseEmail,
+          adminEmailPaymentAfterVoid: form.paymentAfterVoidEmail,
         },
       );
       if (!result.ok) {
         setError(result.error || "Could not save settings.");
         return;
       }
-      setWarning(result.fedexRemovalWarning);
-      setEmail(result.adminNotificationEmail);
-      setNewRequestEmail(result.adminEmailNewRequest);
-      setCustomerResponseEmail(result.adminEmailCustomerResponse);
-      setPaymentAfterVoidEmail(result.adminEmailPaymentAfterVoid);
-      setPushNewRequest(result.adminPushNewRequest);
-      setPushItemStatus(result.adminPushItemStatusUpdate);
-      setRegisteredPushDevices(result.registeredPushDevices);
-      setSku(result.fedexProductSku);
+      applyServer(result);
       setSaved(result.reset ? "FedEx warning reset to the default." : "Settings saved.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save settings.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
+
+  const feedback = settingsFeedbackLabel({
+    saving: saving || savingPush,
+    saved,
+    error,
+    hydrated,
+  });
+  const feedbackBusy = saving || savingPush;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
@@ -109,22 +118,27 @@ export function SettingsScreen() {
         FedEx warning, admin emails, and iOS push toggles. Create or revoke a
         device token on the website Settings page. Analytics stays on the website.
       </Text>
-      {loading && !warning ? <ActivityIndicator color={THEME.darkGreen} /> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {saved ? <Text style={styles.success}>{saved}</Text> : null}
+      <Text
+        style={[
+          styles.feedback,
+          error ? styles.error : feedbackBusy || saved ? styles.success : styles.feedbackIdle,
+        ]}
+      >
+        {feedback}
+      </Text>
 
       <Text style={styles.label}>FedEx upgrade warning</Text>
-      {sku ? <Text style={styles.muted}>Listing SKU: {sku}</Text> : null}
+      <Text style={styles.muted}>{form.sku ? `Listing SKU: ${form.sku}` : " "}</Text>
       <TextInput
-        value={warning}
-        onChangeText={setWarning}
+        value={form.warning}
+        onChangeText={(warning) => setForm((current) => ({ ...current, warning }))}
         multiline
         style={[styles.input, styles.multiline]}
       />
       <Text style={styles.label}>Admin notification email</Text>
       <TextInput
-        value={email}
-        onChangeText={setEmail}
+        value={form.email}
+        onChangeText={(email) => setForm((current) => ({ ...current, email }))}
         autoCapitalize="none"
         keyboardType="email-address"
         style={styles.input}
@@ -134,44 +148,44 @@ export function SettingsScreen() {
       </Text>
       {(
         [
-          ["New customer request", newRequestEmail, setNewRequestEmail],
-          ["Customer answered an offer", customerResponseEmail, setCustomerResponseEmail],
-          ["Payment after a voided invoice", paymentAfterVoidEmail, setPaymentAfterVoidEmail],
+          ["New customer request", form.newRequestEmail, "newRequestEmail"],
+          ["Customer answered an offer", form.customerResponseEmail, "customerResponseEmail"],
+          ["Payment after a voided invoice", form.paymentAfterVoidEmail, "paymentAfterVoidEmail"],
         ] as const
-      ).map(([label, value, setValue]) => (
+      ).map(([label, value, key]) => (
         <View key={label} style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>{label}</Text>
           <Switch
             value={value}
-            onValueChange={setValue}
+            onValueChange={(next) => setForm((current) => ({ ...current, [key]: next }))}
             trackColor={{ true: THEME.darkGreen }}
           />
         </View>
       ))}
-      <Pressable style={styles.button} disabled={loading} onPress={() => void save("save")}>
-        <Text style={styles.buttonLabel}>{loading ? "Saving…" : "Save settings"}</Text>
+      <Pressable style={styles.button} disabled={saving} onPress={() => void save("save")}>
+        <Text style={styles.buttonLabel}>{saving ? "Saving…" : "Save settings"}</Text>
       </Pressable>
 
       <Text style={styles.label}>iOS Push Notifications</Text>
       <Text style={styles.muted}>
         Separate from admin emails.{" "}
-        {registeredPushDevices === 0
+        {form.registeredPushDevices === 0
           ? "No iOS admin device is currently registered for push."
-          : registeredPushDevices === 1
+          : form.registeredPushDevices === 1
             ? "1 iOS admin device is registered for push."
-            : `${registeredPushDevices} iOS admin devices are registered for push.`}
+            : `${form.registeredPushDevices} iOS admin devices are registered for push.`}
       </Text>
       {(
         [
-          ["New Request", pushNewRequest, setPushNewRequest],
-          ["Item Status Update", pushItemStatus, setPushItemStatus],
+          ["New Request", form.pushNewRequest, "pushNewRequest"],
+          ["Item Status Update", form.pushItemStatus, "pushItemStatus"],
         ] as const
-      ).map(([label, value, setValue]) => (
+      ).map(([label, value, key]) => (
         <View key={label} style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>{label}</Text>
           <Switch
             value={value}
-            onValueChange={setValue}
+            onValueChange={(next) => setForm((current) => ({ ...current, [key]: next }))}
             trackColor={{ true: THEME.darkGreen }}
           />
         </View>
@@ -189,8 +203,8 @@ export function SettingsScreen() {
             "/api/mobile/admin/settings",
             {
               intent: "save-admin-push",
-              adminPushNewRequest: pushNewRequest,
-              adminPushItemStatusUpdate: pushItemStatus,
+              adminPushNewRequest: form.pushNewRequest,
+              adminPushItemStatusUpdate: form.pushItemStatus,
             },
           )
             .then((result) => {
@@ -198,9 +212,7 @@ export function SettingsScreen() {
                 setError(result.error || "Could not save push settings.");
                 return;
               }
-              setPushNewRequest(result.adminPushNewRequest);
-              setPushItemStatus(result.adminPushItemStatusUpdate);
-              setRegisteredPushDevices(result.registeredPushDevices);
+              applyServer(result);
               setSaved("iOS push notifications saved.");
             })
             .catch((caught) => {
@@ -213,7 +225,7 @@ export function SettingsScreen() {
           {savingPush ? "Saving…" : "Save push notifications"}
         </Text>
       </Pressable>
-      <Pressable style={styles.secondary} disabled={loading} onPress={() => void save("reset")}>
+      <Pressable style={styles.secondary} disabled={saving} onPress={() => void save("reset")}>
         <Text style={styles.secondaryLabel}>Reset warning to default</Text>
       </Pressable>
       <Pressable style={styles.secondary} onPress={() => void signOut()}>
@@ -264,6 +276,8 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.white,
   },
   secondaryLabel: { color: THEME.darkGreen, fontWeight: "700" },
+  feedback: { minHeight: 20, lineHeight: 20, fontWeight: "600" },
+  feedbackIdle: { color: THEME.mint },
   error: { color: "#8e1f0b" },
   success: { color: THEME.darkGreen, fontWeight: "600" },
   toggleRow: {
