@@ -31,11 +31,7 @@ describe("Shopify staged-target POST", () => {
     assert.equal(STAGED_UPLOAD_HTTP_METHOD, "POST");
     assert.equal(STAGED_UPLOAD_RESOURCE, "FILE");
     assert.deepEqual(
-      stagedUploadFormEntries(target, {
-        filename: "plant.jpg",
-        mimeType: "image/jpeg",
-        data: jpeg,
-      }).map((entry) => entry.name),
+      stagedUploadFormEntries(target).map((entry) => entry.name),
       ["key", "content_type", "success_action_status", "policy", "x-goog-signature", "file"],
     );
   });
@@ -77,11 +73,7 @@ describe("Shopify staged-target POST", () => {
   });
 
   it("includes every Shopify parameter so a missing field cannot come from our POST", () => {
-    const names = stagedUploadFormEntries(target, {
-      filename: "plant.jpg",
-      mimeType: "image/jpeg",
-      data: jpeg,
-    }).map((entry) => entry.name);
+    const names = stagedUploadFormEntries(target).map((entry) => entry.name);
     for (const parameter of target.parameters) {
       assert.ok(names.includes(parameter.name), `missing ${parameter.name}`);
     }

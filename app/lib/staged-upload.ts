@@ -60,7 +60,6 @@ export function logStagedUploadFailure(input: {
 
 export function stagedUploadFormEntries(
   target: Pick<StagedUploadTarget, "parameters">,
-  file: PlantPhotoFile,
 ): Array<{ name: string; kind: "field" | "file"; value?: string }> {
   return [
     ...target.parameters.map((parameter) => ({
