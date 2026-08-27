@@ -40,6 +40,10 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /styles\.dropdown/);
     assert.match(editor, /STOCK_DROPDOWN_MAX_HEIGHT/);
     assert.match(editor, /GestureScrollView/);
+    assert.match(editor, /formatStockSearchInventory/);
+    assert.match(editor, /canSelectStockCandidate/);
+    assert.match(editor, /styles\.noStock/);
+    assert.match(editor, /disabled=\{!selectable\}/);
     assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
     assert.match(editor, /setViewerIndex/);
