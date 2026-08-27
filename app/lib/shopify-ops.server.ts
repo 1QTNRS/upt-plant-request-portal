@@ -26,6 +26,13 @@ import {
   type InventoryUserError,
 } from "./inventory-concurrency";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
+import { preparePlantPhotoFile } from "./plant-photo-file";
+import {
+  STAGED_UPLOAD_HTTP_METHOD,
+  STAGED_UPLOAD_RESOURCE,
+  postFileToStagedTarget,
+  type StagedUploadFetch,
+} from "./staged-upload";
 import {
   isEligibleStockSearchResult,
   reservationFailureMessage,
@@ -1087,13 +1094,18 @@ export async function uploadPlantPhoto(
   admin: GraphqlClient | undefined,
   shop: string,
   file: { filename: string; mimeType: string; data: Buffer },
+  deps?: {
+    fetchImpl?: StagedUploadFetch;
+    convertHeic?: (data: Buffer) => Promise<Buffer>;
+  },
 ): Promise<{ url: string; shopifyFileId?: string }> {
   requireAdminClient(admin, shop, "Uploading a plant photo to Shopify Files");
+  const prepared = await preparePlantPhotoFile(file, { convertHeic: deps?.convertHeic });
 
   if (!admin) {
     // Demo shop only. A base64 data URL keeps the local walkthrough working but
     // would bloat the database and break Shopify product media in production.
-    const encoded = `data:${file.mimeType};base64,${file.data.toString("base64")}`;
+    const encoded = `data:${prepared.mimeType};base64,${prepared.data.toString("base64")}`;
     return { url: encoded };
   }
 
@@ -1109,10 +1121,10 @@ export async function uploadPlantPhoto(
   }>(admin, STAGED_UPLOADS_MUTATION, {
     input: [
       {
-        filename: file.filename,
-        mimeType: file.mimeType,
-        httpMethod: "POST",
-        resource: "FILE",
+        filename: prepared.filename,
+        mimeType: prepared.mimeType,
+        httpMethod: STAGED_UPLOAD_HTTP_METHOD,
+        resource: STAGED_UPLOAD_RESOURCE,
       },
     ],
   });
@@ -1121,23 +1133,16 @@ export async function uploadPlantPhoto(
   if (!target) {
     throw new Error(
       staged.stagedUploadsCreate.userErrors.map((error) => error.message).join("; ") ||
-        "Shopify staged upload failed.",
+        "Shopify staged upload failed at stagedUploadsCreate.",
     );
   }
 
-  const form = new FormData();
-  for (const parameter of target.parameters) {
-    form.append(parameter.name, parameter.value);
-  }
-  form.append(
-    "file",
-    new Blob([new Uint8Array(file.data)], { type: file.mimeType }),
-    file.filename,
-  );
-  const uploadResponse = await fetch(target.url, { method: "POST", body: form });
-  if (!uploadResponse.ok) {
-    throw new Error("Failed to upload plant photo to Shopify staged target.");
-  }
+  await postFileToStagedTarget({
+    shop,
+    target,
+    file: prepared,
+    fetchImpl: deps?.fetchImpl,
+  });
 
   const created = await adminGraphql<{
     fileCreate: {
@@ -1147,7 +1152,7 @@ export async function uploadPlantPhoto(
   }>(admin, FILE_CREATE_MUTATION, {
     files: [
       {
-        alt: file.filename,
+        alt: prepared.filename,
         contentType: "IMAGE",
         originalSource: target.resourceUrl,
       },

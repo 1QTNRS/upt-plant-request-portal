@@ -4,6 +4,7 @@ import type { AdminContext } from "./admin-auth.server";
 import { canStubShopifyWrites } from "./environment.server";
 import { addItemPhotos, getRequest } from "./portal.server";
 import { uploadPlantPhoto } from "./shopify-ops.server";
+import type { StagedUploadFetch } from "./staged-upload";
 import { saveLocalUpload } from "./uploads.server";
 
 type GraphqlClient = NonNullable<AdminContext["admin"]>;
@@ -67,6 +68,8 @@ export async function saveUploadedPlantPhoto(input: {
   itemId: string;
   file: { filename: string; mimeType: string; data: Buffer };
   clientKey?: string;
+  fetchImpl?: StagedUploadFetch;
+  convertHeic?: (data: Buffer) => Promise<Buffer>;
 }): Promise<{ ok: true; photo: SavedPlantPhoto } | { ok: false; error: string }> {
   const clientKey = input.clientKey?.trim() || contentKey(input.file.data);
   const memoryKey = photoUploadMemoryKey({
@@ -81,7 +84,10 @@ export async function saveUploadedPlantPhoto(input: {
   try {
     let stored: { url: string; shopifyFileId?: string };
     try {
-      stored = await uploadPlantPhoto(input.admin, input.shop, input.file);
+      stored = await uploadPlantPhoto(input.admin, input.shop, input.file, {
+        fetchImpl: input.fetchImpl,
+        convertHeic: input.convertHeic,
+      });
     } catch (error) {
       if (!canStubShopifyWrites(input.shop)) {
         return {

@@ -48,6 +48,7 @@
     "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
     "compression": "^1.8.1",
     "express": "^4.22.2",
+    "heic-convert": "^2.1.0",
     "isbot": "^5.1.31",
     "morgan": "^1.11.0",
     "prisma": "^6.16.3",
