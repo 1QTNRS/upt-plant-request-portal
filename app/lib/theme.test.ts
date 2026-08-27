@@ -36,6 +36,12 @@ describe("brand theme", () => {
       !admin.includes("CustomerSurface"),
       "admin chrome must not sit on the customer mint page",
     );
+    assert.doesNotMatch(
+      themeSource,
+      /(?:^|\n)\s*a,\s*s-link\s*\{/,
+      "unscoped `a` recolors the shop SHOP mega-menu to dark-on-dark",
+    );
+    assert.match(themeSource, /\.upt-customer-surface a \{/);
   });
 
   it("paints New mint, payable yellow, and Closed dark green", () => {
