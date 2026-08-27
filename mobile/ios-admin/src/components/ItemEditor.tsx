@@ -733,7 +733,7 @@ const styles = {
     borderTopColor: THEME.line,
   },
   dropdownRowOff: { opacity: 0.7 },
-  noStock: { color: "#8e1f0b", fontWeight: "700" },
+  noStock: { color: "#8e1f0b", fontWeight: "700" as const },
   linkedStock: { marginTop: 10, gap: 4 },
   busy: { marginTop: 8 },
 };
