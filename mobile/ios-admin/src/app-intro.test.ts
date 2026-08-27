@@ -6,7 +6,10 @@ import {
   APP_INTRO_DURATION_MS,
   APP_INTRO_LOGO_WIDTH,
   APP_INTRO_SPLASH_IMAGE,
+  APP_INTRO_START_OPACITY,
+  APP_INTRO_START_SCALE,
   appIntroDurationMs,
+  appIntroShowsLogoBeforeAnimation,
   shouldPlayAppIntro,
 } from "./app-intro";
 
@@ -25,5 +28,11 @@ describe("in-app intro", () => {
     assert.ok(APP_INTRO_DURATION_MS <= 1500);
     assert.equal(appIntroDurationMs(false), APP_INTRO_DURATION_MS);
     assert.equal(appIntroDurationMs(true), 0);
+  });
+
+  it("shows the logo immediately and only scales, never fading from 0", () => {
+    assert.equal(APP_INTRO_START_OPACITY, 1);
+    assert.equal(APP_INTRO_START_SCALE, 0.96);
+    assert.equal(appIntroShowsLogoBeforeAnimation(), true);
   });
 });

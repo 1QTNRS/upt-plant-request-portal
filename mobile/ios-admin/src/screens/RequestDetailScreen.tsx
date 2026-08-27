@@ -173,12 +173,13 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     detail.status === "New" && (detail.canSendOffer || requestLooksSendable(draftedItems));
 
   return (
-    <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={ui.flexPage} edges={["top", "left", "right", "bottom"]}>
     <KeyboardAvoidingView
-      style={ui.flex}
+      style={ui.flexPage}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        style={ui.flexPage}
         contentContainerStyle={ui.page}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

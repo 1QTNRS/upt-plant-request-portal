@@ -14,7 +14,10 @@ import {
 } from "react-native";
 
 import {
+  PHOTO_VIEWER_DISMISS_DISTANCE,
   normalizedSwipeVelocity,
+  photoViewerBounces,
+  photoViewerScrollEnabled,
   shouldCapturePhotoViewerDismiss,
   shouldDismissPhotoViewer,
 } from "../photo-viewer";
@@ -32,14 +35,26 @@ type Props = {
 
 export function PhotoViewer({ photos, index, onClose }: Props) {
   const [current, setCurrent] = useState(index);
+  const [zoomById, setZoomById] = useState<Record<string, number>>({});
   const zoomScaleRef = useRef(1);
+  const zoomByIdRef = useRef<Record<string, number>>({});
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dragY = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useMemo(
+    () =>
+      dragY.interpolate({
+        inputRange: [0, PHOTO_VIEWER_DISMISS_DISTANCE * 2],
+        outputRange: [1, 0.25],
+        extrapolate: "clamp",
+      }),
+    [dragY],
+  );
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) =>
           shouldCapturePhotoViewerDismiss(
             zoomScaleRef.current,
@@ -81,7 +96,10 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
   return (
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
       <Animated.View
-        style={[styles.backdrop, { transform: [{ translateY: dragY }] }]}
+        style={[
+          styles.backdrop,
+          { opacity: backdropOpacity, transform: [{ translateY: dragY }] },
+        ]}
         {...panResponder.panHandlers}
       >
         <View style={styles.topBar}>
@@ -96,6 +114,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
           data={photos}
           horizontal
           pagingEnabled
+          directionalLockEnabled
           initialScrollIndex={index}
           getItemLayout={(_, photoIndex) => ({
             length: SCREEN_WIDTH,
@@ -105,6 +124,8 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
           onMomentumScrollEnd={(event) => {
             const next = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
             setCurrent(next);
+            const photoId = photos[next]?.id;
+            zoomScaleRef.current = photoId ? (zoomByIdRef.current[photoId] ?? 1) : 1;
           }}
           keyExtractor={(photo) => photo.id}
           renderItem={({ item }) => (
@@ -113,6 +134,8 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
               contentContainerStyle={styles.pageContent}
               maximumZoomScale={4}
               minimumZoomScale={1}
+              scrollEnabled={photoViewerScrollEnabled(zoomById[item.id] ?? 1)}
+              bounces={photoViewerBounces(zoomById[item.id] ?? 1)}
               showsHorizontalScrollIndicator={false}
               showsVerticalScrollIndicator={false}
               centerContent
@@ -121,6 +144,14 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
                 const scale = event.nativeEvent.zoomScale;
                 if (typeof scale === "number" && Number.isFinite(scale)) {
                   zoomScaleRef.current = scale;
+                  zoomByIdRef.current[item.id] = scale;
+                  setZoomById((currentZooms) => {
+                    const previous = currentZooms[item.id] ?? 1;
+                    if (photoViewerScrollEnabled(previous) === photoViewerScrollEnabled(scale)) {
+                      return currentZooms;
+                    }
+                    return { ...currentZooms, [item.id]: scale };
+                  });
                 }
               }}
             >
@@ -139,7 +170,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "#000000" },
+  backdrop: { flex: 1, backgroundColor: "#000000", overflow: "hidden" },
   topBar: {
     paddingTop: 54,
     paddingHorizontal: 16,

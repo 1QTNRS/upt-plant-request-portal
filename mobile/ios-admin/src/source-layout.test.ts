@@ -57,6 +57,9 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /keyboardShouldPersistTaps="always"/);
     assert.match(editor, /keyboardDismissMode="none"/);
     assert.match(editor, /intent: "link-stock"/);
+    assert.match(editor, /intent: "unlink-stock"/);
+    assert.match(editor, /accessibilityLabel="Remove"/);
+    assert.match(editor, /Change stock/);
     assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
     assert.match(editor, /setViewerIndex/);
@@ -76,6 +79,12 @@ describe("iOS admin source layout", () => {
     const viewer = read("src/components/PhotoViewer.tsx");
     assert.match(viewer, /shouldDismissPhotoViewer/);
     assert.match(viewer, /shouldCapturePhotoViewerDismiss/);
+    assert.match(viewer, /photoViewerScrollEnabled/);
+    assert.match(viewer, /photoViewerBounces/);
+    assert.match(editor, /showsStockSearchInput/);
+    assert.match(editor, /linkedStockSummary/);
+    assert.match(editor, /Change stock/);
+    assert.match(editor, /accessibilityLabel="Remove"/);
     assert.doesNotMatch(editor, /height: 160/);
   });
 
@@ -133,9 +142,15 @@ describe("iOS admin source layout", () => {
     assert.match(app, /APP_INTRO_BACKGROUND/);
     assert.match(intro, /APP_INTRO_SPLASH_ICON/);
     assert.match(intro, /APP_INTRO_LOGO_WIDTH/);
+    assert.match(intro, /APP_INTRO_START_OPACITY/);
+    assert.match(intro, /logoReady/);
+    assert.match(intro, /Asset\.fromModule/);
+    assert.match(intro, /downloadAsync/);
     assert.match(intro, /hideAsync/);
     assert.doesNotMatch(intro, /Request Portal/);
     assert.doesNotMatch(intro, /wordmark/);
+    assert.doesNotMatch(intro, /Animated\.timing\(opacity/);
+    assert.doesNotMatch(intro, /new Animated\.Value\(0\)/);
     assert.match(login, /Request Portal/);
     assert.doesNotMatch(login, /UPT Admin/);
   });

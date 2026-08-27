@@ -50,19 +50,20 @@ Profiles: `development` (dev client), `preview` (internal), `production` (autoIn
 | File | Required | Purpose |
 | --- | --- | --- |
 | `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.json`. Do not commit a fake placeholder. |
-| `mobile/ios-admin/assets/splash-icon.png` | **Yes** for a visible logo | Centered logo on the **native** splash and the in-app intro. Background is always `#002910`. Replace the committed transparent PNG with the real mark (no text). |
+| `mobile/ios-admin/assets/splash-icon.png` | **Yes** — committed store mark | Centered UPT logo on the **native** splash and the in-app intro. Background is always `#002910`. This is the live store mark (teal/green on transparent), not an empty placeholder. |
 | `mobile/ios-admin/assets/brand-mark.png` | Unused | Intro uses `splash-icon.png` so both frames match. |
 
 ### Native splash vs in-app intro
 
 - **Native splash** (`expo-splash-screen`): `#002910`, `./assets/splash-icon.png`, `imageWidth: 260`, `resizeMode: contain`. Used by a real EAS / dev-client binary.
-- **In-app intro** (`AppIntro`): same background and the same splash-icon, ~1.1s fade/scale, logo only (no "Request Portal" text). Skipped when a saved `upt_admin_` session is being restored. No network. Respects Reduce Motion (finishes immediately). The native splash stays up until this view mounts so there is no white flash.
+- **In-app intro** (`AppIntro`): same background and the same splash-icon, ~1.1s scale (logo already visible — no empty-green frame). Logo only (no "Request Portal" text). Skipped when a saved `upt_admin_` session is being restored. No network. Respects Reduce Motion (finishes immediately). The native splash stays up until the logo is ready so there is no white flash between frames.
 
 ### Expo Go differences
 
 These config changes still run in Expo Go for normal development:
 
-- Display name, icon, and native splash in `app.json` are **not** applied to Expo Go. Expo Go keeps its own name, icon, and splash. The in-app intro still plays on a fresh sign-in.
+- Display name, icon, and native splash in `app.json` are **not** applied to Expo Go. Expo Go keeps its own name, icon, and **white** splash. That first white flash is Expo Go, not this app — we cannot remove it in Expo Go. The in-app intro still plays on a fresh sign-in (`#002910` + the store mark, already visible, then a short scale).
+- A signed EAS / dev-client build uses our native splash (`#002910` + `splash-icon.png`) and then the same-color intro. There is no Expo Go white frame on that path.
 - Custom scheme `uptadmin://request/{id}` is honored in a standalone / EAS binary. Expo Go uses `exp://` for QR-code loads; notification taps still go through the JS listener and stay behind login.
 - Photo-library permission copy is applied at **prebuild** time. Expo Go shows Expo Go's own library prompt until you install an EAS build.
 
