@@ -3,6 +3,7 @@ import "react-native-gesture-handler";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import {
+  DefaultTheme,
   NavigationContainer,
   createNavigationContainerRef,
   getFocusedRouteNameFromRoute,
@@ -78,6 +79,16 @@ const stackScreenOptions = {
   gestureEnabled: true,
   fullScreenGestureEnabled: false,
   animation: "slide_from_right" as const,
+  contentStyle: { backgroundColor: THEME.requestPage },
+};
+
+const signedInTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: THEME.requestPage,
+    card: THEME.requestPage,
+  },
 };
 
 function RequestsNavigator() {
@@ -135,6 +146,7 @@ function MainTabs() {
           tabBarIndicatorStyle: { backgroundColor: THEME.yellow, height: 3 },
           tabBarPressColor: "transparent",
           tabBarBounces: false,
+          sceneStyle: { backgroundColor: THEME.requestPage },
         };
       }}
     >
@@ -255,12 +267,14 @@ export default function App() {
 
   const playIntro = shouldPlayAppIntro({ sessionKind }) && !introDone;
   const darkLaunch = sessionKind === "unknown" || playIntro || !ready;
+  const signedInChrome = ready && signedIn && !playIntro;
+  const chromeBackground = signedInChrome ? THEME.requestPage : APP_INTRO_BACKGROUND;
 
   return (
     <GestureHandlerRootView
-      style={[ui.flex, { backgroundColor: APP_INTRO_BACKGROUND }]}
+      style={[ui.flex, { backgroundColor: chromeBackground }]}
     >
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: APP_INTRO_BACKGROUND }}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: chromeBackground }}>
         <StatusBar style={darkLaunch ? "light" : "dark"} />
         {sessionKind === "unknown" ? (
           <View style={[ui.flex, { backgroundColor: APP_INTRO_BACKGROUND }]} />
@@ -289,7 +303,11 @@ export default function App() {
           />
         ) : (
           <SessionContext.Provider value={session}>
-            <NavigationContainer ref={navigationRef} linking={linking}>
+            <NavigationContainer
+              ref={navigationRef}
+              linking={linking}
+              theme={signedInTheme}
+            >
               <MainTabs />
             </NavigationContainer>
           </SessionContext.Provider>

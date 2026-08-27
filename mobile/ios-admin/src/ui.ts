@@ -4,8 +4,9 @@ import { THEME } from "./theme";
 
 export const ui = StyleSheet.create({
   flex: { flex: 1 },
-  screen: { flex: 1, padding: 16, backgroundColor: THEME.mint },
-  page: { padding: 16, gap: 12, backgroundColor: THEME.mint },
+  flexPage: { flex: 1, backgroundColor: THEME.requestPage },
+  screen: { flex: 1, padding: 16, backgroundColor: THEME.requestPage },
+  page: { padding: 16, gap: 12, backgroundColor: THEME.requestPage },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

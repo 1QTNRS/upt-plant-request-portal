@@ -1100,15 +1100,22 @@ First Apple-build config (do not change Expo identity): owner
 **Request Portal**, version **1.0.0**, production EAS `autoIncrement` for
 build numbers. App icon path is `mobile/ios-admin/assets/icon.png`
 (1024×1024 — owner provides the file; do not invent a placeholder).
-Native splash and the in-app intro both use `#002910` plus
-`./assets/splash-icon.png` (260px, contain, logo only — no
-"Request Portal" wordmark). The native splash stays up until AppIntro
-mounts so there is no white frame. Intro is JS-only and skipped when
-restoring a saved session. Settings saves merge into the open form and
-keep a reserved Saving…/Saved slot so the screen does not remount or
-lose scroll. Link Stock search dismisses on an outside tap or
-fulfillment change without locking the request page. Camera permission
-is not requested yet.
+Native splash and the in-app intro both use `#002910` plus the live
+store mark at `./assets/splash-icon.png` (260px, contain, logo only —
+no "Request Portal" wordmark). The logo is visible as soon as AppIntro
+mounts (scale-only motion; no empty-green frame). Intro is JS-only and
+skipped when restoring a saved session. Expo Go still shows its own
+white splash first — that is Expo Go, not this app. At base zoom the
+photo viewer turns off zoom-scroll so swipe-down dismisses the image
+and backdrop as one surface; pinch-zoom pans the photo instead.
+Request list / detail chrome is `#d6ece2`; cards stay white; the tab
+bar stays `#002910` with white icons and a yellow selected tab. Linked
+stock shows a compact row plus X / Change stock (`unlink-stock` does
+not touch Shopify). Settings saves merge into the open form and keep a
+reserved Saving…/Saved slot so the screen does not remount or lose
+scroll. Link Stock search dismisses on an outside tap or fulfillment
+change without locking the request page. Camera permission is not
+requested yet.
 
 **Shipped:** `GET /api/mobile/admin/session`, request list, request
 detail, and `POST /api/mobile/admin/requests/:id` for the same intents

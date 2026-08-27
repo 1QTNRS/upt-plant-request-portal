@@ -96,12 +96,15 @@ export function RequestListScreen({ navigation }: Props) {
       />
       {error ? <Text style={ui.error}>{error}</Text> : null}
       <ScrollView
+        style={ui.flexPage}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void loadList(query, "refresh")}
             tintColor={THEME.darkGreen}
+            colors={[THEME.darkGreen]}
+            progressBackgroundColor={THEME.requestPage}
           />
         }
       >
