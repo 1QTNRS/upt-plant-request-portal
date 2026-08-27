@@ -259,7 +259,7 @@ describe("admin mobile request actions", () => {
       },
     });
     assert.equal(refusedZero.ok, false);
-    assert.match(!refusedZero.ok ? refusedZero.error : "", /out of stock/i);
+    assert.match(refusedZero.ok ? "" : (refusedZero.error ?? ""), /out of stock/i);
 
     const draft = await handleMobileAdminRequestAction({
       shop,
