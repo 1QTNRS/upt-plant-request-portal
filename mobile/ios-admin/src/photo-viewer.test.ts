@@ -4,17 +4,19 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y,
-  PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X,
+  PHOTO_VIEWER_EDGE_BACK,
   PHOTO_VIEWER_MAX_ZOOM,
   PHOTO_VIEWER_ZOOM_PAN_THRESHOLD,
   clampPhotoViewerZoom,
   photoViewerDismissTranslateY,
+  photoViewerImageLayout,
   photoViewerImagePanEnabled,
   photoViewerImageTransform,
+  photoViewerPageDelta,
   photoViewerPagingEnabled,
   photoViewerSheetOpacity,
   photoViewerShouldPanImage,
+  photoViewerSourceUri,
   resetPhotoViewerImageTransform,
   shouldCapturePhotoViewerDismiss,
   shouldDismissPhotoViewer,
@@ -130,6 +132,22 @@ describe("photo viewer swipe-down dismiss", () => {
       translateX: 40,
       translateY: -20,
     });
+    assert.deepEqual(photoViewerImageLayout(1, 210, 400, 390, 720), {
+      width: 390,
+      height: 720,
+      left: 0,
+      top: 0,
+    });
+    assert.deepEqual(photoViewerImageLayout(2, 0, 0, 390, 720), {
+      width: 780,
+      height: 1440,
+      left: -195,
+      top: -360,
+    });
+    assert.equal(photoViewerPageDelta(-80, 10, 3, 0), 1);
+    assert.equal(photoViewerPageDelta(80, 10, 3, 0), 0);
+    assert.equal(photoViewerPageDelta(-80, 10, 1, 0), 0);
+    assert.equal(photoViewerSourceUri("https://cdn.example/p.jpg", "pv-1"), "https://cdn.example/p.jpg#pv=pv-1");
   });
 
   it("keeps photo and backdrop on one fade curve while the sheet translates", () => {
@@ -149,16 +167,15 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.match(source, /Gesture\.Pan/);
     assert.match(source, /Gesture\.Pinch/);
     assert.match(source, /Gesture\.Simultaneous/);
-    assert.match(source, /failOffsetX/);
-    assert.match(source, /activeOffsetY/);
-    assert.match(source, /PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X/);
-    assert.match(source, /PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y/);
-    assert.deepEqual([...PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X], [-20, 20]);
-    assert.deepEqual([...PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y], [-1000, 12]);
     assert.match(source, /shouldDismissPhotoViewer/);
     assert.match(source, /photoViewerPagingEnabled/);
     assert.match(source, /photoViewerShouldPanImage/);
-    assert.match(source, /scrollEnabled=\{pagingEnabled\}/);
+    assert.match(source, /photoViewerImageLayout/);
+    assert.match(source, /photoViewerSourceUri/);
+    assert.match(source, /gestureOverlay/);
+    assert.match(source, /PHOTO_VIEWER_EDGE_BACK/);
+    assert.equal(PHOTO_VIEWER_EDGE_BACK, 20);
+    assert.match(source, /scrollEnabled=\{false\}/);
     assert.match(source, /Animated\.spring/);
     assert.match(source, /opacity: sheetOpacity/);
     assert.match(source, /transform: \[\{ translateY: dragY \}\]/);
@@ -174,9 +191,12 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.doesNotMatch(source, /PanResponder/);
     assert.doesNotMatch(source, /maximumZoomScale/);
     assert.doesNotMatch(source, /ScrollView/);
+    assert.doesNotMatch(source, /GestureDetector gesture=\{composed\}>\s*\n\s*<View style=\{styles\.list\}/);
     assert.match(source, />Close</);
     assert.match(source, /onPress=\{closeViewer\}/);
     assert.match(source, /pagingEnabled/);
     assert.match(source, /directionalLockEnabled/);
+    assert.match(source, /position: "absolute"/);
+    assert.doesNotMatch(source, /transform: \[\s*\{ translateX: rendered/);
   });
 });

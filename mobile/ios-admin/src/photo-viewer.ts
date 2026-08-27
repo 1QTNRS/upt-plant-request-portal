@@ -5,6 +5,8 @@ export const PHOTO_VIEWER_DISMISS_FLING_VELOCITY = 800;
 export const PHOTO_VIEWER_DISMISS_FLING_DISTANCE = 24;
 export const PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y = [-1000, 12] as const;
 export const PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X = [-20, 20] as const;
+export const PHOTO_VIEWER_EDGE_BACK = 20;
+export const PHOTO_VIEWER_PAGE_DISTANCE = 60;
 
 /**
  * A clear one-finger downward swipe closes the viewer. Pinch-zoom, a zoomed
@@ -72,6 +74,56 @@ export function photoViewerImageTransform(
 
 export function resetPhotoViewerImageTransform(): PhotoViewerImageTransform {
   return { scale: 1, translateX: 0, translateY: 0 };
+}
+
+export type PhotoViewerImageLayout = {
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+};
+
+/**
+ * Position the photo with layout, not a native transform. Gesture Handler
+ * leftover CATransform on a recycled Image is what pinned the plant in the
+ * bottom-right after close/reopen.
+ */
+export function photoViewerImageLayout(
+  scale: number,
+  translateX: number,
+  translateY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): PhotoViewerImageLayout {
+  const next = photoViewerImageTransform(scale, translateX, translateY);
+  const width = Math.max(0, viewportWidth * next.scale);
+  const height = Math.max(0, viewportHeight * next.scale);
+  return {
+    width,
+    height,
+    left: (viewportWidth - width) / 2 + next.translateX,
+    top: (viewportHeight - height) / 2 + next.translateY,
+  };
+}
+
+export function photoViewerPageDelta(
+  translationX: number,
+  translationY: number,
+  pageCount: number,
+  currentIndex: number,
+): number {
+  if (pageCount <= 1) return 0;
+  if (Math.abs(translationX) < Math.abs(translationY)) return 0;
+  if (Math.abs(translationX) < PHOTO_VIEWER_PAGE_DISTANCE) return 0;
+  const delta = translationX < 0 ? 1 : -1;
+  const next = currentIndex + delta;
+  if (next < 0 || next >= pageCount) return 0;
+  return delta;
+}
+
+export function photoViewerSourceUri(url: string, sessionId: string): string {
+  const glue = url.includes("#") ? "&" : "#";
+  return `${url}${glue}pv=${encodeURIComponent(sessionId)}`;
 }
 
 export function clampPhotoViewerZoom(scale: number): number {
