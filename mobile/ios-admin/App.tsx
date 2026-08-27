@@ -198,7 +198,6 @@ export default function App() {
         return;
       }
       setSessionKind("restore");
-      setIntroDone(true);
       setToken(savedToken);
       try {
         await apiGet(savedUrl || DEFAULT_API_URL, savedToken, "/api/mobile/admin/session");
