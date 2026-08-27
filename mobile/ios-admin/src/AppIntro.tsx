@@ -1,8 +1,13 @@
 import { useEffect, useRef } from "react";
-import { AccessibilityInfo, Animated, Image, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, Image, StyleSheet, View } from "react-native";
+import * as SplashScreen from "expo-splash-screen";
 
-import { APP_INTRO_BRAND_MARK } from "./app-intro-assets";
-import { APP_INTRO_BACKGROUND, appIntroDurationMs } from "./app-intro";
+import { APP_INTRO_SPLASH_ICON } from "./app-intro-assets";
+import {
+  APP_INTRO_BACKGROUND,
+  APP_INTRO_LOGO_WIDTH,
+  appIntroDurationMs,
+} from "./app-intro";
 
 type Props = {
   onFinished: () => void;
@@ -11,6 +16,12 @@ type Props = {
 export function AppIntro({ onFinished }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.96)).current;
+
+  useEffect(() => {
+    void SplashScreen.hideAsync().catch(() => {
+      // Expo Go may already have hidden the native splash.
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +58,13 @@ export function AppIntro({ onFinished }: Props) {
   }, [onFinished, opacity, scale]);
 
   return (
-    <View style={styles.root} accessibilityRole="image" accessibilityLabel="Request Portal">
+    <View style={styles.root} accessibilityRole="image" accessibilityLabel="Logo">
       <Animated.View style={{ opacity, transform: [{ scale }] }}>
-        {APP_INTRO_BRAND_MARK ? (
-          <Image source={APP_INTRO_BRAND_MARK} style={styles.mark} resizeMode="contain" />
-        ) : (
-          <Text style={styles.wordmark}>Request Portal</Text>
-        )}
+        <Image
+          source={APP_INTRO_SPLASH_ICON}
+          style={styles.mark}
+          resizeMode="contain"
+        />
       </Animated.View>
     </View>
   );
@@ -67,14 +78,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   mark: {
-    width: 160,
-    height: 160,
-  },
-  wordmark: {
-    color: "#f7faf7",
-    fontSize: 28,
-    fontWeight: "600",
-    fontFamily: "Georgia",
-    letterSpacing: 0.3,
+    width: APP_INTRO_LOGO_WIDTH,
+    height: APP_INTRO_LOGO_WIDTH,
   },
 });

@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import {
   APP_INTRO_BACKGROUND,
   APP_INTRO_DURATION_MS,
+  APP_INTRO_LOGO_WIDTH,
+  APP_INTRO_SPLASH_IMAGE,
   appIntroDurationMs,
   shouldPlayAppIntro,
 } from "./app-intro";
@@ -17,6 +19,8 @@ describe("in-app intro", () => {
 
   it("stays in the 0.8–1.5s window and skips motion when asked", () => {
     assert.equal(APP_INTRO_BACKGROUND, "#002910");
+    assert.equal(APP_INTRO_LOGO_WIDTH, 260);
+    assert.equal(APP_INTRO_SPLASH_IMAGE, "./assets/splash-icon.png");
     assert.ok(APP_INTRO_DURATION_MS >= 800);
     assert.ok(APP_INTRO_DURATION_MS <= 1500);
     assert.equal(appIntroDurationMs(false), APP_INTRO_DURATION_MS);
