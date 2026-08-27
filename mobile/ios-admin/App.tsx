@@ -1,6 +1,6 @@
 import "react-native-gesture-handler";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import {
   NavigationContainer,
@@ -12,11 +12,14 @@ import * as Notifications from "expo-notifications";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiGet } from "./src/api";
+import { AppIntro } from "./src/AppIntro";
+import { APP_INTRO_BACKGROUND, shouldPlayAppIntro } from "./src/app-intro";
 import { SessionContext } from "./src/SessionContext";
 import { ExactPlantsReviewScreen, ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -38,6 +41,10 @@ import { ui } from "./src/ui";
 const DEFAULT_API_URL = "https://upt-plant-request-portal.onrender.com";
 const TOKEN_KEY = "upt_admin_token";
 const URL_KEY = "upt_admin_api_url";
+
+void SplashScreen.preventAutoHideAsync().catch(() => {
+  // Expo Go may already have hidden the native splash.
+});
 
 const navigationRef = createNavigationContainerRef<MainTabParamList>();
 
@@ -156,6 +163,9 @@ export default function App() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [token, setToken] = useState("");
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [sessionKind, setSessionKind] = useState<"unknown" | "restore" | "fresh">("unknown");
+  const [introDone, setIntroDone] = useState(false);
+  const finishIntro = useCallback(() => setIntroDone(true), []);
 
   useEffect(() => {
     void (async () => {
@@ -163,9 +173,12 @@ export default function App() {
       const savedUrl = await SecureStore.getItemAsync(URL_KEY);
       if (savedUrl) setApiUrl(savedUrl);
       if (!savedToken) {
+        setSessionKind("fresh");
         setReady(true);
         return;
       }
+      setSessionKind("restore");
+      setIntroDone(true);
       setToken(savedToken);
       try {
         await apiGet(savedUrl || DEFAULT_API_URL, savedToken, "/api/mobile/admin/session");
@@ -177,6 +190,13 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (sessionKind === "unknown") return;
+    void SplashScreen.hideAsync().catch(() => {
+      // Already hidden in Expo Go or after a fast restore.
+    });
+  }, [sessionKind]);
 
   useEffect(() => {
     if (!signedIn || !token) return;
@@ -230,13 +250,29 @@ export default function App() {
     setSignedIn(true);
   }
 
+  const playIntro = shouldPlayAppIntro({ sessionKind }) && !introDone;
+  const darkLaunch = sessionKind === "unknown" || playIntro || !ready;
+
   return (
     <GestureHandlerRootView style={ui.flex}>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
-        {!ready ? (
-          <View style={[ui.flex, { justifyContent: "center", alignItems: "center" }]}>
-            <ActivityIndicator color={THEME.darkGreen} />
+        <StatusBar style={darkLaunch ? "light" : "dark"} />
+        {sessionKind === "unknown" ? (
+          <View style={[ui.flex, { backgroundColor: APP_INTRO_BACKGROUND }]} />
+        ) : playIntro ? (
+          <AppIntro onFinished={finishIntro} />
+        ) : !ready ? (
+          <View
+            style={[
+              ui.flex,
+              {
+                backgroundColor: APP_INTRO_BACKGROUND,
+                justifyContent: "center",
+                alignItems: "center",
+              },
+            ]}
+          >
+            <ActivityIndicator color={THEME.white} />
           </View>
         ) : !signedIn ? (
           <LoginScreen

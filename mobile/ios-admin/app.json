@@ -1,26 +1,58 @@
 {
   "expo": {
-    "name": "UPT Admin",
+    "name": "Request Portal",
     "slug": "upt-admin-ios",
     "scheme": "uptadmin",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "owner": "unsolicited-plant-talks",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#002910"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unsolicitedplanttalks.admin"
+      "bundleIdentifier": "com.unsolicitedplanttalks.admin",
+      "icon": "./assets/icon.png",
+      "splash": {
+        "resizeMode": "contain",
+        "backgroundColor": "#002910"
+      }
     },
     "android": {
       "package": "com.unsolicitedplanttalks.admin"
     },
+    "extra": {
+      "eas": {
+        "projectId": "2c4abfc0-98d5-462b-abd0-8ecba3deeeed"
+      }
+    },
     "plugins": [
       "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#002910",
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to your photo library so you can upload photos to requests.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-notifications",
         {
           "enableBackgroundRemoteNotifications": false
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

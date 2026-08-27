@@ -1,0 +1,13 @@
+export const APP_INTRO_BACKGROUND = "#002910";
+export const APP_INTRO_DURATION_MS = 1100;
+export const APP_INTRO_REDUCED_MOTION_MS = 0;
+
+export function shouldPlayAppIntro(input: {
+  sessionKind: "unknown" | "restore" | "fresh";
+}): boolean {
+  return input.sessionKind === "fresh";
+}
+
+export function appIntroDurationMs(reduceMotion: boolean): number {
+  return reduceMotion ? APP_INTRO_REDUCED_MOTION_MS : APP_INTRO_DURATION_MS;
+}

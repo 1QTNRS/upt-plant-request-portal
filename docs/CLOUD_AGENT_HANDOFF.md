@@ -1086,6 +1086,16 @@ in `LOGGABLE_PARAMS`.
 The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
 `tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
 
+First Apple-build config (do not change Expo identity): owner
+`unsolicited-plant-talks`, slug `upt-admin-ios`, projectId
+`2c4abfc0-98d5-462b-abd0-8ecba3deeeed`, bundle
+`com.unsolicitedplanttalks.admin`, scheme `uptadmin`. iPhone display name
+**Request Portal**, version **1.0.0**, production EAS `autoIncrement` for
+build numbers. App icon path is `mobile/ios-admin/assets/icon.png`
+(1024×1024 — owner provides the file; do not invent a placeholder).
+Native splash is static `#002910`. In-app intro is JS-only and skipped
+when restoring a saved session. Camera permission is not requested yet.
+
 **Shipped:** `GET /api/mobile/admin/session`, request list, request
 detail, and `POST /api/mobile/admin/requests/:id` for the same intents
 the web request page uses (`update-item`, stock search/link, photos,
