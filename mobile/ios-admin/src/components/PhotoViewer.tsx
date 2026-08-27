@@ -14,9 +14,9 @@ import {
 } from "react-native";
 
 import {
-  PHOTO_VIEWER_DISMISS_DISTANCE,
   normalizedSwipeVelocity,
   photoViewerBounces,
+  photoViewerDismissTranslateY,
   photoViewerScrollEnabled,
   shouldCapturePhotoViewerDismiss,
   shouldDismissPhotoViewer,
@@ -41,11 +41,11 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dragY = useRef(new Animated.Value(0)).current;
-  const backdropOpacity = useMemo(
+  const sheetOpacity = useMemo(
     () =>
       dragY.interpolate({
-        inputRange: [0, PHOTO_VIEWER_DISMISS_DISTANCE * 2],
-        outputRange: [1, 0.25],
+        inputRange: [0, SCREEN_HEIGHT],
+        outputRange: [1, 0],
         extrapolate: "clamp",
       }),
     [dragY],
@@ -55,6 +55,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponder: (_, gesture) =>
           shouldCapturePhotoViewerDismiss(
             zoomScaleRef.current,
@@ -62,8 +63,20 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
             gesture.dy,
             gesture.numberActiveTouches,
           ),
+        onMoveShouldSetPanResponderCapture: (_, gesture) =>
+          shouldCapturePhotoViewerDismiss(
+            zoomScaleRef.current,
+            gesture.dx,
+            gesture.dy,
+            gesture.numberActiveTouches,
+          ),
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: () => {
+          dragY.stopAnimation();
+        },
         onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 0) dragY.setValue(gesture.dy);
+          dragY.setValue(photoViewerDismissTranslateY(gesture.dy));
         },
         onPanResponderRelease: (_, gesture) => {
           if (
@@ -97,8 +110,8 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
       <Animated.View
         style={[
-          styles.backdrop,
-          { opacity: backdropOpacity, transform: [{ translateY: dragY }] },
+          styles.sheet,
+          { opacity: sheetOpacity, transform: [{ translateY: dragY }] },
         ]}
         {...panResponder.panHandlers}
       >
@@ -136,6 +149,10 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
               minimumZoomScale={1}
               scrollEnabled={photoViewerScrollEnabled(zoomById[item.id] ?? 1)}
               bounces={photoViewerBounces(zoomById[item.id] ?? 1)}
+              bouncesZoom={photoViewerBounces(zoomById[item.id] ?? 1)}
+              alwaysBounceVertical={false}
+              alwaysBounceHorizontal={false}
+              nestedScrollEnabled={false}
               showsHorizontalScrollIndicator={false}
               showsVerticalScrollIndicator={false}
               centerContent
@@ -170,7 +187,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "#000000", overflow: "hidden" },
+  sheet: { flex: 1, backgroundColor: "#000000", overflow: "hidden" },
   topBar: {
     paddingTop: 54,
     paddingHorizontal: 16,

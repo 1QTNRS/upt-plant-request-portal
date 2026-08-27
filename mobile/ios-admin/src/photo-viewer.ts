@@ -45,6 +45,22 @@ export function shouldCapturePhotoViewerDismiss(
 }
 
 /**
+ * One sheet: photo and backdrop share this fade so they do not recede at
+ * different rates while the viewer translates.
+ */
+export function photoViewerSheetOpacity(
+  translationY: number,
+  viewportHeight: number,
+): number {
+  if (viewportHeight <= 0) return 1;
+  return Math.max(0, 1 - Math.max(0, translationY) / viewportHeight);
+}
+
+export function photoViewerDismissTranslateY(translationY: number): number {
+  return Math.max(0, translationY);
+}
+
+/**
  * React Native's PanResponder `vy` is typically px/ms (fractions). Some
  * builds already report px/s. Normalize so the dismiss threshold stays 800.
  */
