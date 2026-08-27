@@ -1,7 +1,10 @@
 export const PHOTO_VIEWER_ZOOM_PAN_THRESHOLD = 1.05;
+export const PHOTO_VIEWER_MAX_ZOOM = 4;
 export const PHOTO_VIEWER_DISMISS_DISTANCE = 80;
 export const PHOTO_VIEWER_DISMISS_FLING_VELOCITY = 800;
 export const PHOTO_VIEWER_DISMISS_FLING_DISTANCE = 24;
+export const PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y = [-1000, 12] as const;
+export const PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X = [-20, 20] as const;
 
 /**
  * A clear one-finger downward swipe closes the viewer. Pinch-zoom, a zoomed
@@ -25,12 +28,17 @@ export function shouldDismissPhotoViewer(input: {
   );
 }
 
-export function photoViewerScrollEnabled(zoomScale: number): boolean {
+export function photoViewerImagePanEnabled(zoomScale: number): boolean {
   return zoomScale > PHOTO_VIEWER_ZOOM_PAN_THRESHOLD;
 }
 
-export function photoViewerBounces(zoomScale: number): boolean {
-  return zoomScale > PHOTO_VIEWER_ZOOM_PAN_THRESHOLD;
+export function photoViewerPagingEnabled(zoomScale: number): boolean {
+  return !photoViewerImagePanEnabled(zoomScale);
+}
+
+export function clampPhotoViewerZoom(scale: number): number {
+  if (!Number.isFinite(scale)) return 1;
+  return Math.min(PHOTO_VIEWER_MAX_ZOOM, Math.max(1, scale));
 }
 
 export function shouldCapturePhotoViewerDismiss(
@@ -40,7 +48,7 @@ export function shouldCapturePhotoViewerDismiss(
   numberActiveTouches = 1,
 ): boolean {
   if (numberActiveTouches > 1) return false;
-  if (zoomScale > PHOTO_VIEWER_ZOOM_PAN_THRESHOLD) return false;
+  if (photoViewerImagePanEnabled(zoomScale)) return false;
   return translationY > 12 && Math.abs(translationY) > Math.abs(translationX) * 1.25;
 }
 
@@ -61,8 +69,8 @@ export function photoViewerDismissTranslateY(translationY: number): number {
 }
 
 /**
- * React Native's PanResponder `vy` is typically px/ms (fractions). Some
- * builds already report px/s. Normalize so the dismiss threshold stays 800.
+ * Gesture Handler reports px/s. React Native PanResponder `vy` is typically
+ * px/ms. Normalize so the dismiss threshold stays 800.
  */
 export function normalizedSwipeVelocity(velocityY: number): number {
   return Math.abs(velocityY) > 20 ? velocityY : velocityY * 1000;

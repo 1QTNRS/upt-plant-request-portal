@@ -78,9 +78,9 @@ describe("iOS admin source layout", () => {
     assert.match(detail, /sendOfferHoldControlsEnabled/);
     const viewer = read("src/components/PhotoViewer.tsx");
     assert.match(viewer, /shouldDismissPhotoViewer/);
-    assert.match(viewer, /shouldCapturePhotoViewerDismiss/);
-    assert.match(viewer, /photoViewerScrollEnabled/);
-    assert.match(viewer, /photoViewerBounces/);
+    assert.match(viewer, /GestureHandlerRootView/);
+    assert.match(viewer, /Gesture\.Pan/);
+    assert.match(viewer, /photoViewerPagingEnabled/);
     assert.match(editor, /showsStockSearchInput/);
     assert.match(editor, /linkedStockSummary/);
     assert.match(editor, /Change stock/);

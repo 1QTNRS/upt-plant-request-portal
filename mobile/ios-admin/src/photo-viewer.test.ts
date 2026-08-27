@@ -4,10 +4,14 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
+  PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y,
+  PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X,
+  PHOTO_VIEWER_MAX_ZOOM,
   PHOTO_VIEWER_ZOOM_PAN_THRESHOLD,
-  photoViewerBounces,
+  clampPhotoViewerZoom,
   photoViewerDismissTranslateY,
-  photoViewerScrollEnabled,
+  photoViewerImagePanEnabled,
+  photoViewerPagingEnabled,
   photoViewerSheetOpacity,
   shouldCapturePhotoViewerDismiss,
   shouldDismissPhotoViewer,
@@ -49,6 +53,7 @@ describe("photo viewer swipe-down dismiss", () => {
       false,
     );
     assert.equal(shouldCapturePhotoViewerDismiss(1, 120, 20), false);
+    assert.equal(photoViewerPagingEnabled(1), true);
   });
 
   it("does not close while pinch-zooming or while zoomed in", () => {
@@ -73,6 +78,8 @@ describe("photo viewer swipe-down dismiss", () => {
     );
     assert.equal(shouldCapturePhotoViewerDismiss(2, 0, 120), false);
     assert.equal(shouldCapturePhotoViewerDismiss(1, 0, 80, 2), false);
+    assert.equal(photoViewerImagePanEnabled(2), true);
+    assert.equal(photoViewerPagingEnabled(2), false);
   });
 
   it("does not take a short downward swipe as a dismiss", () => {
@@ -87,13 +94,13 @@ describe("photo viewer swipe-down dismiss", () => {
     );
   });
 
-  it("locks the zoom scroll view at base zoom and unlocks it when zoomed", () => {
-    assert.equal(photoViewerScrollEnabled(1), false);
-    assert.equal(photoViewerBounces(1), false);
-    assert.equal(photoViewerScrollEnabled(PHOTO_VIEWER_ZOOM_PAN_THRESHOLD), false);
-    assert.equal(photoViewerBounces(PHOTO_VIEWER_ZOOM_PAN_THRESHOLD), false);
-    assert.equal(photoViewerScrollEnabled(1.2), true);
-    assert.equal(photoViewerBounces(1.2), true);
+  it("pages at base zoom and pans the image only when zoomed", () => {
+    assert.equal(photoViewerPagingEnabled(1), true);
+    assert.equal(photoViewerImagePanEnabled(1), false);
+    assert.equal(photoViewerPagingEnabled(PHOTO_VIEWER_ZOOM_PAN_THRESHOLD), true);
+    assert.equal(photoViewerImagePanEnabled(1.2), true);
+    assert.equal(clampPhotoViewerZoom(0.4), 1);
+    assert.equal(clampPhotoViewerZoom(9), PHOTO_VIEWER_MAX_ZOOM);
   });
 
   it("keeps photo and backdrop on one fade curve while the sheet translates", () => {
@@ -104,32 +111,34 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.equal(photoViewerDismissTranslateY(90), 90);
   });
 
-  it("owns vertical dismiss before the zoom scroll view can rubber-band", () => {
+  it("uses one Gesture Handler owner and does not keep a zoom ScrollView", () => {
     const source = readFileSync(
       path.join(import.meta.dirname, "components", "PhotoViewer.tsx"),
       "utf8",
     );
+    assert.match(source, /GestureHandlerRootView/);
+    assert.match(source, /Gesture\.Pan/);
+    assert.match(source, /Gesture\.Pinch/);
+    assert.match(source, /Gesture\.Simultaneous/);
+    assert.match(source, /failOffsetX/);
+    assert.match(source, /activeOffsetY/);
+    assert.match(source, /PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X/);
+    assert.match(source, /PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y/);
+    assert.deepEqual([...PHOTO_VIEWER_DISMISS_FAIL_OFFSET_X], [-20, 20]);
+    assert.deepEqual([...PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y], [-1000, 12]);
     assert.match(source, /shouldDismissPhotoViewer/);
-    assert.match(source, /shouldCapturePhotoViewerDismiss/);
-    assert.match(source, /onMoveShouldSetPanResponderCapture/);
-    assert.match(source, /onPanResponderTerminationRequest: \(\) => false/);
-    assert.match(source, /onShouldBlockNativeResponder: \(\) => true/);
-    assert.match(source, /photoViewerDismissTranslateY/);
-    assert.match(source, /photoViewerScrollEnabled/);
-    assert.match(source, /photoViewerBounces/);
-    assert.match(source, /bouncesZoom=\{photoViewerBounces/);
-    assert.match(source, /scrollEnabled=\{photoViewerScrollEnabled/);
-    assert.match(source, /bounces=\{photoViewerBounces/);
+    assert.match(source, /photoViewerPagingEnabled/);
+    assert.match(source, /photoViewerImagePanEnabled/);
+    assert.match(source, /scrollEnabled=\{pagingEnabled\}/);
     assert.match(source, /Animated\.spring/);
     assert.match(source, /opacity: sheetOpacity/);
     assert.match(source, /transform: \[\{ translateY: dragY \}\]/);
-    assert.match(source, /inputRange: \[0, SCREEN_HEIGHT\]/);
-    assert.equal((source.match(/PanResponder\.create/g) || []).length, 1);
-    assert.doesNotMatch(source, /Gesture\.Pan/);
+    assert.doesNotMatch(source, /PanResponder/);
+    assert.doesNotMatch(source, /maximumZoomScale/);
+    assert.doesNotMatch(source, /ScrollView/);
     assert.match(source, />Close</);
     assert.match(source, /onPress=\{onClose\}/);
     assert.match(source, /pagingEnabled/);
     assert.match(source, /directionalLockEnabled/);
-    assert.match(source, /maximumZoomScale=\{4\}/);
   });
 });
