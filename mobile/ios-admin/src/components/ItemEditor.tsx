@@ -560,7 +560,7 @@ export function ItemEditor({
                   disabled={!fieldsOn}
                   onPress={unlinkLinkedStock}
                   accessibilityRole="button"
-                  accessibilityLabel="Remove linked stock"
+                  accessibilityLabel="Remove"
                   hitSlop={8}
                   style={styles.removeStock}
                 >
