@@ -70,6 +70,7 @@ These config changes still run in Expo Go for normal development:
 
 - Photo library (current): `Allow access to your photo library so you can upload photos to requests.`
 - Camera is **not** requested. The app only opens the photo library. Intended future copy, when a built-in camera exists: `Allow camera access so you can take plant photos for requests.`
+- Face ID is **not** requested. Device tokens stay in the iOS Keychain via SecureStore without biometric unlock.
 
 ## Visuals
 

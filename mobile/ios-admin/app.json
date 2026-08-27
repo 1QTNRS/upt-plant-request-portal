@@ -19,6 +19,16 @@
       "splash": {
         "resizeMode": "contain",
         "backgroundColor": "#002910"
+      },
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
       }
     },
     "android": {
@@ -52,7 +62,12 @@
           "enableBackgroundRemoteNotifications": false
         }
       ],
-      "expo-secure-store"
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ]
     ]
   }
 }

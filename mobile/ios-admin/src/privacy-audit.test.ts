@@ -25,7 +25,11 @@ function collectSourceFiles(dir: string): string[] {
       out.push(...collectSourceFiles(full));
       continue;
     }
-    if (/\.(ts|tsx|js|json)$/.test(entry.name) && entry.name !== "package-lock.json") {
+    if (
+      /\.(ts|tsx|js|json)$/.test(entry.name) &&
+      entry.name !== "package-lock.json" &&
+      entry.name !== "privacy-audit.test.ts"
+    ) {
       out.push(full);
     }
   }

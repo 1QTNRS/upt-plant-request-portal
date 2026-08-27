@@ -23,7 +23,12 @@ describe("first Apple build config", () => {
         icon: string;
         splash: { backgroundColor: string };
         extra: { eas: { projectId: string } };
-        ios: { bundleIdentifier: string; icon: string; splash: { backgroundColor: string } };
+        ios: {
+          bundleIdentifier: string;
+          icon: string;
+          splash: { backgroundColor: string };
+          infoPlist: { NSAppTransportSecurity: { NSAllowsArbitraryLoads: boolean } };
+        };
         plugins: unknown[];
       };
     };
@@ -43,6 +48,7 @@ describe("first Apple build config", () => {
     assert.equal(app.expo.ios.icon, "./assets/icon.png");
     assert.equal(app.expo.splash.backgroundColor, "#002910");
     assert.equal(app.expo.ios.splash.backgroundColor, "#002910");
+    assert.equal(app.expo.ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads, false);
     assert.equal(eas.cli.appVersionSource, "remote");
     assert.equal(eas.build.production.autoIncrement, true);
     assert.ok(eas.build.development);
@@ -55,10 +61,14 @@ describe("first Apple build config", () => {
     const picker = expo.plugins.find(
       (plugin) => Array.isArray(plugin) && plugin[0] === "expo-image-picker",
     ) as [string, { photosPermission: string; cameraPermission: boolean; microphonePermission: boolean }];
+    const secureStore = expo.plugins.find(
+      (plugin) => Array.isArray(plugin) && plugin[0] === "expo-secure-store",
+    ) as [string, { faceIDPermission: boolean }];
     assert.equal(picker[1].photosPermission, PHOTO_LIBRARY_PERMISSION);
     assert.equal(picker[1].photosPermission, "Allow access to your photo library so you can upload photos to requests.");
     assert.equal(picker[1].cameraPermission, false);
     assert.equal(picker[1].microphonePermission, false);
+    assert.equal(secureStore[1].faceIDPermission, false);
     assert.equal(
       FUTURE_CAMERA_PERMISSION,
       "Allow camera access so you can take plant photos for requests.",
