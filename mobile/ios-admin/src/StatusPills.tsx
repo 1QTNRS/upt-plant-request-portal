@@ -12,8 +12,7 @@ function pillColors(status: string) {
   if (status === "Expired") {
     return { backgroundColor: THEME.white, color: THEME.darkGreen, borderColor: THEME.yellow };
   }
-  // New sits on the mint request page — white keeps the pill readable.
-  return { backgroundColor: THEME.white, color: THEME.darkGreen, borderColor: THEME.line };
+  return { backgroundColor: THEME.mint, color: THEME.darkGreen, borderColor: THEME.mint };
 }
 
 export function StatusPills({
