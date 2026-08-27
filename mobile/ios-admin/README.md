@@ -68,6 +68,7 @@ These config changes still run in Expo Go for normal development:
 - A signed EAS / dev-client build uses our native splash (`#002910` + `splash-icon.png`) and then the same-color intro. There is no Expo Go white frame on that path.
 - Custom scheme `uptadmin://request/{id}` is honored in a standalone / EAS binary. Expo Go uses `exp://` for QR-code loads; notification taps still go through the JS listener and stay behind login.
 - Photo-library permission copy is applied at **prebuild** time. Expo Go shows Expo Go's own library prompt until you install an EAS build.
+- Camera-roll photos on iPhone are HEIC. Expo ImagePicker's PHPicker path returns those raw HEIC bytes and ignores `quality` for `UTType.heic`. The app re-encodes each picked photo to JPEG with `expo-image-manipulator` before upload. Relabeling `.heic` as `image/jpeg` without converting the bytes makes Shopify's staged GCS target return 400.
 
 ### Permissions
 

@@ -7,6 +7,7 @@ import {
   resolveFedexVariant,
   resolveOnlineStoreAndPosPublications,
   searchExistingStock,
+  uploadPlantPhoto,
 } from "./shopify-ops.server";
 import { unlinkableVariantReason } from "./growers-choice";
 import { exactPlantInventoryIdempotencyKey } from "./inventory-concurrency";
@@ -924,5 +925,151 @@ describe("sales channel publications", () => {
     assert.match(error.message, /POS \(pos or point_of_sale\)/);
     assert.match(error.message, /Apps and sales channels/);
     assert.equal(/scope/i.test(error.message), false);
+  });
+});
+
+describe("uploadPlantPhoto staged target", () => {
+  const jpeg = Buffer.from("ffd8ffe000104a46494600010100000100010000ffd9", "hex");
+  const heic = Buffer.from("000000186674797068656963000000006d696631", "hex");
+  const shop = "merchant-staged-photo.myshopify.com";
+
+  function readyFile() {
+    return {
+      id: "gid://shopify/MediaImage/1",
+      fileStatus: "READY",
+      fileErrors: [],
+      image: { url: "https://cdn.shopify.com/plant.jpg" },
+    };
+  }
+
+  it("tells stagedUploadsCreate the sniffed JPEG mime and POSTs that file", async () => {
+    const calls: Call[] = [];
+    let postedType = "";
+    let postedName = "";
+    const result = await uploadPlantPhoto(
+      fakeAdmin(
+        {
+          StagedPlantPhotoUpload: {
+            stagedUploadsCreate: {
+              stagedTargets: [
+                {
+                  url: "https://shopify-staged-uploads.storage.googleapis.com/upload",
+                  resourceUrl: "https://shopify-staged-uploads.storage.googleapis.com/tmp/plant.jpg",
+                  parameters: [{ name: "content_type", value: "image/jpeg" }],
+                },
+              ],
+              userErrors: [],
+            },
+          },
+          CreatePlantPhoto: {
+            fileCreate: { files: [readyFile()], userErrors: [] },
+          },
+        },
+        calls,
+      ),
+      shop,
+      { filename: "IMG_1.HEIC", mimeType: "image/heic", data: jpeg },
+      {
+        fetchImpl: async (_url, init) => {
+          const request = new Request("https://shopify-staged-uploads.storage.googleapis.com/upload", init);
+          const form = await request.formData();
+          const file = form.get("file");
+          assert.ok(file instanceof File);
+          postedType = file.type;
+          postedName = file.name;
+          return new Response(null, { status: 201 });
+        },
+      },
+    );
+
+    assert.equal(result.url, "https://cdn.shopify.com/plant.jpg");
+    const stagedInput = (calls[0]?.variables.input as Array<{ mimeType: string; httpMethod: string; filename: string }>)[0];
+    assert.equal(stagedInput.mimeType, "image/jpeg");
+    assert.equal(stagedInput.httpMethod, "POST");
+    assert.equal(stagedInput.filename, "IMG_1.jpg");
+    assert.equal(postedType, "image/jpeg");
+    assert.equal(postedName, "IMG_1.jpg");
+  });
+
+  it("converts HEIC bytes before the staged POST", async () => {
+    const calls: Call[] = [];
+    let postedSize = 0;
+    await uploadPlantPhoto(
+      fakeAdmin(
+        {
+          StagedPlantPhotoUpload: {
+            stagedUploadsCreate: {
+              stagedTargets: [
+                {
+                  url: "https://shopify-staged-uploads.storage.googleapis.com/upload",
+                  resourceUrl: "https://shopify-staged-uploads.storage.googleapis.com/tmp/plant.jpg",
+                  parameters: [{ name: "content_type", value: "image/jpeg" }],
+                },
+              ],
+              userErrors: [],
+            },
+          },
+          CreatePlantPhoto: {
+            fileCreate: { files: [readyFile()], userErrors: [] },
+          },
+        },
+        calls,
+      ),
+      shop,
+      { filename: "leaf.HEIC", mimeType: "image/heic", data: heic },
+      {
+        convertHeic: async () => jpeg,
+        fetchImpl: async (_url, init) => {
+          const request = new Request("https://shopify-staged-uploads.storage.googleapis.com/upload", init);
+          const file = (await request.formData()).get("file");
+          assert.ok(file instanceof File);
+          postedSize = file.size;
+          assert.equal(file.type, "image/jpeg");
+          return new Response(null, { status: 201 });
+        },
+      },
+    );
+    assert.equal(
+      (calls[0]?.variables.input as Array<{ mimeType: string }>)[0].mimeType,
+      "image/jpeg",
+    );
+    assert.equal(postedSize, jpeg.length);
+  });
+
+  it("surfaces a non-2xx staged-target status and does not call fileCreate", async () => {
+    const calls: Call[] = [];
+    await assert.rejects(
+      () =>
+        uploadPlantPhoto(
+          fakeAdmin(
+            {
+              StagedPlantPhotoUpload: {
+                stagedUploadsCreate: {
+                  stagedTargets: [
+                    {
+                      url: "https://shopify-staged-uploads.storage.googleapis.com/upload",
+                      resourceUrl: "https://shopify-staged-uploads.storage.googleapis.com/tmp/plant.jpg",
+                      parameters: [{ name: "content_type", value: "image/jpeg" }],
+                    },
+                  ],
+                  userErrors: [],
+                },
+              },
+            },
+            calls,
+          ),
+          shop,
+          { filename: "plant.jpg", mimeType: "image/jpeg", data: jpeg },
+          {
+            fetchImpl: async () =>
+              new Response("<Error><Code>InvalidArgument</Code></Error>", { status: 400 }),
+          },
+        ),
+      /400 at staged-target/,
+    );
+    assert.deepEqual(
+      calls.map((call) => call.operation),
+      ["StagedPlantPhotoUpload"],
+    );
   });
 });
