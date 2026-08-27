@@ -9,13 +9,17 @@ test.describe("Link Stock search", () => {
       timeout: 15_000,
     });
     await page.locator(".upt-wide-only").getByText("View items").click();
-    await expect(page.getByText("Monstera Deliciosa")).toBeVisible({
+    await expect(page.getByText("Monstera Deliciosa", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
-    await page.getByText("Link Existing Website Stock").first().click();
     const search = page.locator("input[placeholder='Product title, variant, or SKU']");
-    await expect(search).toBeVisible();
+    await expect(async () => {
+      if (!(await search.isVisible())) {
+        await page.getByText("Link Existing Website Stock").first().click();
+      }
+      await expect(search).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
 
     await search.fill("thai");
     const dropdown = page.locator("[data-stock-search-dropdown]");
