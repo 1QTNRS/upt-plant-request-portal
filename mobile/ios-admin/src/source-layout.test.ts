@@ -58,7 +58,7 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /keyboardDismissMode="none"/);
     assert.match(editor, /intent: "link-stock"/);
     assert.match(editor, /intent: "unlink-stock"/);
-    assert.match(editor, /Remove linked stock/);
+    assert.match(editor, /accessibilityLabel="Remove"/);
     assert.match(editor, /Change stock/);
     assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
