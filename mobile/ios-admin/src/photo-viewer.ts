@@ -25,6 +25,14 @@ export function shouldDismissPhotoViewer(input: {
   );
 }
 
+export function photoViewerScrollEnabled(zoomScale: number): boolean {
+  return zoomScale > PHOTO_VIEWER_ZOOM_PAN_THRESHOLD;
+}
+
+export function photoViewerBounces(zoomScale: number): boolean {
+  return zoomScale > PHOTO_VIEWER_ZOOM_PAN_THRESHOLD;
+}
+
 export function shouldCapturePhotoViewerDismiss(
   zoomScale: number,
   translationX: number,
