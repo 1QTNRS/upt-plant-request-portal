@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
@@ -34,6 +34,7 @@ type Props = NativeStackScreenProps<RequestsStackParamList, "RequestDetail">;
 
 export function RequestDetailScreen({ navigation, route }: Props) {
   const { apiUrl, token } = useSession();
+  const insets = useSafeAreaInsets();
   const { requestId } = route.params;
   const [detail, setDetail] = useState<RequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -157,13 +158,15 @@ export function RequestDetailScreen({ navigation, route }: Props) {
 
   if (!detail) {
     return (
-      <SafeAreaView style={ui.screen} edges={["top", "left", "right", "bottom"]}>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={ui.link}>← Requests</Text>
-        </Pressable>
-        {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
-        {error ? <Text style={ui.error}>{error}</Text> : null}
-      </SafeAreaView>
+      <View style={ui.flexPage}>
+        <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
+          <Pressable onPress={() => navigation.goBack()}>
+            <Text style={ui.link}>← Requests</Text>
+          </Pressable>
+          {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
+          {error ? <Text style={ui.error}>{error}</Text> : null}
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -173,14 +176,15 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     detail.status === "New" && (detail.canSendOffer || requestLooksSendable(draftedItems));
 
   return (
-    <SafeAreaView style={ui.flexPage} edges={["top", "left", "right", "bottom"]}>
+    <View style={ui.flexPage}>
+    <SafeAreaView style={ui.flexPage} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView
       style={ui.flexPage}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         style={ui.flexPage}
-        contentContainerStyle={ui.page}
+        contentContainerStyle={[ui.page, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         onTouchStart={dismissStockSearches}
@@ -385,5 +389,6 @@ export function RequestDetailScreen({ navigation, route }: Props) {
       </ScrollView>
     </KeyboardAvoidingView>
     </SafeAreaView>
+    </View>
   );
 }

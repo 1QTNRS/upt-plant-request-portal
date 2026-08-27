@@ -127,6 +127,7 @@ function MainTabs() {
   return (
     <Tabs.Navigator
       tabBarPosition="bottom"
+      style={ui.flexPage}
       screenOptions={({ route }) => {
         const visible = tabBarVisible(route);
         const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
@@ -135,7 +136,14 @@ function MainTabs() {
           swipeEnabled: tabSwipeEnabled(focused) && visible,
           tabBarActiveTintColor: THEME.yellow,
           tabBarInactiveTintColor: THEME.white,
-          tabBarStyle: visible ? tabBarStyle : { display: "none", height: 0 },
+          tabBarStyle: visible
+            ? tabBarStyle
+            : {
+                display: "none",
+                height: 0,
+                backgroundColor: THEME.requestPage,
+                borderTopColor: THEME.requestPage,
+              },
           tabBarLabelStyle: {
             fontWeight: "700",
             fontSize: TAB_BAR_LABEL_FONT_SIZE,

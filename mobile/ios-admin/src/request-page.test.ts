@@ -49,20 +49,33 @@ describe("request page mint chrome", () => {
     assert.match(list, /tintColor=\{THEME\.darkGreen\}/);
 
     assert.match(detail, /style=\{ui\.flexPage\}/);
-    assert.match(detail, /contentContainerStyle=\{ui\.page\}/);
+    assert.match(detail, /contentContainerStyle=\{\[ui\.page/);
     assert.doesNotMatch(detail, /SafeAreaView style=\{ui\.flex\}/);
 
     assert.match(editor, /style=\{ui\.card\}/);
     assert.doesNotMatch(editor, /backgroundColor: THEME\.requestPage/);
   });
 
-  it("keeps New status readable on the mint page", () => {
+  it("does not restyle New / Pending / Closed / Expired status pills", () => {
     const pills = read("src/StatusPills.tsx");
-    assert.match(pills, /backgroundColor: THEME\.white/);
-    assert.match(pills, /borderColor: THEME\.line/);
-    assert.doesNotMatch(
+    assert.match(
       pills,
       /return \{ backgroundColor: THEME\.mint, color: THEME\.darkGreen, borderColor: THEME\.mint \}/,
     );
+    assert.match(pills, /status === "Closed"/);
+    assert.match(pills, /status === "Pending"/);
+    assert.match(pills, /status === "Expired"/);
+    assert.doesNotMatch(pills, /New sits on the mint request page/);
+  });
+
+  it("paints the request-detail home-indicator edge mint when the tab bar is hidden", () => {
+    const app = read("App.tsx");
+    const detail = read("src/screens/RequestDetailScreen.tsx");
+    assert.match(app, /style=\{ui\.flexPage\}/);
+    assert.match(app, /display: "none"/);
+    assert.match(app, /backgroundColor: THEME\.requestPage/);
+    assert.match(detail, /<View style=\{ui\.flexPage\}>/);
+    assert.match(detail, /edges=\{\["top", "left", "right"\]\}/);
+    assert.doesNotMatch(detail, /edges=\{\["top", "left", "right", "bottom"\]\}/);
   });
 });
