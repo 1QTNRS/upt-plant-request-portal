@@ -233,6 +233,51 @@ describe("admin mobile request actions", () => {
     );
     assert.ok(thai);
     assert.equal(thai.unlinkableReason, null);
+    assert.equal(thai.inventoryQuantity, 4);
+    assert.equal(thai.inventoryTracked, true);
+    assert.equal(thai.publishedOnOnlineStore, true);
+
+    const zero = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: { intent: "search-stock", itemId: created.items[0].id, term: "anthurium" },
+    });
+    assert.equal(zero.ok, true);
+    assert.equal(zero.stockSearch?.results.length, 1);
+    assert.equal(zero.stockSearch?.results[0].inventoryQuantity, 0);
+    assert.match(zero.stockSearch?.results[0].unlinkableReason ?? "", /out of stock/i);
+
+    const refusedZero = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: {
+        intent: "link-stock",
+        itemId: created.items[0].id,
+        variantGid: "gid://shopify/ProductVariant/demo-anthurium-waroq-8in",
+      },
+    });
+    assert.equal(refusedZero.ok, false);
+    assert.match(!refusedZero.ok ? refusedZero.error : "", /out of stock/i);
+
+    const draft = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: { intent: "search-stock", itemId: created.items[0].id, term: "draft" },
+    });
+    assert.equal(draft.ok, true);
+    assert.deepEqual(draft.stockSearch?.results, []);
+
+    const posOnly = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: { intent: "search-stock", itemId: created.items[0].id, term: "hoya" },
+    });
+    assert.equal(posOnly.ok, true);
+    assert.deepEqual(posOnly.stockSearch?.results, []);
 
     const linked = await handleMobileAdminRequestAction({
       shop,

@@ -787,6 +787,33 @@ describe("searching the shop's existing stock", () => {
       ],
     );
   });
+
+  it("reads Shopify variant available quantity, not a location rollup the app invented", async () => {
+    const { calls } = await search(
+      stockSearch([variantNode({ id: "gid://shopify/ProductVariant/1" })]),
+    );
+    const searchCall = calls.find((call) => call.operation === "PortalStockSearch");
+    assert.ok(searchCall?.query.includes("inventoryQuantity"));
+    assert.equal(searchCall?.query.includes("inventoryLevels"), false);
+    assert.equal(searchCall?.query.includes("inventoryLevel("), false);
+  });
+});
+
+describe("demo catalogue used when there is no Admin session", () => {
+  it("keeps ACTIVE Online Store rows and drops draft and POS-only listings", async () => {
+    const thai = await searchExistingStock(undefined, DEMO_SHOP, "thai");
+    assert.equal(thai.length, 1);
+    assert.equal(thai[0]?.inventoryQuantity, 4);
+    assert.equal(thai[0]?.publishedOnOnlineStore, true);
+
+    const zero = await searchExistingStock(undefined, DEMO_SHOP, "anthurium");
+    assert.equal(zero.length, 1);
+    assert.equal(zero[0]?.inventoryQuantity, 0);
+    assert.equal(unlinkableVariantReason(zero[0]!), "This variant is out of stock.");
+
+    assert.deepEqual(await searchExistingStock(undefined, DEMO_SHOP, "draft"), []);
+    assert.deepEqual(await searchExistingStock(undefined, DEMO_SHOP, "hoya"), []);
+  });
 });
 
 describe("FedEx upgrade listing", () => {
