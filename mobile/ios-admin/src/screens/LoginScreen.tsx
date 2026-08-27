@@ -33,7 +33,7 @@ export function LoginScreen({ apiUrl, token, onApiUrl, onToken, onSignedIn }: Pr
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
     <ScrollView contentContainerStyle={ui.page} keyboardShouldPersistTaps="handled">
-      <Text style={ui.title}>UPT Admin</Text>
+      <Text style={ui.title}>Request Portal</Text>
       <Text style={ui.muted}>
         Create a device token in Shopify admin → Settings → iOS admin app, then paste it
         here.

@@ -38,7 +38,7 @@ export async function registerAdminPush(apiUrl: string, token: string): Promise<
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("upt-admin", {
-      name: "UPT Admin",
+      name: "Request Portal",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }

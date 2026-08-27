@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import {
+  APP_INTRO_BACKGROUND,
+  APP_INTRO_DURATION_MS,
+  appIntroDurationMs,
+  shouldPlayAppIntro,
+} from "./app-intro";
+
+describe("in-app intro", () => {
+  it("plays only for a fresh launch, not while restoring a session", () => {
+    assert.equal(shouldPlayAppIntro({ sessionKind: "unknown" }), false);
+    assert.equal(shouldPlayAppIntro({ sessionKind: "restore" }), false);
+    assert.equal(shouldPlayAppIntro({ sessionKind: "fresh" }), true);
+  });
+
+  it("stays in the 0.8–1.5s window and skips motion when asked", () => {
+    assert.equal(APP_INTRO_BACKGROUND, "#002910");
+    assert.ok(APP_INTRO_DURATION_MS >= 800);
+    assert.ok(APP_INTRO_DURATION_MS <= 1500);
+    assert.equal(appIntroDurationMs(false), APP_INTRO_DURATION_MS);
+    assert.equal(appIntroDurationMs(true), 0);
+  });
+});

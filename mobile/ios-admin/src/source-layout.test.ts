@@ -95,10 +95,22 @@ describe("iOS admin source layout", () => {
     assert.match(app, /registerAdminPush/);
     assert.match(app, /createNavigationContainerRef/);
     assert.match(app, /uptadmin:\/\//);
+    assert.match(app, /request\/:requestId/);
     assert.match(app, /resolveAdminPushDeepLink/);
     assert.match(settings, /iOS Push Notifications/);
     assert.match(settings, /save-admin-push/);
     assert.match(settings, /New Request/);
     assert.match(settings, /Item Status Update/);
+  });
+
+  it("plays a skippable in-app intro after the native splash", () => {
+    const app = read("App.tsx");
+    const login = read("src/screens/LoginScreen.tsx");
+    assert.match(app, /preventAutoHideAsync/);
+    assert.match(app, /AppIntro/);
+    assert.match(app, /shouldPlayAppIntro/);
+    assert.match(app, /sessionKind/);
+    assert.match(login, /Request Portal/);
+    assert.doesNotMatch(login, /UPT Admin/);
   });
 });
