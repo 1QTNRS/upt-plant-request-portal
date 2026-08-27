@@ -17,8 +17,61 @@ export type PickerAsset = {
   mimeType?: string | null;
 };
 
+export type PhotoLibraryPermission = {
+  granted: boolean;
+};
+
+export type ImageLibraryPickResult = {
+  canceled: boolean;
+  assets?: PickerAsset[] | null;
+};
+
+/** PHPicker options: JPEG-compatible files in cache, no prior library grant. */
+export const IMAGE_LIBRARY_PICKER_OPTIONS: {
+  mediaTypes: Array<"images">;
+  quality: number;
+  allowsMultipleSelection: boolean;
+  orderedSelection: boolean;
+  preferredAssetRepresentationMode: "compatible";
+} = {
+  mediaTypes: ["images"],
+  quality: 0.8,
+  allowsMultipleSelection: true,
+  orderedSelection: true,
+  preferredAssetRepresentationMode: "compatible",
+};
+
+export const PHOTO_LIBRARY_DENIED_MESSAGE =
+  "Photo library access is needed to attach an exact-plant photo.";
+
 export function newPhotoClientKey(): string {
   return `photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function shouldBlockLibraryPicker(_permission: PhotoLibraryPermission | null): boolean {
+  // iOS 14+ PHPicker does not need a prior grant. Blocking on Expo Go's
+  // library permission was preventing the system picker from opening at all.
+  return false;
+}
+
+export function normalizedImageMime(asset: PickerAsset): string {
+  const mime = (asset.mimeType || "").toLowerCase();
+  const name = asset.fileName || "";
+  if (mime === "image/png" || /\.png$/i.test(name)) return "image/png";
+  if (mime === "image/webp" || /\.webp$/i.test(name)) return "image/webp";
+  if (mime === "image/gif" || /\.gif$/i.test(name)) return "image/gif";
+  return "image/jpeg";
+}
+
+export function uploadFileFromPickerAsset(
+  asset: PickerAsset,
+  index: number,
+): { uri: string; name: string; type: string } {
+  const type = normalizedImageMime(asset);
+  const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : type === "image/gif" ? "gif" : "jpg";
+  const rawBase = (asset.fileName || `plant-${index + 1}`).replace(/\.[^.]+$/, "");
+  const base = rawBase.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || `plant-${index + 1}`;
+  return { uri: asset.uri, name: `${base}.${ext}`, type };
 }
 
 export function photosFromPickerAssets(assets: PickerAsset[]): EditorPhoto[] {
@@ -30,13 +83,36 @@ export function photosFromPickerAssets(assets: PickerAsset[]): EditorPhoto[] {
       status: "uploading" as const,
       progress: 0,
       clientKey,
-      file: {
-        uri: asset.uri,
-        name: asset.fileName || `plant-${index + 1}.jpg`,
-        type: asset.mimeType || "image/jpeg",
-      },
+      file: uploadFileFromPickerAsset(asset, index),
     };
   });
+}
+
+export function photoPickerErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/permission|denied|access/i.test(message)) return PHOTO_LIBRARY_DENIED_MESSAGE;
+  return message || "Could not open the photo library.";
+}
+
+export async function pickPlantPhotos(input: {
+  launch: (options: typeof IMAGE_LIBRARY_PICKER_OPTIONS) => Promise<ImageLibraryPickResult>;
+  requestPermission?: () => Promise<PhotoLibraryPermission>;
+}): Promise<{ canceled: boolean; assets: PickerAsset[] }> {
+  const options = IMAGE_LIBRARY_PICKER_OPTIONS;
+  try {
+    const first = await input.launch(options);
+    if (first.canceled || !first.assets?.length) return { canceled: true, assets: [] };
+    return { canceled: false, assets: first.assets };
+  } catch (error) {
+    if (!input.requestPermission) throw error;
+    const permission = await input.requestPermission();
+    if (!permission.granted) {
+      throw new Error(PHOTO_LIBRARY_DENIED_MESSAGE);
+    }
+    const retry = await input.launch(options);
+    if (retry.canceled || !retry.assets?.length) return { canceled: true, assets: [] };
+    return { canceled: false, assets: retry.assets };
+  }
 }
 
 export function mergeEditorPhotos(

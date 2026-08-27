@@ -62,7 +62,9 @@ Profiles: `development` (dev client), `preview` (internal), `production` (autoIn
 
 These config changes still run in Expo Go for normal development:
 
-- Display name, icon, and native splash in `app.json` are **not** applied to Expo Go. Expo Go keeps its own name, icon, and **white** splash. That first white flash is Expo Go, not this app — we cannot remove it in Expo Go. The in-app intro still plays on a fresh sign-in (`#002910` + the store mark, already visible, then a short scale).
+- Display name and icon in `app.json` are **not** applied to Expo Go. Expo Go keeps its own name and icon.
+- Expo Go's splash is still Expo Go's (white chrome). It also **reuses this project's `splash.image`** (`splash-icon.png`, the store mark) and draws that image on its white canvas. It does **not** apply our `#002910`. That is why the first frame can show the UPT logo on a white background — Expo Go borrowed the image, not the green. We cannot recolor Expo Go's chrome.
+- The in-app intro still plays on every cold launch (`#002910` + the same store mark, already visible, then a short scale). That green frame is ours.
 - A signed EAS / dev-client build uses our native splash (`#002910` + `splash-icon.png`) and then the same-color intro. There is no Expo Go white frame on that path.
 - Custom scheme `uptadmin://request/{id}` is honored in a standalone / EAS binary. Expo Go uses `exp://` for QR-code loads; notification taps still go through the JS listener and stay behind login.
 - Photo-library permission copy is applied at **prebuild** time. Expo Go shows Expo Go's own library prompt until you install an EAS build.

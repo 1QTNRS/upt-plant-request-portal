@@ -1109,7 +1109,9 @@ store mark at `./assets/splash-icon.png` (260px, contain, logo only —
 no "Request Portal" wordmark). The logo is visible as soon as AppIntro
 mounts (scale-only motion; no empty-green frame). Intro is JS-only and
 holds ~2.2s on every cold launch, including a restored session. Expo Go still shows its own
-white splash first — that is Expo Go, not this app. At base zoom the
+white splash first and stamps this project's `splash.image` (the store mark) on that
+white chrome — it does not apply `#002910`. That first "logo on white" frame is Expo Go
+borrowing the image, not a second branded splash we own. At base zoom the
 photo viewer turns off zoom-scroll so swipe-down dismisses the image
 and backdrop as one surface; pinch-zoom pans the photo instead.
 Request list / detail chrome is `#d6ece2`; cards stay white; the tab
