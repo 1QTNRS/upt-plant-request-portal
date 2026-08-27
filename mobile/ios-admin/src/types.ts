@@ -78,6 +78,7 @@ export type StockCandidate = {
   sku?: string;
   price: number;
   inventoryQuantity?: number;
+  inventoryTracked?: boolean;
   unlinkableReason: string | null;
 };
 

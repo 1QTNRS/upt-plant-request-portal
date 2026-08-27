@@ -26,8 +26,10 @@ import {
   FULFILLMENT_CHOICE_LABELS,
   FULFILLMENT_TYPE_LABELS,
   formatLinkedInventory,
+  formatStockSearchInventory,
   inventoryHoldState,
   MIN_STOCK_SEARCH_TERM,
+  stockSearchInventoryIsEmpty,
   unlinkableVariantReason,
   type FulfillmentType,
   type InventoryHoldState,
@@ -774,19 +776,20 @@ function ExistingStockPanel({
                   </div>
                 ) : (
                   results.map((candidate) => {
-                    const label = [
-                      candidate.productTitle,
-                      candidate.variantTitle,
-                    ]
-                      .filter(Boolean)
-                      .join(" — ");
-                    const detail = [
-                      candidate.sku ? `SKU ${candidate.sku}` : null,
-                      formatCurrency(candidate.price),
-                      formatLinkedInventory(candidate),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
+                    const inventoryLabel = formatStockSearchInventory(candidate);
+                    const noStock = stockSearchInventoryIsEmpty(candidate);
+                    const inventory = (
+                      <span
+                        data-stock-search-inventory
+                        data-stock-search-no-stock={noStock ? "true" : undefined}
+                        style={{
+                          color: noStock ? "#8e1f0b" : "#6d7175",
+                          fontWeight: noStock ? 700 : 400,
+                        }}
+                      >
+                        {inventoryLabel}
+                      </span>
+                    );
                     const linkableIndex = linkableResults.findIndex(
                       (row) => row.variantGid === candidate.variantGid,
                     );
@@ -819,6 +822,26 @@ function ExistingStockPanel({
                         }}
                       />
                     );
+                    const body = (
+                      <div>
+                        <strong>{candidate.productTitle}</strong>
+                        {candidate.variantTitle ? (
+                          <div style={{ fontSize: 12, color: "#6d7175" }}>
+                            {candidate.variantTitle}
+                          </div>
+                        ) : null}
+                        <div style={{ fontSize: 12, color: "#6d7175" }}>
+                          {formatCurrency(candidate.price)}
+                          {" · "}
+                          {inventory}
+                        </div>
+                        {candidate.unlinkableReason && !noStock ? (
+                          <div style={{ fontSize: 12, color: "#6d7175" }}>
+                            {candidate.unlinkableReason}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
                     if (candidate.unlinkableReason) {
                       return (
                         <div
@@ -836,11 +859,7 @@ function ExistingStockPanel({
                           }}
                         >
                           {thumb}
-                          <div>
-                            <strong>{label}</strong>
-                            <div style={{ fontSize: 12 }}>{detail}</div>
-                            <div style={{ fontSize: 12 }}>{candidate.unlinkableReason}</div>
-                          </div>
+                          {body}
                         </div>
                       );
                     }
@@ -869,10 +888,7 @@ function ExistingStockPanel({
                         }}
                       >
                         {thumb}
-                        <div>
-                          <strong>{label}</strong>
-                          <div style={{ fontSize: 12, color: "#6d7175" }}>{detail}</div>
-                        </div>
+                        {body}
                       </button>
                     );
                   })

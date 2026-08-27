@@ -1,17 +1,25 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function ensureExactPlantsQueueOpen(page: Page) {
+  const table = page.locator("[data-exact-plants-table]");
+  await expect(page.getByText("EXACT PLANTS queue")).toBeVisible({ timeout: 15_000 });
+  // defaultOpen is true. A click-if-hidden race closes the already-open
+  // section on a slow first paint, so wait for it to appear before toggling.
+  try {
+    await expect(table).toBeVisible({ timeout: 8_000 });
+  } catch {
+    await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
+    await expect(table).toBeVisible({ timeout: 8_000 });
+  }
+  return table;
+}
 
 test.describe("EXACT PLANTS table", () => {
   test("sortable headers keep the listing filter and open the photo viewer", async ({
     page,
   }) => {
     await page.goto("/app/exact-plants");
-    await expect(page.getByText("EXACT PLANTS queue")).toBeVisible({ timeout: 15_000 });
-
-    const table = page.locator("[data-exact-plants-table]");
-    if (!(await table.isVisible())) {
-      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
-    }
-    await expect(table).toBeVisible();
+    const table = await ensureExactPlantsQueueOpen(page);
     await expect(page.getByText("Thai Constellation")).toBeVisible();
     await expect(page.locator("body")).not.toContainText("lisa.park@email.com");
     await expect(page.locator("body")).not.toContainText("alex.rivera@example.com");
@@ -79,10 +87,7 @@ test.describe("EXACT PLANTS table", () => {
 
   test("actions still offer listing and dismiss", async ({ page }) => {
     await page.goto("/app/exact-plants");
-    const table = page.locator("[data-exact-plants-table]");
-    if (!(await table.isVisible())) {
-      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
-    }
+    await ensureExactPlantsQueueOpen(page);
     await expect(page.getByRole("link", { name: "Create listing" }).first()).toBeVisible();
     await expect(page.locator("[data-dismiss-exact-plant]").first()).toBeVisible();
     await page.locator("[data-dismiss-exact-plant]").first().click();
@@ -102,9 +107,7 @@ test.describe("EXACT PLANTS table", () => {
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/app/exact-plants");
-    if (!(await page.locator("[data-exact-plants-table]").isVisible())) {
-      await page.locator("summary", { hasText: "EXACT PLANTS queue" }).click();
-    }
+    await ensureExactPlantsQueueOpen(page);
     const wrap = page.locator("[data-exact-plants-table-wrap]");
     await expect(wrap).toBeVisible();
     const overflow = await wrap.evaluate(
