@@ -621,7 +621,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "An item UPT cannot supply. It appears on the offer with a reason and cannot be accepted or rejected.",
     detail: [
       "Stored as `availability: \"not_available\"`, which overrides whatever fulfilment route the item was on: a plant UPT cannot supply is not being supplied either way, and a stale route must not put it back into a draft order.",
-      "It carries one of four reasons: currently not in UPT prop circulation, available in 2+ mos, available in 2-3weeks, or not in our current inventory.",
+      "It carries one of five reasons: currently not in UPT prop circulation, available in 2+ mos, available in 2-3weeks, not in our current inventory, or other.",
       "It needs no photo, price or weight before the offer can be sent, it is excluded from the offered count in analytics, and it can never become an EXACT PLANTS listing — there is no exact plant to sell. `readOfferChoices` only honours accept and reject, so a forged field cannot make an unavailable plant purchasable.",
       "An offer where nothing is available shows no FedEx upgrade and creates no draft order. `sendOffer` closes that request immediately; a leftover Pending all-unavailable answer still has a Close Request button.",
     ],

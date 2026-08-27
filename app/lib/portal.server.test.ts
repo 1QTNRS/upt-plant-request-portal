@@ -410,6 +410,27 @@ describe("availability", () => {
       "a stale reason would prefill the next flip to Not Available",
     );
   });
+
+  it("keeps other as a stored unavailable reason", async () => {
+    const created = await submitCustomerRequest(availabilityShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "String of Pearls" }],
+    });
+    const itemId = created.items[0].id;
+
+    await updateRequestItem(availabilityShop, {
+      requestId: created.id,
+      itemId,
+      availability: "not_available",
+      unavailableReason: "other",
+    });
+    assert.equal(
+      (await prisma.requestItem.findUniqueOrThrow({ where: { id: itemId } }))
+        .unavailableReason,
+      "other",
+    );
+  });
 });
 
 describe("plants keep the order the customer typed them", () => {

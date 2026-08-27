@@ -17,13 +17,15 @@ export type UnavailableReason =
   | "currently not in UPT prop circulation"
   | "available in 2+ mos"
   | "available in 2-3weeks"
-  | "not in our current inventory";
+  | "not in our current inventory"
+  | "other";
 
 export const UNAVAILABLE_REASON_OPTIONS: UnavailableReason[] = [
   "currently not in UPT prop circulation",
   "available in 2+ mos",
   "available in 2-3weeks",
   "not in our current inventory",
+  "other",
 ];
 
 const LEGACY_UNAVAILABLE_REASONS: Record<string, UnavailableReason> = {
@@ -39,6 +41,8 @@ const LEGACY_UNAVAILABLE_REASONS: Record<string, UnavailableReason> = {
   "Not in UPT's current inventory": "not in our current inventory",
   "not in our current inventory": "not in our current inventory",
   "Not in UPT's current inventory ": "not in our current inventory",
+  other: "other",
+  Other: "other",
 };
 
 export const DEFAULT_UNAVAILABLE_REASON: UnavailableReason =
