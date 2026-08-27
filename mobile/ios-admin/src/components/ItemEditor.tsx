@@ -46,7 +46,9 @@ import {
   mergeEditorPhotos,
   orderedPhotoIdsAfterUpload,
   PHOTO_UPLOAD_CONCURRENCY,
+  photoPickerErrorMessage,
   photosFromPickerAssets,
+  pickPlantPhotos,
   runPool,
   type EditorPhoto,
 } from "../photo-upload";
@@ -443,18 +445,22 @@ export function ItemEditor({
   }
 
   async function pickPhoto() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      onError("Photo library access is needed to attach an exact-plant photo.");
+    let picked;
+    try {
+      picked = await pickPlantPhotos({
+        launch: (options) =>
+          ImagePicker.launchImageLibraryAsync({
+            ...options,
+            preferredAssetRepresentationMode:
+              ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+          }),
+        requestPermission: () => ImagePicker.requestMediaLibraryPermissionsAsync(),
+      });
+    } catch (error) {
+      onError(photoPickerErrorMessage(error));
       return;
     }
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-      allowsMultipleSelection: true,
-      orderedSelection: true,
-    });
-    if (picked.canceled || picked.assets.length === 0) return;
+    if (picked.canceled) return;
     const next = photosFromPickerAssets(picked.assets);
     setPendingPhotos((current) => [...current, ...next]);
     const uploadedByKey = new Map<string, string>();

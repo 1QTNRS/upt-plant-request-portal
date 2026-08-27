@@ -20,7 +20,7 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /selectTextOnFocus/);
     assert.doesNotMatch(editor, /Save item/);
     assert.match(editor, /Upload Photos/);
-    assert.match(editor, /allowsMultipleSelection/);
+    assert.match(editor, /pickPlantPhotos/);
   });
 
   it("combines request counts with filters and pull-to-refresh", () => {
@@ -154,5 +154,8 @@ describe("iOS admin source layout", () => {
     assert.doesNotMatch(intro, /new Animated\.Value\(0\)/);
     assert.match(login, /Request Portal/);
     assert.doesNotMatch(login, /UPT Admin/);
+    const readme = read("README.md");
+    assert.match(readme, /reuses this project's `splash\.image`/);
+    assert.match(readme, /does \*\*not\*\* apply our `#002910`/);
   });
 });

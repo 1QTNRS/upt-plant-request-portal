@@ -6,13 +6,20 @@ import { describe, it } from "node:test";
 import {
   canPreviewPhoto,
   canReorderPhoto,
+  IMAGE_LIBRARY_PICKER_OPTIONS,
   mergeEditorPhotos,
+  normalizedImageMime,
   orderedPhotoIdsAfterUpload,
+  PHOTO_LIBRARY_DENIED_MESSAGE,
   PHOTO_UPLOAD_CONCURRENCY,
+  photoPickerErrorMessage,
   photosFromPickerAssets,
+  pickPlantPhotos,
   runPool,
+  shouldBlockLibraryPicker,
   showsProgressBar,
   showsRetry,
+  uploadFileFromPickerAsset,
 } from "./photo-upload";
 
 describe("multi-photo picker and progress", () => {
@@ -96,11 +103,99 @@ describe("multi-photo picker and progress", () => {
       path.join(import.meta.dirname, "components", "ItemEditor.tsx"),
       "utf8",
     );
-    assert.match(editor, /allowsMultipleSelection:\s*true/);
-    assert.match(editor, /orderedSelection:\s*true/);
+    assert.equal(IMAGE_LIBRARY_PICKER_OPTIONS.allowsMultipleSelection, true);
+    assert.equal(IMAGE_LIBRARY_PICKER_OPTIONS.orderedSelection, true);
+    assert.equal(IMAGE_LIBRARY_PICKER_OPTIONS.quality, 0.8);
+    assert.equal(IMAGE_LIBRARY_PICKER_OPTIONS.preferredAssetRepresentationMode, "compatible");
+    assert.match(editor, /pickPlantPhotos/);
     assert.match(editor, /Upload Photos/);
     assert.match(editor, /apiUploadPhoto/);
     assert.match(editor, /uploadKey: photo\.clientKey/);
+  });
+
+  it("opens the system picker without requiring a prior library grant", () => {
+    assert.equal(shouldBlockLibraryPicker(null), false);
+    assert.equal(shouldBlockLibraryPicker({ granted: false }), false);
+    assert.equal(shouldBlockLibraryPicker({ granted: true }), false);
+    const editor = readFileSync(
+      path.join(import.meta.dirname, "components", "ItemEditor.tsx"),
+      "utf8",
+    );
+    assert.doesNotMatch(editor, /if \(!permission\.granted\)/);
+    assert.match(editor, /photoPickerErrorMessage/);
+  });
+
+  it("sends HEIC library photos as JPEG so Shopify Files will accept them", () => {
+    const heic = uploadFileFromPickerAsset(
+      { uri: "file:///IMG_1.HEIC", fileName: "IMG_1.HEIC", mimeType: "image/heic" },
+      0,
+    );
+    assert.equal(heic.type, "image/jpeg");
+    assert.equal(heic.name, "IMG_1.jpg");
+    assert.equal(normalizedImageMime({ uri: "file:///a.jpg", mimeType: "image/jpg" }), "image/jpeg");
+    assert.equal(normalizedImageMime({ uri: "file:///a.png", mimeType: "image/png" }), "image/png");
+    const pending = photosFromPickerAssets([
+      { uri: "file:///leaf.HEIC", fileName: "leaf.HEIC", mimeType: "image/heif" },
+    ]);
+    assert.equal(pending[0].file?.type, "image/jpeg");
+    assert.equal(pending[0].file?.name, "leaf.jpg");
+  });
+
+  it("opens the picker first and only asks for permission after a launch failure", async () => {
+    let launches = 0;
+    let asked = 0;
+    const first = await pickPlantPhotos({
+      launch: async () => {
+        launches += 1;
+        return {
+          canceled: false,
+          assets: [{ uri: "file:///ok.jpg", fileName: "ok.jpg", mimeType: "image/jpeg" }],
+        };
+      },
+      requestPermission: async () => {
+        asked += 1;
+        return { granted: false };
+      },
+    });
+    assert.equal(first.canceled, false);
+    assert.equal(first.assets[0]?.uri, "file:///ok.jpg");
+    assert.equal(launches, 1);
+    assert.equal(asked, 0);
+
+    await assert.rejects(
+      () =>
+        pickPlantPhotos({
+          launch: async () => {
+            throw new Error("Missing media library permission");
+          },
+          requestPermission: async () => {
+            asked += 1;
+            return { granted: false };
+          },
+        }),
+      (error: unknown) => {
+        assert.equal(photoPickerErrorMessage(error), PHOTO_LIBRARY_DENIED_MESSAGE);
+        return true;
+      },
+    );
+    assert.equal(asked, 1);
+
+    const retried = await pickPlantPhotos({
+      launch: async () => {
+        launches += 1;
+        if (launches === 2) throw new Error("denied");
+        return {
+          canceled: false,
+          assets: [{ uri: "file:///retry.jpg", fileName: "retry.jpg" }],
+        };
+      },
+      requestPermission: async () => {
+        asked += 1;
+        return { granted: true };
+      },
+    });
+    assert.equal(retried.assets[0]?.uri, "file:///retry.jpg");
+    assert.equal(asked, 2);
   });
 
   it("retries with the same client key so a successful upload is not duplicated", () => {
