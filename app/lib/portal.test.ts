@@ -45,6 +45,7 @@ import {
   summarizeAdminDashboardStats,
   normalizeRequestStatus,
   normalizeUnavailableReason,
+  UNAVAILABLE_REASON_OPTIONS,
   itemsHavePurchasableOffer,
   offerHasPayableItems,
   sendOfferHoldControlsEnabled,
@@ -252,6 +253,9 @@ describe("status mapping", () => {
       normalizeUnavailableReason("Not in UPT's current inventory"),
       "not in our current inventory",
     );
+    assert.equal(normalizeUnavailableReason("other"), "other");
+    assert.equal(normalizeUnavailableReason("Other"), "other");
+    assert.ok(UNAVAILABLE_REASON_OPTIONS.includes("other"));
   });
 });
 

@@ -24,7 +24,7 @@ import {
   THUMB_REMOVE_SIZE,
   THUMB_SIZE,
 } from "./item-editor";
-import type { RequestItem } from "./types";
+import { UNAVAILABLE_REASONS, type RequestItem } from "./types";
 
 function item(overrides: Partial<RequestItem> = {}): RequestItem {
   return {
@@ -47,6 +47,11 @@ function item(overrides: Partial<RequestItem> = {}): RequestItem {
 }
 
 describe("item editor rules", () => {
+  it("offers other as a Not Available reason", () => {
+    assert.ok(UNAVAILABLE_REASONS.includes("other"));
+    assert.equal(UNAVAILABLE_REASONS[3], "not in our current inventory");
+  });
+
   it("disables offer fields only for Not Available", () => {
     assert.equal(offerFieldsEnabled("exact_plant"), true);
     assert.equal(offerFieldsEnabled("growers_choice"), true);

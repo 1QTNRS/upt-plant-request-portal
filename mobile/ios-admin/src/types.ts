@@ -100,6 +100,7 @@ export const UNAVAILABLE_REASONS = [
   "available in 2+ mos",
   "available in 2-3weeks",
   "not in our current inventory",
+  "other",
 ] as const;
 
 export type FulfillmentRoute = "exact_plant" | "growers_choice" | "not_available";
