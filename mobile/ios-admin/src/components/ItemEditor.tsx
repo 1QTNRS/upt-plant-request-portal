@@ -29,6 +29,11 @@ import {
   stockDropdownOpen,
 } from "../item-editor";
 import {
+  changeStockUnblocksDropdown,
+  linkedStockSummary,
+  showsStockSearchInput,
+} from "../linked-stock";
+import {
   STOCK_SEARCH_NO_STOCK_COLOR,
   canSelectStockCandidate,
   formatStockSearchInventory,
@@ -97,6 +102,7 @@ export function ItemEditor({
   const [stockLoading, setStockLoading] = useState(false);
   const [stockFocused, setStockFocused] = useState(false);
   const [stockClosed, setStockClosed] = useState(false);
+  const [changingStock, setChangingStock] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [autosave, setAutosave] = useState<AutosaveStatus>("idle");
@@ -141,6 +147,15 @@ export function ItemEditor({
     draftRef.current = { offeredName, priceText, weightText, customerFacingNotes: notes };
     onDraftChangeRef.current?.(item.id, draftRef.current);
   }, [offeredName, priceText, weightText, notes, item.id]);
+
+  const linkedSummary = item.linkedStock
+    ? linkedStockSummary({
+        productTitle: item.linkedStock.productTitle,
+        variantTitle: item.linkedStock.variantTitle,
+        price: Number(item.linkedStock.price ?? item.price),
+        inventoryQuantity: item.linkedStock.inventoryQuantity,
+      })
+    : null;
 
   const dropdownVisible = stockDropdownOpen(
     stockFocused,
@@ -187,6 +202,7 @@ export function ItemEditor({
     if (stockMode) return;
     setStockClosed(true);
     setStockFocused(false);
+    setChangingStock(false);
     setStockTerm("");
     setStockResults([]);
     setStockLoading(false);
@@ -195,6 +211,31 @@ export function ItemEditor({
       searchTimer.current = null;
     }
   }, [stockMode]);
+
+  function clearLocalStockSearch() {
+    setStockTerm("");
+    setStockResults([]);
+    setStockClosed(false);
+    setStockFocused(false);
+    setChangingStock(false);
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  }
+
+  function unlinkLinkedStock() {
+    clearLocalStockSearch();
+    void act({ intent: "unlink-stock", itemId: item.id });
+  }
+
+  function startChangeStock() {
+    const next = changeStockUnblocksDropdown();
+    setChangingStock(next.changingStock);
+    setStockClosed(next.stockClosed);
+    setStockTerm("");
+    setStockResults([]);
+  }
 
   async function act(
     body: Record<string, unknown>,
@@ -507,7 +548,39 @@ export function ItemEditor({
 
       {stockMode ? (
         <View style={styles.stockWrap} pointerEvents={fieldsOn ? "auto" : "none"}>
-          {canEditItems ? (
+          {item.linkedStock && linkedSummary ? (
+            <View style={styles.linkedRow}>
+              <View style={styles.linkedCopy}>
+                <Text style={ui.cardTitle}>{linkedSummary.title}</Text>
+                {linkedSummary.variant ? <Text style={ui.muted}>{linkedSummary.variant}</Text> : null}
+                <Text style={ui.muted}>{linkedSummary.meta}</Text>
+              </View>
+              {canEditItems ? (
+                <Pressable
+                  disabled={!fieldsOn}
+                  onPress={unlinkLinkedStock}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove linked stock"
+                  hitSlop={8}
+                  style={styles.removeStock}
+                >
+                  <Text style={styles.removeStockLabel}>X</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={ui.muted}>No store listing linked yet.</Text>
+          )}
+          {item.linkedStock && canEditItems && !changingStock ? (
+            <Pressable disabled={!fieldsOn} onPress={startChangeStock}>
+              <Text style={ui.link}>Change stock</Text>
+            </Pressable>
+          ) : null}
+          {canEditItems &&
+          showsStockSearchInput({
+            hasLinkedStock: Boolean(item.linkedStock),
+            changingStock,
+          }) ? (
             <Pressable
               style={styles.stockHit}
               onTouchStart={(event) => {
@@ -558,6 +631,7 @@ export function ItemEditor({
                             onPress={() => {
                               if (!selectable) return;
                               setStockClosed(true);
+                              setChangingStock(false);
                               void act({
                                 intent: "link-stock",
                                 itemId: item.id,
@@ -585,27 +659,6 @@ export function ItemEditor({
               ) : null}
             </Pressable>
           ) : null}
-          {item.linkedStock ? (
-            <View style={styles.linkedStock}>
-              <Text style={ui.muted}>
-                Linked: {item.linkedStock.productTitle} · {item.linkedStock.variantTitle}
-              </Text>
-              <Text style={ui.muted}>
-                ${Number(item.linkedStock.price ?? item.price).toFixed(2)}
-                {item.linkedStock.weightLbs != null ? ` · ${item.linkedStock.weightLbs} lb` : ""}
-              </Text>
-              {canEditItems ? (
-                <Pressable
-                  disabled={!fieldsOn}
-                  onPress={() => void act({ intent: "unlink-stock", itemId: item.id })}
-                >
-                  <Text style={ui.link}>Unlink listing</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={ui.muted}>No store listing linked yet.</Text>
-          )}
         </View>
       ) : null}
 
@@ -799,5 +852,23 @@ const styles = {
   inStock: { color: THEME.darkGreen, fontWeight: "600" as const },
   noStock: { color: STOCK_SEARCH_NO_STOCK_COLOR, fontWeight: "700" as const },
   linkedStock: { marginTop: 10, gap: 4 },
+  linkedRow: {
+    marginTop: 10,
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 12,
+  },
+  linkedCopy: { flex: 1, minWidth: 0, gap: 2 },
+  removeStock: {
+    minWidth: 36,
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.line,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    backgroundColor: THEME.white,
+  },
+  removeStockLabel: { color: THEME.darkGreen, fontWeight: "700" as const, fontSize: 16 },
   busy: { marginTop: 8 },
 };
