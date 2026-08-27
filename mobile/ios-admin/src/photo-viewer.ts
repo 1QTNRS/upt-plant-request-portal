@@ -45,6 +45,22 @@ export function photoViewerShouldPanImage(
   return pointerCount === 1 && photoViewerImagePanEnabled(zoomScale);
 }
 
+/**
+ * Gesture Handler reports 0 pointers when the finger lifts. A zoomed
+ * photo must keep its scale on that end event — do not treat it as a
+ * page swipe that resets zoom.
+ */
+export function photoViewerKeepZoomAfterPan(zoomScale: number): boolean {
+  return photoViewerImagePanEnabled(zoomScale);
+}
+
+export function photoViewerShouldResetZoomForPage(
+  fromIndex: number,
+  toIndex: number,
+): boolean {
+  return fromIndex !== toIndex;
+}
+
 export type PhotoViewerImageTransform = {
   scale: number;
   translateX: number;

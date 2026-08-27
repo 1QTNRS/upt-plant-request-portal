@@ -12,8 +12,10 @@ import {
   photoViewerImageLayout,
   photoViewerImagePanEnabled,
   photoViewerImageTransform,
+  photoViewerKeepZoomAfterPan,
   photoViewerPageDelta,
   photoViewerPagingEnabled,
+  photoViewerShouldResetZoomForPage,
   photoViewerSheetOpacity,
   photoViewerShouldPanImage,
   photoViewerSourceUri,
@@ -107,6 +109,10 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.equal(photoViewerShouldPanImage(2, 1), true);
     assert.equal(photoViewerShouldPanImage(2, 2), false);
     assert.equal(photoViewerShouldPanImage(1, 1), false);
+    assert.equal(photoViewerKeepZoomAfterPan(2), true);
+    assert.equal(photoViewerKeepZoomAfterPan(1), false);
+    assert.equal(photoViewerShouldResetZoomForPage(0, 0), false);
+    assert.equal(photoViewerShouldResetZoomForPage(0, 1), true);
     assert.equal(clampPhotoViewerZoom(0.4), 1);
     assert.equal(clampPhotoViewerZoom(9), PHOTO_VIEWER_MAX_ZOOM);
   });
@@ -170,6 +176,9 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.match(source, /shouldDismissPhotoViewer/);
     assert.match(source, /photoViewerPagingEnabled/);
     assert.match(source, /photoViewerShouldPanImage/);
+    assert.match(source, /photoViewerKeepZoomAfterPan/);
+    assert.match(source, /photoViewerShouldResetZoomForPage/);
+    assert.match(source, /styles\.chrome/);
     assert.match(source, /photoViewerImageLayout/);
     assert.match(source, /photoViewerSourceUri/);
     assert.match(source, /gestureOverlay/);
@@ -177,8 +186,13 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.equal(PHOTO_VIEWER_EDGE_BACK, 20);
     assert.match(source, /scrollEnabled=\{false\}/);
     assert.match(source, /Animated\.spring/);
+    assert.match(source, /styles\.stage,/);
     assert.match(source, /opacity: sheetOpacity/);
     assert.match(source, /transform: \[\{ translateY: dragY \}\]/);
+    assert.doesNotMatch(
+      source,
+      /translateY: dragY[\s\S]*styles\.topBar/,
+    );
     assert.match(source, /photoViewerImageTransform/);
     assert.match(source, /resetPhotoViewerImageTransform/);
     assert.match(source, /closeViewer/);
