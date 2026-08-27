@@ -553,6 +553,7 @@ function variantNode(overrides: {
   productImage?: string | null;
   productStatus?: string;
   productTitle?: string;
+  publishedOnPublication?: boolean;
 }) {
   return {
     id: overrides.id,
@@ -579,6 +580,7 @@ function variantNode(overrides: {
       title: overrides.productTitle ?? "Monstera Thai Constellation",
       handle: "monstera-thai-constellation",
       status: overrides.productStatus ?? "ACTIVE",
+      publishedOnPublication: overrides.publishedOnPublication ?? true,
       featuredMedia: overrides.productImage
         ? { preview: { image: { url: overrides.productImage } } }
         : null,
@@ -591,6 +593,10 @@ function stockSearch(
   looseVariantNodes: ReturnType<typeof variantNode>[] = [],
 ): Responses {
   return {
+    ...publications([
+      { id: ONLINE_STORE_PUBLICATION, catalog: appCatalog("online_store") },
+      { id: POS_PUBLICATION, catalog: appCatalog("pos") },
+    ]),
     PortalStockSearch: {
       products: { nodes: [{ variants: { nodes: productVariantNodes } }] },
       productVariants: { nodes: looseVariantNodes },
@@ -614,10 +620,14 @@ describe("searching the shop's existing stock", () => {
   it("asks both roots in one round trip, wildcarding each word", async () => {
     // `products` reaches the product's own text and its variants' SKUs;
     // `productVariants` reaches a variant title like "6 inch", which is where
-    // the size lives on a plant listing.
+    // the size lives on a plant listing. `status:active` is Shopify's product
+    // status filter; Online Store publication is checked separately.
     const { calls } = await search(stockSearch([variantNode({ id: "gid://shopify/ProductVariant/1" })]));
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].variables.query, "monstera* thai*");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].operation, "SalesChannelPublications");
+    assert.equal(calls[1].operation, "PortalStockSearch");
+    assert.equal(calls[1].variables.query, "monstera* thai* status:active");
+    assert.equal(calls[1].variables.onlineStorePublicationId, ONLINE_STORE_PUBLICATION);
   });
 
   it("merges the two roots on variant id rather than listing a variant twice", async () => {
@@ -699,12 +709,9 @@ describe("searching the shop's existing stock", () => {
     );
   });
 
-  it("returns what cannot be linked with the reason, rather than a short list", async () => {
-    // A silently shortened list looks like "we do not sell that plant", which
-    // sends the admin to source one they already have on a draft product.
+  it("keeps zero-price and not-for-sale ACTIVE Online Store rows visible", async () => {
     const { found } = await search(
       stockSearch([
-        variantNode({ id: "gid://shopify/ProductVariant/1", productStatus: "DRAFT" }),
         variantNode({ id: "gid://shopify/ProductVariant/2", price: "0.00" }),
         variantNode({
           id: "gid://shopify/ProductVariant/3",
@@ -715,9 +722,68 @@ describe("searching the shop's existing stock", () => {
     assert.deepEqual(
       found.map((candidate) => unlinkableVariantReason(candidate)),
       [
-        "This product is not active in Shopify, so a customer could not buy it.",
         "This variant has no price in Shopify.",
         "Shopify reports this variant as not available for sale.",
+      ],
+    );
+  });
+
+  it("drops draft, archived, and Online Store-unpublished products server-side", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({ id: "gid://shopify/ProductVariant/1", productStatus: "DRAFT" }),
+        variantNode({ id: "gid://shopify/ProductVariant/2", productStatus: "ARCHIVED" }),
+        variantNode({
+          id: "gid://shopify/ProductVariant/3",
+          publishedOnPublication: false,
+        }),
+        variantNode({
+          id: "gid://shopify/ProductVariant/4",
+          productTitle: "Visible Thai",
+        }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => candidate.variantGid),
+      ["gid://shopify/ProductVariant/4"],
+    );
+  });
+
+  it("keeps an ACTIVE Online Store variant that is out of stock", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({
+          id: "gid://shopify/ProductVariant/zero",
+          inventoryQuantity: 0,
+          availableForSale: false,
+        }),
+      ]),
+    );
+    assert.equal(found.length, 1);
+    assert.equal(found[0].inventoryQuantity, 0);
+    assert.equal(unlinkableVariantReason(found[0]), "This variant is out of stock.");
+  });
+
+  it("reports inventory per variant, not a product total", async () => {
+    const { found } = await search(
+      stockSearch([
+        variantNode({
+          id: "gid://shopify/ProductVariant/small",
+          title: "4 inch",
+          inventoryQuantity: 1,
+        }),
+        variantNode({
+          id: "gid://shopify/ProductVariant/large",
+          title: "8 inch",
+          inventoryQuantity: 0,
+        }),
+      ]),
+    );
+    assert.deepEqual(
+      found.map((candidate) => [candidate.variantTitle, candidate.inventoryQuantity]),
+      [
+        ["4 inch", 1],
+        ["8 inch", 0],
       ],
     );
   });

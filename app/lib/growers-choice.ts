@@ -86,6 +86,11 @@ export type StockVariantCandidate = {
   productHandle: string;
   /** Shopify `ProductStatus`; only an ACTIVE product can be sold. */
   productStatus: string;
+  /**
+   * Published to this shop's Online Store publication. ACTIVE is not enough:
+   * a product can be active and still only sit on POS or another channel.
+   */
+  publishedOnOnlineStore: boolean;
   variantGid: string;
   variantTitle: string;
   sku: string | null;
@@ -112,6 +117,9 @@ export function unlinkableVariantReason(
   if (candidate.productStatus.toUpperCase() !== "ACTIVE") {
     return "This product is not active in Shopify, so a customer could not buy it.";
   }
+  if (!candidate.publishedOnOnlineStore) {
+    return "This product is not available on the Online Store.";
+  }
   if (!(candidate.price > 0)) {
     return "This variant has no price in Shopify.";
   }
@@ -122,6 +130,56 @@ export function unlinkableVariantReason(
     return "Shopify reports this variant as not available for sale.";
   }
   return null;
+}
+
+/**
+ * Whether a search hit should appear at all.
+ *
+ * Draft, archived, and products that are not on the Online Store are omitted
+ * server-side. Zero-stock ACTIVE Online Store variants stay visible so the
+ * admin can see the listing exists; they still cannot be linked.
+ */
+export function isEligibleStockSearchResult(
+  candidate: Pick<StockVariantCandidate, "productStatus" | "publishedOnOnlineStore">,
+): boolean {
+  return (
+    candidate.productStatus.toUpperCase() === "ACTIVE" &&
+    candidate.publishedOnOnlineStore
+  );
+}
+
+/** Shopify search syntax that restricts the catalogue to ACTIVE products. */
+export const STOCK_SEARCH_STATUS_CONSTRAINT = "status:active";
+
+export function stockSearchShopifyQuery(term: string): string | null {
+  const query = buildStockSearchQuery(term);
+  if (!query) return null;
+  return `${query} ${STOCK_SEARCH_STATUS_CONSTRAINT}`;
+}
+
+/**
+ * Inventory line for a Link Stock search row.
+ *
+ * `inventoryQuantity` is the variant's Shopify `available` quantity — the same
+ * figure `unlinkableVariantReason` and the reservation pre-check use. Untracked
+ * variants have no counter.
+ */
+export function formatStockSearchInventory(input: {
+  inventoryTracked?: boolean | null;
+  inventoryQuantity?: number | null;
+}): string {
+  if (!input.inventoryTracked) return "Not tracked";
+  const quantity = input.inventoryQuantity ?? 0;
+  if (quantity < 1) return "No stock";
+  return `${quantity} in stock`;
+}
+
+export function stockSearchInventoryIsEmpty(input: {
+  inventoryTracked?: boolean | null;
+  inventoryQuantity?: number | null;
+}): boolean {
+  if (!input.inventoryTracked) return false;
+  return (input.inventoryQuantity ?? 0) < 1;
 }
 
 export function isLinkableVariant(candidate: StockVariantCandidate): boolean {

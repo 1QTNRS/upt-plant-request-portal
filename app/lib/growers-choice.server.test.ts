@@ -43,6 +43,7 @@ function variant(
     productTitle: "Monstera Thai Constellation",
     productHandle: "monstera-thai-constellation",
     productStatus: "ACTIVE",
+    publishedOnOnlineStore: true,
     variantGid: VARIANT_GID,
     variantTitle: "6 inch",
     sku: "MTC-6",
@@ -758,6 +759,7 @@ function liveVariant(overrides: { inventoryQuantity?: number | null; status?: st
           title: "Monstera Thai Constellation",
           handle: "monstera-thai-constellation",
           status: overrides.status ?? "ACTIVE",
+          publishedOnPublication: true,
           featuredMedia: null,
         },
       },
@@ -769,6 +771,17 @@ function shopifyResponses(overrides: Record<string, unknown> = {}) {
   return {
     PortalShopCurrency: { shop: { currencyCode: "USD" } },
     PlantRequestDraftOrderByTag: { draftOrders: { nodes: [] } },
+    SalesChannelPublications: {
+      publications: {
+        nodes: [
+          {
+            id: "gid://shopify/Publication/1",
+            catalog: { apps: { nodes: [{ handle: "online_store" }] } },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    },
     PortalStockVariantsById: liveVariant({}),
     CreatePlantRequestDraftOrder: {
       draftOrderCreate: {

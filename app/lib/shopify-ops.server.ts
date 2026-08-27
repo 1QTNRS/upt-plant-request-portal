@@ -27,9 +27,10 @@ import {
 } from "./inventory-concurrency";
 import { canStubShopifyWrites, requireAdminClient } from "./environment.server";
 import {
-  buildStockSearchQuery,
+  isEligibleStockSearchResult,
   reservationFailureMessage,
   reservationShortfalls,
+  stockSearchShopifyQuery,
   weightInPounds,
   type ReservationShortfall,
   type StockVariantCandidate,
@@ -207,7 +208,7 @@ export async function resolveShopCurrency(
  * keystroke costs one round trip, and the results are merged on variant id.
  */
 const STOCK_SEARCH_QUERY = `#graphql
-  query PortalStockSearch($query: String!, $limit: Int!) {
+  query PortalStockSearch($query: String!, $limit: Int!, $onlineStorePublicationId: ID!) {
     products(first: $limit, query: $query) {
       nodes {
         variants(first: $limit) {
@@ -230,6 +231,7 @@ const STOCK_SEARCH_QUERY = `#graphql
               title
               handle
               status
+              publishedOnPublication(publicationId: $onlineStorePublicationId)
               featuredMedia { preview { image { url } } }
             }
           }
@@ -256,6 +258,7 @@ const STOCK_SEARCH_QUERY = `#graphql
           title
           handle
           status
+          publishedOnPublication(publicationId: $onlineStorePublicationId)
           featuredMedia { preview { image { url } } }
         }
       }
@@ -273,7 +276,7 @@ const STOCK_SEARCH_QUERY = `#graphql
  * sold at all.
  */
 const STOCK_VARIANTS_BY_ID_QUERY = `#graphql
-  query PortalStockVariantsById($ids: [ID!]!) {
+  query PortalStockVariantsById($ids: [ID!]!, $onlineStorePublicationId: ID!) {
     nodes(ids: $ids) {
       ... on ProductVariant {
         id
@@ -294,6 +297,7 @@ const STOCK_VARIANTS_BY_ID_QUERY = `#graphql
           title
           handle
           status
+          publishedOnPublication(publicationId: $onlineStorePublicationId)
           featuredMedia { preview { image { url } } }
         }
       }
@@ -318,6 +322,7 @@ type StockVariantNode = {
     title: string;
     handle: string;
     status: string;
+    publishedOnPublication: boolean;
     featuredMedia: { preview: { image: { url: string | null } | null } | null } | null;
   };
 };
@@ -345,6 +350,7 @@ function toStockCandidate(node: StockVariantNode): StockVariantCandidate {
     productTitle: node.product.title,
     productHandle: node.product.handle,
     productStatus: node.product.status,
+    publishedOnOnlineStore: node.product.publishedOnPublication,
     variantGid: node.id,
     variantTitle: node.title,
     sku: node.sku,
@@ -376,6 +382,7 @@ const DEMO_STOCK: StockVariantCandidate[] = [
     productTitle: "Monstera Thai Constellation (Demo Stock)",
     productHandle: "demo-monstera-thai-constellation",
     productStatus: "ACTIVE",
+    publishedOnOnlineStore: true,
     variantGid: "gid://shopify/ProductVariant/demo-monstera-thai-6in",
     variantTitle: "6 inch",
     sku: "DEMO-MTC-6",
@@ -391,6 +398,7 @@ const DEMO_STOCK: StockVariantCandidate[] = [
     productTitle: "Philodendron Pink Princess (Demo Stock)",
     productHandle: "demo-philodendron-pink-princess",
     productStatus: "ACTIVE",
+    publishedOnOnlineStore: true,
     variantGid: "gid://shopify/ProductVariant/demo-philodendron-pink-4in",
     variantTitle: "4 inch",
     sku: "DEMO-PPP-4",
@@ -406,6 +414,7 @@ const DEMO_STOCK: StockVariantCandidate[] = [
     productTitle: "Anthurium Warocqueanum (Demo Stock)",
     productHandle: "demo-anthurium-warocqueanum",
     productStatus: "ACTIVE",
+    publishedOnOnlineStore: true,
     variantGid: "gid://shopify/ProductVariant/demo-anthurium-waroq-8in",
     variantTitle: "8 inch",
     sku: "DEMO-AWQ-8",
@@ -415,6 +424,38 @@ const DEMO_STOCK: StockVariantCandidate[] = [
     availableForSale: false,
     weightLbs: 6.5,
     imageUrl: "https://picsum.photos/seed/demo-anthurium-warocqueanum/800/800",
+  },
+  {
+    productGid: "gid://shopify/Product/demo-draft-alocasia",
+    productTitle: "Alocasia Dragon Scale (Demo Draft)",
+    productHandle: "demo-alocasia-dragon-scale-draft",
+    productStatus: "DRAFT",
+    publishedOnOnlineStore: false,
+    variantGid: "gid://shopify/ProductVariant/demo-draft-alocasia-6in",
+    variantTitle: "6 inch",
+    sku: "DEMO-ADS-6",
+    price: 120,
+    inventoryQuantity: 2,
+    inventoryTracked: true,
+    availableForSale: false,
+    weightLbs: 3,
+    imageUrl: "https://picsum.photos/seed/demo-draft-alocasia/800/800",
+  },
+  {
+    productGid: "gid://shopify/Product/demo-pos-only-hoyas",
+    productTitle: "Hoya Compacta (Demo POS Only)",
+    productHandle: "demo-hoya-compacta-pos",
+    productStatus: "ACTIVE",
+    publishedOnOnlineStore: false,
+    variantGid: "gid://shopify/ProductVariant/demo-pos-only-hoya-4in",
+    variantTitle: "4 inch",
+    sku: "DEMO-HC-4",
+    price: 45,
+    inventoryQuantity: 6,
+    inventoryTracked: true,
+    availableForSale: true,
+    weightLbs: 1.5,
+    imageUrl: "https://picsum.photos/seed/demo-pos-only-hoya/800/800",
   },
 ];
 
@@ -429,27 +470,30 @@ function demoStockMatches(term: string): StockVariantCandidate[] {
 }
 
 /**
- * The purchasable-and-not variants matching what the admin typed.
- *
- * Nothing is filtered out: a variant that cannot be linked is returned with the
- * reason, because "out of stock" and "no such plant" send the admin to very
- * different next steps and a silently short list looks like the latter.
+ * ACTIVE products published to this shop's Online Store, plus any zero-stock
+ * variants of those products. Draft, archived, and channel-only listings are
+ * dropped here so the website and iOS app cannot show them.
  */
 export async function searchExistingStock(
   admin: GraphqlClient | undefined,
   shop: string,
   term: string,
 ): Promise<StockVariantCandidate[]> {
-  const query = buildStockSearchQuery(term);
+  const query = stockSearchShopifyQuery(term);
   if (!query) return [];
 
   requireAdminClient(admin, shop, "Searching Shopify products");
-  if (!admin) return demoStockMatches(term);
+  if (!admin) return demoStockMatches(term).filter(isEligibleStockSearchResult);
 
+  const onlineStorePublicationId = await resolveOnlineStorePublicationId(admin, shop);
   const data = await adminGraphql<{
     products: { nodes: Array<{ variants: { nodes: StockVariantNode[] } }> };
     productVariants: { nodes: StockVariantNode[] };
-  }>(admin, STOCK_SEARCH_QUERY, { query, limit: STOCK_SEARCH_LIMIT });
+  }>(admin, STOCK_SEARCH_QUERY, {
+    query,
+    limit: STOCK_SEARCH_LIMIT,
+    onlineStorePublicationId,
+  });
 
   const seen = new Set<string>();
   const candidates: StockVariantCandidate[] = [];
@@ -460,20 +504,24 @@ export async function searchExistingStock(
   for (const node of nodes) {
     if (seen.has(node.id)) continue;
     seen.add(node.id);
-    candidates.push(toStockCandidate(node));
+    const candidate = toStockCandidate(node);
+    if (!isEligibleStockSearchResult(candidate)) continue;
+    candidates.push(candidate);
   }
   return candidates;
 }
 
 async function fetchStockVariants(
   admin: GraphqlClient,
+  shop: string,
   variantGids: string[],
 ): Promise<StockVariantCandidate[]> {
   if (variantGids.length === 0) return [];
+  const onlineStorePublicationId = await resolveOnlineStorePublicationId(admin, shop);
   const data = await adminGraphql<{ nodes: Array<StockVariantNode | null> }>(
     admin,
     STOCK_VARIANTS_BY_ID_QUERY,
-    { ids: variantGids },
+    { ids: variantGids, onlineStorePublicationId },
   );
   return data.nodes.flatMap((node) => (node ? [toStockCandidate(node)] : []));
 }
@@ -493,7 +541,7 @@ export async function getExistingStockVariant(
   if (!admin) {
     return DEMO_STOCK.find((candidate) => candidate.variantGid === variantGid) ?? null;
   }
-  const [variant] = await fetchStockVariants(admin, [variantGid]);
+  const [variant] = await fetchStockVariants(admin, shop, [variantGid]);
   return variant ?? null;
 }
 
@@ -775,7 +823,7 @@ async function createClaimedDraftOrder(
       invoiceUrl = existing.invoiceUrl ?? undefined;
       reservedUntil = existing.reserveInventoryUntil ?? undefined;
     } else {
-      await assertLinkedStockStillAvailable(admin, input.acceptedItems);
+      await assertLinkedStockStillAvailable(admin, shop, input.acceptedItems);
 
       const draftInput = buildDraftOrderInput({
         requestId: input.requestId,
@@ -897,12 +945,13 @@ function reservedPlantLines(
  */
 async function assertLinkedStockStillAvailable(
   admin: GraphqlClient,
+  shop: string,
   acceptedItems: AcceptedDraftOrderItem[],
 ): Promise<void> {
   const lines = reservedPlantLines(acceptedItems);
   if (lines.length === 0) return;
 
-  const live = await fetchStockVariants(admin, [
+  const live = await fetchStockVariants(admin, shop, [
     ...new Set(lines.map((line) => line.variantId)),
   ]);
 
@@ -1285,6 +1334,50 @@ const PUBLICATIONS_QUERY = `#graphql
     }
   }
 `;
+
+const onlineStorePublicationCache = new Map<string, string>();
+
+/**
+ * This shop's Online Store publication, found by the `online_store` app handle
+ * — never a hardcoded publication GID and never the catalog title.
+ */
+export async function resolveOnlineStorePublicationId(
+  admin: GraphqlClient,
+  shop: string,
+): Promise<string> {
+  const cached = onlineStorePublicationCache.get(shop);
+  if (cached) return cached;
+
+  let after: string | null = null;
+  do {
+    const data: {
+      publications: {
+        nodes: Array<{
+          id: string;
+          catalog?: { apps?: { nodes: Array<{ handle?: string | null }> } } | null;
+        }>;
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    } = await adminGraphql(admin, PUBLICATIONS_QUERY, { after });
+
+    for (const publication of data.publications.nodes) {
+      const handle = publication.catalog?.apps?.nodes[0]?.handle;
+      if (isOnlineStorePublicationHandle(handle)) {
+        onlineStorePublicationCache.set(shop, publication.id);
+        return publication.id;
+      }
+    }
+
+    after = data.publications.pageInfo.hasNextPage
+      ? data.publications.pageInfo.endCursor
+      : null;
+  } while (after);
+
+  throw new Error(
+    `This store has no Online Store (${ONLINE_STORE_APP_HANDLE}) sales channel publication. ` +
+      "Add the Online Store sales channel in Shopify admin under Settings > Apps and sales channels.",
+  );
+}
 
 export async function resolveOnlineStoreAndPosPublications(
   admin: GraphqlClient,

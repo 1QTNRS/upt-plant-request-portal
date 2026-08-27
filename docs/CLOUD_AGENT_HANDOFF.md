@@ -151,7 +151,7 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Shopify Files staged upload + `fileCreate`, polling `fileStatus` until `READY` (`uploadPlantPhoto`)
 - `orders/paid` webhook (`app/routes/webhooks.orders.paid.tsx`) matches `REQ…` or legacy `UPT-REQ-…` tags/notes, ignores redeliveries for an already-paid request
 - Mandatory privacy webhooks: `customers/data_request`, `customers/redact`, `shop/redact` (`app/lib/compliance.server.ts`)
-- Existing-stock search over `products(query:)` **and** `productVariants(query:)` in one document, merged on variant id (`searchExistingStock`). `products` reaches the product's own text and its variants' SKUs; `productVariants` reaches a variant title, which on a plant store is where the size lives
+- Existing-stock search over `products(query:)` **and** `productVariants(query:)` in one document, merged on variant id (`searchExistingStock`). The Shopify query adds `status:active`. Results are then kept only when `Product.status` is ACTIVE and `publishedOnPublication` is true for this shop's Online Store publication (resolved by the `online_store` app handle). `products` reaches the product's own text and its variants' SKUs; `productVariants` reaches a variant title, which on a plant store is where the size lives
 - Draft orders are idempotent three times over: a recorded `DraftOrderReference` with a checkout link short-circuits, `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost, and `claimDraftOrderCreation` makes the window between those two exclusive. Without the first two a retry bills the customer twice; without the third two concurrent callers reserve the same plant twice
 - Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
 - EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
@@ -284,11 +284,18 @@ which is deliberately **free of imports**: `portal.ts` reads it to decide whethe
 an offer can be sent, so anything imported there would pull `portal.ts` back in a
 circle.
 
-Only a **purchasable** variant may be linked: `ACTIVE` product, a price above
-zero, `availableForSale`, and either untracked stock or at least one unit.
-`unlinkableVariantReason` returns the reason instead, and search results include
-the unlinkable ones with it — a silently shortened list reads as "we do not sell
-that plant", which sends the admin to source one they already have.
+Link Stock search only returns **ACTIVE** products published to this shop's
+**Online Store** publication (`publishedOnPublication` against the real
+`online_store` app-handle publication — never a hardcoded GID). Draft,
+archived, and channel-only listings are dropped server-side. Zero-stock
+ACTIVE Online Store variants stay visible as **No stock** and cannot be
+linked. A purchasable variant still needs a price above zero,
+`availableForSale`, and either untracked stock or at least one unit.
+`unlinkableVariantReason` is the link-time refusal. Inventory shown is the
+variant's Shopify `inventoryQuantity` (available/sellable), the same figure
+the reservation pre-check uses. There is no configured Grower's Choice
+location; EXACT PLANTS still stocks new listings at the shop primary
+location.
 
 Untracked stock is allowed and is **not** the same as stock of zero: Shopify has
 no counter for it, so there is nothing to be short of and nothing to reserve.

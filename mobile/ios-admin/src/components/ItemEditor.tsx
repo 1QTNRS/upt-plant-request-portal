@@ -28,6 +28,11 @@ import {
   STOCK_DROPDOWN_MAX_HEIGHT,
   stockDropdownOpen,
 } from "../item-editor";
+import {
+  canSelectStockCandidate,
+  formatStockSearchInventory,
+  stockSearchInventoryIsEmpty,
+} from "../stock-search";
 import { itemNoteLines } from "../item-notes";
 import {
   canPreviewPhoto,
@@ -479,28 +484,38 @@ export function ItemEditor({
                       keyboardDismissMode="none"
                       style={styles.dropdownList}
                     >
-                      {stockResults.map((candidate) => (
-                        <Pressable
-                          key={candidate.variantGid}
-                          style={styles.dropdownRow}
-                          onPress={() => {
-                            setStockClosed(true);
-                            void act({
-                              intent: "link-stock",
-                              itemId: item.id,
-                              variantGid: candidate.variantGid,
-                            });
-                          }}
-                        >
-                          <Text style={ui.cardTitle}>
-                            {candidate.productTitle} · {candidate.variantTitle}
-                          </Text>
-                          <Text style={ui.muted}>
-                            ${candidate.price.toFixed(2)}
-                            {candidate.unlinkableReason ? ` · ${candidate.unlinkableReason}` : ""}
-                          </Text>
-                        </Pressable>
-                      ))}
+                      {stockResults.map((candidate) => {
+                        const selectable = canSelectStockCandidate(candidate);
+                        const noStock = stockSearchInventoryIsEmpty(candidate);
+                        return (
+                          <Pressable
+                            key={candidate.variantGid}
+                            style={[styles.dropdownRow, !selectable && styles.dropdownRowOff]}
+                            disabled={!selectable}
+                            onPress={() => {
+                              if (!selectable) return;
+                              setStockClosed(true);
+                              void act({
+                                intent: "link-stock",
+                                itemId: item.id,
+                                variantGid: candidate.variantGid,
+                              });
+                            }}
+                          >
+                            <Text style={ui.cardTitle}>{candidate.productTitle}</Text>
+                            {candidate.variantTitle ? (
+                              <Text style={ui.muted}>{candidate.variantTitle}</Text>
+                            ) : null}
+                            <Text style={ui.muted}>
+                              ${candidate.price.toFixed(2)}
+                              {" · "}
+                              <Text style={noStock ? styles.noStock : undefined}>
+                                {formatStockSearchInventory(candidate)}
+                              </Text>
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </GestureScrollView>
                   )}
                 </View>
@@ -717,6 +732,8 @@ const styles = {
     borderTopWidth: 1,
     borderTopColor: THEME.line,
   },
+  dropdownRowOff: { opacity: 0.7 },
+  noStock: { color: "#8e1f0b", fontWeight: "700" },
   linkedStock: { marginTop: 10, gap: 4 },
   busy: { marginTop: 8 },
 };

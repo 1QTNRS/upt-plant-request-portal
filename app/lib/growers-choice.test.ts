@@ -6,12 +6,16 @@ import { describe, it } from "node:test";
 import {
   buildStockSearchQuery,
   formatLinkedInventory,
+  formatStockSearchInventory,
   inventoryHoldState,
+  isEligibleStockSearchResult,
   linkedStockShortfall,
   reservationFailureMessage,
   reservationShortfalls,
   resolveFulfillmentType,
   resolveLinkedWeightLbs,
+  stockSearchInventoryIsEmpty,
+  stockSearchShopifyQuery,
   unlinkableVariantReason,
   weightInPounds,
   type LiveVariantStock,
@@ -26,6 +30,7 @@ function candidate(
     productTitle: "Monstera Thai Constellation",
     productHandle: "monstera-thai-constellation",
     productStatus: "ACTIVE",
+    publishedOnOnlineStore: true,
     variantGid: "gid://shopify/ProductVariant/1",
     variantTitle: "6 inch",
     sku: "MTC-6",
@@ -104,6 +109,68 @@ describe("whether a variant may be linked", () => {
 
   it("refuses a variant with no price, which would be offered for nothing", () => {
     assert.match(unlinkableVariantReason(candidate({ price: 0 })) ?? "", /no price/i);
+  });
+
+  it("refuses a product that is not on the Online Store", () => {
+    assert.match(
+      unlinkableVariantReason(candidate({ publishedOnOnlineStore: false })) ?? "",
+      /Online Store/,
+    );
+  });
+});
+
+describe("which search hits the admin is allowed to see", () => {
+  it("keeps ACTIVE Online Store variants, including those with no stock", () => {
+    assert.equal(isEligibleStockSearchResult(candidate()), true);
+    assert.equal(isEligibleStockSearchResult(candidate({ inventoryQuantity: 0 })), true);
+  });
+
+  it("hides draft, archived, and unpublished products", () => {
+    assert.equal(isEligibleStockSearchResult(candidate({ productStatus: "DRAFT" })), false);
+    assert.equal(
+      isEligibleStockSearchResult(candidate({ productStatus: "ARCHIVED" })),
+      false,
+    );
+    assert.equal(
+      isEligibleStockSearchResult(candidate({ publishedOnOnlineStore: false })),
+      false,
+    );
+  });
+
+  it("adds status:active to the Shopify search without changing the typed words", () => {
+    assert.equal(stockSearchShopifyQuery("monst thai"), "monst* thai* status:active");
+    assert.equal(stockSearchShopifyQuery("a"), null);
+  });
+
+  it("labels tracked inventory as X in stock or No stock", () => {
+    assert.equal(
+      formatStockSearchInventory({ inventoryTracked: true, inventoryQuantity: 12 }),
+      "12 in stock",
+    );
+    assert.equal(
+      formatStockSearchInventory({ inventoryTracked: true, inventoryQuantity: 1 }),
+      "1 in stock",
+    );
+    assert.equal(
+      formatStockSearchInventory({ inventoryTracked: true, inventoryQuantity: 0 }),
+      "No stock",
+    );
+    assert.equal(
+      formatStockSearchInventory({ inventoryTracked: false, inventoryQuantity: null }),
+      "Not tracked",
+    );
+    assert.equal(
+      stockSearchInventoryIsEmpty({ inventoryTracked: true, inventoryQuantity: 0 }),
+      true,
+    );
+    assert.equal(
+      stockSearchInventoryIsEmpty({ inventoryTracked: true, inventoryQuantity: 3 }),
+      false,
+    );
+    assert.equal(
+      stockSearchInventoryIsEmpty({ inventoryTracked: false, inventoryQuantity: null }),
+      false,
+    );
   });
 });
 
@@ -281,11 +348,18 @@ describe("website stock typeahead", () => {
     );
     assert.match(source, /data-stock-search-dropdown/);
     assert.match(source, /data-stock-search-option/);
+    assert.match(source, /data-stock-search-inventory/);
+    assert.match(source, /data-stock-search-no-stock/);
+    assert.match(source, /formatStockSearchInventory/);
+    assert.match(source, /stockSearchInventoryIsEmpty/);
+    assert.match(source, /#8e1f0b/);
     assert.match(source, /setTimeout/);
     assert.match(source, /intent", "link-stock"/);
     assert.match(source, /candidate.imageUrl/);
     assert.match(source, /ArrowDown/);
     assert.match(source, /ArrowUp/);
+    assert.match(source, /maxHeight: 280/);
+    assert.match(source, /overflowY: "auto"/);
     assert.equal(source.includes("Search Shopify"), false);
     assert.equal(source.includes("Link this variant"), false);
   });
