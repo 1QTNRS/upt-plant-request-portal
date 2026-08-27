@@ -23,9 +23,11 @@ import {
   photoViewerDismissTranslateY,
   photoViewerImageLayout,
   photoViewerImageTransform,
+  photoViewerKeepZoomAfterPan,
   photoViewerPageDelta,
   photoViewerPagingEnabled,
   photoViewerShouldPanImage,
+  photoViewerShouldResetZoomForPage,
   photoViewerSourceUri,
   resetPhotoViewerImageTransform,
   shouldDismissPhotoViewer,
@@ -109,8 +111,10 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
   const goToPageRef = useRef<(nextIndex: number) => void>(() => undefined);
   goToPageRef.current = (nextIndex: number) => {
     const clamped = Math.max(0, Math.min(photos.length - 1, nextIndex));
+    if (photoViewerShouldResetZoomForPage(currentRef.current, clamped)) {
+      applyZoomRef.current(1);
+    }
     setCurrent(clamped);
-    applyZoomRef.current(1);
     dragY.setValue(0);
     listRef.current?.scrollToOffset({
       offset: clamped * viewportRef.current.width,
@@ -182,7 +186,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
           requestAnimationFrame(() => onCloseRef.current());
           return;
         }
-        if (photoViewerShouldPanImage(zoomScaleRef.current, pointers)) {
+        if (photoViewerKeepZoomAfterPan(zoomScaleRef.current)) {
           const next = photoViewerImageTransform(
             zoomScaleRef.current,
             imagePanStart.current.x + event.translationX,
@@ -219,12 +223,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
   return (
     <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={closeViewer}>
       <GestureHandlerRootView style={styles.root}>
-        <Animated.View
-          style={[
-            styles.sheet,
-            { opacity: sheetOpacity, transform: [{ translateY: dragY }] },
-          ]}
-        >
+        <View style={styles.chrome}>
           <View style={styles.topBar}>
             <Text style={styles.count}>
               {current + 1} of {photos.length}
@@ -233,8 +232,11 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
               <Text style={styles.close}>Close</Text>
             </Pressable>
           </View>
-          <View
-            style={styles.stage}
+          <Animated.View
+            style={[
+              styles.stage,
+              { opacity: sheetOpacity, transform: [{ translateY: dragY }] },
+            ]}
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               if (width <= 0 || height <= 0) return;
@@ -293,8 +295,8 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
                 collapsable={false}
               />
             </GestureDetector>
-          </View>
-        </Animated.View>
+          </Animated.View>
+        </View>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -302,7 +304,7 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000000" },
-  sheet: { flex: 1, backgroundColor: "#000000", overflow: "hidden" },
+  chrome: { flex: 1, backgroundColor: "#000000" },
   topBar: {
     paddingTop: 54,
     paddingHorizontal: 16,
