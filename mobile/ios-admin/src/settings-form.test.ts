@@ -72,7 +72,9 @@ describe("Settings form save does not jump", () => {
     );
     const app = readFileSync(path.join(import.meta.dirname, "..", "App.tsx"), "utf8");
     assert.match(source, /<ScrollView/);
-    assert.doesNotMatch(source, /key=\{/);
+    assert.doesNotMatch(source, /<ScrollView[^>]*\bkey=/);
+    assert.doesNotMatch(source, /key=\{(saved|form|hydrated|saving)/);
+    assert.match(source, /key=\{label\}/);
     assert.doesNotMatch(source, /if \(.*loading.*\) return/);
     assert.doesNotMatch(source, /setLoading\(true\)/);
     assert.match(source, /setSaving\(true\)/);
