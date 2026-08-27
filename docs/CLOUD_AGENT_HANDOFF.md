@@ -1092,6 +1092,10 @@ in `LOGGABLE_PARAMS`.
 
 The Expo app lives in `mobile/ios-admin/`. It is **not** part of the web
 `tsc` / ESLint / CI matrix. Run it with Expo Go (`npx expo start`).
+Routine iOS UI/UX batches follow the standing workflow in `AGENTS.md`
+(implement → mobile tests/Expo checks → PR → CI → squash-merge when
+`routine`). Do not change EAS identity, bundle ID, project ID, API URL,
+or `upt_admin_` token behavior unless the owner asks.
 
 First Apple-build config (do not change Expo identity): owner
 `unsolicited-plant-talks`, slug `upt-admin-ios`, projectId

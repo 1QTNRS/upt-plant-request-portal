@@ -79,5 +79,29 @@ redesign how the app looks without changing Shopify, inventory, or the
 website admin. Look-and-feel changes belong in `mobile/ios-admin/`; business
 rules stay in the Render app.
 
+Current design constants:
+
+- page background: `#d6ece2`
+- bottom nav: `#002910` with white labels/icons and a yellow selected tab
+- display name: Request Portal
+
+## Routine iOS workflow
+
+Cloud Agents work these UI/UX batches without waiting on the owner: inspect,
+implement, test (`npx tsc --noEmit`, `npm test`, `npx expo-doctor`,
+`npx expo install --check`, `npx expo export --platform ios`), open the PR,
+wait for CI, and Squash & Merge when the change is iOS-only and classified
+`routine`. Stop for owner approval on auth/tokens, payments, inventory
+architecture, destructive data work, or EAS identity changes.
+
+After a routine merge, refresh Expo Go with:
+
+```bat
+cd mobile\ios-admin
+npx expo start -c
+```
+
+Then reload the app on the phone.
+
 Analytics stays on the website only. Token create/revoke stays in the
 website Settings page.
