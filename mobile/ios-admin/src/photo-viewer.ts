@@ -36,6 +36,44 @@ export function photoViewerPagingEnabled(zoomScale: number): boolean {
   return !photoViewerImagePanEnabled(zoomScale);
 }
 
+export function photoViewerShouldPanImage(
+  zoomScale: number,
+  pointerCount: number,
+): boolean {
+  return pointerCount === 1 && photoViewerImagePanEnabled(zoomScale);
+}
+
+export type PhotoViewerImageTransform = {
+  scale: number;
+  translateX: number;
+  translateY: number;
+};
+
+/**
+ * At base zoom the photo is always identity. Leftover pan from a prior
+ * pinch — the half-screen offset that stuck the image in a corner after
+ * close/reopen — must not render.
+ */
+export function photoViewerImageTransform(
+  scale: number,
+  translateX: number,
+  translateY: number,
+): PhotoViewerImageTransform {
+  const nextScale = clampPhotoViewerZoom(scale);
+  if (!photoViewerImagePanEnabled(nextScale)) {
+    return resetPhotoViewerImageTransform();
+  }
+  return {
+    scale: nextScale,
+    translateX: Number.isFinite(translateX) ? translateX : 0,
+    translateY: Number.isFinite(translateY) ? translateY : 0,
+  };
+}
+
+export function resetPhotoViewerImageTransform(): PhotoViewerImageTransform {
+  return { scale: 1, translateX: 0, translateY: 0 };
+}
+
 export function clampPhotoViewerZoom(scale: number): number {
   if (!Number.isFinite(scale)) return 1;
   return Math.min(PHOTO_VIEWER_MAX_ZOOM, Math.max(1, scale));

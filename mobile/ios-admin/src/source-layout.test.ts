@@ -63,6 +63,8 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /PhotoStrip/);
     assert.match(editor, /PhotoViewer/);
     assert.match(editor, /setViewerIndex/);
+    assert.match(editor, /viewerSession/);
+    assert.match(editor, /key=\{`photo-viewer-\$\{viewerSession\}`\}/);
     assert.match(editor, /reorder-photos/);
     assert.match(strip, /THUMB_SIZE/);
     assert.match(strip, /paddingTop: THUMB_PAD/);

@@ -11,8 +11,11 @@ import {
   clampPhotoViewerZoom,
   photoViewerDismissTranslateY,
   photoViewerImagePanEnabled,
+  photoViewerImageTransform,
   photoViewerPagingEnabled,
   photoViewerSheetOpacity,
+  photoViewerShouldPanImage,
+  resetPhotoViewerImageTransform,
   shouldCapturePhotoViewerDismiss,
   shouldDismissPhotoViewer,
 } from "./photo-viewer";
@@ -99,8 +102,34 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.equal(photoViewerImagePanEnabled(1), false);
     assert.equal(photoViewerPagingEnabled(PHOTO_VIEWER_ZOOM_PAN_THRESHOLD), true);
     assert.equal(photoViewerImagePanEnabled(1.2), true);
+    assert.equal(photoViewerShouldPanImage(2, 1), true);
+    assert.equal(photoViewerShouldPanImage(2, 2), false);
+    assert.equal(photoViewerShouldPanImage(1, 1), false);
     assert.equal(clampPhotoViewerZoom(0.4), 1);
     assert.equal(clampPhotoViewerZoom(9), PHOTO_VIEWER_MAX_ZOOM);
+  });
+
+  it("drops leftover pan at base zoom so a reopen cannot sit in a corner", () => {
+    assert.deepEqual(resetPhotoViewerImageTransform(), {
+      scale: 1,
+      translateX: 0,
+      translateY: 0,
+    });
+    assert.deepEqual(photoViewerImageTransform(1, 210, 400), {
+      scale: 1,
+      translateX: 0,
+      translateY: 0,
+    });
+    assert.deepEqual(photoViewerImageTransform(1.02, 80, 90), {
+      scale: 1,
+      translateX: 0,
+      translateY: 0,
+    });
+    assert.deepEqual(photoViewerImageTransform(2, 40, -20), {
+      scale: 2,
+      translateX: 40,
+      translateY: -20,
+    });
   });
 
   it("keeps photo and backdrop on one fade curve while the sheet translates", () => {
@@ -128,16 +157,25 @@ describe("photo viewer swipe-down dismiss", () => {
     assert.deepEqual([...PHOTO_VIEWER_DISMISS_ACTIVE_OFFSET_Y], [-1000, 12]);
     assert.match(source, /shouldDismissPhotoViewer/);
     assert.match(source, /photoViewerPagingEnabled/);
-    assert.match(source, /photoViewerImagePanEnabled/);
+    assert.match(source, /photoViewerShouldPanImage/);
     assert.match(source, /scrollEnabled=\{pagingEnabled\}/);
     assert.match(source, /Animated\.spring/);
     assert.match(source, /opacity: sheetOpacity/);
     assert.match(source, /transform: \[\{ translateY: dragY \}\]/);
+    assert.match(source, /photoViewerImageTransform/);
+    assert.match(source, /resetPhotoViewerImageTransform/);
+    assert.match(source, /closeViewer/);
+    assert.match(source, /resetImage\(\)/);
+    assert.match(source, /useEffect/);
+    assert.match(source, /Dimensions,\n  FlatList,\n  Image,/);
+    assert.match(source, /removeClippedSubviews=\{false\}/);
+    assert.doesNotMatch(source, /FlatList,\n  Gesture,/);
+    assert.doesNotMatch(source, /imageWrap/);
     assert.doesNotMatch(source, /PanResponder/);
     assert.doesNotMatch(source, /maximumZoomScale/);
     assert.doesNotMatch(source, /ScrollView/);
     assert.match(source, />Close</);
-    assert.match(source, /onPress=\{onClose\}/);
+    assert.match(source, /onPress=\{closeViewer\}/);
     assert.match(source, /pagingEnabled/);
     assert.match(source, /directionalLockEnabled/);
   });
