@@ -29,6 +29,7 @@ import {
   stockDropdownOpen,
 } from "../item-editor";
 import {
+  STOCK_SEARCH_NO_STOCK_COLOR,
   canSelectStockCandidate,
   formatStockSearchInventory,
   stockSearchInventoryIsEmpty,
@@ -487,11 +488,13 @@ export function ItemEditor({
                       {stockResults.map((candidate) => {
                         const selectable = canSelectStockCandidate(candidate);
                         const noStock = stockSearchInventoryIsEmpty(candidate);
+                        const inventoryLabel = formatStockSearchInventory(candidate);
                         return (
                           <Pressable
                             key={candidate.variantGid}
-                            style={[styles.dropdownRow, !selectable && styles.dropdownRowOff]}
+                            style={styles.dropdownRow}
                             disabled={!selectable}
+                            accessibilityState={{ disabled: !selectable }}
                             onPress={() => {
                               if (!selectable) return;
                               setStockClosed(true);
@@ -506,12 +509,12 @@ export function ItemEditor({
                             {candidate.variantTitle ? (
                               <Text style={ui.muted}>{candidate.variantTitle}</Text>
                             ) : null}
-                            <Text style={ui.muted}>
-                              ${candidate.price.toFixed(2)}
-                              {" · "}
-                              <Text style={noStock ? styles.noStock : undefined}>
-                                {formatStockSearchInventory(candidate)}
-                              </Text>
+                            <Text style={ui.muted}>${candidate.price.toFixed(2)}</Text>
+                            <Text
+                              style={noStock ? styles.noStock : styles.inStock}
+                              accessibilityLabel={inventoryLabel}
+                            >
+                              {inventoryLabel}
                             </Text>
                           </Pressable>
                         );
@@ -732,8 +735,8 @@ const styles = {
     borderTopWidth: 1,
     borderTopColor: THEME.line,
   },
-  dropdownRowOff: { opacity: 0.7 },
-  noStock: { color: "#8e1f0b", fontWeight: "700" as const },
+  inStock: { color: THEME.darkGreen, fontWeight: "600" as const },
+  noStock: { color: STOCK_SEARCH_NO_STOCK_COLOR, fontWeight: "700" as const },
   linkedStock: { marginTop: 10, gap: 4 },
   busy: { marginTop: 8 },
 };
