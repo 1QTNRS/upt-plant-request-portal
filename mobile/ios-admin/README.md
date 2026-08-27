@@ -56,7 +56,7 @@ Profiles: `development` (dev client), `preview` (internal), `production` (autoIn
 ### Native splash vs in-app intro
 
 - **Native splash** (`expo-splash-screen`): `#002910`, `./assets/splash-icon.png`, `imageWidth: 260`, `resizeMode: contain`. Used by a real EAS / dev-client binary.
-- **In-app intro** (`AppIntro`): same background and the same splash-icon, ~1.1s scale (logo already visible — no empty-green frame). Logo only (no "Request Portal" text). Skipped when a saved `upt_admin_` session is being restored. No network. Respects Reduce Motion (finishes immediately). The native splash stays up until the logo is ready so there is no white flash between frames.
+- **In-app intro** (`AppIntro`): same background and the same splash-icon, ~2.2s hold (logo already visible, short scale). Logo only (no "Request Portal" text). Plays on every cold launch, including a restored `upt_admin_` session. No network. Reduce Motion skips the scale but still holds the logo (~2s). The native splash stays up until the logo is ready so there is no white flash between frames.
 
 ### Expo Go differences
 

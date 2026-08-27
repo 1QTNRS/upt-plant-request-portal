@@ -7,6 +7,7 @@ import { APP_INTRO_SPLASH_ICON } from "./app-intro-assets";
 import {
   APP_INTRO_BACKGROUND,
   APP_INTRO_LOGO_WIDTH,
+  APP_INTRO_SCALE_MS,
   APP_INTRO_START_OPACITY,
   APP_INTRO_START_SCALE,
   appIntroDurationMs,
@@ -59,7 +60,7 @@ export function AppIntro({ onFinished }: Props) {
       }
       Animated.timing(scale, {
         toValue: 1,
-        duration: 700,
+        duration: APP_INTRO_SCALE_MS,
         useNativeDriver: true,
       }).start();
       timeout = setTimeout(onFinished, duration);

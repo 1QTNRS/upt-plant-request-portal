@@ -140,6 +140,7 @@ describe("iOS admin source layout", () => {
     assert.match(app, /shouldPlayAppIntro/);
     assert.match(app, /sessionKind/);
     assert.match(app, /APP_INTRO_BACKGROUND/);
+    assert.doesNotMatch(app, /setSessionKind\("restore"\);\s*setIntroDone\(true\)/);
     assert.match(intro, /APP_INTRO_SPLASH_ICON/);
     assert.match(intro, /APP_INTRO_LOGO_WIDTH/);
     assert.match(intro, /APP_INTRO_START_OPACITY/);

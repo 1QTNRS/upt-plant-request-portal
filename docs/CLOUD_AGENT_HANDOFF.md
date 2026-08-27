@@ -1108,7 +1108,7 @@ Native splash and the in-app intro both use `#002910` plus the live
 store mark at `./assets/splash-icon.png` (260px, contain, logo only —
 no "Request Portal" wordmark). The logo is visible as soon as AppIntro
 mounts (scale-only motion; no empty-green frame). Intro is JS-only and
-skipped when restoring a saved session. Expo Go still shows its own
+holds ~2.2s on every cold launch, including a restored session. Expo Go still shows its own
 white splash first — that is Expo Go, not this app. At base zoom the
 photo viewer turns off zoom-scroll so swipe-down dismisses the image
 and backdrop as one surface; pinch-zoom pans the photo instead.
