@@ -246,7 +246,11 @@ export function ThemeStyles() {
         color: ${THEME.white} !important;
         -webkit-text-fill-color: ${THEME.white} !important;
       }
-      a, s-link { color: ${THEME.darkGreen}; }
+      /* Shop mega-menus sit outside this surface and inherit their own
+         color. An unscoped `a` painted those links #002910 on #002910,
+         so only the hovered item stayed visible. */
+      .upt-customer-surface a { color: ${THEME.darkGreen}; }
+      s-link { color: ${THEME.darkGreen}; }
     `}</style>
   );
 }
