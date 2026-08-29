@@ -46,7 +46,7 @@ jobs:
         if: ${{ secrets.SMOKE_TEST_SECRET == '' || secrets.SHOPIFY_API_SECRET == '' }}
         run: |
           echo "USER ACTION REQUIRED: set GitHub secrets SMOKE_TEST_SECRET and SHOPIFY_API_SECRET, and set ALLOW_SMOKE_ADMIN=true plus SMOKE_TEST_SECRET on the Render web service, to enable live dev-store smoke."
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-artifacts
