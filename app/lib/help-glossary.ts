@@ -141,7 +141,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "`orders/paid` closes a paid request and marks its accepted items Sold. A redelivery of the webhook for an already-paid request is ignored rather than appending a second status event.",
       "A request can also be closed with nothing paid. `sendOffer` closes immediately when the admin response has no purchasable items and writes `Admin response contained no purchasable items` — that is not a customer decline, a payment, or an expiration. A customer who rejects every purchasable plant is closed the same way on submit (`Customer Closed Request`). The Close Request button remains only as a leftover for a Pending decline-all that has not been swept yet. Reviewing the offer with nothing selected does not show it. The admin can close such a request too — `closeDeclinedRequest` refuses while the customer has accepted something, because that request stays open until they pay or the hold expires. `adminOverrideCloseRequest` is the separate admin-only path that can end any still-open request; it writes `Admin Override Close`, keeps history, and voids an unpaid Draft Order rather than leaving a payable invoice behind.",
-      "Closing does not withdraw an unclaimed exact plant from the EXACT PLANTS queue. `exactPlantReleaseReason` returns `customer_declined` when they rejected the plant, or `unclaimed_after_close` when the request closed with the plant still unclaimed. Closed means paid or means the customer wanted nothing, and the second kind holds precisely the plants that queue exists for.",
+      "Closing does not withdraw an unclaimed exact plant from the EXACT PLANTS queue. `exactPlantReleaseReason` returns `customer_declined` when they rejected the plant, or `unclaimed_after_close` when the request closed with the plant still unclaimed. Closed means paid or means the customer wanted nothing. Payment claims the accepted plants; a declined sibling stays in the queue.",
     ],
     citations: [
       {
@@ -595,7 +595,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     detail: [
       "All four parts are required: UPT marked the item Available, UPT made an exact-plant offer for it, the customer was given Accept and Reject, and the customer chose Reject.",
       "It is not UPT Not Available, which was never on offer and has no exact plant to sell. It is not a rejected Grower's Choice item either, which already has its own Shopify product.",
-      "The rejection is recorded and nothing is published. A decline also survives the request being closed, so tidying a finished request away does not take its declined plant out of the review queue.",
+      "The rejection is recorded and nothing is published. A decline also survives the request being closed or a sibling being paid, so tidying a finished request away does not take its declined plant out of the review queue.",
     ],
     citations: [
       {

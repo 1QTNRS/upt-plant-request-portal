@@ -357,8 +357,13 @@ export type ExactPlantEligibilityInput = {
   /** Undefined or null when the customer never answered the offer. */
   responseChoice?: string | null;
   requestStatus?: string | null;
-  /** Truthy once the request has been paid for. */
+  /**
+   * Truthy once the request collected payment. That is not enough to exclude
+   * a declined sibling: payment claims the accepted plants, not every line.
+   */
   paidAt?: unknown;
+  /** Truthy once THIS plant was sold. */
+  purchasedAt?: unknown;
 };
 
 /**
@@ -368,9 +373,10 @@ export type ExactPlantEligibilityInput = {
  * customer declined it, their hold lapsed unpaid, or the request reached a
  * legitimate final Closed state with the Exact Plant still unclaimed. A plant
  * UPT marked Not Available is never eligible — there is no exact plant to sell
- * — and a paid request is never touched. Eligibility is separate from the
- * historical reason: admin override and customer Close Request do not rewrite
- * a decline that never happened.
+ * — and a plant that was itself accepted and paid stays sold. Eligibility is
+ * separate from the historical reason: admin override and customer Close
+ * Request do not rewrite a decline that never happened. Time passing, request
+ * close, offer expiration and a sibling payment also do not.
  */
 export function exactPlantReleaseReason(
   input: ExactPlantEligibilityInput,
@@ -383,8 +389,10 @@ export function exactPlantReleaseReason(
   // a plant that already has one, and every EXACT PLANTS listing is one
   // physical plant with one unit of stock.
   if (input.offerFulfillmentType === "growers_choice") return null;
-  // A sold plant stays sold.
-  if (input.paidAt) return null;
+  // This plant itself was sold or claimed. A sibling payment on the same
+  // request does not take a declined Exact Plant out of the queue.
+  if (input.purchasedAt) return null;
+  if (input.responseChoice === "accept" && input.paidAt) return null;
 
   // Declining survives the request being closed. Closed means paid, or closed
   // because the customer wanted nothing — and the second kind holds precisely
@@ -425,8 +433,8 @@ export function exactPlantIneligibilityReason(
   if (input.offerFulfillmentType === "growers_choice") {
     return "This plant was offered from existing website stock, which already has its own Shopify product. EXACT PLANTS listings are for plants sourced for one customer.";
   }
-  if (input.paidAt) {
-    return "This request has been paid and closed, so the plant is sold.";
+  if (input.purchasedAt || (input.responseChoice === "accept" && input.paidAt)) {
+    return "This plant has been paid for and is sold.";
   }
   if (input.responseChoice === "accept") {
     return "The customer accepted this plant and their hold has not expired yet.";

@@ -382,6 +382,9 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
       }
       if (choice === "reject") bucket.rejected += 1;
 
+      const requestItem = request.items.find(
+        (entry) => entry.id === offerItem.requestItemId,
+      );
       const reason = exactPlantReleaseReason({
         hasOfferItem: true,
         offerAvailability: offerItem.availability,
@@ -389,6 +392,7 @@ export async function getAnalytics(shop: string, range: AnalyticsRange) {
         responseChoice: choice,
         requestStatus: request.status,
         paidAt: request.paidAt,
+        purchasedAt: requestItem?.purchasedAt,
       });
       if (reason === "customer_declined") releasedItems.customerDeclined += 1;
       if (reason === "accepted_unpaid_expired") {

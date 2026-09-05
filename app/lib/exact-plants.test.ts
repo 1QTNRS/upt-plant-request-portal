@@ -106,11 +106,21 @@ describe("exact plant release eligibility", () => {
   });
 
   it("never releases a sold plant, however the request ended", () => {
-    // Payment is what puts a plant out of scope, not the request being tidied
-    // away: see "still releases a plant the customer declined" below.
+    // Payment of THIS plant puts it out of scope, not the request being tidied
+    // away and not a sibling being paid for.
     assert.equal(
       exactPlantReleaseReason(
         offered({ responseChoice: "accept", requestStatus: "Closed", paidAt: new Date() }),
+      ),
+      null,
+    );
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({
+          responseChoice: "accept",
+          requestStatus: "Closed",
+          purchasedAt: new Date(),
+        }),
       ),
       null,
     );
@@ -120,12 +130,12 @@ describe("exact plant release eligibility", () => {
       ),
       "unclaimed_after_close",
     );
-    // A declined item on a request that was paid for other plants stays sold-safe.
     assert.equal(
       exactPlantReleaseReason(
         offered({ responseChoice: "reject", paidAt: new Date() }),
       ),
-      null,
+      "customer_declined",
+      "a declined Exact Plant stays eligible when a sibling is paid",
     );
   });
 
@@ -182,6 +192,40 @@ describe("exact plant release eligibility", () => {
     assert.equal(exactPlantReleaseTone("unclaimed_after_close"), "info");
   });
 
+  it("keeps a declined Exact Plant eligible until an explicit exit", () => {
+    const declined = offered({ responseChoice: "reject" });
+    assert.equal(exactPlantReleaseReason(declined), "customer_declined");
+    assert.equal(
+      exactPlantReleaseReason({ ...declined, requestStatus: "Closed" }),
+      "customer_declined",
+    );
+    assert.equal(
+      exactPlantReleaseReason({ ...declined, requestStatus: "Expired" }),
+      "customer_declined",
+    );
+    assert.equal(
+      exactPlantReleaseReason({
+        ...declined,
+        requestStatus: "Closed",
+        paidAt: new Date("2020-01-01T00:00:00.000Z"),
+      }),
+      "customer_declined",
+      "old timestamps and a sibling payment must not drop a decline",
+    );
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({ responseChoice: "accept", requestStatus: "Closed", paidAt: new Date() }),
+      ),
+      null,
+    );
+    assert.equal(
+      exactPlantReleaseReason(
+        offered({ offerFulfillmentType: "growers_choice", responseChoice: "reject" }),
+      ),
+      null,
+    );
+  });
+
   it("releases an unclaimed Exact Plant after the request is closed unpaid", () => {
     assert.equal(
       exactPlantReleaseReason(offered({ requestStatus: "Closed" })),
@@ -229,12 +273,18 @@ describe("exact plant ineligibility messages", () => {
     );
   });
 
-  it("explains a paid request", () => {
+  it("explains a paid plant, not a sibling payment", () => {
     assert.match(
       exactPlantIneligibilityReason(
-        offered({ responseChoice: "reject", paidAt: new Date() }),
+        offered({ responseChoice: "accept", paidAt: new Date() }),
       ) ?? "",
-      /paid and closed/,
+      /paid for and is sold/,
+    );
+    assert.equal(
+      exactPlantIneligibilityReason(
+        offered({ responseChoice: "reject", paidAt: new Date() }),
+      ),
+      null,
     );
   });
 
