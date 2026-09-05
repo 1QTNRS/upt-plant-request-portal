@@ -640,7 +640,7 @@ In production this is driven by the `upt-offer-maintenance` Render cron job, whi
 
 ### Analytics
 
-Read from Prisma. Revenue uses `ShopifyOrderReference.plantRevenue` or draft line items filtered by `kind === "plant"` (FedEx excluded). Behavior flags and item conversion are computed from real request/response/payment data.
+Read from Prisma. Revenue uses `ShopifyOrderReference.plantRevenue` or draft line items filtered by `kind === "plant"` (FedEx excluded). Behavior flags and item conversion are computed from real request/response/payment data. The Date Range picker (`submittedAt`) applies to every figure on the page: request counts, plant tables, the customer table, item conversion, revenue-by-month, and the this/last-month cards. Repeated-decline plant patterns still use their own behaviour window, not the picker.
 
 Every plant metric groups on `RequestItem.canonicalPlantId`, not on the typed
 text and **never on the Shopify product title** — see "Canonical plant identity"
@@ -947,10 +947,9 @@ table wrap below 720px; customer offer images sit in a horizontal row (three
 across) and Accept/Reject/FedEx hit areas fit a 375px viewport without hydration. Stored statuses, eligibility rules and
 computed numbers did not change.
 
-One analytics correctness bug is **reported, not silently "fixed"**: the
-customer table, the item-conversion table and the revenue-this/last-month cards
-read `allShopRequests` and therefore ignore the Date Range picker. The ranged
-`requests` query already exists beside it. Treat that as its own change.
+**Done:** the Date Range picker now applies to the customer table, the
+item-conversion table, revenue-by-month, and the this/last-month cards. Those
+used to read a second whole-shop query and ignore the picker.
 
 **Done:** the Render Blueprint is applied and the web service is live at
 `https://upt-plant-request-portal.onrender.com`, verified from outside —
