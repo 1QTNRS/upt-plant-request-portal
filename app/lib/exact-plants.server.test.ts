@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
 import prisma from "../db.server";
-import { EXACT_PLANT_DISMISSED_REASON } from "./exact-plants";
+import { mobileAdminExactPlantsPayload } from "./admin-mobile-api";
+import {
+  EXACT_PLANT_DISMISSED_REASON,
+  matchesExactPlantListingFilter,
+} from "./exact-plants";
 import {
   createExactPlantListing,
   createExactPlantListingsFromDrafts,
@@ -13,8 +17,12 @@ import {
   listDismissedExactPlants,
   listExactPlantCandidates,
 } from "./exact-plants.server";
-import { adminOverrideCloseRequest } from "./offer-response.server";
 import {
+  adminOverrideCloseRequest,
+  handleCustomerOfferAction,
+} from "./offer-response.server";
+import {
+  closePendingDeclineAllRequests,
   getCustomerResponse,
   saveCustomerResponse,
   sendOffer,
@@ -23,6 +31,7 @@ import {
   submitCustomerRequest,
   updateRequestItem,
 } from "./portal.server";
+import { runOfferMaintenance } from "./scheduler.server";
 import { DEMO_SHOP } from "./shop";
 
 const shop = `${DEMO_SHOP}-exact-plants-test`;
@@ -725,7 +734,7 @@ describe("expired offers release their exact plants", () => {
     assert.equal((await listExactPlantCandidates(shop, request.id)).length, 0);
     await assert.rejects(
       () => getExactPlantReview(shop, availableId),
-      /paid and closed/,
+      /paid for and is sold/,
     );
   });
 });
@@ -1076,5 +1085,288 @@ describe("unclaimed Exact Plants after close", () => {
     const candidates = await listExactPlantCandidates(shop, created.id);
     assert.equal(candidates.length, 2);
     assert.ok(candidates.every((row) => row.releaseReason === "customer_declined"));
+  });
+});
+
+describe("declined Exact Plants stay in Not Listed until an explicit exit", () => {
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop } });
+    await prisma.customerProfile.deleteMany({ where: { shop } });
+  });
+
+  async function prepareAvailableItem(requestId: string, itemId: string, name: string) {
+    await updateRequestItem(shop, {
+      requestId,
+      itemId,
+      offeredName: name,
+      availability: "available",
+      price: 80,
+      weightLbs: 2,
+      photoUrls: [`https://cdn.example.com/${itemId}.jpg`],
+    });
+  }
+
+  it("1. lists a declined Exact Plant as Not Listed", async () => {
+    const { request, availableId } = await createOfferedRequest();
+    const rows = await listExactPlantCandidates(shop, request.id);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.requestItemId, availableId);
+    assert.equal(rows[0]?.releaseReason, "customer_declined");
+    assert.equal(matchesExactPlantListingFilter(rows[0]!, "not_yet_listed"), true);
+  });
+
+  it("2. keeps a declined Exact Plant after the request closes", async () => {
+    const { request, availableId } = await createOfferedRequest();
+    await adminOverrideCloseRequest({
+      shop,
+      requestId: request.id,
+      confirmed: true,
+    });
+    const row = (await listExactPlantCandidates(shop, request.id)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.ok(row);
+    assert.equal(row?.releaseReason, "customer_declined");
+    assert.equal(
+      (await prisma.plantRequest.findUniqueOrThrow({ where: { id: request.id } }))
+        .status,
+      "Closed",
+    );
+  });
+
+  it("3. keeps a declined Exact Plant after several days", async () => {
+    const { request, availableId } = await createOfferedRequest();
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    await prisma.plantRequest.update({
+      where: { id: request.id },
+      data: {
+        submittedAt: tenDaysAgo,
+        closedAt: tenDaysAgo,
+      },
+    });
+    await prisma.offer.update({
+      where: { requestId: request.id },
+      data: {
+        sentAt: tenDaysAgo,
+        expiresAt: new Date(tenDaysAgo.getTime() + 3 * 24 * 60 * 60 * 1000),
+      },
+    });
+    const row = (await listExactPlantCandidates(shop, request.id)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.ok(row, "old timestamps must not drop a declined Exact Plant");
+    assert.equal(row?.releaseReason, "customer_declined");
+  });
+
+  it("4. keeps a declined Exact Plant after expiration and maintenance", async () => {
+    const { request, availableId } = await createOfferedRequest();
+    await expireOffer(request.id);
+    await runOfferMaintenance("", async () => undefined);
+    const row = (await listExactPlantCandidates(shop, request.id)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.ok(row);
+    assert.equal(row?.releaseReason, "customer_declined");
+  });
+
+  it("5. keeps a declined Exact Plant after decline-all auto-close", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Decline All Plant" }],
+    });
+    await prepareAvailableItem(created.id, created.items[0].id, "Decline All Exact");
+    await sendOffer(shop, created.id, 3);
+    const form = new FormData();
+    form.set("intent", "submit-response");
+    form.set(`choice-${created.items[0].id}`, "reject");
+    form.set("fedexUpgradeSelected", "false");
+    const result = await handleCustomerOfferAction({
+      shop,
+      requestId: created.id,
+      form,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(
+      (await prisma.plantRequest.findUniqueOrThrow({ where: { id: created.id } }))
+        .status,
+      "Closed",
+    );
+    assert.equal(await closePendingDeclineAllRequests(shop), 0);
+    const row = (await listExactPlantCandidates(shop, created.id)).find(
+      (entry) => entry.requestItemId === created.items[0].id,
+    );
+    assert.ok(row);
+    assert.equal(row?.releaseReason, "customer_declined");
+  });
+
+  it("6. keeps an unclaimed Exact Plant after admin override close", async () => {
+    const { request, availableId } = await createOfferedRequest({
+      respond: false,
+    });
+    await adminOverrideCloseRequest({
+      shop,
+      requestId: request.id,
+      confirmed: true,
+    });
+    const row = (await listExactPlantCandidates(shop, request.id)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.ok(row);
+    assert.equal(row?.releaseReason, "unclaimed_after_close");
+  });
+
+  it("7. excludes a dismissed plant from the active queue", async () => {
+    const { availableId } = await createOfferedRequest();
+    const dismissed = await dismissExactPlantFromQueue({
+      shop,
+      requestItemId: availableId,
+      confirmed: true,
+    });
+    assert.deepEqual(dismissed, { ok: true, alreadyDismissed: false });
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      false,
+    );
+    assert.equal(
+      (await listDismissedExactPlants(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      true,
+    );
+  });
+
+  it("8. excludes a listed plant from Not Listed", async () => {
+    const { availableId } = await createOfferedRequest();
+    await createExactPlantListing(undefined, shop, {
+      requestItemId: availableId,
+      title: "Listed Exact",
+      price: 175,
+      weightLbs: 9.5,
+      photoUrls: ["https://picsum.photos/seed/listed/800/800"],
+    });
+    const row = (await listExactPlantCandidates(shop)).find(
+      (entry) => entry.requestItemId === availableId,
+    );
+    assert.ok(row);
+    assert.equal(matchesExactPlantListingFilter(row, "not_yet_listed"), false);
+    assert.equal(matchesExactPlantListingFilter(row, "listed"), true);
+    const mobile = mobileAdminExactPlantsPayload([row], [], "not_yet_listed");
+    assert.equal(mobile.items.some((entry) => entry.requestItemId === availableId), false);
+  });
+
+  it("9. excludes an accepted and paid plant", async () => {
+    const { request, availableId } = await createOfferedRequest({
+      acceptAvailable: true,
+    });
+    await markRequestPaid(shop, request.id, {
+      shopifyOrderGid: "gid://shopify/Order/sibling-paid",
+      orderNumber: "#2001",
+      plantRevenue: 175,
+    });
+    assert.equal(
+      (await listExactPlantCandidates(shop, request.id)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      false,
+    );
+  });
+
+  it("10. excludes a declined Grower's Choice plant", async () => {
+    const { availableId } = await createOfferedRequest();
+    await prisma.offerItem.updateMany({
+      where: { requestItemId: availableId },
+      data: { fulfillmentType: "growers_choice" },
+    });
+    assert.equal(
+      (await listExactPlantCandidates(shop)).some(
+        (row) => row.requestItemId === availableId,
+      ),
+      false,
+    );
+  });
+
+  it("keeps a declined Exact Plant after a sibling is paid", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [
+        { plantName: "Lacunosa bloody hell" },
+        { plantName: "Accepted sibling" },
+      ],
+    });
+    const [declined, accepted] = created.items;
+    await prepareAvailableItem(created.id, declined.id, "PS0072 - Hoya lacunosa Bloody Hell");
+    await prepareAvailableItem(created.id, accepted.id, "Accepted sibling exact");
+    await sendOffer(shop, created.id, 3);
+    await saveCustomerResponse(shop, {
+      requestId: created.id,
+      fedexUpgradeSelected: false,
+      fedexUpgradePrice: 15,
+      items: [
+        {
+          offerItemId: "declined",
+          sourceItemId: declined.id,
+          plantName: "PS0072 - Hoya lacunosa Bloody Hell",
+          choice: "reject",
+          fulfillmentType: "exact_plant",
+          price: 80,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "",
+          photoUrls: [`https://cdn.example.com/${declined.id}.jpg`],
+        },
+        {
+          offerItemId: "accepted",
+          sourceItemId: accepted.id,
+          plantName: "Accepted sibling exact",
+          choice: "accept",
+          fulfillmentType: "exact_plant",
+          price: 80,
+          quantity: 1,
+          lineRevenue: 80,
+          customerNotes: "",
+          photoUrls: [`https://cdn.example.com/${accepted.id}.jpg`],
+        },
+      ],
+    });
+
+    const beforePay = await listExactPlantCandidates(shop, created.id);
+    assert.equal(
+      beforePay.some((row) => row.requestItemId === declined.id),
+      true,
+    );
+    assert.equal(
+      beforePay.some((row) => row.requestItemId === accepted.id),
+      false,
+    );
+
+    await markRequestPaid(shop, created.id, {
+      shopifyOrderGid: "gid://shopify/Order/req69",
+      orderNumber: "#REQ69",
+      plantRevenue: 80,
+    });
+
+    const afterPay = await listExactPlantCandidates(shop, created.id);
+    const declinedRow = afterPay.find((row) => row.requestItemId === declined.id);
+    assert.ok(declinedRow, "sibling payment must not drop the declined Exact Plant");
+    assert.equal(declinedRow?.releaseReason, "customer_declined");
+    assert.equal(matchesExactPlantListingFilter(declinedRow, "not_yet_listed"), true);
+    assert.equal(
+      afterPay.some((row) => row.requestItemId === accepted.id),
+      false,
+    );
+    const mobile = mobileAdminExactPlantsPayload(afterPay, [], "not_yet_listed");
+    assert.equal(
+      mobile.items.some((row) => row.requestItemId === declined.id),
+      true,
+    );
   });
 });

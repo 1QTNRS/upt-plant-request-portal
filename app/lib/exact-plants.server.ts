@@ -160,6 +160,7 @@ export async function listExactPlantCandidates(
       responseChoice: responseItem?.choice,
       requestStatus: item.request.status,
       paidAt: item.request.paidAt,
+      purchasedAt: item.purchasedAt,
     });
     if (!reason) return [];
 
@@ -228,6 +229,7 @@ function rowFromRequestItem(
       offer: { expiresAt: Date | null; sentAt: Date };
     }>;
     responseItems: Array<{ choice: string | null }>;
+    purchasedAt: Date | null;
     request: {
       requestNumber: string;
       status: string;
@@ -246,6 +248,7 @@ function rowFromRequestItem(
     responseChoice: responseItem?.choice,
     requestStatus: item.request.status,
     paidAt: item.request.paidAt,
+    purchasedAt: item.purchasedAt,
   });
   if (!reason || !offerItem) return null;
 
@@ -340,6 +343,7 @@ export async function getExactPlantReview(
     responseChoice: responseItem?.choice,
     requestStatus: item.request.status,
     paidAt: item.request.paidAt,
+    purchasedAt: item.purchasedAt,
   };
   const releaseReason = exactPlantReleaseReason(eligibility);
   if (!releaseReason || !offerItem) {
@@ -620,6 +624,7 @@ export async function dismissExactPlantFromQueue(input: {
     responseChoice: responseItem?.choice,
     requestStatus: item.request.status,
     paidAt: item.request.paidAt,
+    purchasedAt: item.purchasedAt,
   });
   if (!releaseReason) {
     return { ok: false, error: "This item is not in the EXACT PLANTS queue." };

@@ -1009,10 +1009,11 @@ without asking; both concern which plant is for sale and who may pay for it.
 `exactPlantReleaseReason` used to refuse any `Closed` request, so an admin
 closing a request whose customer had declined everything dropped exactly the
 plants the review queue exists for. `Closed` means one of two different things —
-paid, or closed because there was nothing to pay for — and only the first puts a
-plant out of reach. **Payment decides eligibility, not the bare status.** The
-`paidAt` check already sits a line earlier, so removing the status check lost
-nothing else.
+paid, or closed because there was nothing to pay for — and only payment of
+**that plant** puts it out of reach. **Payment of the accepted plants decides
+their eligibility, not the bare status and not a sibling `paidAt`.** A declined
+Exact Plant stays in EXACT PLANTS → Not Listed after the request is paid for
+other plants.
 
 Without this, the Close Request action and rule 9 contradict each other and an
 admin has to remember to list before closing.

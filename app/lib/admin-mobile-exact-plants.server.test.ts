@@ -9,6 +9,7 @@ import { action as settingsAction, loader as settingsLoader } from "../routes/ap
 import { createAdminMobileToken } from "./admin-mobile-auth.server";
 import { DEFAULT_FEDEX_REMOVAL_WARNING } from "./portal";
 import {
+  markRequestPaid,
   saveCustomerResponse,
   sendOffer,
   submitCustomerRequest,
@@ -280,5 +281,78 @@ describe("admin mobile EXACT PLANTS and settings", () => {
     };
     assert.equal(resetBody.reset, true);
     assert.equal(resetBody.fedexRemovalWarning, DEFAULT_FEDEX_REMOVAL_WARNING);
+  });
+
+  it("keeps a declined Exact Plant in Not listed after a sibling is paid", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Declined exact" }, { plantName: "Accepted sibling" }],
+    });
+    const [declined, accepted] = created.items;
+    for (const item of created.items) {
+      await updateRequestItem(shop, {
+        requestId: created.id,
+        itemId: item.id,
+        offeredName: item.plantName,
+        price: 80,
+        weightLbs: 2,
+        availability: "available",
+        photoUrls: [`https://picsum.photos/seed/${item.id}/800/800`],
+      });
+    }
+    await sendOffer(shop, created.id, 3);
+    await saveCustomerResponse(shop, {
+      requestId: created.id,
+      fedexUpgradeSelected: false,
+      fedexUpgradePrice: 15,
+      items: [
+        {
+          offerItemId: "declined",
+          sourceItemId: declined.id,
+          plantName: declined.plantName,
+          choice: "reject",
+          fulfillmentType: "exact_plant",
+          price: 80,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "",
+          photoUrls: [],
+        },
+        {
+          offerItemId: "accepted",
+          sourceItemId: accepted.id,
+          plantName: accepted.plantName,
+          choice: "accept",
+          fulfillmentType: "exact_plant",
+          price: 80,
+          quantity: 1,
+          lineRevenue: 80,
+          customerNotes: "",
+          photoUrls: [],
+        },
+      ],
+    });
+    await markRequestPaid(shop, created.id, {
+      shopifyOrderGid: "gid://shopify/Order/mobile-sibling",
+      orderNumber: "#M1",
+      plantRevenue: 80,
+    });
+
+    const token = (await createAdminMobileToken(shop, "iPhone sibling")).token;
+    const queue = await queueLoader(
+      loaderArgs(
+        authed(token, "https://app.example/api/mobile/admin/exact-plants?listing=not_yet_listed"),
+      ),
+    );
+    const body = (await queue.json()) as {
+      items: Array<{ requestItemId: string; listingStatus: string }>;
+    };
+    assert.equal(body.items.some((row) => row.requestItemId === declined.id), true);
+    assert.equal(body.items.some((row) => row.requestItemId === accepted.id), false);
+    assert.equal(
+      body.items.find((row) => row.requestItemId === declined.id)?.listingStatus,
+      "not_yet_listed",
+    );
   });
 });
