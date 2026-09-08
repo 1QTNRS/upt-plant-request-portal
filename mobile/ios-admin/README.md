@@ -25,10 +25,10 @@ You do **not** need a Mac for day-to-day development. Install [Expo Go](https://
 ```bat
 cd mobile\ios-admin
 npm install
-npx expo start -c
+npm start
 ```
 
-`npm start` sets `APP_VARIANT=development` so Metro QR codes target **Request Portal Dev** (`com.unsolicitedplanttalks.admin.dev`). Install the **development** EAS build once; it can sit beside the App Store **Request Portal** app.
+`npm start` sets `APP_VARIANT=development` (via `cross-env`, works on Windows) so Metro QR codes target **Request Portal Dev** (`com.unsolicitedplanttalks.admin.dev`). Install the **development** EAS build once; it can sit beside the App Store **Request Portal** app.
 
 3. Scan the QR code. Default App URL is the live Render service.
 
@@ -53,17 +53,31 @@ Expo/EAS identity (do not change):
 - bundleIdentifier: `com.unsolicitedplanttalks.admin.dev`
 - scheme: `uptadmin-dev`
 
-`app.config.js` reads `APP_VARIANT` (`development` or `production`). EAS sets it per profile in `eas.json`; you should not edit bundle IDs by hand.
+`app.json` holds shared production defaults (icon, splash, plugins, permissions). `app.config.js` applies `APP_VARIANT` overrides only — development name/bundle/scheme, or production reaffirmation. EAS sets `APP_VARIANT` per profile in `eas.json`; you should not edit bundle IDs by hand.
+
+**Development build:**
+
+```bash
+cd mobile/ios-admin
+eas build --profile development --platform ios
+```
+
+**Production build:**
+
+```bash
+cd mobile/ios-admin
+eas build --profile production --platform ios
+```
 
 iPhone display name is **Request Portal** in production builds and **Request Portal Dev** in development builds. Version is **1.0.0**. Production EAS builds use `autoIncrement` for the iOS build number (`eas.json` `appVersionSource: remote`). Do not invent a second build-number scheme.
 
-Profiles: `development` (dev client, separate bundle ID), `preview` (internal, production identity), `production` (App Store, production identity). Apple Developer enrollment and APNs are handled separately — register `com.unsolicitedplanttalks.admin.dev` before the first development EAS iOS build.
+Profiles: `development` (dev client, separate bundle ID), `preview` (internal, production identity), `production` (App Store, production identity). The dev App ID `com.unsolicitedplanttalks.admin.dev` is already registered — do not create another.
 
 ### Assets you must provide before the first store build
 
 | File | Required | Purpose |
 | --- | --- | --- |
-| `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.config.js`. Do not commit a fake placeholder. |
+| `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.json`. Do not commit a fake placeholder. |
 | `mobile/ios-admin/assets/splash-icon.png` | **Yes** — committed store mark | Centered UPT logo on the **native** splash and the in-app intro. Background is always `#002910`. This is the live store mark (teal/green on transparent), not an empty placeholder. |
 | `mobile/ios-admin/assets/brand-mark.png` | Unused | Intro uses `splash-icon.png` so both frames match. |
 
@@ -76,7 +90,7 @@ Profiles: `development` (dev client, separate bundle ID), `preview` (internal, p
 
 These config changes still run in Expo Go for normal development:
 
-- Display name and icon in `app.config.js` are **not** applied to Expo Go. Expo Go keeps its own name and icon.
+- Display name and icon in `app.json` / `app.config.js` are **not** applied to Expo Go. Expo Go keeps its own name and icon.
 - Expo Go's splash is still Expo Go's (white chrome). It also **reuses this project's `splash.image`** (`splash-icon.png`, the store mark) and draws that image on its white canvas. It does **not** apply our `#002910`. That is why the first frame can show the UPT logo on a white background — Expo Go borrowed the image, not the green. We cannot recolor Expo Go's chrome.
 - The in-app intro still plays on every cold launch (`#002910` + the same store mark, already visible, then a short scale). That green frame is ours.
 - A signed EAS / dev-client build uses our native splash (`#002910` + `splash-icon.png`) and then the same-color intro. There is no Expo Go white frame on that path.

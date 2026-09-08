@@ -4,14 +4,14 @@
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "APP_VARIANT=development expo start",
-    "start:production": "APP_VARIANT=production expo start",
-    "ios": "APP_VARIANT=development expo start --ios",
-    "android": "APP_VARIANT=development expo start --android",
+    "start": "cross-env APP_VARIANT=development expo start",
+    "start:production": "cross-env APP_VARIANT=production expo start",
+    "ios": "cross-env APP_VARIANT=development expo start --ios",
+    "android": "cross-env APP_VARIANT=development expo start --android",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 src/*.test.ts",
-    "config:development": "APP_VARIANT=development expo config --type public",
-    "config:production": "APP_VARIANT=production expo config --type public"
+    "config:development": "cross-env APP_VARIANT=development expo config --type public --json",
+    "config:production": "cross-env APP_VARIANT=production expo config --type public --json"
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.18.17",
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "cross-env": "^7.0.3",
     "typescript": "~5.9.2"
   }
 }
