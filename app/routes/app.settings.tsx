@@ -7,10 +7,8 @@ import type {
 import {
   Form,
   useActionData,
-  useFetcher,
   useLoaderData,
   useNavigation,
-  useRevalidator,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -125,32 +123,17 @@ export default function Settings() {
   const settings = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
-  const revalidator = useRevalidator();
-  const tokenFetcher = useFetcher<typeof action>();
   const submittingIntent = String(navigation.formData?.get("intent") || "");
   const creatingToken =
-    tokenFetcher.state !== "idle" &&
-    String(tokenFetcher.formData?.get("intent") || "") === "create-mobile-token";
+    navigation.state !== "idle" && submittingIntent === "create-mobile-token";
   const createdToken =
-    tokenFetcher.data &&
-    "newMobileToken" in tokenFetcher.data &&
-    tokenFetcher.data.newMobileToken
-      ? tokenFetcher.data.newMobileToken
-      : actionData &&
-          "newMobileToken" in actionData &&
-          actionData.newMobileToken
-        ? actionData.newMobileToken
-        : null;
+    actionData && "newMobileToken" in actionData && actionData.newMobileToken
+      ? actionData.newMobileToken
+      : null;
   const mobileTokenError =
-    tokenFetcher.data &&
-    "mobileTokenError" in tokenFetcher.data &&
-    tokenFetcher.data.mobileTokenError
-      ? tokenFetcher.data.mobileTokenError
-      : actionData &&
-          "mobileTokenError" in actionData &&
-          actionData.mobileTokenError
-        ? actionData.mobileTokenError
-        : null;
+    actionData && "mobileTokenError" in actionData && actionData.mobileTokenError
+      ? actionData.mobileTokenError
+      : null;
   const savingFedex =
     navigation.state !== "idle" && submittingIntent === "save";
   const savingEmails =
@@ -170,11 +153,6 @@ export default function Settings() {
   const [pushItemStatus, setPushItemStatus] = useState(
     settings.adminPushItemStatusUpdate,
   );
-
-  useEffect(() => {
-    if (!createdToken?.token) return;
-    void revalidator.revalidate();
-  }, [createdToken?.token, revalidator]);
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
@@ -432,27 +410,31 @@ export default function Settings() {
             then keep this page for revoke if a phone is lost.
           </s-paragraph>
           {createdToken ? (
-            <s-banner tone="warning">
-              <s-stack direction="block" gap="small">
-                <s-text>
-                  Copy this token now. It will not be shown again.
-                </s-text>
-                <s-text>{createdToken.label}</s-text>
-                <input
-                  data-created-mobile-token
-                  type="text"
-                  readOnly
-                  value={createdToken.token}
-                  onFocus={(event) => event.currentTarget.select()}
-                  style={{
-                    ...themeFieldStyle,
-                    marginTop: 0,
-                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                    wordBreak: "break-all",
-                  }}
-                />
-              </s-stack>
-            </s-banner>
+            <div
+              data-created-mobile-token-box
+              style={{
+                padding: 16,
+                borderRadius: 8,
+                border: "1px solid #8a6116",
+                background: "#fff8e1",
+              }}
+            >
+              <p style={{ margin: "0 0 8px" }}>
+                Copy this token now. It will not be shown again.
+              </p>
+              <p style={{ margin: "0 0 8px" }}>{createdToken.label}</p>
+              <p
+                data-created-mobile-token
+                style={{
+                  margin: 0,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  wordBreak: "break-all",
+                  userSelect: "all",
+                }}
+              >
+                {createdToken.token}
+              </p>
+            </div>
           ) : null}
           {mobileTokenError ? (
             <s-banner tone="critical">
@@ -466,7 +448,7 @@ export default function Settings() {
               <s-text>Device token revoked. That phone can no longer sign in.</s-text>
             </s-banner>
           ) : null}
-          <tokenFetcher.Form method="post" data-create-mobile-token>
+          <Form method="post" data-create-mobile-token>
             <s-stack direction="block" gap="base">
               <input type="hidden" name="intent" value="create-mobile-token" />
               <label htmlFor="mobile-token-label">
@@ -497,7 +479,7 @@ export default function Settings() {
                 {creatingToken ? "Creating…" : "Create device token"}
               </button>
             </s-stack>
-          </tokenFetcher.Form>
+          </Form>
           {settings.mobileTokens.length === 0 ? (
             <s-text color="subdued">No active device tokens.</s-text>
           ) : (

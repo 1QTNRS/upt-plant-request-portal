@@ -277,12 +277,15 @@ describe("iOS admin API payloads", () => {
     assert.match(settings, /create-mobile-token/);
     assert.match(settings, /revoke-mobile-token/);
     assert.match(settings, /iOS admin app/);
-    assert.match(settings, /tokenFetcher\.Form/);
-    assert.match(settings, /data-create-mobile-token/);
+    assert.match(settings, /<Form method="post" data-create-mobile-token>/);
     assert.match(settings, /name="mobileTokenLabel"/);
     assert.match(settings, /data-created-mobile-token/);
     assert.match(settings, /<button/);
     assert.match(settings, /id="mobile-token-label"/);
+    assert.doesNotMatch(settings, /tokenFetcher/);
+    assert.doesNotMatch(settings, /useFetcher/);
+    assert.doesNotMatch(settings, /useRevalidator/);
+    assert.doesNotMatch(settings, /revalidator\.revalidate/);
     const createForm = settings.slice(
       settings.indexOf("data-create-mobile-token"),
       settings.indexOf("settings.mobileTokens.length"),
@@ -290,6 +293,13 @@ describe("iOS admin API payloads", () => {
     assert.match(createForm, /name="mobileTokenLabel"/);
     assert.doesNotMatch(createForm, /<s-text-field/);
     assert.doesNotMatch(createForm, /<s-button/);
+    const createdTokenBox = settings.slice(
+      settings.indexOf("data-created-mobile-token-box"),
+      settings.indexOf("data-create-mobile-token"),
+    );
+    assert.match(createdTokenBox, /userSelect: "all"/);
+    assert.doesNotMatch(createdTokenBox, /<s-banner/);
+    assert.doesNotMatch(createdTokenBox, /<input/);
     assert.match(settings, /save-admin-emails/);
     assert.match(settings, /adminEmailNewRequest/);
     assert.match(settings, /adminEmailCustomerResponse/);
