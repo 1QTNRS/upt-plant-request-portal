@@ -204,15 +204,24 @@ describe("EXACT PLANTS listing on Shopify", () => {
     );
   });
 
-  it("tags a new listing only with the shared EXACT PLANTS label", async () => {
+  it("creates a new listing with no portal-added tags and joins EXACT PLANTS", async () => {
     const calls = await listOnePlant();
     const created = callOf(calls, "CreateExactPlantProduct");
-    const product = created.variables.product as { tags: string[] };
-    assert.deepEqual(product.tags, ["EXACT PLANTS"]);
+    const product = created.variables.product as {
+      tags: string[];
+      collectionsToJoin: string[];
+    };
+    assert.deepEqual(product.tags, []);
+    assert.equal(product.tags.includes("EXACT PLANTS"), false);
     assert.equal(
       product.tags.some((tag) => tag.startsWith("upt-declined-item:")),
       false,
     );
+    assert.deepEqual(product.collectionsToJoin, ["gid://shopify/Collection/1"]);
+    assert.deepEqual(callOf(calls, "AddExactPlantToCollection").variables, {
+      id: "gid://shopify/Collection/1",
+      productIds: [PRODUCT_GID],
+    });
   });
 
   it("updates a stored product GID instead of creating a second listing", async () => {
@@ -255,6 +264,47 @@ describe("EXACT PLANTS listing on Shopify", () => {
       calls.filter((call) => call.operation === "CreateExactPlantProduct").length,
       0,
     );
+  });
+
+  it("still finds a legacy tagged product when no GID is stored", async () => {
+    const calls: Call[] = [];
+    await createExactPlantShopifyProduct(
+      fakeAdmin(
+        {
+          ...LISTING_RESPONSES,
+          ...retryResponses([
+            {
+              id: "gid://shopify/MediaImage/1",
+              originalSource: { url: EXISTING_PHOTO },
+            },
+          ]),
+        },
+        calls,
+      ),
+      {
+        requestItemId: "item_1",
+        title: "Monstera Thai Constellation",
+        price: 285,
+        weightLbs: 4.5,
+        photoUrls: [EXISTING_PHOTO],
+      },
+    );
+    assert.equal(
+      callOf(calls, "ExactPlantProductByTag").variables.query,
+      "tag:'upt-declined-item:item_1'",
+    );
+    assert.equal(
+      calls.filter((call) => call.operation === "ExactPlantProductById").length,
+      0,
+    );
+    assert.equal(
+      calls.filter((call) => call.operation === "CreateExactPlantProduct").length,
+      0,
+    );
+    assert.deepEqual(callOf(calls, "AddExactPlantToCollection").variables, {
+      id: "gid://shopify/Collection/1",
+      productIds: [PRODUCT_GID],
+    });
   });
 
   it("tracks one unit of stock and refuses oversell", async () => {

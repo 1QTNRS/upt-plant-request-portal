@@ -86,7 +86,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       "Candidates are read from offer items rather than from customer responses, because an offer that simply expired has no response rows and starting from the response would silently miss every unanswered expired offer.",
       "Nothing is created until an admin approves it. The review form prefills the title, price, weight and the exact-plant photos, and nothing else — no customer-facing notes, no customer identity, no request or response information. Cancel creates nothing.",
       "On approve, one Shopify product is created per item, added to the existing EXACT PLANTS collection, given a variant that tracks inventory and denies oversell, stocked with one unit at the shop's primary location, and only then published — to Online Store and Point of Sale only. Publishing before stocking would show the plant as sold out.",
-      "Retries are safe. New listings are tagged only with the shared `EXACT PLANTS` label. A stored Shopify product GID identifies the product for later retries, and older products that already have `upt-declined-item:{requestItemId}` are still found by that tag. A failure keeps the rejection and allows the retry.",
+      "Retries are safe. New listings get no Shopify tags from the portal. A stored Shopify product GID identifies the product for later retries, and older products that already have `upt-declined-item:{requestItemId}` are still found by that tag. A failure keeps the rejection and allows the retry.",
       "Never for an accepted-and-paid plant, never for UPT Not Available, never for an item that was never offered, never for a Grower's Choice line, and never for the FedEx upgrade.",
     ],
     citations: [

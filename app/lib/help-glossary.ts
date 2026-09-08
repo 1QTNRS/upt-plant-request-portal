@@ -550,7 +550,7 @@ export const GLOSSARY: GlossaryEntry[] = [
       "Nothing is auto-published. The customer's rejection is saved without creating a product; an admin opens the review form and approves it, and Cancel creates nothing. Dismiss from EXACT PLANTS is the other queue action: it requires confirmation, writes `Admin Dismissed from EXACT PLANTS` plus `exactPlantDismissedAt`, and removes the item from the active queue without creating a Shopify product or deleting the request, response, offer snapshot, photos or history. A plant that already has a product GID cannot be dismissed.",
       "The listing prefills and publishes title, price, weight and the selected exact-plant photos only — never customer-facing notes or disclaimers, customer identity, request information or customer response information.",
       "One Shopify product per item, added to the existing EXACT PLANTS collection and published to Online Store and Point of Sale only. The variant tracks inventory, denies oversell and is stocked with one unit before it is published, because an untracked plant can be sold to several customers and a tracked one published before it is stocked shows as sold out.",
-      "New listings are tagged only with the shared `EXACT PLANTS` collection label. A unique per-item tag is not written. Retries find an existing product from the stored Shopify product GID, and still look up older products that already carry `upt-declined-item:{requestItemId}`.",
+      "New listings get no Shopify tags from the portal — not `EXACT PLANTS`, not a request number, not `upt-declined-item:{requestItemId}`. The product is added to the existing EXACT PLANTS collection; that membership is the grouping. Retries find an existing product from the stored Shopify product GID, and still look up older products that already carry `upt-declined-item:{requestItemId}`.",
     ],
     citations: [
       {
@@ -563,6 +563,11 @@ export const GLOSSARY: GlossaryEntry[] = [
         path: "app/lib/exact-plants.ts",
         locator: "EXACT_PLANT_DISMISSED_REASON",
         quote: 'export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";',
+      },
+      {
+        path: "app/lib/exact-plants.ts",
+        locator: "exactPlantSharedTags",
+        quote: "Portal-created Exact Plant products get no Shopify tags.",
       },
       {
         path: HANDOFF,
