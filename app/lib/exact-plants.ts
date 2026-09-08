@@ -5,8 +5,8 @@ export const EXACT_PLANT_PRODUCT_TYPE = "Exact Plant";
 export const EXACT_PLANT_VENDOR = "UPT";
 export const EXACT_PLANT_ITEM_TAG_PREFIX = "upt-declined-item:";
 
-/** Shared tag written on every new Exact Plant product. Not a per-listing id. */
-export const EXACT_PLANT_SHARED_TAGS = [EXACT_PLANTS_COLLECTION_TITLE] as const;
+/** Portal-created Exact Plant products get no Shopify tags. */
+export const EXACT_PLANT_SHARED_TAGS = [] as const;
 
 /** Admin chose not to create an EXACT PLANTS listing for an eligible plant. */
 export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";
@@ -67,15 +67,16 @@ export type ExactPlantListingRecord = ExactPlantListingDraft & {
 };
 
 /**
- * Legacy lookup key for products created before unique tags were stopped.
- * New listings do not write this tag. Retries still search for it so older
- * products are not duplicated. The `declined` wording predates expired offers
- * becoming eligible.
+ * Legacy lookup key for products created before the portal stopped tagging.
+ * New listings write no tags. Retries still search for this so older products
+ * are not duplicated. The `declined` wording predates expired offers becoming
+ * eligible.
  */
 export function declinedItemTag(requestItemId: string): string {
   return `${EXACT_PLANT_ITEM_TAG_PREFIX}${requestItemId}`;
 }
 
+/** Empty on purpose. Collection membership groups Exact Plant products. */
 export function exactPlantSharedTags(): string[] {
   return [...EXACT_PLANT_SHARED_TAGS];
 }
@@ -644,6 +645,8 @@ export function buildExactPlantProductCreateInput(input: {
   collectionId: string;
   appUrl?: string;
 }) {
+  // requestItemId is not written as a tag. Retries use the stored product GID.
+  void input.requestItemId;
   return {
     product: {
       title: input.title,

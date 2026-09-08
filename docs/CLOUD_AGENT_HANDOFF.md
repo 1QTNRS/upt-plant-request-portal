@@ -154,8 +154,8 @@ Commands: `npm run setup`, `npm run prisma:generate`, `npm run prisma:migrate`,
 - Existing-stock search over `products(query:)` **and** `productVariants(query:)` in one document, merged on variant id (`searchExistingStock`). The Shopify query adds `status:active`. Results are then kept only when `Product.status` is ACTIVE and `publishedOnPublication` is true for this shop's Online Store publication (resolved by the `online_store` app handle). `products` reaches the product's own text and its variants' SKUs; `productVariants` reaches a variant title, which on a plant store is where the size lives
 - Draft orders are idempotent three times over: a recorded `DraftOrderReference` with a checkout link short-circuits, `draftOrderIdempotencyTag` finds a draft order Shopify already created when a previous reply was lost, and `claimDraftOrderCreation` makes the window between those two exclusive. Without the first two a retry bills the customer twice; without the third two concurrent callers reserve the same plant twice
 - Outbound email is deduplicated on `EmailMessage.idempotencyKey` (`@@unique([shop, idempotencyKey])`), so a retry or a double form submit cannot send the same message twice
-- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
-- Idempotency tag `upt-declined-item:{requestItemId}` so retries do not create duplicate products; a retry updates the existing product instead
+- EXACT PLANTS: find/create collection titled `EXACT PLANTS`, `productCreate` with media and **no Shopify tags**, variant price + weight (lb) + tracked stock of one, `collectionAddProducts`, `publishablePublish` to Online Store and Point of Sale only (paginating all publications)
+- Idempotency: stored `ExactPlantListing.shopifyProductGid` finds the product on retry; older products that still have `upt-declined-item:{requestItemId}` are found by that tag. New listings write no tags.
 
 ### Verifying Shopify calls without a store
 
@@ -371,8 +371,9 @@ expired has no response rows, so starting from the response would silently miss
 every unanswered expired offer.
 
 `EXACT_PLANT_ITEM_TAG_PREFIX` still reads `upt-declined-item:` although expired
-offers are now eligible too. It is the Shopify idempotency tag — renaming it
-would orphan the products already created under it and allow duplicates.
+offers are now eligible too. New listings write **no** Shopify tags. The prefix
+is only a legacy lookup — renaming it would orphan products already created
+under it and allow duplicates.
 
 
 Implemented as an **admin-approved** path only. Customer reject does not create a product. Review form prefills title, price, weight, photos. It must not prefill or publish customer-facing notes, customer identity, request info, or response info. Cancel creates nothing.

@@ -373,7 +373,7 @@ describe("EXACT PLANTS product media", () => {
     assert.equal(exactPlantMediaError([]), null);
   });
 
-  it("publishes only the approved title, tags and collection", () => {
+  it("publishes only the approved title and collection, with no portal tags", () => {
     const { product, media } = buildExactPlantProductCreateInput({
       requestItemId: "item_1",
       title: "Monstera Thai Constellation",
@@ -386,7 +386,7 @@ describe("EXACT PLANTS product media", () => {
       status: "ACTIVE",
       vendor: "UPT",
       productType: "Exact Plant",
-      tags: ["EXACT PLANTS"],
+      tags: [],
       collectionsToJoin: ["gid://shopify/Collection/1"],
     });
     assert.equal(media.length, 1);

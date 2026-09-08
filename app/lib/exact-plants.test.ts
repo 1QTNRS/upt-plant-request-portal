@@ -15,7 +15,6 @@ import {
   EXACT_PLANT_RELEASE_LABELS,
   exactPlantListingBucket,
   exactPlantReleaseTone,
-  EXACT_PLANTS_COLLECTION_TITLE,
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
   isExactPlantEligible,
@@ -457,10 +456,9 @@ describe("shopify product payload", () => {
     assert.deepEqual(payload.product.collectionsToJoin, [
       "gid://shopify/Collection/1",
     ]);
-    assert.deepEqual(payload.product.tags, [EXACT_PLANTS_COLLECTION_TITLE]);
-    assert.deepEqual(exactPlantSharedTags(), [EXACT_PLANTS_COLLECTION_TITLE]);
+    assert.deepEqual(payload.product.tags, []);
+    assert.deepEqual(exactPlantSharedTags(), []);
     assert.equal(declinedItemTag("item_123"), "upt-declined-item:item_123");
-    assert.equal(payload.product.tags.includes(declinedItemTag("item_123")), false);
     assert.equal("descriptionHtml" in payload.product, false);
     assert.equal(JSON.stringify(payload).includes("disclaimer"), false);
     assert.deepEqual(payload.media, [
