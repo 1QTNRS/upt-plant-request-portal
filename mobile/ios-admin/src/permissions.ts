@@ -1,4 +1,4 @@
-/** iOS photo-library usage string. Must match app.json expo-image-picker photosPermission. */
+/** iOS photo-library usage string. Must match app.config.js expo-image-picker photosPermission. */
 export const PHOTO_LIBRARY_PERMISSION =
   "Allow access to your photo library so you can upload photos to requests.";
 

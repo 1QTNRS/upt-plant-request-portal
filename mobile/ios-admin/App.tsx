@@ -27,7 +27,7 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { RequestDetailScreen } from "./src/screens/RequestDetailScreen";
 import { RequestListScreen } from "./src/screens/RequestListScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
-import { resolveAdminPushDeepLink } from "./src/push";
+import { resolveAdminPushDeepLink, iosAdminLinkPrefix } from "./src/push";
 import { notificationRequestId, registerAdminPush } from "./src/register-push";
 import type {
   ExactPlantsStackParamList,
@@ -50,7 +50,7 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 const navigationRef = createNavigationContainerRef<MainTabParamList>();
 
 const linking = {
-  prefixes: ["uptadmin://"],
+  prefixes: [iosAdminLinkPrefix()],
   config: {
     screens: {
       Requests: {

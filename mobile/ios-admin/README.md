@@ -28,6 +28,8 @@ npm install
 npx expo start -c
 ```
 
+`npm start` sets `APP_VARIANT=development` so Metro QR codes target **Request Portal Dev** (`com.unsolicitedplanttalks.admin.dev`). Install the **development** EAS build once; it can sit beside the App Store **Request Portal** app.
+
 3. Scan the QR code. Default App URL is the live Render service.
 
 ## First Apple build (EAS)
@@ -37,19 +39,31 @@ Expo/EAS identity (do not change):
 - owner: `unsolicited-plant-talks`
 - slug: `upt-admin-ios`
 - projectId: `2c4abfc0-98d5-462b-abd0-8ecba3deeeed`
-- bundleIdentifier: `com.unsolicitedplanttalks.admin`
-- scheme: `uptadmin`
 - live API URL: `https://upt-plant-request-portal.onrender.com`
 
-iPhone display name is **Request Portal**. Version is **1.0.0**. Production EAS builds use `autoIncrement` for the iOS build number (`eas.json` `appVersionSource: remote`). Do not invent a second build-number scheme.
+**Production** (App Store / TestFlight / `preview` / `production` EAS profiles):
 
-Profiles: `development` (dev client), `preview` (internal), `production` (autoIncrement). Apple Developer enrollment and APNs are handled separately — this repo does not create credentials.
+- display name: **Request Portal**
+- bundleIdentifier: `com.unsolicitedplanttalks.admin`
+- scheme: `uptadmin`
+
+**Development** (`development` EAS profile and local `npm start`):
+
+- display name: **Request Portal Dev**
+- bundleIdentifier: `com.unsolicitedplanttalks.admin.dev`
+- scheme: `uptadmin-dev`
+
+`app.config.js` reads `APP_VARIANT` (`development` or `production`). EAS sets it per profile in `eas.json`; you should not edit bundle IDs by hand.
+
+iPhone display name is **Request Portal** in production builds and **Request Portal Dev** in development builds. Version is **1.0.0**. Production EAS builds use `autoIncrement` for the iOS build number (`eas.json` `appVersionSource: remote`). Do not invent a second build-number scheme.
+
+Profiles: `development` (dev client, separate bundle ID), `preview` (internal, production identity), `production` (App Store, production identity). Apple Developer enrollment and APNs are handled separately — register `com.unsolicitedplanttalks.admin.dev` before the first development EAS iOS build.
 
 ### Assets you must provide before the first store build
 
 | File | Required | Purpose |
 | --- | --- | --- |
-| `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.json`. Do not commit a fake placeholder. |
+| `mobile/ios-admin/assets/icon.png` | **Yes** — 1024×1024 PNG | iOS app icon. Configured in `app.config.js`. Do not commit a fake placeholder. |
 | `mobile/ios-admin/assets/splash-icon.png` | **Yes** — committed store mark | Centered UPT logo on the **native** splash and the in-app intro. Background is always `#002910`. This is the live store mark (teal/green on transparent), not an empty placeholder. |
 | `mobile/ios-admin/assets/brand-mark.png` | Unused | Intro uses `splash-icon.png` so both frames match. |
 
@@ -62,11 +76,11 @@ Profiles: `development` (dev client), `preview` (internal), `production` (autoIn
 
 These config changes still run in Expo Go for normal development:
 
-- Display name and icon in `app.json` are **not** applied to Expo Go. Expo Go keeps its own name and icon.
+- Display name and icon in `app.config.js` are **not** applied to Expo Go. Expo Go keeps its own name and icon.
 - Expo Go's splash is still Expo Go's (white chrome). It also **reuses this project's `splash.image`** (`splash-icon.png`, the store mark) and draws that image on its white canvas. It does **not** apply our `#002910`. That is why the first frame can show the UPT logo on a white background — Expo Go borrowed the image, not the green. We cannot recolor Expo Go's chrome.
 - The in-app intro still plays on every cold launch (`#002910` + the same store mark, already visible, then a short scale). That green frame is ours.
 - A signed EAS / dev-client build uses our native splash (`#002910` + `splash-icon.png`) and then the same-color intro. There is no Expo Go white frame on that path.
-- Custom scheme `uptadmin://request/{id}` is honored in a standalone / EAS binary. Expo Go uses `exp://` for QR-code loads; notification taps still go through the JS listener and stay behind login.
+- Custom scheme `uptadmin://request/{id}` (production) or `uptadmin-dev://request/{id}` (development dev client) is honored in a standalone / EAS binary. Expo Go uses `exp://` for QR-code loads; notification taps still go through the JS listener and stay behind login.
 - Photo-library permission copy is applied at **prebuild** time. Expo Go shows Expo Go's own library prompt until you install an EAS build.
 - Camera-roll photos on iPhone are HEIC. Expo ImagePicker's PHPicker path returns those raw HEIC bytes and ignores `quality` for `UTType.heic`. The app re-encodes each picked photo to JPEG with `expo-image-manipulator` before upload. Relabeling `.heic` as `image/jpeg` without converting the bytes makes Shopify's staged GCS target return 400.
 

@@ -4,11 +4,14 @@
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-    "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
+    "start": "APP_VARIANT=development expo start",
+    "start:production": "APP_VARIANT=production expo start",
+    "ios": "APP_VARIANT=development expo start --ios",
+    "android": "APP_VARIANT=development expo start --android",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 src/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 src/*.test.ts",
+    "config:development": "APP_VARIANT=development expo config --type public",
+    "config:production": "APP_VARIANT=production expo config --type public"
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.18.17",

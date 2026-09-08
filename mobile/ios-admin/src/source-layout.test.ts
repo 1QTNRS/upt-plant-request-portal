@@ -127,7 +127,7 @@ describe("iOS admin source layout", () => {
     const settings = read("src/screens/SettingsScreen.tsx");
     assert.match(app, /registerAdminPush/);
     assert.match(app, /createNavigationContainerRef/);
-    assert.match(app, /uptadmin:\/\//);
+    assert.match(app, /iosAdminLinkPrefix\(\)/);
     assert.match(app, /request\/:requestId/);
     assert.match(app, /resolveAdminPushDeepLink/);
     assert.match(settings, /iOS Push Notifications/);
