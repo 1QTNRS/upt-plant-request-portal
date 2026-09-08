@@ -44,10 +44,12 @@ export function StatusPills({
   status,
   hasExistingOrder,
   isPurchased,
+  hasResponded,
 }: {
   status: string;
   hasExistingOrder?: boolean;
   isPurchased?: boolean;
+  hasResponded?: boolean;
 }) {
   const statusColors = pillColors(status);
   const existingColors =
@@ -58,6 +60,11 @@ export function StatusPills({
     backgroundColor: THEME.yellow,
     color: THEME.darkGreen,
     borderColor: THEME.yellow,
+  };
+  const answeredColors = {
+    backgroundColor: THEME.mint,
+    color: THEME.darkGreen,
+    borderColor: THEME.darkGreen,
   };
 
   return (
@@ -73,6 +80,19 @@ export function StatusPills({
       >
         <Text style={[styles.label, { color: statusColors.color }]}>{status}</Text>
       </View>
+      {status === "Pending" && hasResponded ? (
+        <View
+          style={[
+            styles.pill,
+            {
+              backgroundColor: answeredColors.backgroundColor,
+              borderColor: answeredColors.borderColor,
+            },
+          ]}
+        >
+          <Text style={[styles.label, { color: answeredColors.color }]}>Answered</Text>
+        </View>
+      ) : null}
       {isPurchased ? (
         <View
           style={[

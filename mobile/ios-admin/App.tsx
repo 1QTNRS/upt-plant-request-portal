@@ -105,6 +105,7 @@ function ExactPlantsNavigator() {
     <ExactPlantsStack.Navigator screenOptions={stackScreenOptions}>
       <ExactPlantsStack.Screen name="ExactPlantsList" component={ExactPlantsScreen} />
       <ExactPlantsStack.Screen name="ExactPlantsReview" component={ExactPlantsReviewScreen} />
+      <ExactPlantsStack.Screen name="RequestDetail" component={RequestDetailScreen} />
     </ExactPlantsStack.Navigator>
   );
 }

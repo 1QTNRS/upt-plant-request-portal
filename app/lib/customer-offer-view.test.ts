@@ -143,7 +143,8 @@ describe("an expired offer is not presented as a live one", () => {
       formAction: "/apps/plant-requests/requests/req-1",
     });
 
-    assert.match(live, /Offer expires in 3 days/);
+    assert.match(live, /Offer expires soon/);
+    assert.match(live, /&lt;3 days|<3 days/);
     assert.match(live, /type="radio"/);
     assert.match(live, /value="submit-response"/);
     assert.match(live, /data-offer-submit/);

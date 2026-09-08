@@ -68,6 +68,7 @@ import {
   reserveInventoryUntilFor,
   variantBackedLines,
   computeTimeRemaining,
+  formatOfferExpirationUrgencyPill,
 } from "./portal";
 
 describe("FedEx listing identity", () => {
@@ -564,7 +565,7 @@ describe("terminal plant item grouping", () => {
     );
   });
 
-  it("groups terminal detail only when Closed or Expired has accept/reject answers", () => {
+  it("groups detail when the customer answered, including Pending unpaid", () => {
     assert.equal(
       shouldGroupTerminalPlantItems("Closed", [
         { sourceItemId: "a", choice: "accept" },
@@ -574,6 +575,12 @@ describe("terminal plant item grouping", () => {
     assert.equal(
       shouldGroupTerminalPlantItems("Expired", [
         { sourceItemId: "a", choice: "reject" },
+      ]),
+      true,
+    );
+    assert.equal(
+      shouldGroupTerminalPlantItems("Pending", [
+        { sourceItemId: "a", choice: "accept" },
       ]),
       true,
     );
@@ -639,14 +646,46 @@ describe("purchased request pill", () => {
 });
 
 describe("expiration", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+
   it("detects expired offers and formats remaining time", () => {
     const past = new Date("2026-01-01T00:00:00Z").toISOString();
     const future = new Date("2026-01-04T12:00:00Z").toISOString();
-    const now = new Date("2026-01-01T12:00:00Z");
 
     assert.equal(isOfferExpired(past, now), true);
     assert.equal(isOfferExpired(future, now), false);
     assert.match(computeTimeRemaining(future, now) ?? "", /day/);
+  });
+
+  it("formats urgency pills for days and hours", () => {
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-03T12:00:00Z").toISOString(),
+        now,
+      ),
+      "<3 days",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-02T18:00:00Z").toISOString(),
+        now,
+      ),
+      "<2 days",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-01T20:00:00Z").toISOString(),
+        now,
+      ),
+      "<12 hrs",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-01T00:00:00Z").toISOString(),
+        now,
+      ),
+      "Expired",
+    );
   });
 });
 

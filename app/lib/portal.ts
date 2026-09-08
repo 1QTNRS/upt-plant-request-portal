@@ -802,11 +802,13 @@ export function shouldGroupTerminalPlantItems(
   status: RequestStatus,
   responseItems: TerminalResponseChoice[] | null | undefined,
 ): boolean {
-  if (status !== "Closed" && status !== "Expired") return false;
   if (!responseItems?.length) return false;
-  return responseItems.some(
+  const hasChoice = responseItems.some(
     (item) => item.choice === "accept" || item.choice === "reject",
   );
+  if (!hasChoice) return false;
+  if (status === "Pending") return true;
+  return status === "Closed" || status === "Expired";
 }
 
 export const ADMIN_EMAIL_SUBSCRIPTION_OPTIONS = [
@@ -946,8 +948,55 @@ export function computeTimeRemaining(expiresAtIso: string, now = new Date()): st
   return `${minutes} minute${minutes === 1 ? "" : "s"} remaining`;
 }
 
+/** Urgency pill for offer expiration: &lt;3 days, &lt;12 hrs, Expired, etc. */
+export function formatOfferExpirationUrgencyPill(
+  expiresAtIso: string,
+  now = new Date(),
+): string | null {
+  const expiresAt = new Date(expiresAtIso);
+  const ms = expiresAt.getTime() - now.getTime();
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return "Expired";
+
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  if (hours >= 72) return "<3 days";
+  if (hours >= 48) return "<3 days";
+  if (hours >= 24) return "<2 days";
+  if (hours >= 12) return "<1 day";
+  if (hours >= 6) return "<12 hrs";
+  if (hours >= 2) return "<6 hrs";
+  return "<2 hrs";
+}
+
 export function isOfferExpired(expiresAtIso: string, now = new Date()): boolean {
   return new Date(expiresAtIso).getTime() <= now.getTime();
+}
+
+/** Pending requests where the customer already submitted accept/reject choices. */
+export function requestShowsAnsweredPill(
+  status: RequestStatus,
+  hasResponded: boolean,
+): boolean {
+  return status === "Pending" && hasResponded;
+}
+
+/** True when the customer explicitly removed FedEx while accepting plants. */
+export function customerDeclinedFedExUpgrade(input: {
+  acceptedPurchasableCount: number;
+  fedexUpgradeSelected: boolean;
+}): boolean {
+  return input.acceptedPurchasableCount > 0 && !input.fedexUpgradeSelected;
+}
+
+export function buildDraftOrderNote(input: {
+  requestNumber: string;
+  declinedFedEx?: boolean;
+}): string {
+  const lines = [`UPT plant request ${input.requestNumber}`];
+  if (input.declinedFedEx) {
+    lines.push("Declined FedEx");
+  }
+  return lines.join("\n");
 }
 
 export function percent(numerator: number, denominator: number): number {
@@ -1254,10 +1303,15 @@ export function buildDraftOrderInput(input: {
    * real override (no ADD ON charge). The line title is ADD ON, not Shipping.
    */
   shippingFeeOverride?: number;
+  /** Append "Declined FedEx" when the customer removed the upgrade. */
+  declinedFedEx?: boolean;
 }) {
   return {
     email: input.customerEmail,
-    note: `UPT plant request ${input.requestNumber}`,
+    note: buildDraftOrderNote({
+      requestNumber: input.requestNumber,
+      declinedFedEx: input.declinedFedEx,
+    }),
     // Shopify defaults this off. Without it the invoice checkout hides the
     // discount-code field, so a customer with a store code cannot use it.
     allowDiscountCodesInCheckout: true,

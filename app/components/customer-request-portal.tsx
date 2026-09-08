@@ -4,6 +4,7 @@ import {
   computeTimeRemaining,
   customerStatusTone,
   formatCustomerStatusLabel,
+  formatOfferExpirationUrgencyPill,
   isOfferExpired,
   type CustomerMyRequestRow,
   type RequestStatus,
@@ -158,7 +159,10 @@ export function CustomerRequestPortal({
           data-plant-rows
           data-max-rows={MAX_PLANT_ROWS}
         >
-          <h2 className="upt-card-title">Plants requested</h2>
+          <h2 className="upt-card-title">PLANTS REQUESTED</h2>
+          <p className="upt-card-helper">
+            Please enter one plant per box. Add a new box for each additional plant.
+          </p>
           {plantLines.map((line, index) => (
             <div key={index} className="upt-plant-card" data-plant-row>
               <label>
@@ -395,14 +399,13 @@ export function CustomerRequestPortal({
 }
 
 export function OfferExpiryBanner({
-  expirationDays,
   expiresAt,
   expiresAtIso,
   urgencyMessage,
   holdMessage,
   requestClosed = false,
 }: {
-  expirationDays: number;
+  expirationDays?: number;
   expiresAt: string;
   expiresAtIso: string;
   urgencyMessage: string;
@@ -430,6 +433,7 @@ export function OfferExpiryBanner({
     return (
       <s-banner tone="critical">
         <s-stack direction="block" gap="small">
+          <s-badge tone="critical">Expired</s-badge>
           <s-text>
             <strong>This offer has expired</strong>
           </s-text>
@@ -449,18 +453,24 @@ export function OfferExpiryBanner({
   }
 
   const remaining = computeTimeRemaining(expiresAtIso);
+  const urgencyPill = formatOfferExpirationUrgencyPill(expiresAtIso);
   return (
     <s-banner tone="warning">
       <s-stack direction="block" gap="small">
+        {urgencyPill ? (
+          <s-badge tone="warning">{urgencyPill}</s-badge>
+        ) : null}
         <s-text>
-          <strong>Offer expires in {expirationDays} days</strong>
+          <strong>Offer expires soon</strong>
         </s-text>
         <s-text>{urgencyMessage}</s-text>
         <s-text>{holdMessage}</s-text>
-        <s-text color="subdued">
+        <s-text>
           Expires: <CustomerTime iso={expiresAtIso}>{expiresAt}</CustomerTime>
         </s-text>
-        {remaining ? <s-text color="subdued">{remaining}</s-text> : null}
+        {remaining && remaining !== "Expired" ? (
+          <s-text color="subdued">{remaining}</s-text>
+        ) : null}
       </s-stack>
     </s-banner>
   );

@@ -114,10 +114,10 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
             key={row.requestItemId}
             style={ui.card}
             onPress={() =>
-              row.listingStatus === "dismissed"
-                ? navigation.getParent()?.navigate("Requests", {
-                    screen: "RequestDetail",
-                    params: { requestId: row.requestId },
+              row.listingStatus === "dismissed" || row.listingStatus === "listed"
+                ? navigation.navigate("RequestDetail", {
+                    requestId: row.requestId,
+                    backLabel: "← EXACT PLANTS",
                   })
                 : navigation.navigate("ExactPlantsReview", { itemId: row.requestItemId })
             }
@@ -228,9 +228,9 @@ export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
           </Text>
           <Pressable
             onPress={() =>
-              navigation.getParent()?.navigate("Requests", {
-                screen: "RequestDetail",
-                params: { requestId: review.requestId },
+              navigation.navigate("RequestDetail", {
+                requestId: review.requestId,
+                backLabel: "← EXACT PLANTS",
               })
             }
           >

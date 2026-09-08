@@ -55,6 +55,7 @@ import {
   payableInvoiceUrl,
   shouldGroupTerminalPlantItems,
   requestIsPurchased,
+  requestShowsAnsweredPill,
   requestStatusTone,
   shouldOfferAdminPaymentLinkRecovery,
   UNAVAILABLE_REASON_OPTIONS,
@@ -112,6 +113,7 @@ import {
 import { NestedBox, StatusBadge } from "../components/theme";
 import { ViewerLocalTime } from "../components/viewer-local-time";
 import { AdminNoteTime } from "../components/admin-note-time";
+import { OfferExpirationDisplay } from "../components/offer-expiration";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -1025,6 +1027,30 @@ function PlantItemCard({
 
         {item.adminNotes ? (
           <s-text color="subdued">Customer request notes: {item.adminNotes}</s-text>
+        ) : null}
+
+        {(item.customerRequestNotes?.trim() || item.customerFacingNotes?.trim()) ? (
+          <div
+            style={{
+              marginTop: 4,
+              marginBottom: 20,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: "#eef8f2",
+              border: "1px solid #b8dcc8",
+            }}
+          >
+            <s-text>
+              <strong>Customer notes</strong>
+            </s-text>
+            {item.customerRequestNotes?.trim() ? (
+              <s-text>{item.customerRequestNotes.trim()}</s-text>
+            ) : null}
+            {item.customerFacingNotes?.trim() &&
+            item.customerFacingNotes.trim() !== item.customerRequestNotes?.trim() ? (
+              <s-text>{item.customerFacingNotes.trim()}</s-text>
+            ) : null}
+          </div>
         ) : null}
 
         <s-stack direction="block" gap="small">
@@ -2060,7 +2086,7 @@ function TerminalPlantItemsSection({
     <s-stack direction="block" gap="large">
       {accepted.length > 0 ? (
         <s-stack direction="block" gap="base">
-          <s-heading>Accepted</s-heading>
+          <s-heading>ACCEPTED</s-heading>
           <NestedBox>
             <s-stack direction="block" gap="base">
               {accepted.map((item) => (
@@ -2078,7 +2104,7 @@ function TerminalPlantItemsSection({
       ) : null}
       {declined.length > 0 ? (
         <s-stack direction="block" gap="base">
-          <s-heading>Declined</s-heading>
+          <s-heading>DECLINED</s-heading>
           <NestedBox>
             <s-stack direction="block" gap="base">
               {declined.map((item) => (
@@ -2244,6 +2270,12 @@ export default function RequestDetail() {
                 <s-badge tone={requestStatusTone(plantRequest.status)}>
                   {plantRequest.status}
                 </s-badge>
+                {requestShowsAnsweredPill(
+                  plantRequest.status,
+                  plantRequest.hasResponded,
+                ) ? (
+                  <s-badge tone="info">Answered</s-badge>
+                ) : null}
                 {requestIsPurchased(plantRequest) ? (
                   <s-badge tone="warning">Purchased</s-badge>
                 ) : null}
@@ -2267,6 +2299,14 @@ export default function RequestDetail() {
               </s-text>
             </s-stack>
           </s-stack>
+          {plantRequest.sentOffer &&
+          (plantRequest.status === "Pending" ||
+            plantRequest.status === "Expired") ? (
+            <OfferExpirationDisplay
+              expiresAt={plantRequest.sentOffer.expiresAt}
+              expiresAtIso={plantRequest.sentOffer.expiresAtIso}
+            />
+          ) : null}
         </s-stack>
       </s-section>
       </div>

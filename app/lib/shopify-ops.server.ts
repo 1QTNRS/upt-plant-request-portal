@@ -46,6 +46,7 @@ import {
 import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
+  customerDeclinedFedExUpgrade,
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
   FEDEX_PRODUCT_SKU,
@@ -888,6 +889,7 @@ export async function createDraftOrderForRequest(
       ...input,
       lineItems,
       reserveInventoryUntil,
+      fedexSelected: input.fedexSelected,
     });
   } catch (error) {
     // Nothing was created, so the claim is only in the way of the retry the
@@ -908,6 +910,7 @@ async function createClaimedDraftOrder(
     lineItems: DraftOrderLineItem[];
     reserveInventoryUntil?: string;
     shippingFeeOverride?: number;
+    fedexSelected: boolean;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -941,6 +944,10 @@ async function createClaimedDraftOrder(
         lineItems,
         reserveInventoryUntil,
         shippingFeeOverride: input.shippingFeeOverride,
+        declinedFedEx: customerDeclinedFedExUpgrade({
+          acceptedPurchasableCount: input.acceptedItems.length,
+          fedexUpgradeSelected: input.fedexSelected,
+        }),
       });
 
       const created = await adminGraphql<{
