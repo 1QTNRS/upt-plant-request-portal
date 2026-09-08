@@ -755,8 +755,7 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /RequestStatusBadges/);
     assert.match(dashboard, /status === "Closed" \? "success"/);
     assert.match(dashboard, /data-closed-sort/);
-    assert.match(dashboard, /Newest Closed/);
-    assert.match(dashboard, /Oldest Closed/);
+    assert.match(dashboard, /closedRequestSortLabel/);
     assert.match(dashboard, /parseClosedRequestSort/);
     assert.match(dashboard, /sortAdminDashboardRequests/);
     assert.match(dashboard, /isPurchased/);
