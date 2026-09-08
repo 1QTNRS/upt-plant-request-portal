@@ -18,6 +18,19 @@
  * storefront domains. See `forwardedOriginIsTrusted` in
  * `app/lib/customer-session.server.ts`.
  *
+ * Embedded admin mutations have a second, documented mismatch: Shopify Admin
+ * initiates `POST /app/*.data` with `Origin: https://admin.shopify.com` while
+ * `request.url` is the app host. React Router's `singleFetchAction` then
+ * returns `Error: Bad Request` / 400 *before any route runs* — including
+ * Settings token create. A browser will only send that Origin from a page on
+ * admin.shopify.com, so we withhold it for `/app` mutations only.
+ * `authenticate.admin` still has to accept the request. Do not add
+ * `admin.shopify.com` to `allowedActionOrigins`.
+ *
+ * Render terminates TLS in front of this process. Without `trust proxy`,
+ * Express builds `request.url` as `http://…` while the browser Origin is
+ * `https://…`, which is the same 400.
+ *
  * Everything else mirrors `react-router-serve`: compression, the same static
  * asset routes, and `morgan("tiny")` request logs.
  */
@@ -36,6 +49,8 @@ import morgan from "morgan";
  */
 export const APP_PROXY_ORIGIN_HEADER = "x-shopify-app-proxy-origin";
 export const APP_PROXY_TARGET_PATH = "/customer";
+export const SHOPIFY_ADMIN_ORIGIN_HEADER = "x-shopify-admin-origin";
+export const EMBEDDED_ADMIN_PATH = "/app";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -89,6 +104,64 @@ function isAppProxyTarget(url) {
   );
 }
 
+export function isEmbeddedAdminPath(url) {
+  const pathname = url.split("?")[0];
+  return (
+    pathname === EMBEDDED_ADMIN_PATH ||
+    pathname.startsWith(`${EMBEDDED_ADMIN_PATH}/`) ||
+    pathname.startsWith(`${EMBEDDED_ADMIN_PATH}.`)
+  );
+}
+
+/** Hostname of an Origin header. Mirrors `originHost` in app-proxy.ts. */
+export function adminOriginHost(origin) {
+  if (!origin || origin === "null") return null;
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function isShopifyAdminOrigin(origin) {
+  const host = adminOriginHost(origin);
+  if (!host) return false;
+  return host === "admin.shopify.com" || host.endsWith(".admin.shopify.com");
+}
+
+/**
+ * Moves Shopify Admin's Origin aside so React Router's single-fetch CSRF
+ * check does not abort embedded `/app` mutations with a bare 400.
+ *
+ * Only `admin.shopify.com` (and its subdomains) are withheld. An attacker
+ * page cannot set that Origin. The internal header is deleted first so a
+ * caller cannot choose it.
+ */
+export function withholdShopifyAdminOrigin(req) {
+  delete req.headers[SHOPIFY_ADMIN_ORIGIN_HEADER];
+
+  if (!MUTATION_METHODS.has(req.method)) return;
+  if (!isEmbeddedAdminPath(req.url)) return;
+
+  const origin = req.headers.origin;
+  if (!isShopifyAdminOrigin(origin)) return;
+
+  req.headers[SHOPIFY_ADMIN_ORIGIN_HEADER] = origin;
+  delete req.headers.origin;
+}
+
+function logAdminMutationOrigin(req) {
+  if (!MUTATION_METHODS.has(req.method)) return;
+  if (!isEmbeddedAdminPath(req.url)) return;
+
+  const pathname = req.url.split("?")[0];
+  const forwarded = req.headers[SHOPIFY_ADMIN_ORIGIN_HEADER];
+  const origin = req.headers.origin || forwarded;
+  console.info(
+    `[upt-portal] admin-mutation path=${pathname} origin_host=${adminOriginHost(origin) || "none"} withheld=${forwarded ? "yes" : "no"}`,
+  );
+}
+
 /**
  * Moves the storefront `Origin` of a proxied submission aside so React Router's
  * cross-origin check does not abort it, leaving the decision to the app.
@@ -121,6 +194,9 @@ async function start() {
 
   const app = express();
   app.disable("x-powered-by");
+  // Render's load balancer terminates TLS. React Router builds request.url
+  // from req.protocol; without this, https Origins fail the CSRF check.
+  app.set("trust proxy", 1);
   app.use(compression());
 
   app.use(
@@ -142,6 +218,8 @@ async function start() {
 
   app.use((req, _res, next) => {
     withholdAppProxyOrigin(req);
+    withholdShopifyAdminOrigin(req);
+    logAdminMutationOrigin(req);
     next();
   });
 
