@@ -52,6 +52,11 @@ async function plantRevenueFromPayload(
     variantGid: settings.fedexVariantGid,
     upgradeLabel: settings.fedexUpgradeLabel,
     upgradeSelected: response?.fedexUpgradeSelected,
+    heatPack: {
+      variantGid: settings.heatPackVariantGid,
+      label: settings.heatPackLabel,
+      selected: response?.heatPackSelected ?? undefined,
+    },
   });
 
   if (result.unidentifiedUpgrade) {

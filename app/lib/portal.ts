@@ -184,6 +184,8 @@ export type CustomerOfferResponse = {
   offerExpiresAt?: string;
   fedexUpgradeSelected: boolean;
   fedexUpgradePrice: number;
+  heatPackSelected?: boolean | null;
+  heatPackPrice?: number | null;
   hasAcceptedPurchasableItems: boolean;
   items: CustomerResponseItem[];
   closedAt?: string;
@@ -208,6 +210,15 @@ export const FEDEX_PRODUCT_URL =
   "https://unsolicitedplanttalks.com/products/upgrade-to-fedex-priority-overnight-for-just-15-extra";
 
 export function fedexVariantSkuQuery(sku = FEDEX_PRODUCT_SKU): string {
+  return `sku:${sku}`;
+}
+
+export const HEAT_PACK_PRODUCT_HANDLE = "heat-pack-includes-foil-insulation";
+
+/** Live UPT listing. Draft-order lines resolve this SKU first. */
+export const HEAT_PACK_PRODUCT_SKU = "UPTHEAPACINC72S";
+
+export function heatPackVariantSkuQuery(sku = HEAT_PACK_PRODUCT_SKU): string {
   return `sku:${sku}`;
 }
 
@@ -306,6 +317,7 @@ export function offerHasPayableItems(input: {
  */
 export const OFFER_ITEM_REQUIREMENTS = [
   "an exact plant photo",
+  "an offered name",
   "a linked store listing",
   "enough stock on the linked listing",
   "a price",
@@ -363,6 +375,10 @@ export function incompleteOfferItems(
       }
     } else if (item.photos.length === 0) {
       missing.push("an exact plant photo");
+    }
+
+    if (fulfillment === "exact_plant" && !item.offeredName?.trim()) {
+      missing.push("an offered name");
     }
 
     if (!(normalizePrice(item.price) > 0)) missing.push("a price");
@@ -1084,7 +1100,7 @@ export type DraftOrderLineItem = {
   quantity: number;
   price: number;
   weightLbs: number;
-  kind: "plant" | "fedex";
+  kind: "plant" | "fedex" | "heat_pack";
   /**
    * The real Shopify variant this line sells. Present on a Grower's Choice
    * plant, which comes out of stock the store already lists, and on the FedEx
@@ -1111,6 +1127,10 @@ export function buildDraftOrderLineItems(input: {
   fedexLabel: string;
   fedexPrice: number;
   fedexVariantGid?: string;
+  heatPackSelected?: boolean;
+  heatPackLabel?: string;
+  heatPackPrice?: number;
+  heatPackVariantGid?: string;
 }): DraftOrderLineItem[] {
   const lines: DraftOrderLineItem[] = input.acceptedItems.map((item) => ({
     title: item.plantName,
@@ -1129,6 +1149,17 @@ export function buildDraftOrderLineItems(input: {
       weightLbs: 0,
       kind: "fedex",
       ...(input.fedexVariantGid ? { variantId: input.fedexVariantGid } : {}),
+    });
+  }
+
+  if (input.heatPackSelected && lines.length > 0) {
+    lines.push({
+      title: input.heatPackLabel ?? "Heat Pack",
+      quantity: 1,
+      price: normalizePrice(input.heatPackPrice ?? 0),
+      weightLbs: 0,
+      kind: "heat_pack",
+      ...(input.heatPackVariantGid ? { variantId: input.heatPackVariantGid } : {}),
     });
   }
 
@@ -1335,6 +1366,19 @@ export type FedexLineIdentity = {
   upgradeSelected?: boolean;
 };
 
+export type HeatPackLineIdentity = {
+  /** `ShopSettings.heatPackVariantGid`: the variant the add-on is billed on. */
+  variantGid?: string | null;
+  /** `ShopSettings.heatPackLabel`: the title the app gives a custom line. */
+  label?: string | null;
+  /** Whether the customer's frozen response included the add-on. */
+  selected?: boolean;
+};
+
+export type PaidOrderRevenueIdentity = FedexLineIdentity & {
+  heatPack?: HeatPackLineIdentity;
+};
+
 export type PaidOrderPlantRevenue = {
   plantRevenue: number;
   fedexLineCount: number;
@@ -1360,6 +1404,21 @@ function isFedexLine(line: PaidOrderLine, fedex: FedexLineIdentity): boolean {
   return title === label;
 }
 
+function isHeatPackLine(line: PaidOrderLine, heatPack: HeatPackLineIdentity): boolean {
+  const variantId = shopifyNumericId(heatPack.variantGid);
+  if (variantId) {
+    const lineVariantId =
+      shopifyNumericId(line.admin_graphql_api_variant_id) ??
+      shopifyNumericId(line.variant_id);
+    if (lineVariantId) return lineVariantId === variantId;
+  }
+
+  const label = heatPack.label?.trim().toLowerCase();
+  if (!label) return false;
+  const title = (line.title ?? line.name ?? "").trim().toLowerCase();
+  return title === label;
+}
+
 /**
  * Plant revenue from a paid order's own line items. The fallback for a request
  * with no recorded draft order, where `plantRevenueFromLines` and its explicit
@@ -1377,14 +1436,17 @@ function isFedexLine(line: PaidOrderLine, fedex: FedexLineIdentity): boolean {
  */
 export function plantRevenueFromPaidOrderLines(
   lines: PaidOrderLine[],
-  fedex: FedexLineIdentity = {},
+  identity: PaidOrderRevenueIdentity = {},
 ): PaidOrderPlantRevenue {
   let plantRevenue = 0;
   let fedexLineCount = 0;
 
   for (const line of lines) {
-    if (isFedexLine(line, fedex)) {
+    if (isFedexLine(line, identity)) {
       fedexLineCount += 1;
+      continue;
+    }
+    if (identity.heatPack && isHeatPackLine(line, identity.heatPack)) {
       continue;
     }
     const price = Number.parseFloat(String(line.price ?? "0"));
@@ -1395,7 +1457,7 @@ export function plantRevenueFromPaidOrderLines(
   return {
     plantRevenue: normalizePrice(plantRevenue),
     fedexLineCount,
-    unidentifiedUpgrade: Boolean(fedex.upgradeSelected) && fedexLineCount === 0,
+    unidentifiedUpgrade: Boolean(identity.upgradeSelected) && fedexLineCount === 0,
   };
 }
 
@@ -1919,6 +1981,9 @@ export type SampleCustomerOffer = {
   holdMessage: string;
   fedexUpgradeLabel: string;
   fedexUpgradePrice: number;
+  heatPackAddonEnabled: boolean;
+  heatPackLabel: string;
+  heatPackPrice: number;
   customerEmail: string;
   customerName: string;
   requestNumber: string;

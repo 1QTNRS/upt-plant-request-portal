@@ -42,6 +42,7 @@ export const SETTINGS_KNOWN_INTENTS = [
   "reset",
   "save-admin-emails",
   "save-admin-push",
+  "save-heat-pack-addon",
   "create-mobile-token",
   "revoke-mobile-token",
 ] as const;

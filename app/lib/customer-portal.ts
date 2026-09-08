@@ -180,6 +180,51 @@ export function countAcceptedPurchasableChoices(
   return Object.values(choices).filter((choice) => choice === "accept").length;
 }
 
+/** Yes / No from the heat-pack radios. Null when they have not answered. */
+export function readHeatPackChoice(fields: FieldSource): boolean | null {
+  const raw = String(fields.get("heatPackSelected") || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "true" || raw === "yes") return true;
+  if (raw === "false" || raw === "no") return false;
+  return null;
+}
+
+/**
+ * Whether an enabled heat-pack add-on still needs an explicit Add / No answer.
+ *
+ * Like FedEx, nothing accepted means nothing ships, so the question is skipped.
+ */
+export function heatPackChoiceMissing(input: {
+  heatPackAddonEnabled: boolean;
+  acceptedPurchasableCount: number;
+  heatPackChoice: boolean | null;
+}): boolean {
+  if (!input.heatPackAddonEnabled) return false;
+  if (input.acceptedPurchasableCount === 0) return false;
+  return input.heatPackChoice === null;
+}
+
+/** How the heat-pack section should render as the customer toggles Accept / Reject. */
+export function heatPackUiState(input: {
+  heatPackAddonEnabled: boolean;
+  acceptedPurchasableCount: number;
+  heatPackChoice: boolean | null;
+}): {
+  visible: boolean;
+  enabled: boolean;
+  selected: boolean | null;
+} {
+  if (!input.heatPackAddonEnabled || input.acceptedPurchasableCount === 0) {
+    return { visible: false, enabled: false, selected: null };
+  }
+  return {
+    visible: true,
+    enabled: true,
+    selected: input.heatPackChoice,
+  };
+}
+
 /**
  * Whether every purchasable plant on the offer was rejected (or there were
  * none to accept). Used to auto-close the request and by the leftover
