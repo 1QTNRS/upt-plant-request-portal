@@ -24,6 +24,9 @@ function shop(overrides: Partial<ShopSettings> = {}): ShopSettings {
     registeredPushDevices: 1,
     fedexProductHandle: "upgrade-to-fedex",
     fedexProductSku: "FEDEX-15",
+    heatPackAddonEnabled: false,
+    heatPackProductHandle: "heat-pack-includes-foil-insulation",
+    heatPackProductSku: "UPTHEAPACINC72S",
     ...overrides,
   };
 }

@@ -80,6 +80,7 @@ describe("item autosave", () => {
     assert.equal(itemLooksSendable(typed), true);
     assert.equal(requestLooksSendable([typed]), true);
     assert.equal(itemLooksSendable(item()), false);
+    assert.equal(itemLooksSendable(item({ offeredName: "" })), false);
   });
 
   it("debounces typing instead of saving every keystroke", () => {

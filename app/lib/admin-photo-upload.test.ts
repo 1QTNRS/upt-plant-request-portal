@@ -306,8 +306,8 @@ describe("admin photo upload UI wiring", () => {
     assert.match(uploader, /marginTop: 8/);
     assert.match(uploader, /No file selected/);
     assert.match(uploader, /adminDialogButtonStyle/);
-    assert.match(requestPage, /data-admin-add-photo-url/);
-    assert.match(requestPage, /adminDialogButtonStyle/);
+    assert.doesNotMatch(requestPage, /data-admin-add-photo-url/);
+    assert.doesNotMatch(requestPage, /add-photo-url/);
     assert.match(uploader, /startUpload/);
     assert.match(uploader, /\/photos/);
     assert.match(uploader, /parseUploadActionResponse/);
