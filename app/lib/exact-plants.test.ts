@@ -15,7 +15,6 @@ import {
   EXACT_PLANT_RELEASE_LABELS,
   exactPlantListingBucket,
   exactPlantReleaseTone,
-  EXACT_PLANTS_COLLECTION_TITLE,
   exactPlantIneligibilityReason,
   exactPlantReleaseReason,
   isExactPlantEligible,
