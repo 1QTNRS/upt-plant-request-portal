@@ -544,6 +544,18 @@ this failure can never again present as an unexplained `Bad Request`.
 Do not "fix" a future proxy 400 by widening `allowedActionOrigins`, and do not
 route customer writes through GET to dodge the check.
 
+#### Why Settings Create device token POSTed `/app/settings.data` 400
+
+The same React Router check (`throwIfPotentialCSRFAttack` inside
+`singleFetchAction`) rejects embedded-admin mutations when `Origin` is
+`https://admin.shopify.com` and `request.url` is the Render app host. The
+Settings action never runs, so no Prisma insert happens and no Polariss
+render is involved. `server.js` withholds that Origin for `/app` mutations
+only (`withholdShopifyAdminOrigin`) and sets `trust proxy` so Render's TLS
+edge does not turn the request URL into `http://`. Do not add
+`admin.shopify.com` to `allowedActionOrigins`. An attacker page cannot send
+that Origin; `authenticate.admin` still has to accept the request.
+
 `write_app_proxy` is in the scope list because configuring an app proxy requires
 it. It was missing, which is a plausible contributor to proxy misbehaviour;
 adding it means the merchant has to approve the scopes again.
