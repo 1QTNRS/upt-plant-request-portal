@@ -570,7 +570,6 @@ export const ADMIN_DASHBOARD_STATUS_FILTERS = [
   "All",
   "New",
   "Pending",
-  "Expired",
   "Closed",
   "ExistingOrder",
 ] as const;
@@ -587,6 +586,9 @@ export function adminDashboardFilterLabel(
 export function parseAdminDashboardStatusFilter(
   value: string | null | undefined,
 ): AdminDashboardStatusFilter {
+  if (value === "Expired") {
+    return "Closed";
+  }
   if (
     value &&
     (ADMIN_DASHBOARD_STATUS_FILTERS as readonly string[]).includes(value)
@@ -603,6 +605,9 @@ export function matchesAdminStatusFilter(
 ): boolean {
   if (filter === "ExistingOrder") {
     return status === "New" && hasExistingOrder === true;
+  }
+  if (filter === "Closed") {
+    return status === "Closed" || status === "Expired";
   }
   return filter === "All" || status === filter;
 }
@@ -647,7 +652,7 @@ export function parseClosedRequestSort(
 }
 
 export function closedRequestSortLabel(sort: ClosedRequestSort): string {
-  return sort === "oldest" ? "Oldest Closed" : "Newest Closed";
+  return sort === "oldest" ? "Oldest" : "Newest";
 }
 
 /**
@@ -664,21 +669,49 @@ export function closedRequestSortTime(request: {
   return Number.isFinite(time) ? time : 0;
 }
 
+/**
+ * One comparable terminal timestamp for Closed + Expired rows in the Closed
+ * filter. Closed uses closedAt; Expired uses expiredAt (never submittedAt).
+ */
+export function terminalRequestSortTime(request: {
+  status?: RequestStatus;
+  closedAt?: Date | string | null;
+  closedAtIso?: string | null;
+  expiredAt?: Date | string | null;
+  expiredAtIso?: string | null;
+}): number {
+  if (request.status === "Expired") {
+    const raw = request.expiredAt ?? request.expiredAtIso ?? null;
+    if (!raw) return 0;
+    const time = raw instanceof Date ? raw.getTime() : Date.parse(String(raw));
+    return Number.isFinite(time) ? time : 0;
+  }
+  return closedRequestSortTime(request);
+}
+
 export function sortClosedRequests<
-  T extends { closedAt?: Date | string | null; closedAtIso?: string | null },
+  T extends {
+    status?: RequestStatus;
+    closedAt?: Date | string | null;
+    closedAtIso?: string | null;
+    expiredAt?: Date | string | null;
+    expiredAtIso?: string | null;
+  },
 >(requests: T[], sort: ClosedRequestSort = "newest"): T[] {
   return [...requests].sort((left, right) => {
-    const delta = closedRequestSortTime(right) - closedRequestSortTime(left);
+    const delta = terminalRequestSortTime(right) - terminalRequestSortTime(left);
     return sort === "newest" ? delta : -delta;
   });
 }
 
-/** Closed filter uses closedAt. Other filters keep the incoming (submittedAt) order. */
+/** Closed filter uses terminal timestamps. Other filters keep submittedAt order. */
 export function sortAdminDashboardRequests<
   T extends {
     status: RequestStatus;
     closedAt?: Date | string | null;
     closedAtIso?: string | null;
+    expiredAt?: Date | string | null;
+    expiredAtIso?: string | null;
   },
 >(
   requests: T[],
@@ -714,12 +747,50 @@ export function countAdminDashboardStatusFilters(
     All: requests.length,
     New: stats.newRequests,
     Pending: stats.pending,
-    Expired: stats.expired,
-    Closed: stats.closed,
+    Closed: stats.closed + stats.expired,
     ExistingOrder: requests.filter(
       (request) => request.status === "New" && request.hasExistingOrder === true,
     ).length,
   };
+}
+
+type TerminalResponseChoice = {
+  sourceItemId: string;
+  choice: CustomerResponseItemChoice;
+};
+
+/** Closed/Expired detail: group plant items by explicit customer accept/reject. */
+export function partitionPlantItemsByCustomerChoice<
+  T extends { id: string },
+>(items: T[], responseItems: TerminalResponseChoice[]): {
+  accepted: T[];
+  declined: T[];
+} {
+  const acceptedIds = new Set(
+    responseItems
+      .filter((item) => item.choice === "accept")
+      .map((item) => item.sourceItemId),
+  );
+  const declinedIds = new Set(
+    responseItems
+      .filter((item) => item.choice === "reject")
+      .map((item) => item.sourceItemId),
+  );
+  return {
+    accepted: items.filter((item) => acceptedIds.has(item.id)),
+    declined: items.filter((item) => declinedIds.has(item.id)),
+  };
+}
+
+export function shouldGroupTerminalPlantItems(
+  status: RequestStatus,
+  responseItems: TerminalResponseChoice[] | null | undefined,
+): boolean {
+  if (status !== "Closed" && status !== "Expired") return false;
+  if (!responseItems?.length) return false;
+  return responseItems.some(
+    (item) => item.choice === "accept" || item.choice === "reject",
+  );
 }
 
 export const ADMIN_EMAIL_SUBSCRIPTION_OPTIONS = [

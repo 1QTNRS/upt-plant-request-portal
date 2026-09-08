@@ -8,6 +8,8 @@ export const THEME = {
   ink: "#002910",
   muted: "#4a5c52",
   line: "#c9d9d0",
+  /** Expired status pill outline — distinct from Purchased yellow. */
+  expiredRed: "#c41e3a",
 } as const;
 
 export type ThemeTone =
@@ -43,6 +45,13 @@ export function themeBadgeStyle(
       background: THEME.mint,
       color: THEME.darkGreen,
       borderColor: THEME.mint,
+    };
+  }
+  if (label === "Expired") {
+    return {
+      background: THEME.white,
+      color: THEME.expiredRed,
+      borderColor: THEME.expiredRed,
     };
   }
   switch (tone) {

@@ -24,8 +24,12 @@ import {
 import { applyStockOutsideTouch } from "../item-editor";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
-import { StatusPills } from "../StatusPills";
+import { ExistingOrderPill, StatusPills } from "../StatusPills";
 import { THEME } from "../theme";
+import {
+  partitionPlantItemsByCustomerChoice,
+  shouldGroupTerminalPlantItems,
+} from "../terminal-response";
 import type { ActionResult, RequestDetail } from "../types";
 import { ui } from "../ui";
 import type { RequestsStackParamList } from "./navigation-types";
@@ -174,6 +178,34 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const draftedItems = detail.items.map((item) => applyItemDraft(item, drafts[item.id]));
   const canSendOffer =
     detail.status === "New" && (detail.canSendOffer || requestLooksSendable(draftedItems));
+  const groupTerminalItems = shouldGroupTerminalPlantItems(
+    detail.status,
+    detail.customerResponse?.items,
+  );
+  const terminalGroups =
+    groupTerminalItems && detail.customerResponse
+      ? partitionPlantItemsByCustomerChoice(detail.items, detail.customerResponse.items)
+      : null;
+
+  function renderItemEditor(item: RequestDetail["items"][number], requestDetail: RequestDetail) {
+    return (
+      <ItemEditor
+        key={item.id}
+        item={item}
+        canEditItems={requestDetail.canEditItems}
+        apiUrl={apiUrl}
+        token={token}
+        requestId={requestDetail.id}
+        onResult={applyResult}
+        onError={setError}
+        onStockDropdownChange={onStockDropdownChange}
+        onStockSearchTouch={consumeStockSearchTouch}
+        onDraftChange={onDraftChange}
+        registerFlush={registerFlush}
+        registerStockDismiss={registerStockDismiss}
+      />
+    );
+  }
 
   return (
     <View style={ui.flexPage}>
@@ -206,23 +238,24 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         {loading ? <ActivityIndicator color={THEME.darkGreen} /> : null}
         {error ? <Text style={ui.error}>{error}</Text> : null}
 
-        {detail.items.map((item) => (
-          <ItemEditor
-            key={item.id}
-            item={item}
-            canEditItems={detail.canEditItems}
-            apiUrl={apiUrl}
-            token={token}
-            requestId={detail.id}
-            onResult={applyResult}
-            onError={setError}
-            onStockDropdownChange={onStockDropdownChange}
-            onStockSearchTouch={consumeStockSearchTouch}
-            onDraftChange={onDraftChange}
-            registerFlush={registerFlush}
-            registerStockDismiss={registerStockDismiss}
-          />
-        ))}
+        {terminalGroups ? (
+          <>
+            {terminalGroups.accepted.length > 0 ? (
+              <View style={ui.card}>
+                <Text style={ui.cardTitle}>Accepted</Text>
+                {terminalGroups.accepted.map((item) => renderItemEditor(item, detail))}
+              </View>
+            ) : null}
+            {terminalGroups.declined.length > 0 ? (
+              <View style={ui.card}>
+                <Text style={ui.cardTitle}>Declined</Text>
+                {terminalGroups.declined.map((item) => renderItemEditor(item, detail))}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          detail.items.map((item) => renderItemEditor(item, detail))
+        )}
 
         <View style={ui.card}>
           <Text style={ui.cardTitle}>Send offer</Text>
@@ -238,9 +271,14 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                 </Text>
               )}
               {holdControlsOn && detail.sentOffer.shippingFeeOverride !== undefined ? (
-                <Text style={ui.muted}>
-                  ADD ON ${detail.sentOffer.shippingFeeOverride.toFixed(2)}
-                </Text>
+                <>
+                  {detail.hasExistingOrder ? <ExistingOrderPill status={detail.status} /> : null}
+                  <Text style={ui.muted}>
+                    ADD ON ${detail.sentOffer.shippingFeeOverride.toFixed(2)}
+                  </Text>
+                </>
+              ) : detail.hasExistingOrder && holdControlsOn ? (
+                <ExistingOrderPill status={detail.status} />
               ) : null}
             </>
           ) : (
@@ -277,10 +315,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                 ))}
               </View>
               {detail.hasExistingOrder && holdControlsOn ? (
-                <Text style={ui.muted}>
-                  This customer said they have an existing order. You can set an ADD ON
-                  amount below if you are combining shipments.
-                </Text>
+                <ExistingOrderPill status={detail.status} />
               ) : null}
               <Text style={ui.label}>ADD ON</Text>
               <TextInput

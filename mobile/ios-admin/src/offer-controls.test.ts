@@ -33,10 +33,9 @@ describe("Send offer hold controls", () => {
     assert.match(source, /pointerEvents=\{holdControlsOn \? "auto" : "none"\}/);
     assert.match(source, /intent: "send-offer"/);
     assert.match(source, /Send offer/);
-    const existingOrderAt = source.indexOf(
-      "This customer said they have an existing order",
-    );
+    const existingOrderAt = source.indexOf("ExistingOrderPill");
     const addOnAt = source.indexOf('<Text style={ui.label}>ADD ON</Text>');
     assert.ok(existingOrderAt > -1 && addOnAt > existingOrderAt);
+    assert.ok(!source.includes("This customer said they have an existing order"));
   });
 });

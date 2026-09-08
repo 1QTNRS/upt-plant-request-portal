@@ -10,4 +10,6 @@ export const THEME = {
   line: "#c9d9d0",
   disabledFill: "#e4eee8",
   disabledText: "#8a9a92",
+  /** Expired status pill outline — distinct from Purchased yellow. */
+  expiredRed: "#c41e3a",
 };

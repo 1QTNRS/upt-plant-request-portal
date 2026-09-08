@@ -42,8 +42,12 @@ import {
   requestIsPurchased,
   sortAdminDashboardRequests,
   sortClosedRequests,
+  ADMIN_DASHBOARD_STATUS_FILTERS,
   closedRequestSortLabel,
   closedRequestSortTime,
+  partitionPlantItemsByCustomerChoice,
+  shouldGroupTerminalPlantItems,
+  terminalRequestSortTime,
   adminSubscribedToEmail,
   OVERRIDDEN_SHIPPING_LINE_TITLE,
   responseSnapshotListingImage,
@@ -346,13 +350,15 @@ describe("admin dashboard status filter", () => {
     },
   ];
 
-  it("defaults missing or unknown values to All", () => {
+  it("defaults missing or unknown values to All and maps legacy Expired to Closed", () => {
     assert.equal(parseAdminDashboardStatusFilter(null), "All");
     assert.equal(parseAdminDashboardStatusFilter(""), "All");
     assert.equal(parseAdminDashboardStatusFilter("pending"), "All");
     assert.equal(parseAdminDashboardStatusFilter("Pending"), "Pending");
+    assert.equal(parseAdminDashboardStatusFilter("Expired"), "Closed");
     assert.equal(parseAdminDashboardStatusFilter("ExistingOrder"), "ExistingOrder");
     assert.equal(adminDashboardFilterLabel("ExistingOrder"), "Existing Order");
+    assert.ok(!ADMIN_DASHBOARD_STATUS_FILTERS.includes("Expired" as never));
   });
 
   it("falls back to offer photos when an older response stored none", () => {
@@ -378,10 +384,19 @@ describe("admin dashboard status filter", () => {
       All: 6,
       New: 2,
       Pending: 2,
-      Expired: 1,
-      Closed: 1,
+      Closed: 2,
       ExistingOrder: 1,
     });
+  });
+
+  it("includes Expired requests in the Closed filter without changing stored status", () => {
+    const closed = filterAdminDashboardRequests(requests, "", "Closed");
+    assert.deepEqual(
+      closed.map((request) => request.requestNumber).sort(),
+      ["REQ4", "REQ5"],
+    );
+    assert.equal(closed.find((request) => request.requestNumber === "REQ4")?.status, "Expired");
+    assert.equal(closed.find((request) => request.requestNumber === "REQ5")?.status, "Closed");
   });
 
   it("filters New requests that said they have an existing order", () => {
@@ -449,8 +464,8 @@ describe("closed request sorting", () => {
     assert.equal(parseClosedRequestSort(""), "newest");
     assert.equal(parseClosedRequestSort("submitted"), "newest");
     assert.equal(parseClosedRequestSort("oldest"), "oldest");
-    assert.equal(closedRequestSortLabel("newest"), "Newest Closed");
-    assert.equal(closedRequestSortLabel("oldest"), "Oldest Closed");
+    assert.equal(closedRequestSortLabel("newest"), "Newest");
+    assert.equal(closedRequestSortLabel("oldest"), "Oldest");
   });
 
   it("sorts newest closed by closedAt rather than createdAt or submittedAt", () => {
@@ -491,6 +506,84 @@ describe("closed request sorting", () => {
     assert.deepEqual(
       sortAdminDashboardRequests(closed, "Closed", "newest").map((row) => row.id),
       ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+    );
+  });
+
+  it("sorts Expired rows by expiredAt alongside Closed rows by closedAt", () => {
+    const terminal = [
+      {
+        id: "closed-old",
+        status: "Closed" as const,
+        closedAtIso: "2026-01-01T00:00:00.000Z",
+        expiredAtIso: null,
+        submittedAtIso: "2026-12-01T00:00:00.000Z",
+      },
+      {
+        id: "expired-new",
+        status: "Expired" as const,
+        closedAtIso: null,
+        expiredAtIso: "2026-06-01T00:00:00.000Z",
+        submittedAtIso: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    assert.equal(
+      terminalRequestSortTime(terminal[1]!),
+      Date.parse("2026-06-01T00:00:00.000Z"),
+    );
+    assert.deepEqual(
+      sortClosedRequests(terminal).map((row) => row.id),
+      ["expired-new", "closed-old"],
+    );
+    assert.deepEqual(
+      sortClosedRequests(terminal, "oldest").map((row) => row.id),
+      ["closed-old", "expired-new"],
+    );
+  });
+});
+
+describe("terminal plant item grouping", () => {
+  const items = [
+    { id: "a", plantName: "Monstera" },
+    { id: "b", plantName: "Philodendron" },
+    { id: "c", plantName: "Hoya" },
+  ];
+
+  it("partitions accepted and declined plants from explicit customer choices", () => {
+    const grouped = partitionPlantItemsByCustomerChoice(items, [
+      { sourceItemId: "a", choice: "accept" },
+      { sourceItemId: "b", choice: "reject" },
+      { sourceItemId: "c", choice: "unavailable" },
+    ]);
+    assert.deepEqual(
+      grouped.accepted.map((item) => item.id),
+      ["a"],
+    );
+    assert.deepEqual(
+      grouped.declined.map((item) => item.id),
+      ["b"],
+    );
+  });
+
+  it("groups terminal detail only when Closed or Expired has accept/reject answers", () => {
+    assert.equal(
+      shouldGroupTerminalPlantItems("Closed", [
+        { sourceItemId: "a", choice: "accept" },
+      ]),
+      true,
+    );
+    assert.equal(
+      shouldGroupTerminalPlantItems("Expired", [
+        { sourceItemId: "a", choice: "reject" },
+      ]),
+      true,
+    );
+    assert.equal(shouldGroupTerminalPlantItems("Pending", []), false);
+    assert.equal(shouldGroupTerminalPlantItems("Closed", null), false);
+    assert.equal(
+      shouldGroupTerminalPlantItems("Closed", [
+        { sourceItemId: "a", choice: "unavailable" },
+      ]),
+      false,
     );
   });
 });

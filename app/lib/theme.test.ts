@@ -52,6 +52,8 @@ describe("brand theme", () => {
     );
     assert.equal(themeBadgeStyle("success", "Closed").background, THEME.darkGreen);
     assert.equal(themeBadgeStyle("success", "Closed").color, THEME.white);
+    assert.equal(themeBadgeStyle("critical", "Expired").borderColor, THEME.expiredRed);
+    assert.equal(themeBadgeStyle("critical", "Expired").color, THEME.expiredRed);
   });
 });
 

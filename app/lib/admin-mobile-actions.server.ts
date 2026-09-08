@@ -71,6 +71,14 @@ export async function loadMobileAdminRequestDetail(
       body: note.body,
       createdAtIso: note.createdAtIso,
     })),
+    customerResponse: customerResponse
+      ? {
+          items: customerResponse.items.map((item) => ({
+            sourceItemId: item.sourceItemId,
+            choice: item.choice,
+          })),
+        }
+      : null,
   });
 }
 

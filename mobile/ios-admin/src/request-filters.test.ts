@@ -42,11 +42,11 @@ const rows = [
 ];
 
 describe("request status filters", () => {
-  it("defaults to New and has no duplicate All row", () => {
+  it("defaults to New and has no dedicated Expired filter", () => {
     assert.equal(DEFAULT_STATUS_FILTER, "New");
     assert.deepEqual(
       STATUS_FILTERS.map((filter) => filter.value),
-      ["New", "Pending", "Closed", "Expired", "ExistingOrder"],
+      ["New", "Pending", "Closed", "ExistingOrder"],
     );
   });
 
@@ -60,12 +60,8 @@ describe("request status filters", () => {
       ["pending"],
     );
     assert.deepEqual(
-      filterRequestRows(rows, "Closed").map((item) => item.id),
-      ["closed"],
-    );
-    assert.deepEqual(
-      filterRequestRows(rows, "Expired").map((item) => item.id),
-      ["expired"],
+      filterRequestRows(rows, "Closed").map((item) => item.id).sort(),
+      ["closed", "expired"],
     );
     assert.deepEqual(
       filterRequestRows(rows, "ExistingOrder").map((item) => item.id),
@@ -73,14 +69,10 @@ describe("request status filters", () => {
     );
   });
 
-  it("keeps the selected filter when search and refresh reuse the same rows", () => {
-    const refreshed = [...rows, row({ id: "new-2", requestNumber: "REQ6", status: "New" })];
-    const visible = filterRequestRows(refreshed, "Pending", "");
-    assert.deepEqual(
-      visible.map((item) => item.id),
-      ["pending"],
-    );
-    assert.equal(filterRequestRows(refreshed, "New", "Albo")[0]?.id, "existing");
+  it("keeps Expired stored status while showing it under Closed", () => {
+    const visible = filterRequestRows(rows, "Closed");
+    assert.equal(visible.find((item) => item.id === "expired")?.status, "Expired");
+    assert.equal(visible.find((item) => item.id === "closed")?.status, "Closed");
   });
 
   it("shows counts for the combined status controls", () => {
@@ -92,9 +84,9 @@ describe("request status filters", () => {
     });
     assert.equal(counts.New, 2);
     assert.equal(counts.Pending, 1);
-    assert.equal(counts.Closed, 1);
-    assert.equal(counts.Expired, 1);
+    assert.equal(counts.Closed, 2);
     assert.equal(counts.ExistingOrder, 1);
+    assert.ok(!("Expired" in counts));
   });
 });
 
@@ -120,27 +112,37 @@ describe("closed request sorting", () => {
     }),
   ];
 
-  it("defaults to newest closed", () => {
+  it("defaults to newest terminal order", () => {
     assert.equal(parseClosedRequestSort(null), "newest");
-    assert.equal(closedRequestSortLabel("newest"), "Newest Closed");
+    assert.equal(closedRequestSortLabel("newest"), "Newest");
     assert.deepEqual(
       filterRequestRows(closed, "Closed").map((item) => item.id),
       ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
     );
   });
 
-  it("sorts newest and oldest closed by closedAt rather than createdAt", () => {
+  it("sorts newest and oldest by terminal timestamps", () => {
+    const terminal = [
+      row({
+        id: "closed-old",
+        status: "Closed",
+        closedAtIso: "2026-01-01T00:00:00.000Z",
+        submittedAtIso: "2026-12-01T00:00:00.000Z",
+      }),
+      row({
+        id: "expired-new",
+        status: "Expired",
+        expiredAtIso: "2026-06-01T00:00:00.000Z",
+        submittedAtIso: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
     assert.deepEqual(
-      sortClosedRequests(closed, "newest").map((item) => item.id),
-      ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+      sortClosedRequests(terminal, "newest").map((item) => item.id),
+      ["expired-new", "closed-old"],
     );
     assert.deepEqual(
-      sortClosedRequests(closed, "oldest").map((item) => item.id),
-      ["missing-closed-at", "old-close-new-submit", "new-close-old-submit"],
-    );
-    assert.deepEqual(
-      filterRequestRows(closed, "Closed", "", "oldest").map((item) => item.id),
-      ["missing-closed-at", "old-close-new-submit", "new-close-old-submit"],
+      filterRequestRows(terminal, "Closed", "", "oldest").map((item) => item.id),
+      ["closed-old", "expired-new"],
     );
   });
 });

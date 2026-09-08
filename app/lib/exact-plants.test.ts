@@ -724,12 +724,16 @@ describe("the EXACT PLANTS queue page", () => {
       requestPage.indexOf("function SendOfferSection"),
       requestPage.indexOf("function DeclinedExactPlantsSection"),
     );
-    const existingOrderAt = sendOffer.indexOf(
-      "This customer said they have an existing order",
-    );
+    const existingOrderAt = sendOffer.indexOf('<StatusBadge tone="warning">Existing Order</StatusBadge>');
     const addOnAt = sendOffer.indexOf("<s-text>ADD ON</s-text>");
     assert.ok(existingOrderAt > -1 && addOnAt > existingOrderAt);
+    assert.ok(!sendOffer.includes("This customer said they have an existing order"));
     assert.match(requestPage, /<s-badge tone="warning">Purchased<\/s-badge>/);
+    assert.match(requestPage, /function TerminalPlantItemsSection/);
+    assert.match(requestPage, /shouldGroupTerminalPlantItems/);
+    assert.match(requestPage, /partitionPlantItemsByCustomerChoice/);
+    assert.match(requestPage, /<s-heading>Accepted<\/s-heading>/);
+    assert.match(requestPage, /<s-heading>Declined<\/s-heading>/);
     assert.match(requestPage, /inputMode="decimal"/);
     const overrideField = requestPage.slice(
       requestPage.indexOf('id="shippingFeeOverride"'),
@@ -753,6 +757,8 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /countAdminDashboardStatusFilters/);
     assert.match(dashboard, /ExistingOrder/);
     assert.match(dashboard, /Existing Order/);
+    assert.ok(!dashboard.includes('value: "Expired"'));
+    assert.ok(!dashboard.includes(">Expired<"));
     assert.match(dashboard, /RequestStatusBadges/);
     assert.match(dashboard, /status === "Closed" \? "success"/);
     assert.match(dashboard, /data-closed-sort/);
