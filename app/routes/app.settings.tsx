@@ -28,6 +28,13 @@ import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 import { themeFieldStyle, themePrimaryButtonStyle } from "../components/theme";
 import { THEME } from "../lib/theme";
+import { parseSettingsIntent } from "../lib/action-origin";
+
+function logSettingsAction(
+  fields: Record<string, string | string[] | boolean | number>,
+) {
+  console.info(`[settings-action] ${JSON.stringify(fields)}`);
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
@@ -56,22 +63,48 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop } = await requireAdmin(request);
+  logSettingsAction({ reached: true });
+  let shop: string;
+  try {
+    ({ shop } = await requireAdmin(request));
+  } catch (error) {
+    logSettingsAction({
+      auth: error instanceof Response ? `response-${error.status}` : "threw",
+    });
+    throw error;
+  }
+  logSettingsAction({ shop, auth: "ok" });
+
   const form = await request.formData();
-  const intent = String(form.get("intent") || "save");
+  const formKeys = [...form.keys()];
+  const { intent, known } = parseSettingsIntent(form.get("intent"));
+  logSettingsAction({ shop, formKeys, intent, known });
+
+  if (!known) {
+    logSettingsAction({ shop, intent, branch: "unknown-intent", status: 400 });
+    return new Response("Unknown settings action.", { status: 400 });
+  }
 
   if (intent === "create-mobile-token") {
+    logSettingsAction({ shop, branch: "create-mobile-token", insert: "start" });
     try {
       const created = await createAdminMobileToken(
         shop,
         String(form.get("mobileTokenLabel") || ""),
       );
+      logSettingsAction({
+        shop,
+        branch: "create-mobile-token",
+        insert: "ok",
+        tokenId: created.record.id,
+      });
       return {
         saved: false,
         reset: false,
         newMobileToken: { label: created.record.label, token: created.token },
       };
     } catch {
+      logSettingsAction({ shop, branch: "create-mobile-token", insert: "failed" });
       return {
         saved: false,
         reset: false,
@@ -81,6 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "revoke-mobile-token") {
+    logSettingsAction({ shop, branch: "revoke-mobile-token" });
     await revokeAdminMobileToken(shop, String(form.get("tokenId") || ""));
     return { saved: false, reset: false, revokedMobileToken: true };
   }
