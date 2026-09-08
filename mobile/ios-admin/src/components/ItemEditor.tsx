@@ -99,7 +99,6 @@ export function ItemEditor({
   const [priceText, setPriceText] = useState(String(item.price ?? ""));
   const [weightText, setWeightText] = useState(String(item.weightLbs ?? ""));
   const [notes, setNotes] = useState(item.customerFacingNotes);
-  const [photoUrl, setPhotoUrl] = useState("");
   const [stockTerm, setStockTerm] = useState("");
   const [stockResults, setStockResults] = useState<StockCandidate[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
@@ -791,28 +790,6 @@ export function ItemEditor({
             onPress={() => void pickPhoto()}
           >
             <Text style={ui.secondaryLabel}>Upload Photos</Text>
-          </Pressable>
-          <TextInput
-            value={photoUrl}
-            onChangeText={setPhotoUrl}
-            editable={fieldsOn}
-            placeholder="Or paste a photo URL"
-            placeholderTextColor={THEME.muted}
-            autoCapitalize="none"
-            style={[ui.input, !fieldsOn && ui.inputDisabled]}
-          />
-          <Pressable
-            style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
-            disabled={!fieldsOn}
-            onPress={() =>
-              void act({
-                intent: "add-photo-url",
-                itemId: item.id,
-                photoUrl,
-              })
-            }
-          >
-            <Text style={ui.secondaryLabel}>Add photo URL</Text>
           </Pressable>
         </View>
       ) : null}

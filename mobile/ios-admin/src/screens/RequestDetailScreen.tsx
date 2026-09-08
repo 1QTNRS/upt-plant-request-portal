@@ -13,6 +13,7 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { formatAdminNoteTimestamp } from "../admin-time";
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
 import {
@@ -366,9 +367,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         <View style={ui.card}>
           <Text style={ui.cardTitle}>Internal notes</Text>
           {detail.internalNotes.map((note) => (
-            <Text key={note.id} style={ui.muted}>
-              {note.body}
-            </Text>
+            <View key={note.id} style={{ marginBottom: 8 }}>
+              <Text style={ui.muted}>{formatAdminNoteTimestamp(note.createdAtIso)}</Text>
+              <Text>{note.body}</Text>
+            </View>
           ))}
           <TextInput
             value={noteDraft}

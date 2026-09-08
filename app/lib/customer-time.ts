@@ -73,3 +73,25 @@ export function formatCustomerDate(date: Date, timeZone?: string | null): string
 export function customerTimeZoneLabel(timeZone?: string | null): string {
   return normalizeIanaTimeZone(timeZone) ?? CUSTOMER_TIME_FALLBACK_ZONE;
 }
+
+/** Admin internal-note stamp: Sep 8, 2026 · 3:24 PM in the viewer zone. */
+export function formatAdminNoteTimestamp(
+  iso: string,
+  timeZone?: string | null,
+): string {
+  const value = new Date(iso);
+  if (!Number.isFinite(value.getTime())) return "";
+  const zone = normalizeIanaTimeZone(timeZone);
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...(zone ? { timeZone: zone } : {}),
+  }).format(value);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(zone ? { timeZone: zone } : {}),
+  }).format(value);
+  return `${datePart} · ${timePart}`;
+}
