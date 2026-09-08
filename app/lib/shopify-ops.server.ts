@@ -6,6 +6,7 @@ import {
   declinedItemTag,
   exactPlantMediaError,
   EXACT_PLANT_STOCK_QUANTITY,
+  EXACT_PLANT_VENDOR,
   EXACT_PLANTS_COLLECTION_TITLE,
   isOnlineStorePublicationHandle,
   isPosPublicationHandle,
@@ -1994,7 +1995,11 @@ async function updateExactPlantProduct(
       }
     `,
     {
-      product: { id: product.id, title: input.title },
+      product: {
+        id: product.id,
+        title: input.title,
+        vendor: EXACT_PLANT_VENDOR,
+      },
       // Left off rather than sent empty, so Shopify sees no media argument at
       // all when the product already carries the approved photos.
       media: plan.create.length > 0 ? plan.create : undefined,

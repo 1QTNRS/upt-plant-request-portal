@@ -208,9 +208,11 @@ describe("EXACT PLANTS listing on Shopify", () => {
     const calls = await listOnePlant();
     const created = callOf(calls, "CreateExactPlantProduct");
     const product = created.variables.product as {
+      vendor: string;
       tags: string[];
       collectionsToJoin: string[];
     };
+    assert.equal(product.vendor, "Unsolicited Plant Talks");
     assert.deepEqual(product.tags, []);
     assert.deepEqual(product.collectionsToJoin, ["gid://shopify/Collection/1"]);
     assert.deepEqual(callOf(calls, "AddExactPlantToCollection").variables, {
@@ -259,6 +261,11 @@ describe("EXACT PLANTS listing on Shopify", () => {
       calls.filter((call) => call.operation === "CreateExactPlantProduct").length,
       0,
     );
+    assert.deepEqual(callOf(calls, "UpdateExactPlantProduct").variables.product, {
+      id: PRODUCT_GID,
+      title: "Monstera Thai Constellation",
+      vendor: "Unsolicited Plant Talks",
+    });
   });
 
   it("still finds a legacy tagged product when no GID is stored", async () => {
@@ -299,6 +306,11 @@ describe("EXACT PLANTS listing on Shopify", () => {
     assert.deepEqual(callOf(calls, "AddExactPlantToCollection").variables, {
       id: "gid://shopify/Collection/1",
       productIds: [PRODUCT_GID],
+    });
+    assert.deepEqual(callOf(calls, "UpdateExactPlantProduct").variables.product, {
+      id: PRODUCT_GID,
+      title: "Monstera Thai Constellation",
+      vendor: "Unsolicited Plant Talks",
     });
   });
 
@@ -563,7 +575,11 @@ describe("retrying an EXACT PLANTS listing after the admin edited the photos", (
     );
 
     assert.deepEqual(callOf(calls, "UpdateExactPlantProduct").variables, {
-      product: { id: PRODUCT_GID, title: "Monstera Thai Constellation" },
+      product: {
+        id: PRODUCT_GID,
+        title: "Monstera Thai Constellation",
+        vendor: "Unsolicited Plant Talks",
+      },
       media: [
         {
           originalSource: EXISTING_PHOTO,

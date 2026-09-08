@@ -13,6 +13,7 @@ import {
   exactPlantSharedTags,
   EXACT_PLANT_DISMISSED_REASON,
   EXACT_PLANT_RELEASE_LABELS,
+  EXACT_PLANT_VENDOR,
   exactPlantListingBucket,
   exactPlantReleaseTone,
   exactPlantIneligibilityReason,
@@ -453,6 +454,8 @@ describe("shopify product payload", () => {
     });
 
     assert.equal(payload.product.title, "Thai Constellation Exact");
+    assert.equal(payload.product.vendor, EXACT_PLANT_VENDOR);
+    assert.equal(EXACT_PLANT_VENDOR, "Unsolicited Plant Talks");
     assert.deepEqual(payload.product.collectionsToJoin, [
       "gid://shopify/Collection/1",
     ]);

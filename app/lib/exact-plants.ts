@@ -2,7 +2,7 @@ import { normalizePrice, normalizeWeight, parseRequestNumber } from "./portal";
 
 export const EXACT_PLANTS_COLLECTION_TITLE = "EXACT PLANTS";
 export const EXACT_PLANT_PRODUCT_TYPE = "Exact Plant";
-export const EXACT_PLANT_VENDOR = "UPT";
+export const EXACT_PLANT_VENDOR = "Unsolicited Plant Talks";
 export const EXACT_PLANT_ITEM_TAG_PREFIX = "upt-declined-item:";
 
 /** Portal-created Exact Plant products get no Shopify tags. */
