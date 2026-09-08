@@ -295,7 +295,7 @@ describe("iOS admin API payloads", () => {
     assert.doesNotMatch(createForm, /<s-button/);
     const createdTokenBox = settings.slice(
       settings.indexOf("data-created-mobile-token-box"),
-      settings.indexOf("data-create-mobile-token"),
+      settings.indexOf("mobileTokenError ?"),
     );
     assert.match(createdTokenBox, /userSelect: "all"/);
     assert.doesNotMatch(createdTokenBox, /<s-banner/);
