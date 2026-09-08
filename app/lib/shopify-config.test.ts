@@ -23,9 +23,11 @@ function read(file: string): string {
 
 /** The text of one `[table]` section, so a key cannot be read from the wrong one. */
 function section(toml: string, table: string): string {
-  const start = toml.indexOf(`[${table}]`);
-  assert.notEqual(start, -1, `${table} table is missing`);
-  const rest = toml.slice(start + table.length + 2);
+  const header = new RegExp(`(?:^|\\n)\\[${table}\\]\\s*\\n`);
+  const match = header.exec(toml);
+  assert.ok(match, `${table} table is missing`);
+  const start = (match.index ?? 0) + match[0].length;
+  const rest = toml.slice(start);
   const end = rest.search(/^\[[a-z]/m);
   return end === -1 ? rest : rest.slice(0, end);
 }
@@ -121,6 +123,19 @@ describe("shopify.app.toml (production)", () => {
     );
   });
 
+  it("declares an empty Events table so CLI 4.7 remote schema is satisfied", () => {
+    // CLI 4.7's bundled Zod schema leaves events optional. Deploy still
+    // validates against a remote spec that requires the events.subscription
+    // key. An empty array is the supported "we use webhooks, not Events" form.
+    const events = section(toml, "events");
+    assert.equal(str(events, "api_version"), "unstable");
+    assert.match(events, /^\s*subscription\s*=\s*\[\s*\]/m);
+    assert.ok(
+      !/^\s*\[\[events\.subscription\]\]/m.test(toml),
+      "do not invent Event topic subscriptions; production uses [webhooks]",
+    );
+  });
+
   it("serves every configured webhook URI as a route", () => {
     const uris = [...toml.matchAll(/^\s*uri = "([^"]+)"/gm)].map((match) => match[1]);
     assert.ok(uris.length >= 6, "expected the app and compliance webhook URIs");
@@ -171,6 +186,14 @@ describe("shopify.app.dev.toml (development)", () => {
       str(section(dev, "webhooks"), "api_version"),
       str(section(production, "webhooks"), "api_version"),
     );
+  });
+
+  it("uses the same empty Events table as production", () => {
+    assert.equal(
+      str(section(dev, "events"), "api_version"),
+      str(section(production, "events"), "api_version"),
+    );
+    assert.match(section(dev, "events"), /^\s*subscription\s*=\s*\[\s*\]/m);
   });
 
   it("keeps the same app proxy path, so customer links behave the same", () => {

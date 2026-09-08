@@ -50,6 +50,16 @@ api_version = "2026-04"
   uri = "/webhooks/shop/redact"
   compliance_topics = [ "shop/redact" ]
 
+# Shopify CLI 4.7 validates this file against a remote App Management schema
+# that requires the events table and its subscription key. The bundled CLI
+# schema treats events as optional (`zod.any().optional()`), and its transform
+# no-ops when subscription is missing or empty. An empty list satisfies the
+# remote "Required" check without subscribing to any topic. Real deliveries
+# still come from [webhooks] above.
+[events]
+api_version = "unstable"
+subscription = []
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 # Merchants must re-approve after this change.
