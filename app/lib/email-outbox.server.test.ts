@@ -72,6 +72,7 @@ async function offeredRequest(options?: { expiresInHours?: number }) {
     requestId: created.id,
     itemId: created.items[0].id,
     availability: "available",
+    offeredName: "Monstera Albo Exact",
     price: 250,
     weightLbs: 2,
     photoUrls: ["https://cdn.example.com/monstera.jpg"],

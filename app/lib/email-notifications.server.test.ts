@@ -171,6 +171,7 @@ describe("admin email notification toggles", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 120,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/albo.jpg"],
@@ -279,6 +280,7 @@ describe("customer email count on the happy path with payment", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 250,
       weightLbs: 2,
       customerFacingNotes: "Rooted cutting.",
@@ -319,7 +321,7 @@ describe("customer email count on the happy path with payment", () => {
       ["offer_ready"],
     );
     const offer = customer.find((email) => email.templateKey === "offer_ready")!;
-    assert.match(offer.bodyText, /Available:\n- Monstera Albo — Rooted cutting\./);
+    assert.match(offer.bodyText, /Available:\n- Monstera Albo Exact — Rooted cutting\./);
     assert.doesNotMatch(offer.bodyText, /invoice|checkout/i);
 
     assert.equal(
@@ -359,6 +361,7 @@ describe("customer email count when no payment is needed", () => {
         requestId: created.id,
         itemId: item.id,
         availability: "available",
+        offeredName: `${item.plantName} Exact`,
         price: 80,
         weightLbs: 1,
         photoUrls: [`https://cdn.example.com/${item.id}.jpg`],
@@ -462,6 +465,7 @@ describe("customer email idempotency", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 90,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/albo.jpg"],
@@ -516,6 +520,7 @@ describe("customer email idempotency", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 90,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/albo.jpg"],
@@ -560,6 +565,7 @@ describe("expired invoice recovery does not send a Shopify invoice email", () =>
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 90,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/albo.jpg"],
