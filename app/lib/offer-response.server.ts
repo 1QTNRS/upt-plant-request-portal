@@ -12,8 +12,11 @@ import {
 } from "./portal";
 import {
   customerCanCloseRequest,
+  countAcceptedPurchasableChoices,
   declinedAllPurchasableItems,
   fedexRemovalNeedsConfirmation,
+  heatPackChoiceMissing,
+  readHeatPackChoice,
   readOfferChoices,
 } from "./customer-portal";
 import { formatCustomerDateTime } from "./customer-time";
@@ -115,6 +118,8 @@ async function createDraftOrderFromSnapshot(input: {
   customerEmail: string;
   fedexSelected: boolean;
   fedexPrice: number;
+  heatPackSelected?: boolean;
+  heatPackPrice?: number;
   admin?: AdminContext["admin"];
 }) {
   const { items, holdEndsAt } = await acceptedOfferLines(input.shop, input.requestId);
@@ -126,6 +131,8 @@ async function createDraftOrderFromSnapshot(input: {
     acceptedItems: items,
     fedexSelected: input.fedexSelected,
     fedexPrice: input.fedexPrice,
+    heatPackSelected: input.heatPackSelected,
+    heatPackPrice: input.heatPackPrice,
     holdEndsAt,
     shippingFeeOverride: request?.sentOffer?.shippingFeeOverride,
   });
@@ -195,6 +202,8 @@ export async function createPaymentLinkForRequest(input: {
       customerEmail: request.email,
       fedexSelected: response.fedexUpgradeSelected,
       fedexPrice: response.fedexUpgradePrice,
+      heatPackSelected: response.heatPackSelected ?? undefined,
+      heatPackPrice: response.heatPackPrice ?? undefined,
       admin: input.admin,
     });
     await notifyCheckoutLink(input.shop, input.requestId, draft.invoiceUrl);
@@ -447,6 +456,23 @@ export async function handleCustomerOfferAction(input: {
     };
   }
 
+  const choices = readOfferChoices(input.form);
+  const acceptedPurchasableCount = countAcceptedPurchasableChoices(choices);
+  const heatPackChoice = readHeatPackChoice(input.form);
+  if (
+    heatPackChoiceMissing({
+      heatPackAddonEnabled: offer.heatPackAddonEnabled,
+      acceptedPurchasableCount,
+      heatPackChoice,
+    })
+  ) {
+    return {
+      ok: false as const,
+      missingHeatPackChoice: true as const,
+      error: "Choose whether to add a heat pack.",
+    };
+  }
+
   const items = offer.items.map((item) => {
     const available = item.availability === "available";
     const choice = available
@@ -480,6 +506,8 @@ export async function handleCustomerOfferAction(input: {
   const acceptedAnything = items.some((item) => item.choice === "accept");
   const fedexUpgradeSelected =
     acceptedAnything && String(input.form.get("fedexUpgradeSelected")) === "true";
+  const heatPackSelected =
+    acceptedAnything && offer.heatPackAddonEnabled && heatPackChoice === true;
 
   let saved;
   try {
@@ -488,6 +516,9 @@ export async function handleCustomerOfferAction(input: {
       items,
       fedexUpgradeSelected,
       fedexUpgradePrice: offer.fedexUpgradePrice,
+      heatPackSelected: acceptedAnything && offer.heatPackAddonEnabled ? heatPackChoice : null,
+      heatPackPrice:
+        heatPackSelected ? offer.heatPackPrice : offer.heatPackAddonEnabled ? 0 : null,
     });
   } catch (error) {
     // Lost a race with a concurrent submit of the same offer.
@@ -549,6 +580,8 @@ export async function handleCustomerOfferAction(input: {
       customerEmail: offer.customerEmail,
       fedexSelected: fedexUpgradeSelected,
       fedexPrice: saved.fedexUpgradePrice,
+      heatPackSelected: saved.heatPackSelected ?? undefined,
+      heatPackPrice: saved.heatPackPrice ?? undefined,
       admin: input.admin,
     });
   } catch (error) {

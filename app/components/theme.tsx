@@ -169,6 +169,12 @@ export function ThemeStyles() {
         font-weight: 700;
       }
       .upt-card-title svg { flex: 0 0 auto; }
+      .upt-card-helper {
+        margin: -4px 0 14px;
+        color: ${THEME.muted};
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
       .upt-muted { color: ${THEME.muted}; line-height: 1.5; }
       .upt-sr-only {
         position: absolute;

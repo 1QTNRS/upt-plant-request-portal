@@ -245,7 +245,7 @@ function toPlantItem(item: RequestItem & { photos: PhotoReference[] }): PlantIte
   return {
     id: item.id,
     plantName: item.plantName,
-    offeredName: item.offeredName || item.plantName,
+    offeredName: item.offeredName ?? "",
     quantity: normalizeQuantity(item.quantity),
     itemStatus: (item.itemStatus as PlantItemStatus) || "Requested",
     availability:
@@ -487,6 +487,11 @@ export async function updateShopSettings(
     adminPushItemStatusUpdate?: boolean;
     fedexVariantGid?: string | null;
     fedexUpgradePrice?: number;
+    heatPackAddonEnabled?: boolean;
+    heatPackProductHandle?: string;
+    heatPackVariantGid?: string | null;
+    heatPackPrice?: number;
+    heatPackLabel?: string;
   },
 ) {
   await getShopSettings(shop);
@@ -522,6 +527,21 @@ export async function updateShopSettings(
         : {}),
       ...(data.fedexUpgradePrice !== undefined
         ? { fedexUpgradePrice: normalizePrice(data.fedexUpgradePrice) }
+        : {}),
+      ...(data.heatPackAddonEnabled !== undefined
+        ? { heatPackAddonEnabled: data.heatPackAddonEnabled }
+        : {}),
+      ...(data.heatPackProductHandle !== undefined
+        ? { heatPackProductHandle: data.heatPackProductHandle.trim() || "heat-pack-includes-foil-insulation" }
+        : {}),
+      ...(data.heatPackVariantGid !== undefined
+        ? { heatPackVariantGid: data.heatPackVariantGid }
+        : {}),
+      ...(data.heatPackPrice !== undefined
+        ? { heatPackPrice: normalizePrice(data.heatPackPrice) }
+        : {}),
+      ...(data.heatPackLabel !== undefined
+        ? { heatPackLabel: data.heatPackLabel.trim() || "Heat Pack (includes foil insulation)" }
         : {}),
     },
   });
@@ -715,7 +735,7 @@ export async function submitCustomerRequest(
       items: {
         create: input.items.map((item) => ({
           plantName: item.plantName.trim(),
-          offeredName: item.plantName.trim(),
+          offeredName: "",
           customerRequestNotes: item.notes?.trim() || null,
           quantity: 1,
           availability: "available",
@@ -810,7 +830,7 @@ export async function updateRequestItem(
     where: { id: item.id },
     data: {
       ...(input.offeredName !== undefined
-        ? { offeredName: input.offeredName.trim() || item.plantName }
+        ? { offeredName: input.offeredName.trim() }
         : {}),
       ...(input.availability
         ? {
@@ -1168,7 +1188,9 @@ export async function sendOffer(
             const growersChoice = fulfillment === "growers_choice";
             return {
               requestItemId: item.id,
-              plantName: item.offeredName || item.plantName,
+              plantName: growersChoice
+                ? item.offeredName || item.plantName
+                : item.offeredName.trim(),
               quantity: normalizeQuantity(item.quantity),
               price: normalizePrice(item.price),
               // The listing's own weight is what a Grower's Choice plant
@@ -1312,6 +1334,9 @@ export async function buildCustomerOffer(
     holdMessage: getOfferHoldMessage(expiresAt, allExactPlants),
     fedexUpgradeLabel: settings.fedexUpgradeLabel,
     fedexUpgradePrice: settings.fedexUpgradePrice,
+    heatPackAddonEnabled: settings.heatPackAddonEnabled,
+    heatPackLabel: settings.heatPackLabel,
+    heatPackPrice: settings.heatPackPrice,
     customerEmail: request.customerEmail,
     customerName: request.customerName,
     requestNumber: request.requestNumber,
@@ -1393,6 +1418,8 @@ function toResponseDto(
       : undefined,
     fedexUpgradeSelected: response.fedexUpgradeSelected,
     fedexUpgradePrice: response.fedexUpgradePrice,
+    heatPackSelected: response.heatPackSelected,
+    heatPackPrice: response.heatPackPrice,
     hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
     items,
     closedAt: closedAt ? formatCustomerDateTime(closedAt, timeZone) : undefined,
@@ -1474,6 +1501,8 @@ export async function saveCustomerResponse(
     items: CustomerResponseItem[];
     fedexUpgradeSelected: boolean;
     fedexUpgradePrice: number;
+    heatPackSelected?: boolean | null;
+    heatPackPrice?: number | null;
   },
 ): Promise<CustomerOfferResponse> {
   const request = await loadRequest(shop, input.requestId);
@@ -1499,6 +1528,8 @@ export async function saveCustomerResponse(
     offerExpiresAt: request.offer?.expiresAt.toISOString() ?? null,
     fedexUpgradeSelected: input.fedexUpgradeSelected,
     items: input.items,
+    heatPackSelected: input.heatPackSelected ?? null,
+    heatPackPrice: input.heatPackPrice ?? null,
   };
 
   // Create-only. `CustomerResponse.requestId` is unique, so two concurrent
@@ -1515,6 +1546,8 @@ export async function saveCustomerResponse(
         offerExpiresAt: request.offer?.expiresAt,
         fedexUpgradeSelected: input.fedexUpgradeSelected,
         fedexUpgradePrice: input.fedexUpgradePrice,
+        heatPackSelected: input.heatPackSelected ?? null,
+        heatPackPrice: input.heatPackPrice ?? null,
         snapshotJson: JSON.stringify(snapshot),
         items: {
           create: input.items.map((item) => ({

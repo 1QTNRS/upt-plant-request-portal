@@ -3,13 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 async function continueAsDemoCustomer(page: Page) {
   await page.goto("/customer", { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle");
-  if (await page.getByText("Plants requested").isVisible()) return;
+  if (await page.getByText("PLANTS REQUESTED").isVisible()) return;
   const login = page.getByRole("button", {
     name: "Continue as logged in customer",
   });
   await expect(login).toBeVisible();
   await login.click({ timeout: 20_000 });
-  await expect(page.getByText("Plants requested")).toBeVisible({
+  await expect(page.getByText("PLANTS REQUESTED")).toBeVisible({
     timeout: 20_000,
   });
 }

@@ -29,9 +29,11 @@ export function shouldGroupTerminalPlantItems(
   status: string,
   responseItems: ResponseChoice[] | null | undefined,
 ): boolean {
-  if (status !== "Closed" && status !== "Expired") return false;
   if (!responseItems?.length) return false;
-  return responseItems.some(
+  const hasChoice = responseItems.some(
     (item) => item.choice === "accept" || item.choice === "reject",
   );
+  if (!hasChoice) return false;
+  if (status === "Pending") return true;
+  return status === "Closed" || status === "Expired";
 }

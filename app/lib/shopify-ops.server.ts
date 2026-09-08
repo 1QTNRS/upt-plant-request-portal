@@ -46,10 +46,14 @@ import {
 import {
   buildDraftOrderInput,
   buildDraftOrderLineItems,
+  customerDeclinedFedExUpgrade,
   draftOrderIdempotencyTag,
   FEDEX_PRODUCT_HANDLE,
   FEDEX_PRODUCT_SKU,
   fedexVariantSkuQuery,
+  HEAT_PACK_PRODUCT_HANDLE,
+  HEAT_PACK_PRODUCT_SKU,
+  heatPackVariantSkuQuery,
   plantRevenueFromLines,
   reserveInventoryUntilFor,
   tagSearchQuery,
@@ -174,6 +178,93 @@ export async function refreshFedexUpgradePrice(
   } catch (error) {
     console.error(
       `Could not refresh the FedEx upgrade price for ${shop}; the offer will quote the stored price.`,
+      error,
+    );
+  }
+}
+
+const HEAT_PACK_VARIANT_BY_SKU_QUERY = `#graphql
+  query HeatPackVariantBySku($query: String!) {
+    productVariants(first: 1, query: $query) {
+      nodes { id sku price }
+    }
+  }
+`;
+
+const HEAT_PACK_PRODUCT_BY_HANDLE_QUERY = `#graphql
+  query HeatPackProduct($identifier: ProductIdentifierInput!) {
+    productByIdentifier(identifier: $identifier) {
+      variants(first: 1) {
+        nodes { id price }
+      }
+    }
+  }
+`;
+
+async function persistHeatPackVariant(
+  shop: string,
+  variant: FedexVariantNode,
+  fallbackPrice: number,
+): Promise<{ variantGid: string; price: number }> {
+  const price = Number.parseFloat(variant.price) || fallbackPrice;
+  await updateShopSettings(shop, {
+    heatPackVariantGid: variant.id,
+    heatPackPrice: price,
+  });
+  return { variantGid: variant.id, price };
+}
+
+export async function resolveHeatPackVariant(
+  admin: GraphqlClient | undefined,
+  shop: string,
+): Promise<{ variantGid?: string; price: number }> {
+  const settings = await getShopSettings(shop);
+  if (!admin) {
+    return {
+      variantGid: settings.heatPackVariantGid ?? undefined,
+      price: settings.heatPackPrice,
+    };
+  }
+
+  const skuData = await adminGraphql<{
+    productVariants: { nodes: Array<FedexVariantNode & { sku?: string }> };
+  }>(admin, HEAT_PACK_VARIANT_BY_SKU_QUERY, {
+    query: heatPackVariantSkuQuery(HEAT_PACK_PRODUCT_SKU),
+  });
+  const skuVariant = skuData.productVariants.nodes[0];
+  if (skuVariant) {
+    return persistHeatPackVariant(shop, skuVariant, settings.heatPackPrice);
+  }
+
+  const handleData = await adminGraphql<{
+    productByIdentifier: {
+      variants: { nodes: FedexVariantNode[] };
+    } | null;
+  }>(admin, HEAT_PACK_PRODUCT_BY_HANDLE_QUERY, {
+    identifier: { handle: settings.heatPackProductHandle || HEAT_PACK_PRODUCT_HANDLE },
+  });
+
+  const handleVariant = handleData.productByIdentifier?.variants.nodes[0];
+  if (handleVariant) {
+    return persistHeatPackVariant(shop, handleVariant, settings.heatPackPrice);
+  }
+
+  return {
+    variantGid: settings.heatPackVariantGid ?? undefined,
+    price: settings.heatPackPrice,
+  };
+}
+
+export async function refreshHeatPackPrice(
+  admin: GraphqlClient | undefined,
+  shop: string,
+): Promise<void> {
+  if (!admin) return;
+  try {
+    await resolveHeatPackVariant(admin, shop);
+  } catch (error) {
+    console.error(
+      `Could not refresh the heat pack price for ${shop}; the offer will quote the stored price.`,
       error,
     );
   }
@@ -719,6 +810,9 @@ export async function createDraftOrderForRequest(
     fedexSelected: boolean;
     /** The upgrade price frozen into the customer's response. */
     fedexPrice?: number;
+    heatPackSelected?: boolean;
+    /** The heat pack price frozen into the customer's response. */
+    heatPackPrice?: number;
     /**
      * When the customer's payment deadline runs out. Shopify holds the stock
      * behind a Grower's Choice line until exactly this moment and then releases
@@ -758,6 +852,9 @@ export async function createDraftOrderForRequest(
   const fedex = input.fedexSelected
     ? await resolveFedexVariant(admin, shop)
     : { price: settings.fedexUpgradePrice };
+  const heatPack = input.heatPackSelected
+    ? await resolveHeatPackVariant(admin, shop)
+    : { price: settings.heatPackPrice };
 
   const lineItems = buildDraftOrderLineItems({
     acceptedItems: input.acceptedItems,
@@ -765,6 +862,10 @@ export async function createDraftOrderForRequest(
     fedexLabel: settings.fedexUpgradeLabel,
     fedexPrice: input.fedexPrice ?? fedex.price,
     fedexVariantGid: fedex.variantGid,
+    heatPackSelected: input.heatPackSelected,
+    heatPackLabel: settings.heatPackLabel,
+    heatPackPrice: input.heatPackPrice ?? heatPack.price,
+    heatPackVariantGid: heatPack.variantGid,
   });
 
   if (lineItems.length === 0) {
@@ -788,6 +889,7 @@ export async function createDraftOrderForRequest(
       ...input,
       lineItems,
       reserveInventoryUntil,
+      fedexSelected: input.fedexSelected,
     });
   } catch (error) {
     // Nothing was created, so the claim is only in the way of the retry the
@@ -808,6 +910,7 @@ async function createClaimedDraftOrder(
     lineItems: DraftOrderLineItem[];
     reserveInventoryUntil?: string;
     shippingFeeOverride?: number;
+    fedexSelected: boolean;
   },
 ): Promise<{
   invoiceUrl: string;
@@ -841,6 +944,10 @@ async function createClaimedDraftOrder(
         lineItems,
         reserveInventoryUntil,
         shippingFeeOverride: input.shippingFeeOverride,
+        declinedFedEx: customerDeclinedFedExUpgrade({
+          acceptedPurchasableCount: input.acceptedItems.length,
+          fedexUpgradeSelected: input.fedexSelected,
+        }),
       });
 
       const created = await adminGraphql<{

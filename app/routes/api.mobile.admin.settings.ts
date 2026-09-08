@@ -5,7 +5,7 @@ import {
   unauthorizedMobileResponse,
 } from "../lib/admin-mobile-auth.server";
 import { countRegisteredPushDevices } from "../lib/admin-push.server";
-import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU } from "../lib/portal";
+import { DEFAULT_FEDEX_REMOVAL_WARNING, FEDEX_PRODUCT_SKU, HEAT_PACK_PRODUCT_SKU } from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 
 function asOptionalBool(value: unknown): boolean | undefined {
@@ -28,6 +28,9 @@ async function settingsPayload(
     registeredPushDevices: await countRegisteredPushDevices(settings.shop),
     fedexProductHandle: settings.fedexProductHandle,
     fedexProductSku: FEDEX_PRODUCT_SKU,
+    heatPackAddonEnabled: settings.heatPackAddonEnabled,
+    heatPackProductHandle: settings.heatPackProductHandle,
+    heatPackProductSku: HEAT_PACK_PRODUCT_SKU,
   };
 }
 
@@ -52,6 +55,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return Response.json({
       ok: true,
       reset: true,
+      ...(await settingsPayload(settings)),
+    });
+  }
+
+  if (intent === "save-heat-pack-addon") {
+    const settings = await updateShopSettings(auth.shop, {
+      heatPackAddonEnabled: asOptionalBool(body.heatPackAddonEnabled),
+    });
+    return Response.json({
+      ok: true,
+      reset: false,
       ...(await settingsPayload(settings)),
     });
   }

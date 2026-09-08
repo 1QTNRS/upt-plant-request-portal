@@ -15,6 +15,7 @@ import {
   parseAdminDashboardStatusFilter,
   parseClosedRequestSort,
   requestIsPurchased,
+  requestShowsAnsweredPill,
   requestStatusTone,
   sortAdminDashboardRequests,
   summarizeAdminDashboardStats,
@@ -40,10 +41,12 @@ function RequestStatusBadges({
   status,
   hasExistingOrder,
   isPurchased,
+  hasResponded,
 }: {
   status: RequestStatus;
   hasExistingOrder: boolean;
   isPurchased: boolean;
+  hasResponded: boolean;
 }) {
   return (
     <div
@@ -55,6 +58,9 @@ function RequestStatusBadges({
       }}
     >
       <StatusBadge tone={requestStatusTone(status)}>{status}</StatusBadge>
+      {requestShowsAnsweredPill(status, hasResponded) ? (
+        <StatusBadge tone="info">Answered</StatusBadge>
+      ) : null}
       {isPurchased ? <StatusBadge tone="warning">Purchased</StatusBadge> : null}
       {hasExistingOrder ? (
         <StatusBadge tone={status === "Closed" ? "success" : "warning"}>
@@ -83,6 +89,7 @@ type DashboardData = {
     submittedAtIso: string;
     hasExistingOrder: boolean;
     isPurchased: boolean;
+    hasResponded: boolean;
   }>;
   query: string;
   statusFilter: AdminDashboardStatusFilter;
@@ -121,6 +128,7 @@ function toDashboard(
       submittedAtIso: request.submittedAtIso,
       hasExistingOrder: request.hasExistingOrder === true,
       isPurchased: requestIsPurchased(request),
+      hasResponded: request.hasResponded,
     })),
   };
 }
@@ -289,6 +297,7 @@ export default function Dashboard() {
                     status={request.status}
                     hasExistingOrder={request.hasExistingOrder}
                     isPurchased={request.isPurchased}
+                    hasResponded={request.hasResponded}
                   />
                 </dd>
                 <dt>Submitted Date</dt>
@@ -343,6 +352,7 @@ export default function Dashboard() {
                       status={request.status}
                       hasExistingOrder={request.hasExistingOrder}
                       isPurchased={request.isPurchased}
+                      hasResponded={request.hasResponded}
                     />
                   </td>
                   <td className="upt-cell-wrap">

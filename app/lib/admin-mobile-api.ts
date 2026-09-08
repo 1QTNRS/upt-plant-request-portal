@@ -60,6 +60,7 @@ export type MobileAdminRequestDetail = {
   sentOffer?: {
     expirationDays: number;
     sentAtIso: string;
+    expiresAt: string;
     expiresAtIso: string;
     shippingFeeOverride?: number;
   };
@@ -147,6 +148,7 @@ export function toMobileAdminRequestDetail(
       ? {
           expirationDays: request.sentOffer.expirationDays,
           sentAtIso: request.sentOffer.sentAtIso,
+          expiresAt: request.sentOffer.expiresAt,
           expiresAtIso: request.sentOffer.expiresAtIso,
           ...(request.sentOffer.shippingFeeOverride !== undefined
             ? { shippingFeeOverride: request.sentOffer.shippingFeeOverride }

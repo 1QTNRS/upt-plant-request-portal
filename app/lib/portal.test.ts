@@ -68,6 +68,7 @@ import {
   reserveInventoryUntilFor,
   variantBackedLines,
   computeTimeRemaining,
+  formatOfferExpirationUrgencyPill,
 } from "./portal";
 
 describe("FedEx listing identity", () => {
@@ -564,7 +565,7 @@ describe("terminal plant item grouping", () => {
     );
   });
 
-  it("groups terminal detail only when Closed or Expired has accept/reject answers", () => {
+  it("groups detail when the customer answered, including Pending unpaid", () => {
     assert.equal(
       shouldGroupTerminalPlantItems("Closed", [
         { sourceItemId: "a", choice: "accept" },
@@ -574,6 +575,12 @@ describe("terminal plant item grouping", () => {
     assert.equal(
       shouldGroupTerminalPlantItems("Expired", [
         { sourceItemId: "a", choice: "reject" },
+      ]),
+      true,
+    );
+    assert.equal(
+      shouldGroupTerminalPlantItems("Pending", [
+        { sourceItemId: "a", choice: "accept" },
       ]),
       true,
     );
@@ -639,14 +646,46 @@ describe("purchased request pill", () => {
 });
 
 describe("expiration", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+
   it("detects expired offers and formats remaining time", () => {
     const past = new Date("2026-01-01T00:00:00Z").toISOString();
     const future = new Date("2026-01-04T12:00:00Z").toISOString();
-    const now = new Date("2026-01-01T12:00:00Z");
 
     assert.equal(isOfferExpired(past, now), true);
     assert.equal(isOfferExpired(future, now), false);
     assert.match(computeTimeRemaining(future, now) ?? "", /day/);
+  });
+
+  it("formats urgency pills for days and hours", () => {
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-03T12:00:00Z").toISOString(),
+        now,
+      ),
+      "<3 days",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-02T18:00:00Z").toISOString(),
+        now,
+      ),
+      "<2 days",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-01T20:00:00Z").toISOString(),
+        now,
+      ),
+      "<12 hrs",
+    );
+    assert.equal(
+      formatOfferExpirationUrgencyPill(
+        new Date("2026-01-01T00:00:00Z").toISOString(),
+        now,
+      ),
+      "Expired",
+    );
   });
 });
 
@@ -730,6 +769,54 @@ describe("draft orders", () => {
 
     assert.equal(lines[0]?.variantId, undefined);
     assert.deepEqual(variantBackedLines(lines), []);
+  });
+
+  it("includes a heat pack line when the customer selected the add-on", () => {
+    const lines = buildDraftOrderLineItems({
+      acceptedItems: [
+        {
+          itemId: "item-1",
+          plantName: "Monstera Exact",
+          quantity: 1,
+          price: 85,
+          weightLbs: 12.4,
+        },
+      ],
+      fedexSelected: false,
+      fedexLabel: "FedEx Priority Overnight Upgrade",
+      fedexPrice: 15,
+      heatPackSelected: true,
+      heatPackLabel: "Heat Pack (includes foil insulation)",
+      heatPackPrice: 12,
+      heatPackVariantGid: "gid://shopify/ProductVariant/99",
+    });
+
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1]?.kind, "heat_pack");
+    assert.equal(lines[1]?.variantId, "gid://shopify/ProductVariant/99");
+    assert.equal(plantRevenueFromLines(lines), 85);
+  });
+
+  it("excludes heat pack from plant revenue on paid order lines", () => {
+    const result = plantRevenueFromPaidOrderLines(
+      [
+        { title: "Monstera Exact", price: "85.00", quantity: 1 },
+        {
+          title: "Heat Pack (includes foil insulation)",
+          price: "12.00",
+          quantity: 1,
+          variant_id: 99887766,
+        },
+      ],
+      {
+        heatPack: {
+          variantGid: "gid://shopify/ProductVariant/99887766",
+          label: "Heat Pack (includes foil insulation)",
+          selected: true,
+        },
+      },
+    );
+    assert.equal(result.plantRevenue, 85);
   });
 });
 
@@ -1409,10 +1496,16 @@ describe("an offer cannot be sent on an incomplete item", () => {
 
   it("still offers an item with no customer-facing notes", () => {
     // Notes are editorial. Plenty of plants have nothing to disclose.
-    assert.deepEqual(
-      incompleteOfferItems([{ ...ready, offeredName: null }]),
-      [],
-    );
+    assert.deepEqual(incompleteOfferItems([ready]), []);
+  });
+
+  it("requires an offered name on an exact plant", () => {
+    assert.deepEqual(incompleteOfferItems([{ ...ready, offeredName: "" }]), [
+      { itemName: "Monstera Albo", missing: ["an offered name"] },
+    ]);
+    assert.deepEqual(incompleteOfferItems([{ ...ready, offeredName: null }]), [
+      { itemName: "Monstera Albo", missing: ["an offered name"] },
+    ]);
   });
 
   it("requires nothing of a Not Available item", () => {
@@ -1445,7 +1538,10 @@ describe("an offer cannot be sent on an incomplete item", () => {
     ]);
 
     assert.deepEqual(problems, [
-      { itemName: "Hoya", missing: ["an exact plant photo"] },
+      {
+        itemName: "Hoya",
+        missing: ["an exact plant photo", "an offered name"],
+      },
       {
         itemName: "Anthurium Warocqueanum",
         missing: ["a price", "a weight"],
@@ -1453,7 +1549,7 @@ describe("an offer cannot be sent on an incomplete item", () => {
     ]);
 
     const message = offerReadinessMessage(problems);
-    assert.match(message, /Hoya is missing an exact plant photo\./);
+    assert.match(message, /Hoya is missing an exact plant photo and an offered name\./);
     assert.match(
       message,
       /Anthurium Warocqueanum is missing a price and a weight\./,

@@ -14,6 +14,9 @@ import {
   declinedAllPurchasableItems,
   fedexRemovalNeedsConfirmation,
   fedexUpgradeUiState,
+  heatPackChoiceMissing,
+  heatPackUiState,
+  readHeatPackChoice,
   plantLinesFromQuery,
   portalFormAction,
   portalHome,
@@ -956,7 +959,7 @@ describe("the request form works without JavaScript", () => {
   it("drops title icons and keeps the pager off the request numbers", () => {
     assert.match(source, /className="upt-banner-gap"/);
     assert.match(source, /<h2 className="upt-card-title">New request<\/h2>/);
-    assert.match(source, /<h2 className="upt-card-title">Plants requested<\/h2>/);
+    assert.match(source, /<h2 className="upt-card-title">PLANTS REQUESTED<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">Have an existing order\?<\/h2>/);
     assert.match(source, /<h2 className="upt-card-title">My Requests<\/h2>/);
     assert.ok(!source.includes("refund any shipping overages"));
@@ -1001,6 +1004,64 @@ describe("the request form works without JavaScript", () => {
     assert.match(source, /THEME\.darkGreen/);
     assert.match(source, /upt-card/);
     assert.match(source, /StatusBadge/);
+  });
+});
+
+describe("heat pack add-on choice", () => {
+  it("reads explicit Add / No answers from the form", () => {
+    const yes = new FormData();
+    yes.set("heatPackSelected", "true");
+    const no = new FormData();
+    no.set("heatPackSelected", "false");
+    assert.equal(readHeatPackChoice(yes), true);
+    assert.equal(readHeatPackChoice(no), false);
+    assert.equal(readHeatPackChoice(new FormData()), null);
+  });
+
+  it("requires a choice only when the add-on is enabled and something was accepted", () => {
+    assert.equal(
+      heatPackChoiceMissing({
+        heatPackAddonEnabled: true,
+        acceptedPurchasableCount: 1,
+        heatPackChoice: null,
+      }),
+      true,
+    );
+    assert.equal(
+      heatPackChoiceMissing({
+        heatPackAddonEnabled: true,
+        acceptedPurchasableCount: 0,
+        heatPackChoice: null,
+      }),
+      false,
+    );
+    assert.equal(
+      heatPackChoiceMissing({
+        heatPackAddonEnabled: false,
+        acceptedPurchasableCount: 1,
+        heatPackChoice: null,
+      }),
+      false,
+    );
+  });
+
+  it("shows the section only while at least one plant stays accepted", () => {
+    assert.deepEqual(
+      heatPackUiState({
+        heatPackAddonEnabled: true,
+        acceptedPurchasableCount: 2,
+        heatPackChoice: true,
+      }),
+      { visible: true, enabled: true, selected: true },
+    );
+    assert.deepEqual(
+      heatPackUiState({
+        heatPackAddonEnabled: true,
+        acceptedPurchasableCount: 0,
+        heatPackChoice: null,
+      }),
+      { visible: false, enabled: false, selected: null },
+    );
   });
 });
 

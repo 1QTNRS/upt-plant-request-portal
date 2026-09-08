@@ -42,13 +42,17 @@ describe("terminal response grouping", () => {
     );
   });
 
-  it("groups only Closed or Expired requests with explicit accept/reject answers", () => {
+  it("groups Pending and terminal requests with explicit accept/reject answers", () => {
     assert.equal(
       shouldGroupTerminalPlantItems("Closed", [{ sourceItemId: "a", choice: "accept" }]),
       true,
     );
     assert.equal(
       shouldGroupTerminalPlantItems("Expired", [{ sourceItemId: "a", choice: "reject" }]),
+      true,
+    );
+    assert.equal(
+      shouldGroupTerminalPlantItems("Pending", [{ sourceItemId: "a", choice: "accept" }]),
       true,
     );
     assert.equal(shouldGroupTerminalPlantItems("Pending", []), false);

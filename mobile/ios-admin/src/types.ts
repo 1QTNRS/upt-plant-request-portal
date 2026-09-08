@@ -63,6 +63,7 @@ export type RequestDetail = {
   paidAtIso?: string;
   hasExistingOrder: boolean;
   isPurchased?: boolean;
+  hasResponded: boolean;
   canEditItems: boolean;
   canSendOffer: boolean;
   canCloseDeclined: boolean;
@@ -71,6 +72,7 @@ export type RequestDetail = {
   sentOffer?: {
     expirationDays: number;
     sentAtIso: string;
+    expiresAt: string;
     expiresAtIso: string;
     shippingFeeOverride?: number;
   };
@@ -185,4 +187,7 @@ export type ShopSettings = {
   registeredPushDevices: number;
   fedexProductHandle: string;
   fedexProductSku: string;
+  heatPackAddonEnabled: boolean;
+  heatPackProductHandle: string;
+  heatPackProductSku: string;
 };

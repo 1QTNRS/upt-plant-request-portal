@@ -21,7 +21,6 @@ import {
 } from "./portal";
 import {
   addInternalNote,
-  addItemPhotos,
   getCustomerResponse,
   getRequest,
   linkExistingStock,
@@ -232,14 +231,6 @@ export async function handleMobileAdminRequestAction(input: {
           ? asString(fields, "customerFacingNotes")
           : undefined,
       });
-      return withUpdatedRequest(shop, requestId);
-    }
-
-    if (intent === "add-photo-url") {
-      const url = asString(fields, "photoUrl").trim();
-      if (url) {
-        await addItemPhotos(shop, requestId, itemId, [{ url }]);
-      }
       return withUpdatedRequest(shop, requestId);
     }
 

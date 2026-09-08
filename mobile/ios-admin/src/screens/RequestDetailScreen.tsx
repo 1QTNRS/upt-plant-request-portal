@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -13,6 +14,7 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { formatAdminNoteTimestamp } from "../admin-time";
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
 import {
@@ -25,6 +27,10 @@ import { applyStockOutsideTouch } from "../item-editor";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
 import { useSession } from "../SessionContext";
 import { ExistingOrderPill, StatusPills } from "../StatusPills";
+import {
+  formatOfferExpirationUrgencyPill,
+  isOfferExpired,
+} from "../offer-expiration";
 import { THEME } from "../theme";
 import {
   partitionPlantItemsByCustomerChoice,
@@ -32,14 +38,16 @@ import {
 } from "../terminal-response";
 import type { ActionResult, RequestDetail } from "../types";
 import { ui } from "../ui";
-import type { RequestsStackParamList } from "./navigation-types";
+import type { ExactPlantsStackParamList, RequestsStackParamList } from "./navigation-types";
 
-type Props = NativeStackScreenProps<RequestsStackParamList, "RequestDetail">;
+type Props =
+  | NativeStackScreenProps<RequestsStackParamList, "RequestDetail">
+  | NativeStackScreenProps<ExactPlantsStackParamList, "RequestDetail">;
 
 export function RequestDetailScreen({ navigation, route }: Props) {
   const { apiUrl, token } = useSession();
   const insets = useSafeAreaInsets();
-  const { requestId } = route.params;
+  const { requestId, backLabel = "← Requests" } = route.params;
   const [detail, setDetail] = useState<RequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -222,7 +230,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         onTouchStart={dismissStockSearches}
       >
         <Pressable onPress={() => navigation.goBack()}>
-          <Text style={ui.link}>← Requests</Text>
+          <Text style={ui.link}>{backLabel}</Text>
         </Pressable>
         <Text style={ui.title}>{detail.requestNumber}</Text>
         <Text style={ui.cardMeta}>{detail.customer}</Text>
@@ -230,7 +238,42 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           status={detail.status}
           hasExistingOrder={detail.hasExistingOrder}
           isPurchased={detail.isPurchased}
+          hasResponded={detail.hasResponded}
         />
+        {detail.sentOffer &&
+        (detail.status === "Pending" || detail.status === "Expired") ? (
+          <View style={styles.expirationBox}>
+            {(() => {
+              const pill = formatOfferExpirationUrgencyPill(
+                detail.sentOffer.expiresAtIso,
+              );
+              const expired = isOfferExpired(detail.sentOffer.expiresAtIso);
+              return pill ? (
+                <View
+                  style={[
+                    styles.expirationPill,
+                    expired ? styles.expirationPillExpired : styles.expirationPillActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.expirationPillText,
+                      expired ? styles.expirationPillTextExpired : null,
+                    ]}
+                  >
+                    {pill}
+                  </Text>
+                </View>
+              ) : null;
+            })()}
+            <Text style={styles.expirationLabel}>
+              {isOfferExpired(detail.sentOffer.expiresAtIso)
+                ? "Offer expired"
+                : "Offer expires"}
+            </Text>
+            <Text style={ui.muted}>{detail.sentOffer.expiresAt}</Text>
+          </View>
+        ) : null}
         <Text style={ui.muted}>{detail.email}</Text>
         <Text style={ui.muted}>
           Existing order: {detail.hasExistingOrder ? "Yes — combine shipping" : "No"}
@@ -242,13 +285,13 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           <>
             {terminalGroups.accepted.length > 0 ? (
               <View style={ui.card}>
-                <Text style={ui.cardTitle}>Accepted</Text>
+                <Text style={ui.cardTitle}>ACCEPTED</Text>
                 {terminalGroups.accepted.map((item) => renderItemEditor(item, detail))}
               </View>
             ) : null}
             {terminalGroups.declined.length > 0 ? (
               <View style={ui.card}>
-                <Text style={ui.cardTitle}>Declined</Text>
+                <Text style={ui.cardTitle}>DECLINED</Text>
                 {terminalGroups.declined.map((item) => renderItemEditor(item, detail))}
               </View>
             ) : null}
@@ -366,9 +409,10 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         <View style={ui.card}>
           <Text style={ui.cardTitle}>Internal notes</Text>
           {detail.internalNotes.map((note) => (
-            <Text key={note.id} style={ui.muted}>
-              {note.body}
-            </Text>
+            <View key={note.id} style={{ marginBottom: 8 }}>
+              <Text style={ui.muted}>{formatAdminNoteTimestamp(note.createdAtIso)}</Text>
+              <Text>{note.body}</Text>
+            </View>
           ))}
           <TextInput
             value={noteDraft}
@@ -431,3 +475,42 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  expirationBox: {
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#fff8e6",
+    borderWidth: 1,
+    borderColor: "#f0c040",
+    gap: 6,
+  },
+  expirationPill: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  expirationPillActive: {
+    backgroundColor: THEME.yellow,
+    borderColor: THEME.yellow,
+  },
+  expirationPillExpired: {
+    backgroundColor: THEME.white,
+    borderColor: THEME.expiredRed,
+  },
+  expirationPillText: {
+    fontWeight: "700",
+    color: THEME.darkGreen,
+  },
+  expirationPillTextExpired: {
+    color: THEME.expiredRed,
+  },
+  expirationLabel: {
+    fontWeight: "700",
+    color: THEME.darkGreen,
+  },
+});

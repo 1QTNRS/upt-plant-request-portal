@@ -318,6 +318,7 @@ describe("iOS admin push notifications", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Keep going Exact",
       price: 40,
       weightLbs: 1,
       photoUrls: ["https://cdn.example.com/keep.jpg"],

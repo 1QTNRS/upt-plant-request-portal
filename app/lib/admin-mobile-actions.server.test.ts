@@ -96,19 +96,15 @@ describe("admin mobile request actions", () => {
     assert.equal(pricedBody.request.items[0].price, 92);
     assert.equal(pricedBody.request.canSendOffer, false);
 
-    const photo = await jsonAction(token, created.id, {
-      intent: "add-photo-url",
+    await updateRequestItem(shop, {
+      requestId: created.id,
       itemId: created.items[0].id,
-      photoUrl: "https://cdn.example.com/monstera-peru.jpg",
+      photoUrls: ["https://cdn.example.com/monstera-peru.jpg"],
     });
-    const photoBody = (await photo.json()) as {
-      ok: boolean;
-      request: { canSendOffer: boolean; items: Array<{ photos: Array<{ url: string }> }> };
-    };
-    assert.equal(photoBody.ok, true);
-    assert.equal(photoBody.request.canSendOffer, true);
+    const ready = await loadMobileAdminRequestDetail(shop, created.id);
+    assert.equal(ready?.canSendOffer, true);
     assert.equal(
-      photoBody.request.items[0].photos[0]?.url,
+      ready?.items[0].photos[0]?.url,
       "https://cdn.example.com/monstera-peru.jpg",
     );
 
@@ -136,20 +132,18 @@ describe("admin mobile request actions", () => {
     });
     const token = (await createAdminMobileToken(shop, "iPhone")).token;
     const itemId = created.items[0].id;
-    await jsonAction(token, created.id, {
-      intent: "add-photo-url",
+    await updateRequestItem(shop, {
+      requestId: created.id,
       itemId,
-      photoUrl: "https://cdn.example.com/white-princess-a.jpg",
+      offeredName: "Philodendron White Princess Exact",
+      photoUrls: [
+        "https://cdn.example.com/white-princess-a.jpg",
+        "https://cdn.example.com/white-princess-b.jpg",
+      ],
     });
-    const second = await jsonAction(token, created.id, {
-      intent: "add-photo-url",
-      itemId,
-      photoUrl: "https://cdn.example.com/white-princess-b.jpg",
-    });
-    const before = (await second.json()) as {
-      request: { items: Array<{ photos: Array<{ id: string; url: string }>; price: number }> };
-    };
-    const ids = before.request.items[0].photos.map((photo) => photo.id);
+    const before = await loadMobileAdminRequestDetail(shop, created.id);
+    assert.ok(before);
+    const ids = before.items[0].photos.map((photo) => photo.id);
     assert.equal(ids.length, 2);
 
     const reordered = await jsonAction(token, created.id, {
@@ -166,7 +160,7 @@ describe("admin mobile request actions", () => {
       after.request.items[0].photos.map((photo) => photo.id),
       [ids[1], ids[0]],
     );
-    assert.equal(after.request.items[0].price, before.request.items[0].price);
+    assert.equal(after.request.items[0].price, before.items[0].price);
   });
 
   it("freezes an ADD ON amount on send-offer the same way the website does", async () => {
@@ -180,6 +174,7 @@ describe("admin mobile request actions", () => {
     await updateRequestItem(shop, {
       requestId: created.id,
       itemId: created.items[0].id,
+      offeredName: "Anthurium Clarinervium Exact",
       price: 85,
       weightLbs: 4,
       photoUrls: ["https://cdn.example.com/anthurium.jpg"],
@@ -317,6 +312,7 @@ describe("admin mobile request actions", () => {
     await updateRequestItem(shop, {
       requestId: created.id,
       itemId: created.items[0].id,
+      offeredName: "Ghost Plant Exact",
       price: 40,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/ghost.jpg"],

@@ -147,6 +147,7 @@ export function RequestListScreen({ navigation }: Props) {
               status={row.status}
               hasExistingOrder={row.hasExistingOrder}
               isPurchased={row.isPurchased}
+              hasResponded={row.hasResponded}
             />
             <Text style={ui.muted}>{row.plantsRequested || "No plants listed"}</Text>
           </Pressable>

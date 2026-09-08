@@ -23,6 +23,7 @@ import { missingProductionSecrets } from "../lib/environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
   FEDEX_PRODUCT_SKU,
+  HEAT_PACK_PRODUCT_SKU,
 } from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
@@ -52,6 +53,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     adminPushItemStatusUpdate: settings.adminPushItemStatusUpdate,
     registeredPushDevices,
     fedexProductHandle: settings.fedexProductHandle,
+    heatPackAddonEnabled: settings.heatPackAddonEnabled,
+    heatPackProductHandle: settings.heatPackProductHandle,
     missingSecrets: missingProductionSecrets(),
     mobileTokens: mobileTokens.map((token) => ({
       id: token.id,
@@ -126,6 +129,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: true, reset: true, section: "fedex" as const };
   }
 
+  if (intent === "save-heat-pack-addon") {
+    await updateShopSettings(shop, {
+      heatPackAddonEnabled: form.get("heatPackAddonEnabled") === "on",
+    });
+    return { saved: true, reset: false, section: "heat-pack" as const };
+  }
+
   if (intent === "save-admin-emails") {
     await updateShopSettings(shop, {
       adminNotificationEmail: String(form.get("adminNotificationEmail") || ""),
@@ -174,6 +184,8 @@ export default function Settings() {
     navigation.state !== "idle" && submittingIntent === "save-admin-emails";
   const savingPush =
     navigation.state !== "idle" && submittingIntent === "save-admin-push";
+  const savingHeatPack =
+    navigation.state !== "idle" && submittingIntent === "save-heat-pack-addon";
   const [draft, setDraft] = useState(settings.fedexRemovalWarning);
   const [adminEmail, setAdminEmail] = useState(settings.adminNotificationEmail);
   const [emailNewRequest, setEmailNewRequest] = useState(settings.adminEmailNewRequest);
@@ -187,6 +199,9 @@ export default function Settings() {
   const [pushItemStatus, setPushItemStatus] = useState(
     settings.adminPushItemStatusUpdate,
   );
+  const [heatPackAddonEnabled, setHeatPackAddonEnabled] = useState(
+    settings.heatPackAddonEnabled,
+  );
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
@@ -196,6 +211,7 @@ export default function Settings() {
     setEmailPaymentAfterVoid(settings.adminEmailPaymentAfterVoid);
     setPushNewRequest(settings.adminPushNewRequest);
     setPushItemStatus(settings.adminPushItemStatusUpdate);
+    setHeatPackAddonEnabled(settings.heatPackAddonEnabled);
   }, [
     settings.adminEmailCustomerResponse,
     settings.adminEmailNewRequest,
@@ -203,6 +219,7 @@ export default function Settings() {
     settings.adminNotificationEmail,
     settings.adminPushItemStatusUpdate,
     settings.adminPushNewRequest,
+    settings.heatPackAddonEnabled,
     settings.fedexRemovalWarning,
   ]);
 
@@ -217,7 +234,9 @@ export default function Settings() {
                 ? "Email notifications saved."
                 : actionData.section === "push"
                   ? "iOS push notifications saved."
-                  : "Settings saved."}
+                  : actionData.section === "heat-pack"
+                    ? "Heat Pack add-on setting saved."
+                    : "Settings saved."}
           </s-text>
         </s-banner>
       )}
@@ -301,6 +320,48 @@ export default function Settings() {
             <s-button variant="secondary" type="submit">
               Reset warning to default
             </s-button>
+          </Form>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Customer offer — Heat Pack add-on">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            When enabled, customers who accept plants must choose whether to add
+            a seasonal heat pack to their order.
+          </s-paragraph>
+          <s-text color="subdued">
+            Heat Pack listing SKU: {HEAT_PACK_PRODUCT_SKU} (handle fallback:{" "}
+            {settings.heatPackProductHandle})
+          </s-text>
+          <Form method="post">
+            <s-stack direction="block" gap="base">
+              <input type="hidden" name="intent" value="save-heat-pack-addon" />
+              <label
+                htmlFor="heat-pack-addon-enabled"
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="heat-pack-addon-enabled"
+                  type="checkbox"
+                  name="heatPackAddonEnabled"
+                  checked={heatPackAddonEnabled}
+                  onChange={(event) =>
+                    setHeatPackAddonEnabled(event.currentTarget.checked)
+                  }
+                />
+                <s-text>Heat Pack Add-On enabled</s-text>
+              </label>
+              <s-stack direction="inline" gap="small">
+                <s-button
+                  variant="primary"
+                  type="submit"
+                  {...(savingHeatPack ? { loading: true } : {})}
+                >
+                  Save Heat Pack setting
+                </s-button>
+              </s-stack>
+            </s-stack>
           </Form>
         </s-stack>
       </s-section>

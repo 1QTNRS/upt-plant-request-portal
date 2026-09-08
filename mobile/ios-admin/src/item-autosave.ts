@@ -75,7 +75,7 @@ export function applyItemDraft(item: RequestItem, draft?: ItemDraft | null): Req
   const saved = draftToSavePayload(draft);
   return {
     ...item,
-    offeredName: saved.offeredName || item.offeredName,
+    offeredName: saved.offeredName,
     price: saved.price,
     weightLbs: saved.weightLbs,
     customerFacingNotes: saved.customerFacingNotes,
@@ -87,7 +87,12 @@ export function itemLooksSendable(item: RequestItem): boolean {
   if (item.fulfillmentType === "growers_choice") {
     return Boolean(item.linkedStock?.variantGid);
   }
-  return item.photos.length > 0 && item.price > 0 && item.weightLbs > 0;
+  return (
+    item.offeredName.trim().length > 0 &&
+    item.photos.length > 0 &&
+    item.price > 0 &&
+    item.weightLbs > 0
+  );
 }
 
 export function requestLooksSendable(items: RequestItem[]): boolean {

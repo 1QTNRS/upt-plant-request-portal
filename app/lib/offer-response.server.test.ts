@@ -76,6 +76,7 @@ async function offeredRequest() {
       requestId: created.id,
       itemId: item.id,
       availability: "available",
+      offeredName: `${item.plantName} Exact`,
       price,
       weightLbs: 2,
       customerFacingNotes: `Notes for ${item.plantName}.`,
@@ -151,11 +152,11 @@ describe("an offer answer must be deliberate", () => {
     assert.equal(result.ok, false);
     assert.deepEqual(
       "missingChoices" in result ? result.missingChoices : null,
-      ["Hoya Callistophylla"],
+      ["Hoya Callistophylla Exact"],
     );
     assert.match(
       ("error" in result ? result.error : "") ?? "",
-      /Choose Accept or Reject for Hoya Callistophylla/,
+      /Choose Accept or Reject for Hoya Callistophylla Exact/,
     );
 
     // Nothing recorded, so the customer can still answer properly.
@@ -174,7 +175,7 @@ describe("an offer answer must be deliberate", () => {
 
     assert.deepEqual(
       "missingChoices" in result ? result.missingChoices : null,
-      ["Monstera Albo", "Hoya Callistophylla"],
+      ["Monstera Albo Exact", "Hoya Callistophylla Exact"],
     );
   });
 
@@ -206,8 +207,8 @@ describe("an offer answer must be deliberate", () => {
     const titles = parseDraftOrderLineItems(draft?.lineItemsJson ?? "[]").map(
       (line) => line.title,
     );
-    assert.ok(titles.includes("Monstera Albo"));
-    assert.ok(!titles.includes("Hoya Callistophylla"));
+    assert.ok(titles.includes("Monstera Albo Exact"));
+    assert.ok(!titles.includes("Hoya Callistophylla Exact"));
     assert.ok(!titles.includes("Missing Fern"));
   });
 
@@ -250,6 +251,7 @@ describe("a failed draft order is not presented as a confirmed order", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 250,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/monstera.jpg"],
@@ -370,8 +372,8 @@ describe("the admin can create a missing payment link", () => {
     const titles = parseDraftOrderLineItems(draft?.lineItemsJson ?? "[]").map(
       (line) => line.title,
     );
-    assert.ok(titles.includes("Monstera Albo"));
-    assert.ok(!titles.includes("Hoya Callistophylla"), "rejected plants stay out");
+    assert.ok(titles.includes("Monstera Albo Exact"));
+    assert.ok(!titles.includes("Hoya Callistophylla Exact"), "rejected plants stay out");
   });
 
   it("refuses a request on which the customer accepted nothing", async () => {
@@ -680,7 +682,7 @@ describe("a customer who accepts nothing", () => {
     const declined = response?.items.find((item) => item.sourceItemId === first.id);
 
     assert.equal(declined?.choice, "reject");
-    assert.equal(declined?.plantName, "Monstera Albo");
+    assert.equal(declined?.plantName, "Monstera Albo Exact");
     assert.equal(declined?.price, 250);
     assert.equal(declined?.customerNotes, "Notes for Monstera Albo.");
     assert.deepEqual(declined?.photoUrls, [

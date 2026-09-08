@@ -99,7 +99,6 @@ export function ItemEditor({
   const [priceText, setPriceText] = useState(String(item.price ?? ""));
   const [weightText, setWeightText] = useState(String(item.weightLbs ?? ""));
   const [notes, setNotes] = useState(item.customerFacingNotes);
-  const [photoUrl, setPhotoUrl] = useState("");
   const [stockTerm, setStockTerm] = useState("");
   const [stockResults, setStockResults] = useState<StockCandidate[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
@@ -537,11 +536,16 @@ export function ItemEditor({
           <Text style={ui.muted}>Requested: {item.plantName}</Text>
         </View>
       </View>
-      {noteLines.customer ? <Text style={ui.muted}>Customer: {noteLines.customer}</Text> : null}
+      {noteLines.customer ? (
+        <View style={styles.customerNotesBox}>
+          <Text style={styles.customerNotesLabel}>Customer notes</Text>
+          <Text style={styles.customerNotesBody}>{noteLines.customer}</Text>
+        </View>
+      ) : null}
       {noteLines.admin ? <Text style={ui.muted}>Admin: {noteLines.admin}</Text> : null}
 
       {canEditItems ? (
-        <View style={ui.filters}>
+        <View style={[ui.filters, styles.fulfillmentButtons]}>
           {(["exact_plant", "growers_choice", "not_available"] as FulfillmentRoute[]).map(
             (value) => (
               <Pressable
@@ -792,28 +796,6 @@ export function ItemEditor({
           >
             <Text style={ui.secondaryLabel}>Upload Photos</Text>
           </Pressable>
-          <TextInput
-            value={photoUrl}
-            onChangeText={setPhotoUrl}
-            editable={fieldsOn}
-            placeholder="Or paste a photo URL"
-            placeholderTextColor={THEME.muted}
-            autoCapitalize="none"
-            style={[ui.input, !fieldsOn && ui.inputDisabled]}
-          />
-          <Pressable
-            style={[ui.secondary, !fieldsOn && ui.buttonDisabled]}
-            disabled={!fieldsOn}
-            onPress={() =>
-              void act({
-                intent: "add-photo-url",
-                itemId: item.id,
-                photoUrl,
-              })
-            }
-          >
-            <Text style={ui.secondaryLabel}>Add photo URL</Text>
-          </Pressable>
         </View>
       ) : null}
 
@@ -886,4 +868,26 @@ const styles = {
   },
   removeStockLabel: { color: THEME.darkGreen, fontWeight: "700" as const, fontSize: 16 },
   busy: { marginTop: 8 },
+  customerNotesBox: {
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#eef8f2",
+    borderWidth: 1,
+    borderColor: "#b8dcc8",
+    gap: 4,
+  },
+  customerNotesLabel: {
+    color: THEME.darkGreen,
+    fontWeight: "700" as const,
+    fontSize: 14,
+  },
+  customerNotesBody: {
+    color: THEME.darkGreen,
+    lineHeight: 20,
+  },
+  fulfillmentButtons: {
+    marginTop: 4,
+  },
 };

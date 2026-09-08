@@ -10,6 +10,8 @@ export type SettingsFormState = {
   pushItemStatus: boolean;
   registeredPushDevices: number;
   sku: string;
+  heatPackAddonEnabled: boolean;
+  heatPackSku: string;
 };
 
 export function settingsFormFromShop(settings: ShopSettings): SettingsFormState {
@@ -23,6 +25,8 @@ export function settingsFormFromShop(settings: ShopSettings): SettingsFormState 
     pushItemStatus: settings.adminPushItemStatusUpdate,
     registeredPushDevices: settings.registeredPushDevices,
     sku: settings.fedexProductSku,
+    heatPackAddonEnabled: settings.heatPackAddonEnabled,
+    heatPackSku: settings.heatPackProductSku,
   };
 }
 
