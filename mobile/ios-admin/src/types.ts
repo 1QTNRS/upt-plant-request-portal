@@ -14,6 +14,7 @@ export type RequestRow = {
   status: string;
   submittedAtIso: string;
   closedAtIso?: string;
+  expiredAtIso?: string;
   hasResponded: boolean;
   hasExistingOrder: boolean;
   isPurchased?: boolean;
@@ -58,6 +59,7 @@ export type RequestDetail = {
   status: string;
   submittedAtIso: string;
   closedAtIso?: string;
+  expiredAtIso?: string;
   paidAtIso?: string;
   hasExistingOrder: boolean;
   isPurchased?: boolean;
@@ -73,6 +75,12 @@ export type RequestDetail = {
     shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
+  customerResponse?: {
+    items: Array<{
+      sourceItemId: string;
+      choice: "accept" | "reject" | "unavailable";
+    }>;
+  } | null;
   items: RequestItem[];
 };
 

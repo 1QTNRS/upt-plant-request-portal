@@ -10,9 +10,34 @@ function pillColors(status: string) {
     return { backgroundColor: THEME.yellow, color: THEME.darkGreen, borderColor: THEME.yellow };
   }
   if (status === "Expired") {
-    return { backgroundColor: THEME.white, color: THEME.darkGreen, borderColor: THEME.yellow };
+    return {
+      backgroundColor: THEME.white,
+      color: THEME.expiredRed,
+      borderColor: THEME.expiredRed,
+    };
   }
   return { backgroundColor: THEME.mint, color: THEME.darkGreen, borderColor: THEME.mint };
+}
+
+export function ExistingOrderPill({ status }: { status?: string }) {
+  const existingColors =
+    status === "Closed"
+      ? { backgroundColor: THEME.darkGreen, color: THEME.white, borderColor: THEME.darkGreen }
+      : { backgroundColor: THEME.yellow, color: THEME.darkGreen, borderColor: THEME.yellow };
+
+  return (
+    <View
+      style={[
+        styles.pill,
+        {
+          backgroundColor: existingColors.backgroundColor,
+          borderColor: existingColors.borderColor,
+        },
+      ]}
+    >
+      <Text style={[styles.label, { color: existingColors.color }]}>Existing Order</Text>
+    </View>
+  );
 }
 
 export function StatusPills({

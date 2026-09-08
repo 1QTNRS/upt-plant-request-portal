@@ -51,7 +51,9 @@ import {
   offerReadinessMessage,
   sendOfferHoldControlsEnabled,
   parseShippingFeeOverride,
+  partitionPlantItemsByCustomerChoice,
   payableInvoiceUrl,
+  shouldGroupTerminalPlantItems,
   requestIsPurchased,
   requestStatusTone,
   shouldOfferAdminPaymentLinkRecovery,
@@ -109,7 +111,7 @@ import {
   AdminResponsiveStyles,
   wrapRowStyle,
 } from "../components/admin-layout";
-import { NestedBox } from "../components/theme";
+import { NestedBox, StatusBadge } from "../components/theme";
 import { ViewerLocalTime } from "../components/viewer-local-time";
 
 function itemStatusTone(
@@ -1418,15 +1420,22 @@ function SendOfferSection({
                 <s-text>{sentOffer.expirationDays} days</s-text>
               </s-stack>
               ) : null}
-              {holdControlsOn && sentOffer.shippingFeeOverride !== undefined ? (
-                <s-stack direction="block" gap="small">
-                  <s-text color="subdued">ADD ON</s-text>
-                  <s-text>
-                    ${sentOffer.shippingFeeOverride.toFixed(2)}
-                  </s-text>
-                </s-stack>
-              ) : null}
             </s-stack>
+            {holdControlsOn ? (
+              <s-stack direction="block" gap="base">
+                {hasExistingOrder ? (
+                  <StatusBadge tone="warning">Existing Order</StatusBadge>
+                ) : null}
+                {sentOffer.shippingFeeOverride !== undefined ? (
+                  <s-stack direction="block" gap="small">
+                    <s-text color="subdued">ADD ON</s-text>
+                    <s-text>
+                      ${sentOffer.shippingFeeOverride.toFixed(2)}
+                    </s-text>
+                  </s-stack>
+                ) : null}
+              </s-stack>
+            ) : null}
           </s-stack>
         </NestedBox>
       </s-stack>
@@ -1486,6 +1495,7 @@ function SendOfferSection({
           }}
           aria-disabled={holdControlsOn ? undefined : true}
         >
+        <s-stack direction="block" gap="base">
         <s-paragraph>
           Choose how long the customer has to review and accept this offer.
         </s-paragraph>
@@ -1511,12 +1521,7 @@ function SendOfferSection({
           ))}
         </s-stack>
         {hasExistingOrder && holdControlsOn ? (
-          <s-banner tone="info">
-            <s-text>
-              This customer said they have an existing order. You can set an
-              ADD ON amount below if you are combining shipments.
-            </s-text>
-          </s-banner>
+          <StatusBadge tone="warning">Existing Order</StatusBadge>
         ) : null}
         <s-stack direction="block" gap="small">
           <label htmlFor="shippingFeeOverride">
@@ -1542,6 +1547,7 @@ function SendOfferSection({
           including 0. Leave blank so the customer can choose a store shipping
           rate at checkout.
         </s-text>
+        </s-stack>
         </div>
         <s-button
           variant="primary"
@@ -2057,6 +2063,64 @@ function PlantPatternSection({
   );
 }
 
+function TerminalPlantItemsSection({
+  items,
+  responseItems,
+  shop,
+  onRequiredPhotoBusyChange,
+}: {
+  items: PlantItem[];
+  responseItems: Array<{ sourceItemId: string; choice: "accept" | "reject" | "unavailable" }>;
+  shop: string;
+  onRequiredPhotoBusyChange?: (itemId: string, busy: boolean) => void;
+}) {
+  const { accepted, declined } = partitionPlantItemsByCustomerChoice(
+    items,
+    responseItems,
+  );
+
+  return (
+    <s-stack direction="block" gap="large">
+      {accepted.length > 0 ? (
+        <s-stack direction="block" gap="base">
+          <s-heading>Accepted</s-heading>
+          <NestedBox>
+            <s-stack direction="block" gap="base">
+              {accepted.map((item) => (
+                <PlantItemCard
+                  key={item.id}
+                  item={item}
+                  shop={shop}
+                  canEdit={false}
+                  onRequiredPhotoBusyChange={onRequiredPhotoBusyChange}
+                />
+              ))}
+            </s-stack>
+          </NestedBox>
+        </s-stack>
+      ) : null}
+      {declined.length > 0 ? (
+        <s-stack direction="block" gap="base">
+          <s-heading>Declined</s-heading>
+          <NestedBox>
+            <s-stack direction="block" gap="base">
+              {declined.map((item) => (
+                <PlantItemCard
+                  key={item.id}
+                  item={item}
+                  shop={shop}
+                  canEdit={false}
+                  onRequiredPhotoBusyChange={onRequiredPhotoBusyChange}
+                />
+              ))}
+            </s-stack>
+          </NestedBox>
+        </s-stack>
+      ) : null}
+    </s-stack>
+  );
+}
+
 export default function RequestDetail() {
   const {
     shop,
@@ -2126,6 +2190,10 @@ export default function RequestDetail() {
   };
 
   const canEditItems = plantRequest.status === "New";
+  const groupTerminalItems = shouldGroupTerminalPlantItems(
+    plantRequest.status,
+    response?.items,
+  );
 
   return (
     <s-page heading={`Request ${getDisplayRequestNumber(plantRequest)}`}>
@@ -2239,15 +2307,24 @@ export default function RequestDetail() {
           </s-banner>
         )}
         <s-stack direction="block" gap="base">
-          {plantRequest.items.map((item) => (
-            <PlantItemCard
-              key={item.id}
-              item={item}
+          {groupTerminalItems && response ? (
+            <TerminalPlantItemsSection
+              items={plantRequest.items}
+              responseItems={response.items}
               shop={shop}
-              canEdit={canEditItems}
               onRequiredPhotoBusyChange={setRequiredPhotoBusy}
             />
-          ))}
+          ) : (
+            plantRequest.items.map((item) => (
+              <PlantItemCard
+                key={item.id}
+                item={item}
+                shop={shop}
+                canEdit={canEditItems}
+                onRequiredPhotoBusyChange={setRequiredPhotoBusy}
+              />
+            ))
+          )}
         </s-stack>
       </s-section>
 

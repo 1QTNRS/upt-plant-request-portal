@@ -33,6 +33,7 @@ export type MobileAdminRequestRow = {
   status: PlantRequest["status"];
   submittedAtIso: string;
   closedAtIso?: string;
+  expiredAtIso?: string;
   hasResponded: boolean;
   hasExistingOrder: boolean;
   isPurchased: boolean;
@@ -63,6 +64,12 @@ export type MobileAdminRequestDetail = {
     shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
+  customerResponse?: {
+    items: Array<{
+      sourceItemId: string;
+      choice: "accept" | "reject" | "unavailable";
+    }>;
+  } | null;
   items: Array<{
     id: string;
     plantName: string;
@@ -102,6 +109,7 @@ export function toMobileAdminRequestRow(
     status: request.status,
     submittedAtIso: request.submittedAtIso,
     closedAtIso: request.closedAtIso,
+    expiredAtIso: request.expiredAtIso,
     hasResponded: request.hasResponded,
     hasExistingOrder: request.hasExistingOrder === true,
     isPurchased: requestIsPurchased(request),
@@ -113,6 +121,7 @@ export function toMobileAdminRequestDetail(
   extras: {
     canCloseDeclined?: boolean;
     internalNotes?: MobileAdminRequestDetail["internalNotes"];
+    customerResponse?: MobileAdminRequestDetail["customerResponse"];
   } = {},
 ): MobileAdminRequestDetail {
   const offerProblems = incompleteOfferItems(request.items);
@@ -145,6 +154,7 @@ export function toMobileAdminRequestDetail(
         }
       : undefined,
     internalNotes: extras.internalNotes ?? [],
+    customerResponse: extras.customerResponse ?? null,
     items: request.items.map((item) => ({
       id: item.id,
       plantName: item.plantName,

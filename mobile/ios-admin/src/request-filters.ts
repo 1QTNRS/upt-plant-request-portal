@@ -6,7 +6,6 @@ export const STATUS_FILTERS = [
   { value: "New", label: "New" },
   { value: "Pending", label: "Pending" },
   { value: "Closed", label: "Closed" },
-  { value: "Expired", label: "Expired" },
   { value: "ExistingOrder", label: "Existing Order" },
 ] as const;
 
@@ -22,7 +21,7 @@ export function parseClosedRequestSort(
 }
 
 export function closedRequestSortLabel(sort: ClosedRequestSort): string {
-  return sort === "oldest" ? "Oldest Closed" : "Newest Closed";
+  return sort === "oldest" ? "Oldest" : "Newest";
 }
 
 /**
@@ -37,11 +36,32 @@ export function closedRequestSortTime(row: {
   return Number.isFinite(time) ? time : 0;
 }
 
+/**
+ * One comparable terminal timestamp for Closed + Expired rows in the Closed
+ * filter. Closed uses closedAt; Expired uses expiredAt (never submittedAt).
+ */
+export function terminalRequestSortTime(row: {
+  status?: string;
+  closedAtIso?: string | null;
+  expiredAtIso?: string | null;
+}): number {
+  if (row.status === "Expired") {
+    if (!row.expiredAtIso) return 0;
+    const time = Date.parse(String(row.expiredAtIso));
+    return Number.isFinite(time) ? time : 0;
+  }
+  return closedRequestSortTime(row);
+}
+
 export function sortClosedRequests<
-  T extends { closedAtIso?: string | null },
+  T extends {
+    status?: string;
+    closedAtIso?: string | null;
+    expiredAtIso?: string | null;
+  },
 >(rows: T[], sort: ClosedRequestSort = "newest"): T[] {
   return [...rows].sort((left, right) => {
-    const delta = closedRequestSortTime(right) - closedRequestSortTime(left);
+    const delta = terminalRequestSortTime(right) - terminalRequestSortTime(left);
     return sort === "newest" ? delta : -delta;
   });
 }
@@ -52,6 +72,9 @@ export function matchesStatusFilter(
 ): boolean {
   if (filter === "ExistingOrder") {
     return row.status === "New" && row.hasExistingOrder === true;
+  }
+  if (filter === "Closed") {
+    return row.status === "Closed" || row.status === "Expired";
   }
   if (filter === "All") return true;
   return row.status === filter;
@@ -80,11 +103,13 @@ export function statusFilterCounts(
   rows: RequestRow[],
   stats?: Stats | null,
 ): Record<StatusFilterValue, number> {
+  const closed =
+    (stats?.closed ?? rows.filter((row) => row.status === "Closed").length) +
+    (stats?.expired ?? rows.filter((row) => row.status === "Expired").length);
   return {
     New: stats?.newRequests ?? rows.filter((row) => row.status === "New").length,
     Pending: stats?.pending ?? rows.filter((row) => row.status === "Pending").length,
-    Closed: stats?.closed ?? rows.filter((row) => row.status === "Closed").length,
-    Expired: stats?.expired ?? rows.filter((row) => row.status === "Expired").length,
+    Closed: closed,
     ExistingOrder: rows.filter(
       (row) => row.status === "New" && row.hasExistingOrder === true,
     ).length,
