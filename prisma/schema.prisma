@@ -47,6 +47,11 @@ model ShopSettings {
   fedexVariantGid         String?
   fedexUpgradePrice       Float    @default(15)
   fedexUpgradeLabel       String   @default("FedEx Priority Overnight Upgrade")
+  heatPackAddonEnabled    Boolean  @default(false)
+  heatPackProductHandle   String   @default("heat-pack-includes-foil-insulation")
+  heatPackVariantGid      String?
+  heatPackPrice           Float    @default(0)
+  heatPackLabel           String   @default("Heat Pack (includes foil insulation)")
   adminNotificationEmail  String   @default("")
   /// Portal notification: admin_new_request. Off does not stop request create.
   adminEmailNewRequest    Boolean  @default(true)
@@ -332,6 +337,8 @@ model CustomerResponse {
   offerExpiresAt        DateTime?
   fedexUpgradeSelected  Boolean        @default(true)
   fedexUpgradePrice     Float          @default(15)
+  heatPackSelected      Boolean?
+  heatPackPrice         Float?
   snapshotJson          String
   items                 ResponseItem[]
 }
