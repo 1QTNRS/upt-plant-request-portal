@@ -6,6 +6,7 @@ import {
   buildExactPlantProductCreateInput,
   buildExactPlantVariantInput,
   declinedItemTag,
+  EXACT_PLANT_VENDOR,
   exactPlantMediaError,
   hostedPhotoUrls,
 } from "./exact-plants";
@@ -384,7 +385,7 @@ describe("EXACT PLANTS product media", () => {
     assert.deepEqual(product, {
       title: "Monstera Thai Constellation",
       status: "ACTIVE",
-      vendor: "UPT",
+      vendor: EXACT_PLANT_VENDOR,
       productType: "Exact Plant",
       tags: [],
       collectionsToJoin: ["gid://shopify/Collection/1"],
