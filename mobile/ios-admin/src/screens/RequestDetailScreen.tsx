@@ -194,7 +194,11 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         </Pressable>
         <Text style={ui.title}>{detail.requestNumber}</Text>
         <Text style={ui.cardMeta}>{detail.customer}</Text>
-        <StatusPills status={detail.status} hasExistingOrder={detail.hasExistingOrder} />
+        <StatusPills
+          status={detail.status}
+          hasExistingOrder={detail.hasExistingOrder}
+          isPurchased={detail.isPurchased}
+        />
         <Text style={ui.muted}>{detail.email}</Text>
         <Text style={ui.muted}>
           Existing order: {detail.hasExistingOrder ? "Yes — combine shipping" : "No"}
@@ -254,12 +258,6 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                   customer and closes the request. Expiration and ADD ON do not apply.
                 </Text>
               ) : null}
-              {detail.hasExistingOrder && holdControlsOn ? (
-                <Text style={ui.muted}>
-                  This customer said they have an existing order. You can set an ADD ON
-                  amount below if you are combining shipments.
-                </Text>
-              ) : null}
               <View
                 style={[ui.holdControls, !holdControlsOn && ui.holdControlsOff]}
                 pointerEvents={holdControlsOn ? "auto" : "none"}
@@ -278,6 +276,12 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                   </Pressable>
                 ))}
               </View>
+              {detail.hasExistingOrder && holdControlsOn ? (
+                <Text style={ui.muted}>
+                  This customer said they have an existing order. You can set an ADD ON
+                  amount below if you are combining shipments.
+                </Text>
+              ) : null}
               <Text style={ui.label}>ADD ON</Text>
               <TextInput
                 value={shippingFeeOverride}

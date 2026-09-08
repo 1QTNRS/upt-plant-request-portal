@@ -13,8 +13,10 @@ export type RequestRow = {
   plantsRequested: string;
   status: string;
   submittedAtIso: string;
+  closedAtIso?: string;
   hasResponded: boolean;
   hasExistingOrder: boolean;
+  isPurchased?: boolean;
 };
 
 export type OfferProblem = {
@@ -55,7 +57,10 @@ export type RequestDetail = {
   email: string;
   status: string;
   submittedAtIso: string;
+  closedAtIso?: string;
+  paidAtIso?: string;
   hasExistingOrder: boolean;
+  isPurchased?: boolean;
   canEditItems: boolean;
   canSendOffer: boolean;
   canCloseDeclined: boolean;

@@ -529,6 +529,9 @@ describe("declined exact plant listings", () => {
         createExactPlantListing(
           stubAdmin({
             ExactPlantProductByTag: existingProduct,
+            ExactPlantProductById: {
+              product: existingProduct.products.nodes[0],
+            },
             ExactPlantsCollection: {
               collections: {
                 nodes: [

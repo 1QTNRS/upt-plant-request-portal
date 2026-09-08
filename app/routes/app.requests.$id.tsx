@@ -52,6 +52,7 @@ import {
   sendOfferHoldControlsEnabled,
   parseShippingFeeOverride,
   payableInvoiceUrl,
+  requestIsPurchased,
   requestStatusTone,
   shouldOfferAdminPaymentLinkRecovery,
   UNAVAILABLE_REASON_OPTIONS,
@@ -1469,14 +1470,6 @@ function SendOfferSection({
             </s-stack>
           </s-banner>
         ) : null}
-        {hasExistingOrder && holdControlsOn ? (
-          <s-banner tone="info">
-            <s-text>
-              This customer said they have an existing order. You can set an
-              ADD ON amount below if you are combining shipments.
-            </s-text>
-          </s-banner>
-        ) : null}
         {!holdControlsOn ? (
           <s-banner tone="info">
             <s-text>
@@ -1517,6 +1510,14 @@ function SendOfferSection({
             </button>
           ))}
         </s-stack>
+        {hasExistingOrder && holdControlsOn ? (
+          <s-banner tone="info">
+            <s-text>
+              This customer said they have an existing order. You can set an
+              ADD ON amount below if you are combining shipments.
+            </s-text>
+          </s-banner>
+        ) : null}
         <s-stack direction="block" gap="small">
           <label htmlFor="shippingFeeOverride">
             <s-text>ADD ON</s-text>
@@ -2194,9 +2195,14 @@ export default function RequestDetail() {
             </s-stack>
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Status</s-text>
-              <s-badge tone={requestStatusTone(plantRequest.status)}>
-                {plantRequest.status}
-              </s-badge>
+              <s-stack direction="inline" gap="small">
+                <s-badge tone={requestStatusTone(plantRequest.status)}>
+                  {plantRequest.status}
+                </s-badge>
+                {requestIsPurchased(plantRequest) ? (
+                  <s-badge tone="warning">Purchased</s-badge>
+                ) : null}
+              </s-stack>
             </s-stack>
             <s-stack direction="block" gap="small">
               <s-text color="subdued">Submitted</s-text>

@@ -204,6 +204,59 @@ describe("EXACT PLANTS listing on Shopify", () => {
     );
   });
 
+  it("tags a new listing only with the shared EXACT PLANTS label", async () => {
+    const calls = await listOnePlant();
+    const created = callOf(calls, "CreateExactPlantProduct");
+    const product = created.variables.product as { tags: string[] };
+    assert.deepEqual(product.tags, ["EXACT PLANTS"]);
+    assert.equal(
+      product.tags.some((tag) => tag.startsWith("upt-declined-item:")),
+      false,
+    );
+  });
+
+  it("updates a stored product GID instead of creating a second listing", async () => {
+    const calls: Call[] = [];
+    await createExactPlantShopifyProduct(
+      fakeAdmin(
+        {
+          ...LISTING_RESPONSES,
+          ...retryResponses([
+            {
+              id: "gid://shopify/MediaImage/1",
+              originalSource: { url: EXISTING_PHOTO },
+            },
+          ]),
+          ExactPlantProductById: {
+            product: {
+              id: PRODUCT_GID,
+              handle: "monstera-thai-constellation",
+              variants: {
+                nodes: [
+                  { id: VARIANT_GID, inventoryItem: { id: INVENTORY_ITEM_GID } },
+                ],
+              },
+            },
+          },
+        },
+        calls,
+      ),
+      {
+        requestItemId: "item_1",
+        title: "Monstera Thai Constellation",
+        price: 285,
+        weightLbs: 4.5,
+        photoUrls: [EXISTING_PHOTO],
+        existingProductGid: PRODUCT_GID,
+      },
+    );
+    assert.equal(callOf(calls, "ExactPlantProductById").variables.id, PRODUCT_GID);
+    assert.equal(
+      calls.filter((call) => call.operation === "CreateExactPlantProduct").length,
+      0,
+    );
+  });
+
   it("tracks one unit of stock and refuses oversell", async () => {
     const calls = await listOnePlant();
     assert.deepEqual(callOf(calls, "UpdateExactPlantVariant").variables.variants, [

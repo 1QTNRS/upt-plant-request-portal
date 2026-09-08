@@ -65,6 +65,8 @@ describe("request page mint chrome", () => {
     assert.match(pills, /status === "Closed"/);
     assert.match(pills, /status === "Pending"/);
     assert.match(pills, /status === "Expired"/);
+    assert.match(pills, /Purchased/);
+    assert.match(pills, /THEME\.yellow/);
     assert.doesNotMatch(pills, /New sits on the mint request page/);
   });
 

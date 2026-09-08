@@ -17,6 +17,8 @@ import {
   getDisplayRequestNumber,
   incompleteOfferItems,
   parseAdminDashboardStatusFilter,
+  requestIsPurchased,
+  sortAdminDashboardRequests,
   summarizeAdminDashboardStats,
   type AdminDashboardStatusFilter,
   type IncompleteOfferItem,
@@ -30,8 +32,10 @@ export type MobileAdminRequestRow = {
   plantsRequested: string;
   status: PlantRequest["status"];
   submittedAtIso: string;
+  closedAtIso?: string;
   hasResponded: boolean;
   hasExistingOrder: boolean;
+  isPurchased: boolean;
 };
 
 export type MobileAdminRequestDetail = {
@@ -46,6 +50,7 @@ export type MobileAdminRequestDetail = {
   paidAtIso?: string;
   hasResponded: boolean;
   hasExistingOrder: boolean;
+  isPurchased: boolean;
   canEditItems: boolean;
   canSendOffer: boolean;
   canCloseDeclined: boolean;
@@ -96,8 +101,10 @@ export function toMobileAdminRequestRow(
     plantsRequested: formatPlantsSummary(request.items),
     status: request.status,
     submittedAtIso: request.submittedAtIso,
+    closedAtIso: request.closedAtIso,
     hasResponded: request.hasResponded,
     hasExistingOrder: request.hasExistingOrder === true,
+    isPurchased: requestIsPurchased(request),
   };
 }
 
@@ -121,6 +128,7 @@ export function toMobileAdminRequestDetail(
     paidAtIso: request.paidAtIso,
     hasResponded: request.hasResponded,
     hasExistingOrder: request.hasExistingOrder === true,
+    isPurchased: requestIsPurchased(request),
     canEditItems: request.status === "New",
     canSendOffer: request.status === "New" && offerProblems.length === 0,
     canCloseDeclined: Boolean(extras.canCloseDeclined),
@@ -185,7 +193,10 @@ export function mobileAdminDashboardPayload(
   requests: MobileAdminRequestRow[];
 } {
   const statusFilter = parseAdminDashboardStatusFilter(status);
-  const filtered = filterAdminDashboardRequests(requests, query, statusFilter);
+  const filtered = sortAdminDashboardRequests(
+    filterAdminDashboardRequests(requests, query, statusFilter),
+    statusFilter,
+  );
   return {
     shop,
     query,

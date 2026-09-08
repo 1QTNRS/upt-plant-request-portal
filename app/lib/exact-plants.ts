@@ -5,6 +5,9 @@ export const EXACT_PLANT_PRODUCT_TYPE = "Exact Plant";
 export const EXACT_PLANT_VENDOR = "UPT";
 export const EXACT_PLANT_ITEM_TAG_PREFIX = "upt-declined-item:";
 
+/** Shared tag written on every new Exact Plant product. Not a per-listing id. */
+export const EXACT_PLANT_SHARED_TAGS = [EXACT_PLANTS_COLLECTION_TITLE] as const;
+
 /** Admin chose not to create an EXACT PLANTS listing for an eligible plant. */
 export const EXACT_PLANT_DISMISSED_REASON = "Admin Dismissed from EXACT PLANTS";
 
@@ -64,12 +67,17 @@ export type ExactPlantListingRecord = ExactPlantListingDraft & {
 };
 
 /**
- * Idempotency tag on the Shopify product. The `declined` wording predates
- * expired offers becoming eligible; it is kept because renaming it would orphan
- * the products already created under it and allow duplicates.
+ * Legacy lookup key for products created before unique tags were stopped.
+ * New listings do not write this tag. Retries still search for it so older
+ * products are not duplicated. The `declined` wording predates expired offers
+ * becoming eligible.
  */
 export function declinedItemTag(requestItemId: string): string {
   return `${EXACT_PLANT_ITEM_TAG_PREFIX}${requestItemId}`;
+}
+
+export function exactPlantSharedTags(): string[] {
+  return [...EXACT_PLANT_SHARED_TAGS];
 }
 
 /**
@@ -642,7 +650,7 @@ export function buildExactPlantProductCreateInput(input: {
       status: "ACTIVE" as const,
       vendor: EXACT_PLANT_VENDOR,
       productType: EXACT_PLANT_PRODUCT_TYPE,
-      tags: [EXACT_PLANTS_COLLECTION_TITLE, declinedItemTag(input.requestItemId)],
+      tags: exactPlantSharedTags(),
       collectionsToJoin: [input.collectionId],
     },
     media: buildExactPlantMediaInput(input),

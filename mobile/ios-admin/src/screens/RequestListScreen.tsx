@@ -16,8 +16,11 @@ import { StatusFilterBar } from "../components/StatusFilterBar";
 import { apiPath } from "../query";
 import {
   DEFAULT_STATUS_FILTER,
+  closedRequestSortLabel,
   filterRequestRows,
+  parseClosedRequestSort,
   statusFilterCounts,
+  type ClosedRequestSort,
   type StatusFilterValue,
 } from "../request-filters";
 import { useSession } from "../SessionContext";
@@ -35,6 +38,7 @@ export function RequestListScreen({ navigation }: Props) {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>(DEFAULT_STATUS_FILTER);
+  const [closedSort, setClosedSort] = useState<ClosedRequestSort>("newest");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,7 +73,7 @@ export function RequestListScreen({ navigation }: Props) {
     void loadList("", "initial");
   }, [loadList]);
 
-  const visible = filterRequestRows(requests, statusFilter);
+  const visible = filterRequestRows(requests, statusFilter, "", closedSort);
   const counts = statusFilterCounts(requests, stats);
 
   return (
@@ -85,6 +89,26 @@ export function RequestListScreen({ navigation }: Props) {
         counts={counts}
         onSelect={setStatusFilter}
       />
+      {statusFilter === "Closed" ? (
+        <View style={ui.row}>
+          {(["newest", "oldest"] as const).map((sort) => {
+            const on = closedSort === sort;
+            return (
+              <Pressable
+                key={sort}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                onPress={() => setClosedSort(parseClosedRequestSort(sort))}
+                style={[ui.secondary, on && ui.button, { flex: 1, marginBottom: 12 }]}
+              >
+                <Text style={on ? ui.buttonLabel : ui.secondaryLabel}>
+                  {closedRequestSortLabel(sort)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -119,7 +143,11 @@ export function RequestListScreen({ navigation }: Props) {
           >
             <Text style={ui.cardTitle}>{row.requestNumber}</Text>
             <Text style={ui.cardMeta}>{row.customer}</Text>
-            <StatusPills status={row.status} hasExistingOrder={row.hasExistingOrder} />
+            <StatusPills
+              status={row.status}
+              hasExistingOrder={row.hasExistingOrder}
+              isPurchased={row.isPurchased}
+            />
             <Text style={ui.muted}>{row.plantsRequested || "No plants listed"}</Text>
           </Pressable>
         ))}

@@ -386,7 +386,7 @@ describe("EXACT PLANTS product media", () => {
       status: "ACTIVE",
       vendor: "UPT",
       productType: "Exact Plant",
-      tags: ["EXACT PLANTS", "upt-declined-item:item_1"],
+      tags: ["EXACT PLANTS"],
       collectionsToJoin: ["gid://shopify/Collection/1"],
     });
     assert.equal(media.length, 1);

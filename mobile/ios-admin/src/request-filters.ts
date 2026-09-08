@@ -12,6 +12,40 @@ export const STATUS_FILTERS = [
 
 export type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
 
+/** Mirrors `ClosedRequestSort` in `app/lib/portal.ts`. */
+export type ClosedRequestSort = "newest" | "oldest";
+
+export function parseClosedRequestSort(
+  value: string | null | undefined,
+): ClosedRequestSort {
+  return value === "oldest" ? "oldest" : "newest";
+}
+
+export function closedRequestSortLabel(sort: ClosedRequestSort): string {
+  return sort === "oldest" ? "Oldest Closed" : "Newest Closed";
+}
+
+/**
+ * Milliseconds used to sort Closed rows. Missing/invalid closedAt sorts as 0
+ * so the list stays deterministic and never throws.
+ */
+export function closedRequestSortTime(row: {
+  closedAtIso?: string | null;
+}): number {
+  if (!row.closedAtIso) return 0;
+  const time = Date.parse(String(row.closedAtIso));
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function sortClosedRequests<
+  T extends { closedAtIso?: string | null },
+>(rows: T[], sort: ClosedRequestSort = "newest"): T[] {
+  return [...rows].sort((left, right) => {
+    const delta = closedRequestSortTime(right) - closedRequestSortTime(left);
+    return sort === "newest" ? delta : -delta;
+  });
+}
+
 export function matchesStatusFilter(
   row: Pick<RequestRow, "status" | "hasExistingOrder">,
   filter: string,
@@ -27,9 +61,10 @@ export function filterRequestRows(
   rows: RequestRow[],
   filter: string,
   query = "",
+  closedSort: ClosedRequestSort = "newest",
 ): RequestRow[] {
   const needle = query.trim().toLowerCase();
-  return rows.filter((row) => {
+  const filtered = rows.filter((row) => {
     if (!matchesStatusFilter(row, filter)) return false;
     if (!needle) return true;
     return [row.customer, row.email, row.requestNumber, row.plantsRequested]
@@ -37,6 +72,8 @@ export function filterRequestRows(
       .toLowerCase()
       .includes(needle);
   });
+  if (filter !== "Closed") return filtered;
+  return sortClosedRequests(filtered, closedSort);
 }
 
 export function statusFilterCounts(

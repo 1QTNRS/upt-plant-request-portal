@@ -18,15 +18,22 @@ function pillColors(status: string) {
 export function StatusPills({
   status,
   hasExistingOrder,
+  isPurchased,
 }: {
   status: string;
   hasExistingOrder?: boolean;
+  isPurchased?: boolean;
 }) {
   const statusColors = pillColors(status);
   const existingColors =
     status === "Closed"
       ? { backgroundColor: THEME.darkGreen, color: THEME.white, borderColor: THEME.darkGreen }
       : { backgroundColor: THEME.yellow, color: THEME.darkGreen, borderColor: THEME.yellow };
+  const purchasedColors = {
+    backgroundColor: THEME.yellow,
+    color: THEME.darkGreen,
+    borderColor: THEME.yellow,
+  };
 
   return (
     <View style={styles.row}>
@@ -41,6 +48,19 @@ export function StatusPills({
       >
         <Text style={[styles.label, { color: statusColors.color }]}>{status}</Text>
       </View>
+      {isPurchased ? (
+        <View
+          style={[
+            styles.pill,
+            {
+              backgroundColor: purchasedColors.backgroundColor,
+              borderColor: purchasedColors.borderColor,
+            },
+          ]}
+        >
+          <Text style={[styles.label, { color: purchasedColors.color }]}>Purchased</Text>
+        </View>
+      ) : null}
       {hasExistingOrder ? (
         <View
           style={[
