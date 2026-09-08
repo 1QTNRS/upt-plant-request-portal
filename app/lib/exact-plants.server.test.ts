@@ -1049,6 +1049,7 @@ describe("unclaimed Exact Plants after close", () => {
         requestId: created.id,
         itemId: item.id,
         availability: "available",
+        offeredName: `${item.plantName} Exact`,
         price: 50,
         weightLbs: 1,
         photoUrls: [`https://cdn.example.com/${item.id}.jpg`],

@@ -45,6 +45,7 @@ async function offeredRequest(options?: {
     requestId: created.id,
     itemId: created.items[0].id,
     availability: "available",
+    offeredName: "Philodendron Spiritus Sancti Exact",
     price: 250,
     weightLbs: 4,
     customerFacingNotes: "Two established leaves.",

@@ -89,6 +89,46 @@ describe("plant request persistence", () => {
     assert.ok(stats.newRequests + stats.pending + stats.closed + stats.expired >= requests.length);
   });
 
+<<<<<<< HEAD
+=======
+  it("filters New seed requests that said they have an existing order", async () => {
+    const requests = await listRequests(shop);
+    const existing = filterAdminDashboardRequests(requests, "", "ExistingOrder");
+    assert.ok(existing.length >= 1);
+    assert.ok(
+      existing.every(
+        (request) => request.status === "New" && request.hasExistingOrder === true,
+      ),
+    );
+    assert.ok(existing.some((request) => request.requestNumber === "REQ6"));
+  });
+
+  it("stores the existing-order answer and a shipping override on the offer", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      shopifyCustomerId: "demo-customer-alex",
+      items: [{ plantName: "Monstera Shipping Override" }],
+      hasExistingOrder: true,
+    });
+    assert.equal(created.hasExistingOrder, true);
+
+    await updateRequestItem(shop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      offeredName: "Monstera Shipping Override Exact",
+      price: 80,
+      weightLbs: 4,
+      photoUrls: ["https://cdn.example.com/override.jpg"],
+    });
+    const offered = await sendOffer(shop, created.id, 3, {
+      shippingFeeOverride: 0,
+    });
+    assert.equal(offered?.sentOffer?.shippingFeeOverride, 0);
+  });
+
+>>>>>>> bae57bb (Add offeredName to exact-plant test updateRequestItem calls)
   it("keeps customer requests private by account identity", async () => {
     const alex = await listCustomerRequests(shop, {
       email: "alex.rivera@example.com",
@@ -227,6 +267,7 @@ describe("FedEx upgrade price", () => {
     await updateRequestItem(fedexShop, {
       requestId: request.id,
       itemId: request.items[0].id,
+      offeredName: "Monstera Peru Exact",
       price: 92,
       weightLbs: 2,
       availability: "available",
@@ -444,6 +485,7 @@ describe("an offer is refused until every Available plant is complete", () => {
       requestId: created.id,
       itemId: created.items[1].id,
       availability: "available",
+      offeredName: "Hoya Callistophylla Exact",
       price: 70,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/hoya.jpg"],
@@ -473,6 +515,7 @@ describe("an offer is refused until every Available plant is complete", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Albo Exact",
       price: 250,
       weightLbs: 2,
       photoUrls: ["https://cdn.example.com/monstera.jpg"],
@@ -495,6 +538,7 @@ describe("an offer is refused until every Available plant is complete", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Anthurium Warocqueanum Exact",
       price: 400,
       weightLbs: 3,
       customerFacingNotes: "",
@@ -601,6 +645,7 @@ describe("exact plant photos before the offer is sent", () => {
       requestId: created.id,
       itemId,
       availability: "available",
+      offeredName: "Hoya Callistophylla Exact",
       price: 100,
       weightLbs: 2,
     });
@@ -780,6 +825,7 @@ describe("customer timezone is stored per profile", () => {
       requestId: created.id,
       itemId: created.items[0].id,
       availability: "available",
+      offeredName: "Monstera Exact",
       price: 50,
       weightLbs: 1,
     });
