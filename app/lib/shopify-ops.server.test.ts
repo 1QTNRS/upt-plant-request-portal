@@ -212,11 +212,6 @@ describe("EXACT PLANTS listing on Shopify", () => {
       collectionsToJoin: string[];
     };
     assert.deepEqual(product.tags, []);
-    assert.equal(product.tags.includes("EXACT PLANTS"), false);
-    assert.equal(
-      product.tags.some((tag) => tag.startsWith("upt-declined-item:")),
-      false,
-    );
     assert.deepEqual(product.collectionsToJoin, ["gid://shopify/Collection/1"]);
     assert.deepEqual(callOf(calls, "AddExactPlantToCollection").variables, {
       id: "gid://shopify/Collection/1",
