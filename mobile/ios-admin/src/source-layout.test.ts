@@ -29,6 +29,10 @@ describe("iOS admin source layout", () => {
     assert.match(list, /DEFAULT_STATUS_FILTER/);
     assert.match(list, /RefreshControl/);
     assert.match(list, /filterRequestRows/);
+    assert.match(list, /closedSort/);
+    assert.match(list, /Newest Closed/);
+    assert.match(list, /Oldest Closed/);
+    assert.match(list, /isPurchased/);
     assert.doesNotMatch(list, /STATUS_FILTERS\.map/);
     assert.doesNotMatch(list, /stats\.newRequests/);
   });

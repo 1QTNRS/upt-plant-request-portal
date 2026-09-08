@@ -37,7 +37,13 @@ import {
   matchesAdminSearch,
   matchesAnalyticsCustomerSearch,
   parseAdminDashboardStatusFilter,
+  parseClosedRequestSort,
   parseShippingFeeOverride,
+  requestIsPurchased,
+  sortAdminDashboardRequests,
+  sortClosedRequests,
+  closedRequestSortLabel,
+  closedRequestSortTime,
   adminSubscribedToEmail,
   OVERRIDDEN_SHIPPING_LINE_TITLE,
   responseSnapshotListingImage,
@@ -410,6 +416,132 @@ describe("admin dashboard status filter", () => {
     assert.equal(stats.pending, 2);
     assert.equal(stats.expired, 1);
     assert.equal(stats.closed, 1);
+  });
+});
+
+describe("closed request sorting", () => {
+  const closed = [
+    {
+      id: "old-close-new-submit",
+      status: "Closed" as const,
+      closedAtIso: "2026-01-01T00:00:00.000Z",
+      submittedAtIso: "2026-06-01T00:00:00.000Z",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "new-close-old-submit",
+      status: "Closed" as const,
+      closedAtIso: "2026-06-01T00:00:00.000Z",
+      submittedAtIso: "2026-01-01T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "missing-closed-at",
+      status: "Closed" as const,
+      closedAtIso: null,
+      submittedAtIso: "2026-12-01T00:00:00.000Z",
+      createdAt: "2026-12-01T00:00:00.000Z",
+    },
+  ];
+
+  it("defaults missing or unknown sort values to newest closed", () => {
+    assert.equal(parseClosedRequestSort(null), "newest");
+    assert.equal(parseClosedRequestSort(""), "newest");
+    assert.equal(parseClosedRequestSort("submitted"), "newest");
+    assert.equal(parseClosedRequestSort("oldest"), "oldest");
+    assert.equal(closedRequestSortLabel("newest"), "Newest Closed");
+    assert.equal(closedRequestSortLabel("oldest"), "Oldest Closed");
+  });
+
+  it("sorts newest closed by closedAt rather than createdAt or submittedAt", () => {
+    assert.deepEqual(
+      sortClosedRequests(closed).map((row) => row.id),
+      ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+    );
+  });
+
+  it("sorts oldest closed by closedAt rather than createdAt", () => {
+    assert.deepEqual(
+      sortClosedRequests(closed, "oldest").map((row) => row.id),
+      ["missing-closed-at", "old-close-new-submit", "new-close-old-submit"],
+    );
+  });
+
+  it("treats invalid closedAt as 0 without throwing", () => {
+    assert.equal(closedRequestSortTime({ closedAtIso: "not-a-date" }), 0);
+    assert.equal(closedRequestSortTime({ closedAtIso: null }), 0);
+    assert.deepEqual(
+      sortClosedRequests([
+        { id: "invalid", closedAtIso: "nope" },
+        { id: "valid", closedAtIso: "2026-02-01T00:00:00.000Z" },
+      ]).map((row) => row.id),
+      ["valid", "invalid"],
+    );
+  });
+
+  it("only reorders the Closed dashboard filter", () => {
+    const pending = [
+      { id: "p1", status: "Pending" as const, closedAtIso: "2026-01-01T00:00:00.000Z" },
+      { id: "p2", status: "Pending" as const, closedAtIso: "2026-06-01T00:00:00.000Z" },
+    ];
+    assert.deepEqual(
+      sortAdminDashboardRequests(pending, "Pending").map((row) => row.id),
+      ["p1", "p2"],
+    );
+    assert.deepEqual(
+      sortAdminDashboardRequests(closed, "Closed", "newest").map((row) => row.id),
+      ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+    );
+  });
+});
+
+describe("purchased request pill", () => {
+  it("shows Purchased only for a Closed request with a recorded payment", () => {
+    assert.equal(
+      requestIsPurchased({
+        status: "Closed",
+        paidAtIso: "2026-08-20T16:00:00.000Z",
+      }),
+      true,
+    );
+    assert.equal(
+      requestIsPurchased({
+        status: "Closed",
+        paidAt: new Date("2026-08-20T16:00:00.000Z"),
+      }),
+      true,
+    );
+  });
+
+  it("does not show Purchased for unpaid Closed, accepted-unpaid, expired, admin override, or decline-all", () => {
+    assert.equal(requestIsPurchased({ status: "Closed" }), false);
+    assert.equal(
+      requestIsPurchased({ status: "Closed", paidAtIso: null }),
+      false,
+    );
+    assert.equal(
+      requestIsPurchased({
+        status: "Pending",
+        paidAtIso: null,
+      }),
+      false,
+    );
+    assert.equal(
+      requestIsPurchased({
+        status: "Expired",
+        paidAtIso: "2026-08-20T16:00:00.000Z",
+      }),
+      false,
+    );
+    assert.equal(
+      requestIsPurchased({
+        status: "Closed",
+        paidAt: null,
+        paidAtIso: null,
+      }),
+      false,
+    );
+    assert.equal(requestIsPurchased({ status: "New" }), false);
   });
 });
 

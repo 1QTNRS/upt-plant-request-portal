@@ -7,14 +7,19 @@ import { requireAdmin } from "../lib/admin-auth.server";
 import {
   ADMIN_DASHBOARD_STATUS_FILTERS,
   adminDashboardFilterLabel,
+  closedRequestSortLabel,
   countAdminDashboardStatusFilters,
   filterAdminDashboardRequests,
   formatPlantsSummary,
   getDisplayRequestNumber,
   parseAdminDashboardStatusFilter,
+  parseClosedRequestSort,
+  requestIsPurchased,
   requestStatusTone,
+  sortAdminDashboardRequests,
   summarizeAdminDashboardStats,
   type AdminDashboardStatusFilter,
+  type ClosedRequestSort,
   type PlantRequest,
   type RequestStatus,
 } from "../lib/portal";
@@ -34,9 +39,11 @@ import { THEME } from "../lib/theme";
 function RequestStatusBadges({
   status,
   hasExistingOrder,
+  isPurchased,
 }: {
   status: RequestStatus;
   hasExistingOrder: boolean;
+  isPurchased: boolean;
 }) {
   return (
     <div
@@ -48,6 +55,7 @@ function RequestStatusBadges({
       }}
     >
       <StatusBadge tone={requestStatusTone(status)}>{status}</StatusBadge>
+      {isPurchased ? <StatusBadge tone="warning">Purchased</StatusBadge> : null}
       {hasExistingOrder ? (
         <StatusBadge tone={status === "Closed" ? "success" : "warning"}>
           Existing Order
@@ -74,9 +82,11 @@ type DashboardData = {
     submittedDate: string;
     submittedAtIso: string;
     hasExistingOrder: boolean;
+    isPurchased: boolean;
   }>;
   query: string;
   statusFilter: AdminDashboardStatusFilter;
+  closedSort: ClosedRequestSort;
   statusCounts: Record<AdminDashboardStatusFilter, number>;
 };
 
@@ -84,12 +94,18 @@ function toDashboard(
   requests: PlantRequest[],
   query: string,
   statusFilter: AdminDashboardStatusFilter,
+  closedSort: ClosedRequestSort,
 ): DashboardData {
-  const filtered = filterAdminDashboardRequests(requests, query, statusFilter);
+  const filtered = sortAdminDashboardRequests(
+    filterAdminDashboardRequests(requests, query, statusFilter),
+    statusFilter,
+    closedSort,
+  );
 
   return {
     query,
     statusFilter,
+    closedSort,
     // Counts stay on the full shop dataset so the Overview cards do not
     // shrink when the list is filtered.
     statusCounts: countAdminDashboardStatusFilters(requests),
@@ -104,6 +120,7 @@ function toDashboard(
       submittedDate: request.submittedDate,
       submittedAtIso: request.submittedAtIso,
       hasExistingOrder: request.hasExistingOrder === true,
+      isPurchased: requestIsPurchased(request),
     })),
   };
 }
@@ -114,8 +131,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const params = new URL(request.url).searchParams;
   const query = params.get("q") ?? "";
   const statusFilter = parseAdminDashboardStatusFilter(params.get("status"));
+  const closedSort = parseClosedRequestSort(params.get("closedSort"));
   const requests = await listRequests(shop);
-  return toDashboard(requests, query, statusFilter);
+  return toDashboard(requests, query, statusFilter, closedSort);
 };
 
 export default function Dashboard() {
@@ -134,7 +152,7 @@ export default function Dashboard() {
   const paged = usePagedItems(
     data.requests,
     ADMIN_REQUEST_PAGE_SIZE,
-    `${data.query}:${data.statusFilter}:${data.requests.length}`,
+    `${data.query}:${data.statusFilter}:${data.closedSort}:${data.requests.length}`,
   );
   const pageSlots = padPageSlots(paged.items, ADMIN_REQUEST_PAGE_SIZE);
 
@@ -201,7 +219,33 @@ export default function Dashboard() {
                 </button>
               ))}
             </s-stack>
+            {data.statusFilter === "Closed" ? (
+              <s-stack direction="inline" gap="small" data-closed-sort>
+                {(["newest", "oldest"] as const).map((sort) => (
+                  <button
+                    key={sort}
+                    type="submit"
+                    name="closedSort"
+                    value={sort}
+                    aria-pressed={data.closedSort === sort}
+                    style={{
+                      padding: "8px 12px",
+                      minHeight: 44,
+                      borderRadius: 8,
+                      border: "1px solid #c9cccf",
+                      background: data.closedSort === sort ? THEME.darkGreen : "#fff",
+                      color: data.closedSort === sort ? "#fff" : THEME.darkGreen,
+                      font: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {closedRequestSortLabel(sort)}
+                  </button>
+                ))}
+              </s-stack>
+            ) : null}
             <input type="hidden" name="status" value={data.statusFilter} />
+            <input type="hidden" name="closedSort" value={data.closedSort} />
           </s-stack>
         </Form>
         <s-text color="subdued">
@@ -213,6 +257,10 @@ export default function Dashboard() {
               : data.statusFilter !== "All"
                 ? ` with status ${data.statusFilter}`
                 : ""
+          }${
+            data.statusFilter === "Closed"
+              ? `, ${closedRequestSortLabel(data.closedSort).toLowerCase()}`
+              : ""
           }.`}
         </s-text>
       </s-section>
@@ -240,6 +288,7 @@ export default function Dashboard() {
                   <RequestStatusBadges
                     status={request.status}
                     hasExistingOrder={request.hasExistingOrder}
+                    isPurchased={request.isPurchased}
                   />
                 </dd>
                 <dt>Submitted Date</dt>
@@ -293,6 +342,7 @@ export default function Dashboard() {
                     <RequestStatusBadges
                       status={request.status}
                       hasExistingOrder={request.hasExistingOrder}
+                      isPurchased={request.isPurchased}
                     />
                   </td>
                   <td className="upt-cell-wrap">

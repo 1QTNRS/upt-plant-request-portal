@@ -61,6 +61,41 @@ describe("iOS admin API payloads", () => {
     assert.equal(payload.requests[0].requestNumber, "REQ12");
     assert.equal(payload.requests[0].plantsRequested, "Monstera Albo");
     assert.equal(payload.requests[0].hasExistingOrder, false);
+    assert.equal(payload.requests[0].isPurchased, false);
+  });
+
+  it("exposes closedAt and Purchased on list and detail payloads", () => {
+    const paidClosed = request({
+      id: "req-paid",
+      status: "Closed",
+      requestNumber: "REQ40",
+      closedAtIso: "2026-08-22T16:00:00.000Z",
+      paidAtIso: "2026-08-22T16:00:00.000Z",
+    });
+    const unpaidClosed = request({
+      id: "req-unpaid",
+      status: "Closed",
+      requestNumber: "REQ41",
+      closedAtIso: "2026-08-21T16:00:00.000Z",
+    });
+    const payload = mobileAdminDashboardPayload(
+      "demo-shop.myshopify.com",
+      [unpaidClosed, paidClosed],
+      "",
+      "Closed",
+    );
+    assert.deepEqual(
+      payload.requests.map((row) => row.requestNumber),
+      ["REQ40", "REQ41"],
+    );
+    assert.equal(payload.requests[0].isPurchased, true);
+    assert.equal(payload.requests[0].closedAtIso, "2026-08-22T16:00:00.000Z");
+    assert.equal(payload.requests[1].isPurchased, false);
+
+    const paidDetail = toMobileAdminRequestDetail(paidClosed);
+    const unpaidDetail = toMobileAdminRequestDetail(unpaidClosed);
+    assert.equal(paidDetail.isPurchased, true);
+    assert.equal(unpaidDetail.isPurchased, false);
   });
 
   it("filters New existing-order rows the same way the website does", () => {

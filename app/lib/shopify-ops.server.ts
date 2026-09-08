@@ -1235,6 +1235,48 @@ export async function findExactPlantProductByItemTag(
   };
 }
 
+export async function findExactPlantProductByGid(
+  admin: GraphqlClient,
+  productGid: string,
+): Promise<ExactPlantProduct | null> {
+  const data = await adminGraphql<{
+    product: {
+      id: string;
+      handle: string;
+      variants: {
+        nodes: Array<{ id: string; inventoryItem: { id: string } }>;
+      };
+    } | null;
+  }>(
+    admin,
+    `#graphql
+      query ExactPlantProductById($id: ID!) {
+        product(id: $id) {
+          id
+          handle
+          variants(first: 1) {
+            nodes {
+              id
+              inventoryItem { id }
+            }
+          }
+        }
+      }
+    `,
+    { id: productGid },
+  );
+
+  const product = data.product;
+  if (!product) return null;
+  const variant = product.variants.nodes[0];
+  return {
+    id: product.id,
+    handle: product.handle,
+    variantId: variant?.id,
+    inventoryItemId: variant?.inventoryItem.id,
+  };
+}
+
 export async function findOrCreateExactPlantsCollection(
   admin: GraphqlClient,
 ): Promise<{ id: string; title: string; handle: string }> {
@@ -2011,6 +2053,8 @@ export async function createExactPlantShopifyProduct(
     weightLbs: number;
     photoUrls: string[];
     appUrl?: string;
+    /** Stored listing GID so retries find the product without a unique tag. */
+    existingProductGid?: string;
   },
   /**
    * Called the moment a product for this plant exists in Shopify, before
@@ -2026,7 +2070,11 @@ export async function createExactPlantShopifyProduct(
   const mediaError = exactPlantMediaError(input.photoUrls, input.appUrl);
   if (mediaError) throw new Error(mediaError);
 
-  const existing = await findExactPlantProductByItemTag(admin, input.requestItemId);
+  const existingByGid = input.existingProductGid
+    ? await findExactPlantProductByGid(admin, input.existingProductGid)
+    : null;
+  const existing =
+    existingByGid ?? (await findExactPlantProductByItemTag(admin, input.requestItemId));
   if (existing) {
     await onProductIdentified?.({
       productGid: existing.id,

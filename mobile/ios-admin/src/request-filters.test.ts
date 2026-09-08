@@ -4,7 +4,10 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_STATUS_FILTER,
   STATUS_FILTERS,
+  closedRequestSortLabel,
   filterRequestRows,
+  parseClosedRequestSort,
+  sortClosedRequests,
   statusFilterCounts,
 } from "./request-filters";
 import type { RequestRow } from "./types";
@@ -92,5 +95,52 @@ describe("request status filters", () => {
     assert.equal(counts.Closed, 1);
     assert.equal(counts.Expired, 1);
     assert.equal(counts.ExistingOrder, 1);
+  });
+});
+
+describe("closed request sorting", () => {
+  const closed = [
+    row({
+      id: "old-close-new-submit",
+      status: "Closed",
+      closedAtIso: "2026-01-01T00:00:00.000Z",
+      submittedAtIso: "2026-06-01T00:00:00.000Z",
+    }),
+    row({
+      id: "new-close-old-submit",
+      status: "Closed",
+      closedAtIso: "2026-06-01T00:00:00.000Z",
+      submittedAtIso: "2026-01-01T00:00:00.000Z",
+    }),
+    row({
+      id: "missing-closed-at",
+      status: "Closed",
+      closedAtIso: undefined,
+      submittedAtIso: "2026-12-01T00:00:00.000Z",
+    }),
+  ];
+
+  it("defaults to newest closed", () => {
+    assert.equal(parseClosedRequestSort(null), "newest");
+    assert.equal(closedRequestSortLabel("newest"), "Newest Closed");
+    assert.deepEqual(
+      filterRequestRows(closed, "Closed").map((item) => item.id),
+      ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+    );
+  });
+
+  it("sorts newest and oldest closed by closedAt rather than createdAt", () => {
+    assert.deepEqual(
+      sortClosedRequests(closed, "newest").map((item) => item.id),
+      ["new-close-old-submit", "old-close-new-submit", "missing-closed-at"],
+    );
+    assert.deepEqual(
+      sortClosedRequests(closed, "oldest").map((item) => item.id),
+      ["missing-closed-at", "old-close-new-submit", "new-close-old-submit"],
+    );
+    assert.deepEqual(
+      filterRequestRows(closed, "Closed", "", "oldest").map((item) => item.id),
+      ["missing-closed-at", "old-close-new-submit", "new-close-old-submit"],
+    );
   });
 });

@@ -501,6 +501,7 @@ export async function createExactPlantListing(
             requestItemId: input.requestItemId,
             ...approved,
             appUrl: process.env.SHOPIFY_APP_URL,
+            existingProductGid: existing?.shopifyProductGid ?? undefined,
           },
           recordProduct,
         )

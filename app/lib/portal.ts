@@ -638,6 +638,74 @@ export function summarizeAdminDashboardStats(
   };
 }
 
+export type ClosedRequestSort = "newest" | "oldest";
+
+export function parseClosedRequestSort(
+  value: string | null | undefined,
+): ClosedRequestSort {
+  return value === "oldest" ? "oldest" : "newest";
+}
+
+export function closedRequestSortLabel(sort: ClosedRequestSort): string {
+  return sort === "oldest" ? "Oldest Closed" : "Newest Closed";
+}
+
+/**
+ * Milliseconds used to sort Closed rows. Missing/invalid closedAt sorts as 0
+ * so the list stays deterministic and never throws.
+ */
+export function closedRequestSortTime(request: {
+  closedAt?: Date | string | null;
+  closedAtIso?: string | null;
+}): number {
+  const raw = request.closedAt ?? request.closedAtIso ?? null;
+  if (!raw) return 0;
+  const time = raw instanceof Date ? raw.getTime() : Date.parse(String(raw));
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function sortClosedRequests<
+  T extends { closedAt?: Date | string | null; closedAtIso?: string | null },
+>(requests: T[], sort: ClosedRequestSort = "newest"): T[] {
+  return [...requests].sort((left, right) => {
+    const delta = closedRequestSortTime(right) - closedRequestSortTime(left);
+    return sort === "newest" ? delta : -delta;
+  });
+}
+
+/** Closed filter uses closedAt. Other filters keep the incoming (submittedAt) order. */
+export function sortAdminDashboardRequests<
+  T extends {
+    status: RequestStatus;
+    closedAt?: Date | string | null;
+    closedAtIso?: string | null;
+  },
+>(
+  requests: T[],
+  statusFilter: AdminDashboardStatusFilter,
+  closedSort: ClosedRequestSort = "newest",
+): T[] {
+  if (statusFilter !== "Closed") return requests;
+  return sortClosedRequests(requests, closedSort);
+}
+
+/**
+ * Purchased means this Closed request has a recorded Shopify payment
+ * (`paidAt`). Closed-without-pay, accept-unpaid, expired, and admin override
+ * are not purchased.
+ */
+export function requestIsPurchased(request: {
+  status?: string | null;
+  paidAt?: Date | string | null;
+  paidAtIso?: string | null;
+}): boolean {
+  if (request.status !== "Closed") return false;
+  const raw = request.paidAt ?? request.paidAtIso ?? null;
+  if (raw == null) return false;
+  if (raw instanceof Date) return !Number.isNaN(raw.getTime());
+  return String(raw).trim().length > 0;
+}
+
 export function countAdminDashboardStatusFilters(
   requests: Array<{ status: RequestStatus; hasExistingOrder?: boolean | null }>,
 ): Record<AdminDashboardStatusFilter, number> {

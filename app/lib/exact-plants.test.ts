@@ -10,6 +10,7 @@ import {
   canDismissExactPlantFromQueue,
   countExactPlantListingFilters,
   declinedItemTag,
+  exactPlantSharedTags,
   EXACT_PLANT_DISMISSED_REASON,
   EXACT_PLANT_RELEASE_LABELS,
   exactPlantListingBucket,
@@ -456,8 +457,10 @@ describe("shopify product payload", () => {
     assert.deepEqual(payload.product.collectionsToJoin, [
       "gid://shopify/Collection/1",
     ]);
-    assert.ok(payload.product.tags.includes(EXACT_PLANTS_COLLECTION_TITLE));
-    assert.ok(payload.product.tags.includes(declinedItemTag("item_123")));
+    assert.deepEqual(payload.product.tags, [EXACT_PLANTS_COLLECTION_TITLE]);
+    assert.deepEqual(exactPlantSharedTags(), [EXACT_PLANTS_COLLECTION_TITLE]);
+    assert.equal(declinedItemTag("item_123"), "upt-declined-item:item_123");
+    assert.equal(payload.product.tags.includes(declinedItemTag("item_123")), false);
     assert.equal("descriptionHtml" in payload.product, false);
     assert.equal(JSON.stringify(payload).includes("disclaimer"), false);
     assert.deepEqual(payload.media, [
@@ -716,6 +719,16 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /admin-request-collapsibles/);
     assert.match(requestPage, /name="shippingFeeOverride"/);
     assert.match(requestPage, /ADD ON/);
+    const sendOffer = requestPage.slice(
+      requestPage.indexOf("function SendOfferSection"),
+      requestPage.indexOf("function DeclinedExactPlantsSection"),
+    );
+    const existingOrderAt = sendOffer.indexOf(
+      "This customer said they have an existing order",
+    );
+    const addOnAt = sendOffer.indexOf("<s-text>ADD ON</s-text>");
+    assert.ok(existingOrderAt > -1 && addOnAt > existingOrderAt);
+    assert.match(requestPage, /<s-badge tone="warning">Purchased<\/s-badge>/);
     assert.match(requestPage, /inputMode="decimal"/);
     const overrideField = requestPage.slice(
       requestPage.indexOf('id="shippingFeeOverride"'),
@@ -741,6 +754,13 @@ describe("admin dashboard status filters", () => {
     assert.match(dashboard, /Existing Order/);
     assert.match(dashboard, /RequestStatusBadges/);
     assert.match(dashboard, /status === "Closed" \? "success"/);
+    assert.match(dashboard, /data-closed-sort/);
+    assert.match(dashboard, /Newest Closed/);
+    assert.match(dashboard, /Oldest Closed/);
+    assert.match(dashboard, /parseClosedRequestSort/);
+    assert.match(dashboard, /sortAdminDashboardRequests/);
+    assert.match(dashboard, /isPurchased/);
+    assert.match(dashboard, />Purchased</);
     assert.ok(!dashboard.includes("<select"));
   });
 
