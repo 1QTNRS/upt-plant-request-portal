@@ -12,6 +12,7 @@ import { customerPortalRelativeLinks } from "../lib/app-proxy";
 import { shopifyCustomerLoginHref } from "../lib/customer-nav";
 import {
   fedexRemovalNeedsConfirmation,
+  readHeatPackChoice,
   readOfferChoices,
 } from "../lib/customer-portal";
 import { readCustomerContext } from "../lib/customer-session.server";
@@ -139,10 +140,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       pendingFedexRemoval: false,
       submittedChoices: {},
       fedexSelected: true,
+      heatPackChoice: readHeatPackChoice(form),
       error: null as string | null,
     };
   }
   const choices = readOfferChoices(form);
+  const heatPackChoice = readHeatPackChoice(form);
 
   // Keeping the upgrade returns to the form with it checked again.
   if (intent === "keep-fedex") {
@@ -151,6 +154,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       pendingFedexRemoval: false,
       submittedChoices: choices,
       fedexSelected: true,
+      heatPackChoice,
       error: null as string | null,
     };
   }
@@ -171,6 +175,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       pendingFedexRemoval: true,
       submittedChoices: choices,
       fedexSelected: false,
+      heatPackChoice,
       error: null as string | null,
     };
   }
@@ -193,6 +198,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     ...result,
     pendingFedexRemoval: false,
     submittedChoices: choices,
+    heatPackChoice,
   };
 };
 
@@ -293,6 +299,7 @@ export default function CustomerRequestDetail() {
       formAction={data.formAction}
       submittedChoices={actionData?.submittedChoices}
       fedexSelected={actionData?.fedexSelected ?? true}
+      heatPackChoice={actionData?.heatPackChoice ?? null}
       pendingFedexRemoval={actionData?.pendingFedexRemoval ?? false}
       error={actionData?.error ?? null}
     />

@@ -185,4 +185,7 @@ export type ShopSettings = {
   registeredPushDevices: number;
   fedexProductHandle: string;
   fedexProductSku: string;
+  heatPackAddonEnabled: boolean;
+  heatPackProductHandle: string;
+  heatPackProductSku: string;
 };

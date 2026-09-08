@@ -68,7 +68,6 @@ import {
 } from "../lib/portal";
 import {
   addInternalNote,
-  addItemPhotos,
   expireOverdueOffers,
   getCustomerResponse,
   listInternalNotes,
@@ -106,13 +105,13 @@ import {
 } from "../components/collapsible-section";
 import { saveUploadedPlantPhoto } from "../lib/photo-upload.server";
 import { ReplaceZeroNumberInput } from "../components/replace-zero-number-input";
-import { adminDialogButtonStyle } from "../components/admin-confirm-dialog";
 import {
   AdminResponsiveStyles,
   wrapRowStyle,
 } from "../components/admin-layout";
 import { NestedBox, StatusBadge } from "../components/theme";
 import { ViewerLocalTime } from "../components/viewer-local-time";
+import { AdminNoteTime } from "../components/admin-note-time";
 
 function itemStatusTone(
   status: PlantItemStatus,
@@ -396,16 +395,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           ? String(form.get("customerFacingNotes") || "")
           : undefined,
       });
-      return { ok: true };
-    }
-
-    if (intent === "add-photo-url") {
-      const url = String(form.get("photoUrl") || "").trim();
-      if (url) {
-        await addItemPhotos(shop, requestId, String(form.get("itemId") || ""), [
-          { url },
-        ]);
-      }
       return { ok: true };
     }
 
@@ -923,7 +912,6 @@ function PlantItemCard({
   onRequiredPhotoBusyChange?: (itemId: string, busy: boolean) => void;
 }) {
   const fetcher = useFetcher<typeof action>();
-  const photoFetcher = useFetcher<typeof action>();
   const serverDraft = (source: PlantItem): AdminItemDraft => ({
     offeredName: source.offeredName,
     customerFacingNotes: source.customerFacingNotes,
@@ -934,7 +922,6 @@ function PlantItemCard({
   });
   const dirtyRef = useRef<AdminItemDirty>({});
   const [draft, setDraft] = useState<AdminItemDraft>(() => serverDraft(item));
-  const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
     setDraft((local) => mergeAdminItemDraft(local, serverDraft(item), dirtyRef.current));
@@ -1087,9 +1074,10 @@ function PlantItemCard({
 
         {isAvailable && (
           <>
+            {!growersChoice ? (
             <s-stack direction="block" gap="small">
               <label htmlFor={`offered-name-${item.id}`}>
-                <s-text color="subdued">Final item name</s-text>
+                <s-text color="subdued">Offered Name</s-text>
               </label>
               <input
                 id={`offered-name-${item.id}`}
@@ -1101,6 +1089,7 @@ function PlantItemCard({
                 style={fieldsLocked ? disabledNumberInputStyle : textInputStyle}
               />
             </s-stack>
+            ) : null}
 
             <div style={wrapRowStyle}>
               <s-stack direction="block" gap="small">
@@ -1163,28 +1152,6 @@ function PlantItemCard({
                   alt={item.offeredName || item.plantName}
                 />
               )}
-              {canEdit ? (
-                <photoFetcher.Form method="post">
-                  <input type="hidden" name="intent" value="add-photo-url" />
-                  <input type="hidden" name="itemId" value={item.id} />
-                  <div style={{ ...wrapRowStyle, maxWidth: "100%" }}>
-                    <input
-                      name="photoUrl"
-                      value={photoUrl}
-                      placeholder="https://..."
-                      onChange={(event) => setPhotoUrl(event.currentTarget.value)}
-                      style={{ ...textInputStyle, flex: "1 1 200px" }}
-                    />
-                    <button
-                      type="submit"
-                      data-admin-add-photo-url
-                      style={adminDialogButtonStyle}
-                    >
-                      Add photo URL
-                    </button>
-                  </div>
-                </photoFetcher.Form>
-              ) : null}
             </s-stack>
             )}
           </>
@@ -1776,7 +1743,7 @@ function InternalNotesSection({
             <NestedBox key={note.id} data-internal-note={note.id}>
               <s-stack direction="block" gap="small">
                 <s-text color="subdued">
-                  <ViewerLocalTime
+                  <AdminNoteTime
                     iso={note.createdAtIso}
                     fallback={note.createdAt}
                   />
@@ -1856,6 +1823,16 @@ function CustomerResponseSection({
                 ? `Selected (${formatCurrency(response.fedexUpgradePrice)})`
                 : response.hasAcceptedPurchasableItems
                   ? "Removed"
+                  : "Not applicable"}
+            </s-text>
+          </s-stack>
+          <s-stack direction="block" gap="small">
+            <s-text color="subdued">Heat pack add-on</s-text>
+            <s-text>
+              {response.heatPackSelected
+                ? `Added (${formatCurrency(response.heatPackPrice ?? 0)})`
+                : response.heatPackSelected === false
+                  ? "Not added"
                   : "Not applicable"}
             </s-text>
           </s-stack>

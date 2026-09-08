@@ -233,6 +233,56 @@ export const FEDEX_WARNING_SCRIPT = `
 })();
 `.trim();
 
+export const HEAT_PACK_SCRIPT = `
+(function () {
+  if (window.__uptHeatPack) return;
+  window.__uptHeatPack = true;
+
+  function sectionEl() {
+    var node = document.querySelector("[data-heat-pack-section]");
+    return node instanceof HTMLElement ? node : null;
+  }
+
+  function acceptedCount() {
+    var names = {};
+    var count = 0;
+    Array.prototype.forEach.call(
+      document.querySelectorAll('input[type="radio"][name^="choice-"]'),
+      function (radio) {
+        if (!(radio instanceof HTMLInputElement)) return;
+        if (radio.checked && radio.value === "accept") names[radio.name] = true;
+      },
+    );
+    Object.keys(names).forEach(function () { count += 1; });
+    return count;
+  }
+
+  function apply() {
+    var section = sectionEl();
+    if (!section) return;
+    var enabled = acceptedCount() > 0;
+    section.hidden = !enabled;
+    section.setAttribute("aria-hidden", enabled ? "false" : "true");
+    section.querySelectorAll('input[name="heatPackSelected"]').forEach(function (radio) {
+      if (!(radio instanceof HTMLInputElement)) return;
+      radio.required = enabled;
+      radio.disabled = !enabled;
+      if (!enabled) radio.checked = false;
+    });
+  }
+
+  document.addEventListener("change", function (event) {
+    var target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.type === "radio" && target.name.indexOf("choice-") === 0) {
+      apply();
+    }
+  });
+
+  apply();
+})();
+`.trim();
+
 export const CUSTOMER_PAGED_LIST_SCRIPT = `
 (function () {
   function bind(root) {
@@ -592,8 +642,10 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
 
 export function CustomerEnhanceScripts({
   includeFedexWarning = false,
+  includeHeatPackSection = false,
 }: {
   includeFedexWarning?: boolean;
+  includeHeatPackSection?: boolean;
 }) {
   const source = [
     CUSTOMER_TIME_SCRIPT,
@@ -601,6 +653,7 @@ export function CustomerEnhanceScripts({
     CUSTOMER_PAGED_LIST_SCRIPT,
     CUSTOMER_PLANT_ROWS_SCRIPT,
     includeFedexWarning ? FEDEX_WARNING_SCRIPT : "",
+    includeHeatPackSection ? HEAT_PACK_SCRIPT : "",
   ]
     .filter(Boolean)
     .join("\n");

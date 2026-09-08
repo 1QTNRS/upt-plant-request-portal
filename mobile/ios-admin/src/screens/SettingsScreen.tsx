@@ -31,6 +31,8 @@ const EMPTY_FORM: SettingsFormState = {
   pushItemStatus: true,
   registeredPushDevices: 0,
   sku: "",
+  heatPackAddonEnabled: false,
+  heatPackSku: "",
 };
 
 export function SettingsScreen() {
@@ -39,6 +41,7 @@ export function SettingsScreen() {
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingPush, setSavingPush] = useState(false);
+  const [savingHeatPack, setSavingHeatPack] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
@@ -103,12 +106,12 @@ export function SettingsScreen() {
   }
 
   const feedback = settingsFeedbackLabel({
-    saving: saving || savingPush,
+    saving: saving || savingPush || savingHeatPack,
     saved,
     error,
     hydrated,
   });
-  const feedbackBusy = saving || savingPush;
+  const feedbackBusy = saving || savingPush || savingHeatPack;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
@@ -164,6 +167,55 @@ export function SettingsScreen() {
       ))}
       <Pressable style={styles.button} disabled={saving} onPress={() => void save("save")}>
         <Text style={styles.buttonLabel}>{saving ? "Saving…" : "Save settings"}</Text>
+      </Pressable>
+
+      <Text style={styles.label}>Heat Pack Add-On</Text>
+      <Text style={styles.muted}>
+        {form.heatPackSku ? `Listing SKU: ${form.heatPackSku}` : " "}
+      </Text>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Heat Pack Add-On enabled</Text>
+        <Switch
+          value={form.heatPackAddonEnabled}
+          onValueChange={(heatPackAddonEnabled) =>
+            setForm((current) => ({ ...current, heatPackAddonEnabled }))
+          }
+          trackColor={{ true: THEME.darkGreen }}
+        />
+      </View>
+      <Pressable
+        style={styles.button}
+        disabled={savingHeatPack}
+        onPress={() => {
+          setSavingHeatPack(true);
+          setError(null);
+          setSaved(null);
+          void apiPostJson<ShopSettings & { ok: boolean; error?: string }>(
+            apiUrl,
+            token,
+            "/api/mobile/admin/settings",
+            {
+              intent: "save-heat-pack-addon",
+              heatPackAddonEnabled: form.heatPackAddonEnabled,
+            },
+          )
+            .then((result) => {
+              if (!result.ok) {
+                setError(result.error || "Could not save Heat Pack setting.");
+                return;
+              }
+              applyServer(result);
+              setSaved("Heat Pack add-on setting saved.");
+            })
+            .catch((caught) => {
+              setError(caught instanceof Error ? caught.message : "Could not save Heat Pack setting.");
+            })
+            .finally(() => setSavingHeatPack(false));
+        }}
+      >
+        <Text style={styles.buttonLabel}>
+          {savingHeatPack ? "Saving…" : "Save Heat Pack setting"}
+        </Text>
       </Pressable>
 
       <Text style={styles.label}>iOS Push Notifications</Text>

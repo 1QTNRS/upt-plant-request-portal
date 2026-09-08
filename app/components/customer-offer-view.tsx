@@ -160,6 +160,7 @@ export function CustomerOfferView({
   formAction,
   submittedChoices,
   fedexSelected = true,
+  heatPackChoice = null,
   pendingFedexRemoval = false,
   error,
 }: {
@@ -188,6 +189,8 @@ export function CustomerOfferView({
   /** Choices the customer already picked, echoed back by the server. */
   submittedChoices?: Record<string, "accept" | "reject">;
   fedexSelected?: boolean;
+  /** Explicit Add / No for the heat pack when the add-on is enabled. */
+  heatPackChoice?: boolean | null;
   /** Set when the customer unchecked FedEx and has to confirm the warning. */
   pendingFedexRemoval?: boolean;
   /** Validation message from the last submission, e.g. an unanswered plant. */
@@ -414,6 +417,16 @@ export function CustomerOfferView({
                   </s-text>
                 </s-stack>
               )}
+              {offer.heatPackAddonEnabled && response?.heatPackSelected != null ? (
+                response.heatPackSelected ? (
+                  <s-text>
+                    {offer.heatPackLabel} —{" "}
+                    {formatCurrency(response.heatPackPrice ?? offer.heatPackPrice)}
+                  </s-text>
+                ) : (
+                  <s-text>{offer.heatPackLabel} — not added</s-text>
+                )
+              ) : null}
             </s-stack>
           </s-section>
         ) : null}
@@ -687,6 +700,44 @@ export function CustomerOfferView({
                 </s-box>
               </s-section>
 
+              {offer.heatPackAddonEnabled ? (
+                <s-section heading="Heat pack add-on" data-heat-pack-section>
+                  <s-box
+                    padding="base"
+                    borderWidth="base"
+                    borderRadius="base"
+                    background="base"
+                  >
+                    <s-stack direction="block" gap="base">
+                      <s-text>
+                        {offer.heatPackLabel},{" "}
+                        {formatCurrency(offer.heatPackPrice)}
+                      </s-text>
+                      <label style={choiceLabelStyle}>
+                        <input
+                          type="radio"
+                          name="heatPackSelected"
+                          value="true"
+                          defaultChecked={heatPackChoice === true}
+                          required
+                        />
+                        <s-text>Add heat pack</s-text>
+                      </label>
+                      <label style={choiceLabelStyle}>
+                        <input
+                          type="radio"
+                          name="heatPackSelected"
+                          value="false"
+                          defaultChecked={heatPackChoice === false}
+                          required
+                        />
+                        <s-text>No heat pack</s-text>
+                      </label>
+                    </s-stack>
+                  </s-box>
+                </s-section>
+              ) : null}
+
               <s-section>
                 <button
                   type="submit"
@@ -713,7 +764,10 @@ export function CustomerOfferView({
         <input type="hidden" name="intent" value="save-timezone" />
         <input type="hidden" name="customerTimeZone" defaultValue="" />
       </form>
-      <CustomerEnhanceScripts includeFedexWarning={!expired && !pendingFedexRemoval} />
+      <CustomerEnhanceScripts
+        includeFedexWarning={!expired && !pendingFedexRemoval}
+        includeHeatPackSection={offer.heatPackAddonEnabled}
+      />
     </CustomerOfferPage>
   );
 }
