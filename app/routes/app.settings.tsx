@@ -4,7 +4,14 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import {
+  Form,
+  useActionData,
+  useFetcher,
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { countRegisteredPushDevices } from "../lib/admin-push.server";
@@ -21,6 +28,8 @@ import {
 } from "../lib/portal";
 import { getShopSettings, updateShopSettings } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
+import { themeFieldStyle, themePrimaryButtonStyle } from "../components/theme";
+import { THEME } from "../lib/theme";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { shop } = await requireAdmin(request);
@@ -54,15 +63,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") || "save");
 
   if (intent === "create-mobile-token") {
-    const created = await createAdminMobileToken(
-      shop,
-      String(form.get("mobileTokenLabel") || ""),
-    );
-    return {
-      saved: false,
-      reset: false,
-      newMobileToken: { label: created.record.label, token: created.token },
-    };
+    try {
+      const created = await createAdminMobileToken(
+        shop,
+        String(form.get("mobileTokenLabel") || ""),
+      );
+      return {
+        saved: false,
+        reset: false,
+        newMobileToken: { label: created.record.label, token: created.token },
+      };
+    } catch {
+      return {
+        saved: false,
+        reset: false,
+        mobileTokenError: "Could not create a device token. Try again.",
+      };
+    }
   }
 
   if (intent === "revoke-mobile-token") {
@@ -108,7 +125,32 @@ export default function Settings() {
   const settings = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+  const tokenFetcher = useFetcher<typeof action>();
   const submittingIntent = String(navigation.formData?.get("intent") || "");
+  const creatingToken =
+    tokenFetcher.state !== "idle" &&
+    String(tokenFetcher.formData?.get("intent") || "") === "create-mobile-token";
+  const createdToken =
+    tokenFetcher.data &&
+    "newMobileToken" in tokenFetcher.data &&
+    tokenFetcher.data.newMobileToken
+      ? tokenFetcher.data.newMobileToken
+      : actionData &&
+          "newMobileToken" in actionData &&
+          actionData.newMobileToken
+        ? actionData.newMobileToken
+        : null;
+  const mobileTokenError =
+    tokenFetcher.data &&
+    "mobileTokenError" in tokenFetcher.data &&
+    tokenFetcher.data.mobileTokenError
+      ? tokenFetcher.data.mobileTokenError
+      : actionData &&
+          "mobileTokenError" in actionData &&
+          actionData.mobileTokenError
+        ? actionData.mobileTokenError
+        : null;
   const savingFedex =
     navigation.state !== "idle" && submittingIntent === "save";
   const savingEmails =
@@ -128,6 +170,11 @@ export default function Settings() {
   const [pushItemStatus, setPushItemStatus] = useState(
     settings.adminPushItemStatusUpdate,
   );
+
+  useEffect(() => {
+    if (!createdToken?.token) return;
+    void revalidator.revalidate();
+  }, [createdToken?.token, revalidator]);
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
@@ -384,19 +431,32 @@ export default function Settings() {
             your Shopify password. Create a token, paste it once in the app,
             then keep this page for revoke if a phone is lost.
           </s-paragraph>
-          {actionData &&
-          "newMobileToken" in actionData &&
-          actionData.newMobileToken ? (
+          {createdToken ? (
             <s-banner tone="warning">
               <s-stack direction="block" gap="small">
                 <s-text>
                   Copy this token now. It will not be shown again.
                 </s-text>
-                <s-text>
-                  {actionData.newMobileToken.label}:{" "}
-                  <code>{actionData.newMobileToken.token}</code>
-                </s-text>
+                <s-text>{createdToken.label}</s-text>
+                <input
+                  data-created-mobile-token
+                  type="text"
+                  readOnly
+                  value={createdToken.token}
+                  onFocus={(event) => event.currentTarget.select()}
+                  style={{
+                    ...themeFieldStyle,
+                    marginTop: 0,
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    wordBreak: "break-all",
+                  }}
+                />
               </s-stack>
+            </s-banner>
+          ) : null}
+          {mobileTokenError ? (
+            <s-banner tone="critical">
+              <s-text>{mobileTokenError}</s-text>
             </s-banner>
           ) : null}
           {actionData &&
@@ -406,19 +466,38 @@ export default function Settings() {
               <s-text>Device token revoked. That phone can no longer sign in.</s-text>
             </s-banner>
           ) : null}
-          <Form method="post">
+          <tokenFetcher.Form method="post" data-create-mobile-token>
             <s-stack direction="block" gap="base">
               <input type="hidden" name="intent" value="create-mobile-token" />
-              <s-text-field
+              <label htmlFor="mobile-token-label">
+                <s-text>Device name</s-text>
+              </label>
+              <input
+                id="mobile-token-label"
                 name="mobileTokenLabel"
-                label="Device name"
+                type="text"
                 placeholder="iPhone"
+                autoComplete="off"
+                maxLength={80}
+                style={themeFieldStyle}
               />
-              <s-button variant="primary" type="submit">
-                Create device token
-              </s-button>
+              <button
+                type="submit"
+                disabled={creatingToken}
+                style={{
+                  ...themePrimaryButtonStyle,
+                  width: "auto",
+                  minWidth: 200,
+                  opacity: creatingToken ? 0.7 : 1,
+                  cursor: creatingToken ? "wait" : "pointer",
+                  background: THEME.darkGreen,
+                  color: THEME.white,
+                }}
+              >
+                {creatingToken ? "Creating…" : "Create device token"}
+              </button>
             </s-stack>
-          </Form>
+          </tokenFetcher.Form>
           {settings.mobileTokens.length === 0 ? (
             <s-text color="subdued">No active device tokens.</s-text>
           ) : (
