@@ -17,6 +17,7 @@ import {
   settingsFormFromShop,
   type SettingsFormState,
 } from "../settings-form";
+import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
@@ -118,7 +119,7 @@ export function SettingsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
-    <ScrollView contentContainerStyle={styles.page}>
+    <ScrollView {...iosFormScrollKeyboardProps()} contentContainerStyle={styles.page}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.muted}>
         FedEx warning, admin emails, and iOS push toggles. Create or revoke a

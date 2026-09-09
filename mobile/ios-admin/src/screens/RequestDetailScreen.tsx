@@ -37,6 +37,7 @@ import {
   isOfferExpired,
 } from "../offer-expiration";
 import { THEME } from "../theme";
+import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
 import { logActiveTouchBlockers } from "../touch-diagnostics";
 import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import {
@@ -278,10 +279,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
+        {...iosFormScrollKeyboardProps()}
         style={ui.flexPage}
         contentContainerStyle={[ui.page, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
         onTouchStart={dismissStockSearches}
       >
         <Pressable onPress={() => navigation.goBack()}>

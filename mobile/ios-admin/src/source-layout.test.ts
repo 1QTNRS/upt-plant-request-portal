@@ -73,8 +73,8 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /paddingTop: THUMB_PAD/);
     assert.match(strip, /overflow: "visible"/);
     assert.doesNotMatch(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
-    assert.match(detail, /keyboardShouldPersistTaps="handled"/);
-    assert.match(detail, /keyboardDismissMode="on-drag"/);
+    assert.match(detail, /iosFormScrollKeyboardProps\(\)/);
+    assert.doesNotMatch(detail, /keyboardShouldPersistTaps="handled"/);
     assert.match(detail, /dismissStockSearches/);
     assert.match(detail, /registerStockDismiss/);
     assert.match(detail, /onTouchStart=\{dismissStockSearches\}/);
