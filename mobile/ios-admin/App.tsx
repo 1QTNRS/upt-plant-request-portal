@@ -6,8 +6,6 @@ import {
   DefaultTheme,
   NavigationContainer,
   createNavigationContainerRef,
-  getFocusedRouteNameFromRoute,
-  type Route,
 } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import * as Notifications from "expo-notifications";
@@ -21,8 +19,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { apiGet } from "./src/api";
 import { AppIntro } from "./src/AppIntro";
 import { APP_INTRO_BACKGROUND, shouldPlayAppIntro } from "./src/app-intro";
-import { TAB_BAR_LABEL_FONT_SIZE } from "./src/item-editor";
-import { rootTabBarStyle, rootTabBarVisible } from "./src/navigation-chrome";
+import { rootTabBarLabelOnlyOptions } from "./src/navigation-chrome";
 import { SessionContext } from "./src/SessionContext";
 import { ExactPlantsReviewScreen, ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -111,31 +108,18 @@ function ExactPlantsNavigator() {
   );
 }
 
-function tabScreenOptions(route: Route<string>, bottomInset: number) {
-  const focusedRouteName = getFocusedRouteNameFromRoute(route) ?? route.name;
-  const visible = rootTabBarVisible(focusedRouteName);
-  return {
-    headerShown: false,
-    lazy: false,
-    tabBarActiveTintColor: THEME.yellow,
-    tabBarInactiveTintColor: THEME.white,
-    tabBarStyle: rootTabBarStyle({ visible, bottomInset }),
-    tabBarLabelStyle: {
-      fontWeight: "700" as const,
-      fontSize: TAB_BAR_LABEL_FONT_SIZE,
-      marginBottom: 0,
-    },
-    tabBarHideOnKeyboard: true,
-    sceneStyle: { backgroundColor: THEME.requestPage },
-  };
-}
-
 function MainTabs() {
   const insets = useSafeAreaInsets();
+  const tabOptions = rootTabBarLabelOnlyOptions(insets.bottom);
 
   return (
     <Tabs.Navigator
-      screenOptions={({ route }) => tabScreenOptions(route, insets.bottom)}
+      screenOptions={{
+        headerShown: false,
+        lazy: false,
+        ...tabOptions,
+        sceneStyle: { backgroundColor: THEME.requestPage },
+      }}
     >
       <Tabs.Screen
         name="Requests"

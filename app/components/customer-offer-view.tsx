@@ -613,16 +613,18 @@ export function CustomerOfferView({
                   available. Please review the notes below for additional
                   information.
                 </s-text>
-                <button
-                  type="submit"
-                  name="intent"
-                  value="submit-response"
-                  data-offer-submit
-                  className="upt-primary-action"
-                  style={primaryButtonStyle}
-                >
-                  Submit
-                </button>
+                <div className="upt-offer-submit-row">
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="submit-response"
+                    data-offer-submit
+                    className="upt-primary-action"
+                    style={primaryButtonStyle}
+                  >
+                    Submit
+                  </button>
+                </div>
               </s-stack>
             </s-section>
           ) : (
@@ -768,16 +770,18 @@ export function CustomerOfferView({
 
               <div className="upt-offer-section-gap">
               <s-section>
-                <button
-                  type="submit"
-                  name="intent"
-                  value="submit-response"
-                  data-offer-submit
-                  className="upt-primary-action"
-                  style={primaryButtonStyle}
-                >
-                  Submit
-                </button>
+                <div className="upt-offer-submit-row">
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="submit-response"
+                    data-offer-submit
+                    className="upt-primary-action"
+                    style={primaryButtonStyle}
+                  >
+                    Submit
+                  </button>
+                </div>
               </s-section>
               </div>
             </>

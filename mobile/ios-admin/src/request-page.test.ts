@@ -41,8 +41,8 @@ describe("request page mint chrome", () => {
     assert.match(app, /signedInChrome \? THEME\.requestPage : APP_INTRO_BACKGROUND/);
     const chrome = read("src/navigation-chrome.ts");
     assert.match(chrome, /backgroundColor: THEME\.darkGreen/);
-    assert.match(app, /tabBarActiveTintColor: THEME\.yellow/);
-    assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
+    assert.match(chrome, /tabBarActiveTintColor: THEME\.yellow/);
+    assert.match(chrome, /tabBarInactiveTintColor: THEME\.white/);
 
     assert.match(list, /style=\{ui\.screen\}/);
     assert.match(list, /style=\{ui\.flexPage\}/);

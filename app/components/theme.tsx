@@ -227,6 +227,10 @@ export function ThemeStyles() {
         display: block;
         margin-top: 20px;
       }
+      .upt-offer-submit-row {
+        display: flex;
+        justify-content: center;
+      }
       .upt-addon-summary-card {
         border-radius: 14px;
         padding: 16px;

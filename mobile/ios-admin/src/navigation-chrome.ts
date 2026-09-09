@@ -1,10 +1,34 @@
-import { TAB_BAR_CONTENT_HEIGHT } from "./item-editor";
+import type { StyleProp, ViewStyle } from "react-native";
+
+import { TAB_BAR_CONTENT_HEIGHT, TAB_BAR_LABEL_FONT_SIZE } from "./item-editor";
 import { THEME } from "./theme";
 
 const DETAIL_ROUTES = new Set(["RequestDetail", "ExactPlantsReview"]);
 
 export function rootTabBarVisible(focusedRouteName: string): boolean {
   return !DETAIL_ROUTES.has(focusedRouteName);
+}
+
+/** Bottom tabs default to a triangle MissingIcon when tabBarIcon is omitted. */
+export function rootTabBarLabelOnlyOptions(bottomInset: number) {
+  return {
+    tabBarIcon: () => null,
+    tabBarIconStyle: {
+      display: "none" as const,
+      width: 0,
+      height: 0,
+    } satisfies StyleProp<ViewStyle>,
+    tabBarShowLabel: true,
+    tabBarActiveTintColor: THEME.yellow,
+    tabBarInactiveTintColor: THEME.white,
+    tabBarLabelStyle: {
+      fontWeight: "700" as const,
+      fontSize: TAB_BAR_LABEL_FONT_SIZE,
+      marginBottom: 0,
+    },
+    tabBarStyle: rootTabBarStyle({ visible: true, bottomInset }),
+    tabBarHideOnKeyboard: true,
+  };
 }
 
 export function rootTabBarStyle(input: {

@@ -20,8 +20,23 @@ describe("iOS navigation touch regression", () => {
     const app = read("App.tsx");
     assert.match(app, /createBottomTabNavigator/);
     assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
+    assert.doesNotMatch(app, /getFocusedRouteNameFromRoute/);
     assert.match(app, /lazy: false/);
     assert.match(app, /freezeOnBlur: true/);
+    assert.match(app, /rootTabBarLabelOnlyOptions/);
+  });
+
+  it("removes default triangle tab icons and drives tab-bar visibility from focus hooks", () => {
+    const chrome = read("src/navigation-chrome.ts");
+    assert.match(chrome, /tabBarIcon: \(\) => null/);
+    assert.match(chrome, /display: "none"/);
+    const detail = read("src/screens/RequestDetailScreen.tsx");
+    assert.match(detail, /useRootTabBarHiddenOnFocus/);
+    const list = read("src/screens/RequestListScreen.tsx");
+    assert.match(list, /useRootTabBarVisibleOnFocus/);
+    const hooks = read("src/use-root-tab-bar.ts");
+    assert.match(hooks, /useLayoutEffect/);
+    assert.match(hooks, /transitionStart/);
   });
 
   it("hides the tab bar on detail routes without leaving touch targets active", () => {
@@ -56,6 +71,23 @@ describe("iOS navigation touch regression", () => {
     const list = read("src/screens/RequestListScreen.tsx");
     assert.match(list, /logActiveTouchBlockers\("request-list-focus"\)/);
     assert.match(list, /useFocusEffect/);
+  });
+
+  it("restores root-tab swipe only on list screens, not on detail routes", () => {
+    const shell = read("src/RootTabSwipeShell.tsx");
+    assert.match(shell, /Gesture\.Pan/);
+    assert.match(shell, /swipeDirectionToAdjacent/);
+    const list = read("src/screens/RequestListScreen.tsx");
+    assert.match(list, /RootTabSwipeShell/);
+    assert.match(list, /tabName="Requests"/);
+    const detail = read("src/screens/RequestDetailScreen.tsx");
+    assert.doesNotMatch(detail, /RootTabSwipeShell/);
+    const exact = read("src/screens/ExactPlantsScreen.tsx");
+    assert.match(exact, /tabName="ExactPlants"/);
+    const reviewStart = exact.indexOf("export function ExactPlantsReviewScreen");
+    assert.ok(reviewStart > -1);
+    const reviewBody = exact.slice(reviewStart);
+    assert.doesNotMatch(reviewBody, /RootTabSwipeShell/);
   });
 });
 

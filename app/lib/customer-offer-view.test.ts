@@ -151,6 +151,7 @@ describe("an expired offer is not presented as a live one", () => {
     assert.match(live, /type="radio"/);
     assert.match(live, /value="submit-response"/);
     assert.match(live, /data-offer-submit/);
+    assert.match(live, /upt-offer-submit-row/);
     assert.match(live, /#002910/);
     assert.match(live, /-webkit-text-fill-color:#ffffff/);
     assert.match(live, />Submit</);

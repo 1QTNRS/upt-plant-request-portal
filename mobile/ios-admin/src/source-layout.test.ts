@@ -108,18 +108,19 @@ describe("iOS admin source layout", () => {
 
   it("uses native stack swipe-back and a persistent bottom tab bar", () => {
     const app = read("App.tsx");
+    const chrome = read("src/navigation-chrome.ts");
     assert.match(app, /createBottomTabNavigator/);
     assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
     assert.match(app, /createNativeStackNavigator/);
     assert.match(app, /lazy: false/);
-    assert.match(app, /rootTabBarStyle/);
+    assert.match(app, /rootTabBarLabelOnlyOptions/);
+    assert.match(chrome, /rootTabBarStyle/);
     assert.match(app, /gestureEnabled: true/);
     assert.match(app, /fullScreenGestureEnabled: false/);
-    const chrome = read("src/navigation-chrome.ts");
     assert.match(chrome, /backgroundColor: THEME\.darkGreen/);
-    assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
+    assert.match(chrome, /tabBarInactiveTintColor: THEME\.white/);
     assert.match(chrome, /TAB_BAR_CONTENT_HEIGHT/);
-    assert.match(app, /TAB_BAR_LABEL_FONT_SIZE/);
+    assert.match(chrome, /TAB_BAR_LABEL_FONT_SIZE/);
     assert.match(app, /insets\.bottom/);
     assert.doesNotMatch(app, /fontSize: 12/);
   });
