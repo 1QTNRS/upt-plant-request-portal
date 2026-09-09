@@ -95,6 +95,7 @@ describe("customer addon summary state", () => {
       fedExSummaryState({
         hasAcceptedPurchasableItems: true,
         fedexUpgradeSelected: false,
+        fedexExplicitlyDeclined: true,
       }),
       "declined",
     );
@@ -104,6 +105,14 @@ describe("customer addon summary state", () => {
         fedexUpgradeSelected: false,
       }),
       "not_applicable",
+    );
+    assert.equal(
+      fedExSummaryState({
+        hasAcceptedPurchasableItems: false,
+        fedexUpgradeSelected: false,
+        fedexExplicitlyDeclined: true,
+      }),
+      "declined",
     );
   });
 
@@ -140,12 +149,15 @@ describe("customer addon summary state", () => {
 });
 
 describe("customer final approval addon cards", () => {
-  function renderSummary(overrides: Partial<CustomerOfferResponse> = {}) {
+  function renderSummary(
+    overrides: Partial<CustomerOfferResponse> = {},
+    options: { fedexRemovalWarning?: string } = {},
+  ) {
     return renderToStaticMarkup(
       createElement(CustomerOfferView, {
         offer: offer(),
         response: response(overrides),
-        fedexRemovalWarning: "",
+        fedexRemovalWarning: options.fedexRemovalWarning ?? "",
         requestClosed: false,
         formAction: "/apps/plant-requests/requests/req-1",
       }),
@@ -162,20 +174,57 @@ describe("customer final approval addon cards", () => {
     assert.match(html, />\$7\.00/);
   });
 
-  it("renders red FedEx card when the customer explicitly declined it", () => {
-    const html = renderSummary({
-      fedexUpgradeSelected: false,
-      hasAcceptedPurchasableItems: true,
-    });
+  it("renders red FedEx card with the removal warning when explicitly declined", () => {
+    const html = renderSummary(
+      {
+        fedexUpgradeSelected: false,
+        fedexExplicitlyDeclined: true,
+        hasAcceptedPurchasableItems: true,
+      },
+      { fedexRemovalWarning: "Carrier delays are not covered." },
+    );
     assert.match(html, /upt-addon-summary-negative/);
     assert.match(html, />Declined</);
+    assert.match(html, /Carrier delays are not covered\./);
     assert.doesNotMatch(html, /FedEx Priority Overnight Upgrade — removed/);
   });
 
-  it("omits FedEx and Heat Pack cards when nothing purchasable was accepted", () => {
+  it("renders explicit FedEx decline even when no plants were accepted", () => {
+    const html = renderSummary(
+      {
+      hasAcceptedPurchasableItems: false,
+      fedexUpgradeSelected: false,
+      fedexExplicitlyDeclined: true,
+      heatPackSelected: null,
+      items: [
+        {
+          offerItemId: "response-1",
+          sourceItemId: "item-1",
+          plantName: "Monstera",
+          choice: "reject",
+          price: 250,
+          quantity: 1,
+          lineRevenue: 0,
+          customerNotes: "Notes",
+          photoUrls: [],
+          fulfillmentType: "exact_plant",
+        },
+      ],
+      },
+      { fedexRemovalWarning: "Carrier delays are not covered." },
+    );
+    assert.match(html, /class="upt-addon-summary-card upt-addon-summary-negative/);
+    assert.match(html, /FedEx Priority Overnight Upgrade/);
+    assert.match(html, />Declined</);
+    assert.match(html, /Carrier delays are not covered\./);
+    assert.doesNotMatch(html, /Heat Pack \(includes foil insulation\)/);
+  });
+
+  it("omits FedEx when auto-disabled with no explicit customer decision", () => {
     const html = renderSummary({
       hasAcceptedPurchasableItems: false,
       fedexUpgradeSelected: false,
+      fedexExplicitlyDeclined: false,
       heatPackSelected: null,
       items: [
         {

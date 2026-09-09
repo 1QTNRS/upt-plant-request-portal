@@ -48,6 +48,7 @@ import {
   offerIsAllExactPlants,
   offerReadinessMessage,
   PAYMENT_AFTER_VOID_REASON,
+  readFedexExplicitlyDeclinedFromSnapshot,
   responseSnapshotListingImage,
   responseSnapshotPhotoUrls,
   type CustomerOfferResponse,
@@ -1430,6 +1431,13 @@ function toResponseDto(
       : undefined,
     fedexUpgradeSelected: response.fedexUpgradeSelected,
     fedexUpgradePrice: response.fedexUpgradePrice,
+    fedexExplicitlyDeclined: readFedexExplicitlyDeclinedFromSnapshot(
+      response.snapshotJson,
+      {
+        hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
+        fedexUpgradeSelected: response.fedexUpgradeSelected,
+      },
+    ),
     heatPackSelected: response.heatPackSelected,
     heatPackPrice: response.heatPackPrice,
     hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
@@ -1513,6 +1521,7 @@ export async function saveCustomerResponse(
     items: CustomerResponseItem[];
     fedexUpgradeSelected: boolean;
     fedexUpgradePrice: number;
+    fedexExplicitlyDeclined?: boolean;
     heatPackSelected?: boolean | null;
     heatPackPrice?: number | null;
   },
@@ -1539,6 +1548,7 @@ export async function saveCustomerResponse(
     submittedAt: new Date().toISOString(),
     offerExpiresAt: request.offer?.expiresAt.toISOString() ?? null,
     fedexUpgradeSelected: input.fedexUpgradeSelected,
+    fedexExplicitlyDeclined: input.fedexExplicitlyDeclined ?? false,
     items: input.items,
     heatPackSelected: input.heatPackSelected ?? null,
     heatPackPrice: input.heatPackPrice ?? null,

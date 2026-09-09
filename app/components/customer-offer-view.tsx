@@ -429,11 +429,20 @@ export function CustomerOfferView({
           </s-section>
         ) : rejectedItems.length > 0 ? (
           <s-section heading="Final approval summary">
-            <s-stack direction="block" gap="base">
-              <s-heading>DECLINED</s-heading>
-              {rejectedItems.map((item) => (
-                <DeclinedItemCard key={item.offerItemId} item={item} />
-              ))}
+            <s-stack direction="block" gap="large">
+              <s-stack direction="block" gap="base">
+                <s-heading>DECLINED</s-heading>
+                {rejectedItems.map((item) => (
+                  <DeclinedItemCard key={item.offerItemId} item={item} />
+                ))}
+              </s-stack>
+              {response ? (
+                <FedExSummaryCard
+                  offer={offer}
+                  response={response}
+                  fedexRemovalWarning={fedexRemovalWarning}
+                />
+              ) : null}
             </s-stack>
           </s-section>
         ) : null}
@@ -866,6 +875,7 @@ function FedExSummaryCard({
   const state = fedExSummaryState({
     hasAcceptedPurchasableItems: response.hasAcceptedPurchasableItems,
     fedexUpgradeSelected: response.fedexUpgradeSelected,
+    fedexExplicitlyDeclined: response.fedexExplicitlyDeclined,
   });
   if (state === "not_applicable") return null;
 

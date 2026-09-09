@@ -7,6 +7,7 @@ import {
   buildDraftOrderInput,
   buildDraftOrderNote,
   customerDeclinedFedExUpgrade,
+  customerExplicitlyDeclinedFedEx,
   formatOfferExpirationUrgencyPill,
   isOfferExpired,
   requestShowsAnsweredPill,
@@ -85,6 +86,21 @@ describe("Declined FedEx draft order notes", () => {
       customerDeclinedFedExUpgrade({
         acceptedPurchasableCount: 2,
         fedexUpgradeSelected: true,
+      }),
+      false,
+    );
+    assert.equal(
+      customerExplicitlyDeclinedFedEx({
+        acceptedPurchasableCount: 0,
+        formFedexSelected: false,
+        fedexRemovalAcknowledged: true,
+      }),
+      true,
+    );
+    assert.equal(
+      customerExplicitlyDeclinedFedEx({
+        acceptedPurchasableCount: 0,
+        formFedexSelected: false,
       }),
       false,
     );

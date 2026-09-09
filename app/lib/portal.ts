@@ -184,6 +184,8 @@ export type CustomerOfferResponse = {
   offerExpiresAt?: string;
   fedexUpgradeSelected: boolean;
   fedexUpgradePrice: number;
+  /** Frozen at submit when the customer went through FedEx removal confirmation. */
+  fedexExplicitlyDeclined?: boolean;
   heatPackSelected?: boolean | null;
   heatPackPrice?: number | null;
   hasAcceptedPurchasableItems: boolean;
@@ -1029,15 +1031,50 @@ export function customerDeclinedFedExUpgrade(input: {
   return input.acceptedPurchasableCount > 0 && !input.fedexUpgradeSelected;
 }
 
+/** Whether the customer made an explicit FedEx decision at submit time. */
+export function customerExplicitlyDeclinedFedEx(input: {
+  acceptedPurchasableCount: number;
+  formFedexSelected: boolean;
+  fedexRemovalAcknowledged?: boolean;
+}): boolean {
+  if (input.fedexRemovalAcknowledged) return true;
+  return input.acceptedPurchasableCount > 0 && !input.formFedexSelected;
+}
+
+/** Read `fedexExplicitlyDeclined` from a frozen response snapshot. */
+export function readFedexExplicitlyDeclinedFromSnapshot(
+  snapshotJson: string,
+  fallback: { hasAcceptedPurchasableItems: boolean; fedexUpgradeSelected: boolean },
+): boolean {
+  try {
+    const parsed = JSON.parse(snapshotJson) as { fedexExplicitlyDeclined?: boolean };
+    if (typeof parsed.fedexExplicitlyDeclined === "boolean") {
+      return parsed.fedexExplicitlyDeclined;
+    }
+  } catch {
+    // Legacy snapshots omit the flag; infer from stored billing fields.
+  }
+  return (
+    fallback.hasAcceptedPurchasableItems && !fallback.fedexUpgradeSelected
+  );
+}
+
 export type FedExSummaryState = "added" | "declined" | "not_applicable";
 
 /** Read-only FedEx card state from the frozen customer response snapshot. */
 export function fedExSummaryState(input: {
   hasAcceptedPurchasableItems: boolean;
   fedexUpgradeSelected: boolean;
+  fedexExplicitlyDeclined?: boolean;
 }): FedExSummaryState {
-  if (!input.hasAcceptedPurchasableItems) return "not_applicable";
-  return input.fedexUpgradeSelected ? "added" : "declined";
+  if (input.hasAcceptedPurchasableItems && input.fedexUpgradeSelected) {
+    return "added";
+  }
+  const explicitDecline =
+    input.fedexExplicitlyDeclined ??
+    (input.hasAcceptedPurchasableItems && !input.fedexUpgradeSelected);
+  if (explicitDecline) return "declined";
+  return "not_applicable";
 }
 
 export type HeatPackSummaryState = "added" | "not_added" | "not_offered";
