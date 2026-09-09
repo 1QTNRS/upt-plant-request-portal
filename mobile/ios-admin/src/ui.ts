@@ -75,6 +75,13 @@ export const ui = StyleSheet.create({
     marginBottom: 10,
   },
   cardTitle: { color: THEME.darkGreen, fontWeight: "700", fontSize: 16 },
+  terminalGroupHeading: {
+    color: THEME.darkGreen,
+    fontWeight: "700",
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  noteTimestamp: { color: "#8c9196", fontSize: 13, lineHeight: 18, marginBottom: 4 },
   cardMeta: { color: THEME.darkGreen, marginTop: 4 },
   row: { flexDirection: "row", gap: 8 },
   flexItem: { flex: 1 },

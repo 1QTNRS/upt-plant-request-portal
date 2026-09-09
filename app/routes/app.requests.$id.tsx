@@ -88,6 +88,7 @@ import { ensureShopSeeded } from "../lib/seed-demo.server";
 import {
   getExistingStockVariant,
   refreshFedexUpgradePrice,
+  refreshHeatPackPrice,
   searchExistingStock,
 } from "../lib/shopify-ops.server";
 import { voidExpiredDraftOrder } from "../lib/draft-order-void.server";
@@ -465,6 +466,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       // The offer freezes the FedEx upgrade price into what the customer sees,
       // is emailed and is later billed, so read it from Shopify first.
       await refreshFedexUpgradePrice(admin, shop);
+      await refreshHeatPackPrice(admin, shop);
       const shipping = parseShippingFeeOverride(form.get("shippingFeeOverride"));
       if (!shipping.ok) return { ok: false, error: shipping.error };
       const updated = await sendOffer(shop, requestId, expirationDays, {
@@ -1760,7 +1762,7 @@ function InternalNotesSection({
       <s-stack direction="block" gap="base">
         <s-text color="subdued">
           Admin only. These notes never reach the customer, the offer, or
-          emails. Times are shown in your local time zone.
+          emails. Times are shown in Pacific Time (PT).
         </s-text>
         {notes.length === 0 ? (
           <s-text color="subdued">No internal notes yet.</s-text>
@@ -1768,12 +1770,12 @@ function InternalNotesSection({
           notes.map((note) => (
             <NestedBox key={note.id} data-internal-note={note.id}>
               <s-stack direction="block" gap="small">
-                <s-text color="subdued">
+                <span className="upt-admin-note-time">
                   <AdminNoteTime
                     iso={note.createdAtIso}
                     fallback={note.createdAt}
                   />
-                </s-text>
+                </span>
                 <s-text>{note.body}</s-text>
               </s-stack>
             </NestedBox>
@@ -2077,7 +2079,7 @@ function TerminalPlantItemsSection({
   shop: string;
   onRequiredPhotoBusyChange?: (itemId: string, busy: boolean) => void;
 }) {
-  const { accepted, declined } = partitionPlantItemsByCustomerChoice(
+  const { accepted, declined, notAvailable } = partitionPlantItemsByCustomerChoice(
     items,
     responseItems,
   );
@@ -2086,7 +2088,9 @@ function TerminalPlantItemsSection({
     <s-stack direction="block" gap="large">
       {accepted.length > 0 ? (
         <s-stack direction="block" gap="base">
-          <s-heading>ACCEPTED</s-heading>
+          <span className="upt-terminal-group-heading">
+            <s-heading>ACCEPTED</s-heading>
+          </span>
           <NestedBox>
             <s-stack direction="block" gap="base">
               {accepted.map((item) => (
@@ -2104,10 +2108,32 @@ function TerminalPlantItemsSection({
       ) : null}
       {declined.length > 0 ? (
         <s-stack direction="block" gap="base">
-          <s-heading>DECLINED</s-heading>
+          <span className="upt-terminal-group-heading">
+            <s-heading>DECLINED</s-heading>
+          </span>
           <NestedBox>
             <s-stack direction="block" gap="base">
               {declined.map((item) => (
+                <PlantItemCard
+                  key={item.id}
+                  item={item}
+                  shop={shop}
+                  canEdit={false}
+                  onRequiredPhotoBusyChange={onRequiredPhotoBusyChange}
+                />
+              ))}
+            </s-stack>
+          </NestedBox>
+        </s-stack>
+      ) : null}
+      {notAvailable.length > 0 ? (
+        <s-stack direction="block" gap="base">
+          <span className="upt-terminal-group-heading">
+            <s-heading>NOT AVAILABLE</s-heading>
+          </span>
+          <NestedBox>
+            <s-stack direction="block" gap="base">
+              {notAvailable.map((item) => (
                 <PlantItemCard
                   key={item.id}
                   item={item}

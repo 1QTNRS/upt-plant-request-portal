@@ -8,7 +8,7 @@ type ResponseChoice = {
 export function partitionPlantItemsByCustomerChoice(
   items: RequestItem[],
   responseItems: ResponseChoice[],
-): { accepted: RequestItem[]; declined: RequestItem[] } {
+): { accepted: RequestItem[]; declined: RequestItem[]; notAvailable: RequestItem[] } {
   const acceptedIds = new Set(
     responseItems
       .filter((item) => item.choice === "accept")
@@ -19,9 +19,21 @@ export function partitionPlantItemsByCustomerChoice(
       .filter((item) => item.choice === "reject")
       .map((item) => item.sourceItemId),
   );
+  const unavailableIds = new Set(
+    responseItems
+      .filter((item) => item.choice === "unavailable")
+      .map((item) => item.sourceItemId),
+  );
   return {
     accepted: items.filter((item) => acceptedIds.has(item.id)),
     declined: items.filter((item) => declinedIds.has(item.id)),
+    notAvailable: items.filter(
+      (item) =>
+        unavailableIds.has(item.id) ||
+        (item.availability === "not_available" &&
+          !acceptedIds.has(item.id) &&
+          !declinedIds.has(item.id)),
+    ),
   };
 }
 

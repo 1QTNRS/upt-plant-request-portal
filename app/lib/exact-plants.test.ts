@@ -732,8 +732,10 @@ describe("the EXACT PLANTS queue page", () => {
     assert.match(requestPage, /function TerminalPlantItemsSection/);
     assert.match(requestPage, /shouldGroupTerminalPlantItems/);
     assert.match(requestPage, /partitionPlantItemsByCustomerChoice/);
+    assert.match(requestPage, /upt-terminal-group-heading/);
     assert.match(requestPage, /<s-heading>ACCEPTED<\/s-heading>/);
     assert.match(requestPage, /<s-heading>DECLINED<\/s-heading>/);
+    assert.match(requestPage, /<s-heading>NOT AVAILABLE<\/s-heading>/);
     assert.match(requestPage, /inputMode="decimal"/);
     const overrideField = requestPage.slice(
       requestPage.indexOf('id="shippingFeeOverride"'),

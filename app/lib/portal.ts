@@ -775,12 +775,13 @@ type TerminalResponseChoice = {
   choice: CustomerResponseItemChoice;
 };
 
-/** Closed/Expired detail: group plant items by explicit customer accept/reject. */
+/** Closed/Expired detail: group plant items by explicit customer accept/reject/unavailable. */
 export function partitionPlantItemsByCustomerChoice<
-  T extends { id: string },
+  T extends { id: string; availability?: ItemAvailabilityStatus | string },
 >(items: T[], responseItems: TerminalResponseChoice[]): {
   accepted: T[];
   declined: T[];
+  notAvailable: T[];
 } {
   const acceptedIds = new Set(
     responseItems
@@ -792,9 +793,21 @@ export function partitionPlantItemsByCustomerChoice<
       .filter((item) => item.choice === "reject")
       .map((item) => item.sourceItemId),
   );
+  const unavailableIds = new Set(
+    responseItems
+      .filter((item) => item.choice === "unavailable")
+      .map((item) => item.sourceItemId),
+  );
   return {
     accepted: items.filter((item) => acceptedIds.has(item.id)),
     declined: items.filter((item) => declinedIds.has(item.id)),
+    notAvailable: items.filter(
+      (item) =>
+        unavailableIds.has(item.id) ||
+        (item.availability === "not_available" &&
+          !acceptedIds.has(item.id) &&
+          !declinedIds.has(item.id)),
+    ),
   };
 }
 
@@ -2037,7 +2050,9 @@ export type SampleCustomerOffer = {
   fedexUpgradePrice: number;
   heatPackAddonEnabled: boolean;
   heatPackLabel: string;
-  heatPackPrice: number;
+  /** Null when the live Shopify variant could not be resolved — never show $0 as a fallback. */
+  heatPackPrice: number | null;
+  heatPackPriceResolved: boolean;
   customerEmail: string;
   customerName: string;
   requestNumber: string;

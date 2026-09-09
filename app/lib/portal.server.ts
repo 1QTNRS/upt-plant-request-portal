@@ -1325,6 +1325,9 @@ export async function buildCustomerOffer(
   const timeZone = await getCustomerTimeZone(shop, request.customerEmail);
   const expiresAt = formatCustomerDateTime(request.offer.expiresAt, timeZone);
   const allExactPlants = offerIsAllExactPlants(request.offer.items);
+  const heatPackPriceResolved =
+    !settings.heatPackAddonEnabled ||
+    (Boolean(settings.heatPackVariantGid) && settings.heatPackPrice > 0);
   return {
     title: "Your Personal Plant Offer from UPT",
     expirationDays: request.offer.expirationDays,
@@ -1336,7 +1339,8 @@ export async function buildCustomerOffer(
     fedexUpgradePrice: settings.fedexUpgradePrice,
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackLabel: settings.heatPackLabel,
-    heatPackPrice: settings.heatPackPrice,
+    heatPackPrice: heatPackPriceResolved ? settings.heatPackPrice : null,
+    heatPackPriceResolved,
     customerEmail: request.customerEmail,
     customerName: request.customerName,
     requestNumber: request.requestNumber,

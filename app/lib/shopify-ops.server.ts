@@ -201,28 +201,50 @@ const HEAT_PACK_PRODUCT_BY_HANDLE_QUERY = `#graphql
   }
 `;
 
+function parseShopifyVariantPrice(price: string): number | null {
+  const parsed = Number.parseFloat(price);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function heatPackStoredPriceIsUsable(settings: {
+  heatPackVariantGid?: string | null;
+  heatPackPrice: number;
+}): boolean {
+  return Boolean(settings.heatPackVariantGid) && settings.heatPackPrice > 0;
+}
+
 async function persistHeatPackVariant(
   shop: string,
   variant: FedexVariantNode,
-  fallbackPrice: number,
-): Promise<{ variantGid: string; price: number }> {
-  const price = Number.parseFloat(variant.price) || fallbackPrice;
+): Promise<{ variantGid: string; price: number; resolved: true } | { variantGid?: string; price: null; resolved: false }> {
+  const price = parseShopifyVariantPrice(variant.price);
+  if (price === null) {
+    return { variantGid: variant.id, price: null, resolved: false };
+  }
   await updateShopSettings(shop, {
     heatPackVariantGid: variant.id,
     heatPackPrice: price,
   });
-  return { variantGid: variant.id, price };
+  return { variantGid: variant.id, price, resolved: true };
 }
+
+export type HeatPackVariantResolution = {
+  variantGid?: string;
+  price: number | null;
+  resolved: boolean;
+};
 
 export async function resolveHeatPackVariant(
   admin: GraphqlClient | undefined,
   shop: string,
-): Promise<{ variantGid?: string; price: number }> {
+): Promise<HeatPackVariantResolution> {
   const settings = await getShopSettings(shop);
   if (!admin) {
+    const resolved = heatPackStoredPriceIsUsable(settings);
     return {
       variantGid: settings.heatPackVariantGid ?? undefined,
-      price: settings.heatPackPrice,
+      price: resolved ? settings.heatPackPrice : null,
+      resolved,
     };
   }
 
@@ -233,7 +255,7 @@ export async function resolveHeatPackVariant(
   });
   const skuVariant = skuData.productVariants.nodes[0];
   if (skuVariant) {
-    return persistHeatPackVariant(shop, skuVariant, settings.heatPackPrice);
+    return persistHeatPackVariant(shop, skuVariant);
   }
 
   const handleData = await adminGraphql<{
@@ -246,12 +268,14 @@ export async function resolveHeatPackVariant(
 
   const handleVariant = handleData.productByIdentifier?.variants.nodes[0];
   if (handleVariant) {
-    return persistHeatPackVariant(shop, handleVariant, settings.heatPackPrice);
+    return persistHeatPackVariant(shop, handleVariant);
   }
 
+  const resolved = heatPackStoredPriceIsUsable(settings);
   return {
     variantGid: settings.heatPackVariantGid ?? undefined,
-    price: settings.heatPackPrice,
+    price: resolved ? settings.heatPackPrice : null,
+    resolved,
   };
 }
 
@@ -854,7 +878,12 @@ export async function createDraftOrderForRequest(
     : { price: settings.fedexUpgradePrice };
   const heatPack = input.heatPackSelected
     ? await resolveHeatPackVariant(admin, shop)
-    : { price: settings.heatPackPrice };
+    : { price: null as number | null, resolved: false, variantGid: undefined };
+  if (input.heatPackSelected && !heatPack.resolved) {
+    throw new Error(
+      "The heat pack add-on could not be priced from Shopify. Check that SKU UPTHEAPACINC72S exists before billing for it.",
+    );
+  }
 
   const lineItems = buildDraftOrderLineItems({
     acceptedItems: input.acceptedItems,
@@ -864,7 +893,7 @@ export async function createDraftOrderForRequest(
     fedexVariantGid: fedex.variantGid,
     heatPackSelected: input.heatPackSelected,
     heatPackLabel: settings.heatPackLabel,
-    heatPackPrice: input.heatPackPrice ?? heatPack.price,
+    heatPackPrice: input.heatPackPrice ?? heatPack.price ?? 0,
     heatPackVariantGid: heatPack.variantGid,
   });
 

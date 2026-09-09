@@ -59,6 +59,7 @@ function offer(input: {
     heatPackAddonEnabled: false,
     heatPackLabel: "Heat Pack (includes foil insulation)",
     heatPackPrice: 12,
+    heatPackPriceResolved: true,
     customerEmail: "alex.rivera@example.com",
     customerName: "Alex Rivera",
     requestNumber: "REQ1",
@@ -338,6 +339,7 @@ describe("a paid request acknowledges the payment", () => {
       requestClosed: false,
     });
 
+    assert.match(unpaid, /Complete Your Purchase/);
     assert.match(unpaid, /Continue to Checkout/);
     assert.match(unpaid, /https:\/\/upt\.myshopify\.com\/invoice\/abc/);
   });
@@ -687,7 +689,7 @@ describe("a hold that lapsed before payment", () => {
     });
 
     assert.ok(!live.includes("Your hold ended"));
-    assert.match(live, /emailed this link to you just in case/);
+    assert.match(live, /emailed it to alex\.rivera@example\.com just in case/);
   });
 });
 

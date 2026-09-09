@@ -32,7 +32,7 @@ export const CUSTOMER_TIME_SCRIPT = `
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      timeZone: tz,
+      timeZone: "America/Los_Angeles",
       timeZoneName: "short",
     }).format(date);
   });
@@ -243,6 +243,14 @@ export const HEAT_PACK_SCRIPT = `
     return node instanceof HTMLElement ? node : null;
   }
 
+  function choiceInputs() {
+    return sectionEl()
+      ? Array.prototype.slice.call(
+          sectionEl().querySelectorAll('input[name="heatPackSelected"]'),
+        )
+      : [];
+  }
+
   function acceptedCount() {
     var names = {};
     var count = 0;
@@ -257,18 +265,25 @@ export const HEAT_PACK_SCRIPT = `
     return count;
   }
 
-  function apply() {
+  function setChrome(enabled) {
     var section = sectionEl();
     if (!section) return;
-    var enabled = acceptedCount() > 0;
-    section.hidden = !enabled;
-    section.setAttribute("aria-hidden", enabled ? "false" : "true");
-    section.querySelectorAll('input[name="heatPackSelected"]').forEach(function (radio) {
+    section.style.opacity = enabled ? "1" : "0.55";
+    section.setAttribute("aria-disabled", enabled ? "false" : "true");
+    choiceInputs().forEach(function (radio) {
       if (!(radio instanceof HTMLInputElement)) return;
       radio.required = enabled;
       radio.disabled = !enabled;
+      var label = radio.closest("label");
+      if (label instanceof HTMLElement) {
+        label.style.cursor = enabled ? "pointer" : "not-allowed";
+      }
       if (!enabled) radio.checked = false;
     });
+  }
+
+  function apply() {
+    setChrome(acceptedCount() > 0);
   }
 
   document.addEventListener("change", function (event) {

@@ -173,6 +173,7 @@ export function ThemeStyles() {
         margin: -4px 0 14px;
         color: ${THEME.muted};
         font-size: 0.9rem;
+        font-style: italic;
         line-height: 1.45;
       }
       .upt-muted { color: ${THEME.muted}; line-height: 1.5; }
@@ -221,6 +222,70 @@ export function ThemeStyles() {
       .upt-choice input:focus-visible + span {
         outline: 3px solid ${THEME.yellow};
         outline-offset: 2px;
+      }
+      .upt-offer-section-gap {
+        display: block;
+        margin-top: 20px;
+      }
+      .upt-heat-pack-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      .upt-heat-pack-choice {
+        flex: 1 1 140px;
+        cursor: pointer;
+      }
+      .upt-heat-pack-choice input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .upt-heat-pack-choice span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 14px;
+        border: 2px solid ${THEME.line};
+        border-radius: 10px;
+        background: ${THEME.white};
+        color: ${THEME.ink};
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+      .upt-heat-pack-choice input:checked + span {
+        border-color: ${THEME.darkGreen};
+        background: ${THEME.darkGreen};
+        color: ${THEME.white};
+      }
+      .upt-heat-pack-choice input:disabled + span {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .upt-checkout-panel {
+        border: 2px solid ${THEME.darkGreen};
+        border-radius: 14px;
+        padding: 20px;
+        background: ${THEME.cream};
+      }
+      .upt-checkout-heading {
+        margin: 0 0 8px;
+        color: ${THEME.darkGreen};
+        font-size: 1.25rem;
+        font-weight: 700;
+      }
+      .upt-admin-note-time {
+        color: #8c9196;
+        font-size: 0.875rem;
+      }
+      .upt-terminal-group-heading {
+        display: block;
+        margin-bottom: 12px;
       }
       .upt-plant-card {
         border: 1px solid ${THEME.line};
