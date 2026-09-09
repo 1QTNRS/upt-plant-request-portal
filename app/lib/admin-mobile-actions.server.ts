@@ -14,6 +14,7 @@ import {
 } from "./offer-response.server";
 import { saveUploadedPlantPhoto } from "./photo-upload.server";
 import {
+  canAdminCloseDeclinedRequest,
   parseShippingFeeOverride,
   type ItemAvailabilityStatus,
   type OfferExpirationDays,
@@ -63,9 +64,13 @@ export async function loadMobileAdminRequestDetail(
     listInternalNotes(shop, request.id),
   ]);
   return toMobileAdminRequestDetail(request, {
-    canCloseDeclined: Boolean(
-      customerResponse && !customerResponse.hasAcceptedPurchasableItems,
-    ),
+    canCloseDeclined: canAdminCloseDeclinedRequest({
+      status: request.status,
+      hasCustomerResponse: Boolean(customerResponse),
+      hasAcceptedPurchasableItems: Boolean(
+        customerResponse?.hasAcceptedPurchasableItems,
+      ),
+    }),
     internalNotes: notes.map((note) => ({
       id: note.id,
       body: note.body,

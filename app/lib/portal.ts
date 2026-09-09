@@ -1029,6 +1029,42 @@ export function customerDeclinedFedExUpgrade(input: {
   return input.acceptedPurchasableCount > 0 && !input.fedexUpgradeSelected;
 }
 
+export type FedExSummaryState = "added" | "declined" | "not_applicable";
+
+/** Read-only FedEx card state from the frozen customer response snapshot. */
+export function fedExSummaryState(input: {
+  hasAcceptedPurchasableItems: boolean;
+  fedexUpgradeSelected: boolean;
+}): FedExSummaryState {
+  if (!input.hasAcceptedPurchasableItems) return "not_applicable";
+  return input.fedexUpgradeSelected ? "added" : "declined";
+}
+
+export type HeatPackSummaryState = "added" | "not_added" | "not_offered";
+
+/** Read-only Heat Pack card state from the frozen customer response snapshot. */
+export function heatPackSummaryState(input: {
+  hasAcceptedPurchasableItems: boolean;
+  heatPackSelected: boolean | null | undefined;
+}): HeatPackSummaryState {
+  if (!input.hasAcceptedPurchasableItems) return "not_offered";
+  if (input.heatPackSelected === true) return "added";
+  if (input.heatPackSelected === false) return "not_added";
+  return "not_offered";
+}
+
+/** Admin Close Declined Request — only while a decline-all answer still needs closing. */
+export function canAdminCloseDeclinedRequest(input: {
+  status: RequestStatus;
+  hasCustomerResponse: boolean;
+  hasAcceptedPurchasableItems: boolean;
+}): boolean {
+  if (!input.hasCustomerResponse) return false;
+  if (input.hasAcceptedPurchasableItems) return false;
+  if (input.status === "Closed" || input.status === "Expired") return false;
+  return input.status === "Pending";
+}
+
 export function buildDraftOrderNote(input: {
   requestNumber: string;
   declinedFedEx?: boolean;

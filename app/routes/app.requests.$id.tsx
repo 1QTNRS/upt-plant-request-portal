@@ -44,6 +44,7 @@ import { requestPlantPatterns } from "../lib/plant-behavior.server";
 import {
   ADMIN_OVERRIDE_CLOSE_REASON,
   adminDraftOrderLinkState,
+  canAdminCloseDeclinedRequest,
   formatCurrency,
   formatDateTime,
   getDisplayRequestNumber,
@@ -1918,7 +1919,11 @@ function CustomerResponseSection({
           </s-stack>
         </NestedBox>
 
-        {accepted.length === 0 && status !== "Closed" ? (
+        {canAdminCloseDeclinedRequest({
+          status,
+          hasCustomerResponse: true,
+          hasAcceptedPurchasableItems: response.hasAcceptedPurchasableItems,
+        }) ? (
           <CloseRequestSection />
         ) : null}
       </s-stack>

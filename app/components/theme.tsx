@@ -227,6 +227,38 @@ export function ThemeStyles() {
         display: block;
         margin-top: 20px;
       }
+      .upt-addon-summary-card {
+        border-radius: 14px;
+        padding: 16px;
+        border: 2px solid transparent;
+      }
+      .upt-addon-summary-positive {
+        background: ${THEME.mint};
+        border-color: ${THEME.darkGreen};
+        color: ${THEME.darkGreen};
+      }
+      .upt-addon-summary-negative {
+        background: #fff5f5;
+        border-color: #c41e3a;
+        color: #8e1f0b;
+      }
+      .upt-addon-summary-heading {
+        margin: 0 0 8px;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: inherit;
+      }
+      .upt-addon-summary-decision {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: inherit;
+      }
+      .upt-addon-summary-detail {
+        margin: 6px 0 0;
+        color: inherit;
+        opacity: 0.9;
+      }
       .upt-heat-pack-choices {
         display: flex;
         flex-wrap: wrap;
