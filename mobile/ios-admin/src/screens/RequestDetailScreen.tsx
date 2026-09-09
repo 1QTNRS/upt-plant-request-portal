@@ -74,20 +74,24 @@ export function RequestDetailScreen({ navigation, route }: Props) {
 
   useRootTabBarHiddenOnFocus();
 
-  const dismissInteractionBlockers = useCallback(() => {
+  const dismissOverlays = useCallback(() => {
     for (const dismiss of stockDismissers.current.values()) dismiss();
     stockDismissers.current.clear();
     for (const dismiss of photoDismissers.current.values()) dismiss();
     photoDismissers.current.clear();
     stockOpenIds.current.clear();
     stockTouchConsumed.current = false;
-    Keyboard.dismiss();
   }, []);
+
+  const dismissInteractionBlockers = useCallback(() => {
+    dismissOverlays();
+    Keyboard.dismiss();
+  }, [dismissOverlays]);
 
   useEffect(() => {
     void (async () => {
       resetRequestDetailTransientState({ setConfirmOverride, setError });
-      dismissInteractionBlockers();
+      dismissOverlays();
       setLoading(true);
       setShippingFeeOverride("");
       try {
@@ -104,7 +108,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         setLoading(false);
       }
     })();
-  }, [apiUrl, dismissInteractionBlockers, requestId, token]);
+  }, [apiUrl, dismissOverlays, requestId, token]);
 
   useFocusEffect(
     useCallback(() => {

@@ -498,10 +498,74 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
 
   var root;
   var image;
+  var transform;
   var status;
   var prev;
   var next;
   var stage;
+  var scrollLock = null;
+  var urls = [];
+  var alts = [];
+  var index = 0;
+  var scale = 1;
+  var offsetX = 0;
+  var offsetY = 0;
+  var pointers = new Map();
+  var pinchStart = null;
+  var panStart = null;
+  var swipeStart = null;
+  var DISMISS_PX = 80;
+  var SWIPE_PX = 40;
+
+  function isBaseScale() { return scale <= 1.01; }
+  function pointerDistance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+  function applyTransform() {
+    if (!(transform instanceof HTMLElement)) return;
+    transform.style.transform = "translate(" + offsetX + "px," + offsetY + "px) scale(" + scale + ")";
+  }
+  function resetTransform() {
+    scale = 1;
+    offsetX = 0;
+    offsetY = 0;
+    pointers.clear();
+    pinchStart = null;
+    panStart = null;
+    swipeStart = null;
+    applyTransform();
+  }
+  function lockScroll() {
+    if (scrollLock) return;
+    var scrollY = window.scrollY || 0;
+    var body = document.body;
+    var html = document.documentElement;
+    scrollLock = {
+      scrollY: scrollY,
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+      htmlOverflow: html.style.overflow,
+    };
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = "-" + scrollY + "px";
+    body.style.width = "100%";
+    html.style.overflow = "hidden";
+  }
+  function unlockScroll() {
+    if (!scrollLock) return;
+    var body = document.body;
+    var html = document.documentElement;
+    body.style.overflow = scrollLock.bodyOverflow;
+    body.style.position = scrollLock.bodyPosition;
+    body.style.top = scrollLock.bodyTop;
+    body.style.width = scrollLock.bodyWidth;
+    html.style.overflow = scrollLock.htmlOverflow;
+    window.scrollTo(0, scrollLock.scrollY);
+    scrollLock = null;
+  }
 
   function pinToBody() {
     var nodes = document.querySelectorAll("[data-customer-lightbox]");
@@ -520,6 +584,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     root = pinToBody();
     if (!(root instanceof HTMLElement)) return false;
     image = root.querySelector("[data-lightbox-image]");
+    transform = root.querySelector("[data-lightbox-transform]");
     status = root.querySelector("[data-lightbox-status]");
     prev = root.querySelector("[data-lightbox-prev]");
     next = root.querySelector("[data-lightbox-next]");
@@ -529,15 +594,9 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
 
   if (!bind()) return;
 
-  var urls = [];
-  var alts = [];
-  var index = 0;
-  var startX = 0;
-  var startY = 0;
-  var tracking = false;
-
   function render() {
     if (!urls.length || !(image instanceof HTMLImageElement)) return;
+    resetTransform();
     image.src = urls[index];
     image.alt = alts[index] || "";
     if (status) {
@@ -570,6 +629,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     if (Number.isNaN(index) || index < 0 || index >= urls.length) index = 0;
     root.hidden = false;
     root.tabIndex = -1;
+    lockScroll();
     root.focus();
     render();
   }
@@ -577,6 +637,8 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   function close() {
     if (!root) return;
     root.hidden = true;
+    unlockScroll();
+    resetTransform();
     if (image instanceof HTMLImageElement) image.removeAttribute("src");
   }
 
@@ -610,9 +672,9 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
       move(1);
       return;
     }
-    if (target.closest("[data-lightbox-image]")) return;
+    if (target.closest("[data-lightbox-image], [data-lightbox-transform]")) return;
     if (target.closest(".lightbox-nav")) return;
-    if (target.closest("[data-customer-lightbox]")) {
+    if (target.closest("[data-customer-lightbox]") && isBaseScale()) {
       event.preventDefault();
       close();
     }
@@ -621,36 +683,108 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   document.addEventListener("keydown", function (event) {
     if (root.hidden) return;
     if (event.key === "Escape") close();
+    if (!isBaseScale()) return;
     if (event.key === "ArrowLeft") move(-1);
     if (event.key === "ArrowRight") move(1);
   });
 
+  function isControl(target) {
+    return target instanceof Element && target.closest("[data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav");
+  }
+
   function onPointerDown(event) {
-    if (!event.isPrimary) return;
-    var origin = event.target;
-    if (
-      origin instanceof Element &&
-      origin.closest("[data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav")
-    ) {
-      tracking = false;
+    if (isControl(event.target)) return;
+    if (!(stage instanceof HTMLElement)) return;
+    stage.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      pinchStart = { distance: pointerDistance(pts[0], pts[1]), scale: scale };
+      panStart = null;
+      swipeStart = null;
       return;
     }
-    tracking = true;
-    startX = event.clientX;
-    startY = event.clientY;
+    if (!isBaseScale()) {
+      panStart = { x: event.clientX, y: event.clientY, ox: offsetX, oy: offsetY };
+      return;
+    }
+    swipeStart = { x: event.clientX, y: event.clientY };
   }
+
+  function onPointerMove(event) {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size >= 2 && pinchStart) {
+      var pts2 = Array.from(pointers.values());
+      if (pts2.length < 2) return;
+      var dist = pointerDistance(pts2[0], pts2[1]);
+      scale = Math.min(4, Math.max(1, pinchStart.scale * (dist / pinchStart.distance)));
+      applyTransform();
+      return;
+    }
+    if (panStart && !isBaseScale()) {
+      offsetX = panStart.ox + (event.clientX - panStart.x);
+      offsetY = panStart.oy + (event.clientY - panStart.y);
+      applyTransform();
+      return;
+    }
+    if (swipeStart && isBaseScale()) {
+      var dy = event.clientY - swipeStart.y;
+      if (dy > 0) {
+        offsetY = dy;
+        applyTransform();
+      }
+    }
+  }
+
   function onPointerUp(event) {
-    if (!tracking) return;
-    tracking = false;
-    var dx = event.clientX - startX;
-    var dy = event.clientY - startY;
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
-    move(dx > 0 ? -1 : 1);
+    pointers.delete(event.pointerId);
+    try { if (stage instanceof HTMLElement) stage.releasePointerCapture(event.pointerId); } catch (e) {}
+    if (pointers.size >= 1) {
+      pinchStart = null;
+      return;
+    }
+    pinchStart = null;
+    panStart = null;
+    if (!swipeStart || !isBaseScale()) {
+      swipeStart = null;
+      return;
+    }
+    var dx = event.clientX - swipeStart.x;
+    var dy = event.clientY - swipeStart.y;
+    swipeStart = null;
+    if (dy > DISMISS_PX && dy > Math.abs(dx)) {
+      close();
+      return;
+    }
+    if (urls.length > 1 && Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
+      move(dx > 0 ? -1 : 1);
+      return;
+    }
+    offsetX = 0;
+    offsetY = 0;
+    applyTransform();
   }
+
+  function onPointerCancel(event) {
+    pointers.delete(event.pointerId);
+    if (pointers.size === 0) {
+      pinchStart = null;
+      panStart = null;
+      swipeStart = null;
+      if (isBaseScale()) {
+        offsetX = 0;
+        offsetY = 0;
+        applyTransform();
+      }
+    }
+  }
+
   if (stage instanceof HTMLElement) {
     stage.addEventListener("pointerdown", onPointerDown);
+    stage.addEventListener("pointermove", onPointerMove);
     stage.addEventListener("pointerup", onPointerUp);
-    stage.addEventListener("pointercancel", function () { tracking = false; });
+    stage.addEventListener("pointercancel", onPointerCancel);
   }
 })();
 `.trim();

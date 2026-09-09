@@ -41,6 +41,11 @@ describe("iOS navigation touch regression", () => {
     assert.match(hooks, /useLayoutEffect/);
     assert.match(hooks, /transitionStart/);
     assert.match(hooks, /swipeEnabled/);
+    assert.match(hooks, /bottomInsetRef/);
+    assert.doesNotMatch(
+      hooks,
+      /return \(\) => \{[\s\S]*setRootTabChrome[\s\S]*true, true/,
+    );
   });
 
   it("hides the tab bar on detail routes without leaving touch targets active", () => {

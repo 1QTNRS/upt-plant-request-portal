@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 
+import { MOBILE_LIGHTBOX_STAGE_CSS } from "../lib/mobile-lightbox";
 import { LIGHTBOX_NAV_CSS } from "../lib/photo-lightbox";
 
 /** Small click-to-enlarge thumb. Locked in px so a storefront `img { width:100% }` cannot blow it up. */
@@ -124,6 +125,8 @@ const overlayStyle: CSSProperties = {
   background: "rgba(32, 34, 35, 0.92)",
   color: "#fff",
   padding: 12,
+  touchAction: "none",
+  overscrollBehavior: "none",
 };
 
 const stageStyle: CSSProperties = {
@@ -133,7 +136,8 @@ const stageStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   minHeight: 0,
-  touchAction: "pan-y",
+  touchAction: "none",
+  overscrollBehavior: "none",
 };
 
 const imageStyle: CSSProperties = {
@@ -164,7 +168,7 @@ export function CustomerLightboxRoot() {
   return (
     <>
       {/* Inline display:flex beats the HTML hidden attribute unless we force it. */}
-      <style>{`#customer-lightbox[hidden]{display:none!important}${LIGHTBOX_NAV_CSS}`}</style>
+      <style>{`#customer-lightbox[hidden]{display:none!important}${LIGHTBOX_NAV_CSS}${MOBILE_LIGHTBOX_STAGE_CSS}`}</style>
       <div
         id="customer-lightbox"
         hidden
@@ -190,7 +194,9 @@ export function CustomerLightboxRoot() {
         >
           ‹
         </button>
-        <img data-lightbox-image alt="" style={imageStyle} />
+        <div data-lightbox-transform>
+          <img data-lightbox-image alt="" style={imageStyle} draggable={false} />
+        </div>
         <button
           type="button"
           className="lightbox-nav"
