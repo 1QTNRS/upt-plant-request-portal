@@ -22,7 +22,12 @@ import type {
   ExactPlantReview,
   ExactPlantRow,
 } from "../types";
+import { RootTabSwipeShell } from "../RootTabSwipeShell";
 import { ui } from "../ui";
+import {
+  useRootTabBarHiddenOnFocus,
+  useRootTabBarVisibleOnFocus,
+} from "../use-root-tab-bar";
 import type { ExactPlantsStackParamList } from "./navigation-types";
 
 const FILTERS: ExactPlantFilter[] = [
@@ -45,6 +50,7 @@ type ListProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlantsL
 
 export function ExactPlantsScreen({ navigation }: ListProps) {
   const { apiUrl, token } = useSession();
+  useRootTabBarVisibleOnFocus();
   const [filter, setFilter] = useState<ExactPlantFilter>("not_yet_listed");
   const [counts, setCounts] = useState<Record<ExactPlantFilter, number> | null>(null);
   const [items, setItems] = useState<ExactPlantRow[]>([]);
@@ -79,6 +85,7 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
   }, [filter, loadQueue]);
 
   return (
+    <RootTabSwipeShell tabName="ExactPlants" swipeEnabled>
     <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
       <Text style={ui.title}>EXACT PLANTS</Text>
       <Text style={ui.muted}>
@@ -138,6 +145,7 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
         ) : null}
       </ScrollView>
     </SafeAreaView>
+    </RootTabSwipeShell>
   );
 }
 
@@ -145,6 +153,7 @@ type ReviewProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlant
 
 export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
   const { apiUrl, token } = useSession();
+  useRootTabBarHiddenOnFocus();
   const { itemId } = route.params;
   const [review, setReview] = useState<ExactPlantReview | null>(null);
   const [title, setTitle] = useState("");

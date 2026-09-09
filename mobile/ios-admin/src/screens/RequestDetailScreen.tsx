@@ -38,6 +38,7 @@ import {
 } from "../offer-expiration";
 import { THEME } from "../theme";
 import { logActiveTouchBlockers } from "../touch-diagnostics";
+import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import {
   partitionPendingOfferItems,
   partitionPlantItemsByCustomerChoice,
@@ -70,6 +71,8 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const photoDismissers = useRef(new Map<string, () => void>());
   const stockOpenIds = useRef(new Set<string>());
   const stockTouchConsumed = useRef(false);
+
+  useRootTabBarHiddenOnFocus();
 
   const dismissInteractionBlockers = useCallback(() => {
     for (const dismiss of stockDismissers.current.values()) dismiss();
