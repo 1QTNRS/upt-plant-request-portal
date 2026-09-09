@@ -190,4 +190,5 @@ export type ShopSettings = {
   heatPackAddonEnabled: boolean;
   heatPackProductHandle: string;
   heatPackProductSku: string;
+  heatPackDescription: string;
 };

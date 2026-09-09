@@ -58,6 +58,8 @@ function offer(input: {
     fedexUpgradePrice: 15,
     heatPackAddonEnabled: false,
     heatPackLabel: "Heat Pack (includes foil insulation)",
+    heatPackDescription:
+      "We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.",
     heatPackPrice: 12,
     heatPackPriceResolved: true,
     customerEmail: "alex.rivera@example.com",

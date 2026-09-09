@@ -25,6 +25,7 @@ import { declinedAllPurchasableItems } from "./customer-portal";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  effectiveHeatPackDescription,
   DEFAULT_UNAVAILABLE_REASON,
   FEDEX_PRODUCT_HANDLE,
   formatDate,
@@ -492,6 +493,7 @@ export async function updateShopSettings(
     heatPackVariantGid?: string | null;
     heatPackPrice?: number;
     heatPackLabel?: string;
+    heatPackDescription?: string;
   },
 ) {
   await getShopSettings(shop);
@@ -542,6 +544,11 @@ export async function updateShopSettings(
         : {}),
       ...(data.heatPackLabel !== undefined
         ? { heatPackLabel: data.heatPackLabel.trim() || "Heat Pack (includes foil insulation)" }
+        : {}),
+      ...(data.heatPackDescription !== undefined
+        ? {
+            heatPackDescription: effectiveHeatPackDescription(data.heatPackDescription),
+          }
         : {}),
     },
   });
@@ -1339,6 +1346,7 @@ export async function buildCustomerOffer(
     fedexUpgradePrice: settings.fedexUpgradePrice,
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackLabel: settings.heatPackLabel,
+    heatPackDescription: effectiveHeatPackDescription(settings.heatPackDescription),
     heatPackPrice: heatPackPriceResolved ? settings.heatPackPrice : null,
     heatPackPriceResolved,
     customerEmail: request.customerEmail,

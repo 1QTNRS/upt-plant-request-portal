@@ -222,6 +222,15 @@ export function heatPackVariantSkuQuery(sku = HEAT_PACK_PRODUCT_SKU): string {
   return `sku:${sku}`;
 }
 
+export const DEFAULT_HEAT_PACK_DESCRIPTION =
+  "We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.";
+
+/** Blank stored values fall back to the default copy on display and save. */
+export function effectiveHeatPackDescription(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || DEFAULT_HEAT_PACK_DESCRIPTION;
+}
+
 const LEGACY_PENDING_STATUSES = new Set([
   "Pending",
   "Awaiting Response",
@@ -824,6 +833,25 @@ export function shouldGroupTerminalPlantItems(
   return status === "Closed" || status === "Expired";
 }
 
+/** Pending + offer sent, before the customer accepts or rejects purchasable plants. */
+export function shouldGroupPendingOfferItems(
+  status: RequestStatus,
+  sentOffer: boolean,
+  responseItems: TerminalResponseChoice[] | null | undefined,
+): boolean {
+  if (status !== "Pending" || !sentOffer) return false;
+  return !shouldGroupTerminalPlantItems(status, responseItems);
+}
+
+export function partitionPendingOfferItems<
+  T extends { availability?: ItemAvailabilityStatus | string },
+>(items: T[]): { offered: T[]; notAvailable: T[] } {
+  return {
+    offered: items.filter((item) => item.availability !== "not_available"),
+    notAvailable: items.filter((item) => item.availability === "not_available"),
+  };
+}
+
 export const ADMIN_EMAIL_SUBSCRIPTION_OPTIONS = [
   {
     key: "admin_new_request",
@@ -1005,7 +1033,7 @@ export function buildDraftOrderNote(input: {
   requestNumber: string;
   declinedFedEx?: boolean;
 }): string {
-  const lines = [`UPT plant request ${input.requestNumber}`];
+  const lines = [input.requestNumber];
   if (input.declinedFedEx) {
     lines.push("Declined FedEx");
   }
@@ -2050,6 +2078,7 @@ export type SampleCustomerOffer = {
   fedexUpgradePrice: number;
   heatPackAddonEnabled: boolean;
   heatPackLabel: string;
+  heatPackDescription: string;
   /** Null when the live Shopify variant could not be resolved — never show $0 as a fallback. */
   heatPackPrice: number | null;
   heatPackPriceResolved: boolean;

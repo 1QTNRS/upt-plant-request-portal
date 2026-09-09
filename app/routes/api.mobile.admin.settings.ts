@@ -31,6 +31,7 @@ async function settingsPayload(
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackProductHandle: settings.heatPackProductHandle,
     heatPackProductSku: HEAT_PACK_PRODUCT_SKU,
+    heatPackDescription: settings.heatPackDescription,
   };
 }
 
@@ -62,6 +63,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "save-heat-pack-addon") {
     const settings = await updateShopSettings(auth.shop, {
       heatPackAddonEnabled: asOptionalBool(body.heatPackAddonEnabled),
+      heatPackDescription:
+        body.heatPackDescription !== undefined
+          ? String(body.heatPackDescription)
+          : undefined,
     });
     return Response.json({
       ok: true,

@@ -17,7 +17,11 @@ import {
   PORTAL_DISPLAY_TIME_ZONE,
 } from "./customer-time";
 import {
+  DEFAULT_HEAT_PACK_DESCRIPTION,
+  effectiveHeatPackDescription,
+  partitionPendingOfferItems,
   partitionPlantItemsByCustomerChoice,
+  shouldGroupPendingOfferItems,
   buildDraftOrderLineItems,
   type CustomerOfferResponse,
   type OfferPlantItem,
@@ -60,6 +64,8 @@ function offer(overrides: Partial<SampleCustomerOffer> = {}): SampleCustomerOffe
     fedexUpgradePrice: 15,
     heatPackAddonEnabled: true,
     heatPackLabel: "Heat Pack (includes foil insulation)",
+    heatPackDescription:
+      "We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.",
     heatPackPrice: 7,
     heatPackPriceResolved: true,
     customerEmail: "alex.rivera@example.com",
@@ -242,6 +248,80 @@ describe("checkout prominence and support note placement", () => {
     const supportIndex = checkoutHtml.indexOf("Need help with this request");
     assert.ok(checkoutIndex >= 0);
     assert.ok(supportIndex > checkoutIndex);
+  });
+});
+
+describe("Heat Pack description setting", () => {
+  it("falls back to the default copy when blank", () => {
+    assert.equal(effectiveHeatPackDescription(""), DEFAULT_HEAT_PACK_DESCRIPTION);
+    assert.equal(effectiveHeatPackDescription("   "), DEFAULT_HEAT_PACK_DESCRIPTION);
+    assert.equal(
+      effectiveHeatPackDescription("Custom heat pack note."),
+      "Custom heat pack note.",
+    );
+  });
+
+  it("exposes editable Heat Pack description on web and iOS settings", () => {
+    const web = readFileSync(
+      path.join(import.meta.dirname, "..", "routes", "app.settings.tsx"),
+      "utf8",
+    );
+    const ios = readFileSync(
+      path.join(import.meta.dirname, "..", "..", "mobile", "ios-admin", "src", "screens", "SettingsScreen.tsx"),
+      "utf8",
+    );
+    assert.match(web, /heatPackDescription/);
+    assert.match(ios, /heatPackDescription/);
+  });
+
+  it("shows the saved Heat Pack description on the customer offer", () => {
+    const html = render({
+      offer: offer({
+        heatPackDescription: "Ship with care when it is cold.",
+      }),
+      response: null,
+      fedexRemovalWarning: "",
+      requestClosed: false,
+      formAction: "/apps/plant-requests/requests/req-1",
+    });
+    assert.match(html, /Ship with care when it is cold\./);
+  });
+});
+
+describe("pending offer grouping before customer response", () => {
+  it("groups unanswered pending offers into OFFERED then NOT AVAILABLE", () => {
+    assert.equal(
+      shouldGroupPendingOfferItems("Pending", true, undefined),
+      true,
+    );
+    assert.equal(
+      shouldGroupPendingOfferItems("Pending", true, [
+        { sourceItemId: "a", choice: "accept" },
+      ]),
+      false,
+    );
+    const grouped = partitionPendingOfferItems([
+      { id: "a", availability: "available" },
+      { id: "b", availability: "not_available" },
+    ]);
+    assert.deepEqual(
+      grouped.offered.map((item) => item.id),
+      ["a"],
+    );
+    assert.deepEqual(
+      grouped.notAvailable.map((item) => item.id),
+      ["b"],
+    );
+  });
+
+  it("renders OFFERED before NOT AVAILABLE on the admin request page", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "..", "routes", "app.requests.$id.tsx"),
+      "utf8",
+    );
+    assert.match(source, /PendingOfferItemsSection/);
+    assert.match(source, /shouldGroupPendingOfferItems/);
+    assert.ok(source.indexOf("OFFERED") < source.indexOf("NOT AVAILABLE"));
   });
 });
 

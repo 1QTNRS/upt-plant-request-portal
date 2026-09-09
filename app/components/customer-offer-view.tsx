@@ -740,6 +740,9 @@ export function CustomerOfferView({
                           ? formatCurrency(offer.heatPackPrice)
                           : "Price unavailable"}
                       </s-text>
+                      {offer.heatPackDescription ? (
+                        <s-text>{offer.heatPackDescription}</s-text>
+                      ) : null}
                       <fieldset className="upt-heat-pack-choices">
                         <legend className="upt-sr-only">Heat pack choice</legend>
                         <label className="upt-heat-pack-choice">
