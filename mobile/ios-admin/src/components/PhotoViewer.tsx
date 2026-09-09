@@ -32,6 +32,7 @@ import {
   resetPhotoViewerImageTransform,
   shouldDismissPhotoViewer,
 } from "../photo-viewer";
+import { registerTouchBlocker } from "../touch-diagnostics";
 import { THEME } from "../theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -93,6 +94,10 @@ export function PhotoViewer({ photos, index, onClose }: Props) {
   useEffect(() => {
     resetImage();
   }, [resetImage]);
+
+  useEffect(() => {
+    return registerTouchBlocker(mountId, "PhotoViewer");
+  }, [mountId]);
 
   const applyZoomRef = useRef<(scale: number) => void>(() => undefined);
   applyZoomRef.current = (scale: number) => {

@@ -106,18 +106,20 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /linkedStock\.productTitle/);
   });
 
-  it("uses native stack swipe-back and a taller centered tab bar", () => {
+  it("uses native stack swipe-back and a persistent bottom tab bar", () => {
     const app = read("App.tsx");
-    assert.match(app, /createMaterialTopTabNavigator/);
-    assert.match(app, /tabBarPosition="bottom"/);
+    assert.match(app, /createBottomTabNavigator/);
+    assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
     assert.match(app, /createNativeStackNavigator/);
+    assert.match(app, /lazy: false/);
+    assert.match(app, /rootTabBarStyle/);
     assert.match(app, /gestureEnabled: true/);
     assert.match(app, /fullScreenGestureEnabled: false/);
-    assert.match(app, /backgroundColor: THEME\.darkGreen/);
+    const chrome = read("src/navigation-chrome.ts");
+    assert.match(chrome, /backgroundColor: THEME\.darkGreen/);
     assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
-    assert.match(app, /TAB_BAR_CONTENT_HEIGHT/);
+    assert.match(chrome, /TAB_BAR_CONTENT_HEIGHT/);
     assert.match(app, /TAB_BAR_LABEL_FONT_SIZE/);
-    assert.match(app, /justifyContent: "center"/);
     assert.match(app, /insets\.bottom/);
     assert.doesNotMatch(app, /fontSize: 12/);
   });

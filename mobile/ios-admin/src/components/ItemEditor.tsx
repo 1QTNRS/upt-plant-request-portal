@@ -73,6 +73,7 @@ type Props = {
   onDraftChange?: (itemId: string, draft: ItemDraft) => void;
   registerFlush?: (itemId: string, flush: (() => Promise<boolean>) | null) => void;
   registerStockDismiss?: (itemId: string, dismiss: (() => void) | null) => void;
+  registerPhotoDismiss?: (itemId: string, dismiss: (() => void) | null) => void;
 };
 
 export function ItemEditor({
@@ -88,6 +89,7 @@ export function ItemEditor({
   onDraftChange,
   registerFlush,
   registerStockDismiss,
+  registerPhotoDismiss,
 }: Props) {
   const route = routeOf(item);
   const fieldsOn = canEditItems && offerFieldsEnabled(route);
@@ -198,6 +200,17 @@ export function ItemEditor({
     return () => {
       dismissStockSearchRef.current();
       registerStockDismissRef.current?.(item.id, null);
+    };
+  }, [item.id]);
+
+  const registerPhotoDismissRef = useRef(registerPhotoDismiss);
+  registerPhotoDismissRef.current = registerPhotoDismiss;
+
+  useEffect(() => {
+    registerPhotoDismissRef.current?.(item.id, () => setViewerIndex(null));
+    return () => {
+      setViewerIndex(null);
+      registerPhotoDismissRef.current?.(item.id, null);
     };
   }, [item.id]);
 

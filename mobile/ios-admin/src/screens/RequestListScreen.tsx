@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +13,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet } from "../api";
+import { logActiveTouchBlockers } from "../touch-diagnostics";
 import { StatusFilterBar } from "../components/StatusFilterBar";
 import { apiPath } from "../query";
 import {
@@ -72,6 +74,15 @@ export function RequestListScreen({ navigation }: Props) {
   useEffect(() => {
     void loadList("", "initial");
   }, [loadList]);
+
+  useFocusEffect(
+    useCallback(() => {
+      logActiveTouchBlockers("request-list-focus");
+      return () => {
+        logActiveTouchBlockers("request-list-blur");
+      };
+    }, []),
+  );
 
   const visible = filterRequestRows(requests, statusFilter, "", closedSort);
   const counts = statusFilterCounts(requests, stats);

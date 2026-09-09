@@ -9,8 +9,8 @@ import {
   getFocusedRouteNameFromRoute,
   type Route,
 } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import * as Notifications from "expo-notifications";
-import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from "expo-splash-screen";
@@ -21,6 +21,8 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { apiGet } from "./src/api";
 import { AppIntro } from "./src/AppIntro";
 import { APP_INTRO_BACKGROUND, shouldPlayAppIntro } from "./src/app-intro";
+import { TAB_BAR_LABEL_FONT_SIZE } from "./src/item-editor";
+import { rootTabBarStyle, rootTabBarVisible } from "./src/navigation-chrome";
 import { SessionContext } from "./src/SessionContext";
 import { ExactPlantsReviewScreen, ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -34,8 +36,6 @@ import type {
   MainTabParamList,
   RequestsStackParamList,
 } from "./src/screens/navigation-types";
-import { TAB_BAR_CONTENT_HEIGHT, TAB_BAR_LABEL_FONT_SIZE } from "./src/item-editor";
-import { tabSwipeEnabled } from "./src/tab-swipe";
 import { THEME } from "./src/theme";
 import { ui } from "./src/ui";
 
@@ -72,7 +72,7 @@ function openRequestDetail(requestId: string) {
 
 const RequestsStack = createNativeStackNavigator<RequestsStackParamList>();
 const ExactPlantsStack = createNativeStackNavigator<ExactPlantsStackParamList>();
-const Tabs = createMaterialTopTabNavigator<MainTabParamList>();
+const Tabs = createBottomTabNavigator<MainTabParamList>();
 
 const stackScreenOptions = {
   headerShown: false,
@@ -80,6 +80,7 @@ const stackScreenOptions = {
   fullScreenGestureEnabled: false,
   animation: "slide_from_right" as const,
   contentStyle: { backgroundColor: THEME.requestPage },
+  freezeOnBlur: true,
 };
 
 const signedInTheme = {
@@ -110,54 +111,31 @@ function ExactPlantsNavigator() {
   );
 }
 
-function tabBarVisible(route: Route<string>) {
-  const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
-  return focused !== "RequestDetail" && focused !== "ExactPlantsReview";
+function tabScreenOptions(route: Route<string>, bottomInset: number) {
+  const focusedRouteName = getFocusedRouteNameFromRoute(route) ?? route.name;
+  const visible = rootTabBarVisible(focusedRouteName);
+  return {
+    headerShown: false,
+    lazy: false,
+    tabBarActiveTintColor: THEME.yellow,
+    tabBarInactiveTintColor: THEME.white,
+    tabBarStyle: rootTabBarStyle({ visible, bottomInset }),
+    tabBarLabelStyle: {
+      fontWeight: "700" as const,
+      fontSize: TAB_BAR_LABEL_FONT_SIZE,
+      marginBottom: 0,
+    },
+    tabBarHideOnKeyboard: true,
+    sceneStyle: { backgroundColor: THEME.requestPage },
+  };
 }
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
-  const tabBarStyle = {
-    backgroundColor: THEME.darkGreen,
-    borderTopColor: THEME.darkGreen,
-    height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
-    paddingTop: 12,
-    paddingBottom: insets.bottom + 10,
-  };
 
   return (
     <Tabs.Navigator
-      tabBarPosition="bottom"
-      style={ui.flexPage}
-      screenOptions={({ route }) => {
-        const visible = tabBarVisible(route);
-        const focused = getFocusedRouteNameFromRoute(route) ?? route.name;
-        return {
-          lazy: true,
-          swipeEnabled: tabSwipeEnabled(focused) && visible,
-          tabBarActiveTintColor: THEME.yellow,
-          tabBarInactiveTintColor: THEME.white,
-          tabBarStyle: visible
-            ? tabBarStyle
-            : {
-                display: "none",
-                height: 0,
-                backgroundColor: THEME.requestPage,
-                borderTopColor: THEME.requestPage,
-              },
-          tabBarLabelStyle: {
-            fontWeight: "700",
-            fontSize: TAB_BAR_LABEL_FONT_SIZE,
-            marginBottom: 0,
-            textTransform: "none",
-          },
-          tabBarItemStyle: { justifyContent: "center", paddingVertical: 6 },
-          tabBarIndicatorStyle: { backgroundColor: THEME.yellow, height: 3 },
-          tabBarPressColor: "transparent",
-          tabBarBounces: false,
-          sceneStyle: { backgroundColor: THEME.requestPage },
-        };
-      }}
+      screenOptions={({ route }) => tabScreenOptions(route, insets.bottom)}
     >
       <Tabs.Screen
         name="Requests"
@@ -213,8 +191,6 @@ export default function App() {
 
   useEffect(() => {
     if (sessionKind === "unknown") return;
-    // Fresh launches keep the native splash up until AppIntro mounts (same
-    // #002910 + logo) so there is no white frame in between.
     if (shouldPlayAppIntro({ sessionKind }) && !introDone) return;
     void SplashScreen.hideAsync().catch(() => {
       // Already hidden in Expo Go or after a fast restore.
