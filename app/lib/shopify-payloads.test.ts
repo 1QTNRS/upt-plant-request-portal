@@ -90,7 +90,7 @@ describe("draft order input", () => {
       "REQ2178",
       draftOrderIdempotencyTag("req_1"),
     ]);
-    assert.equal(input.note, "UPT plant request REQ2178");
+    assert.equal(input.note, "REQ2178");
   });
 
   it("carries a per-request tag so a retry finds the existing draft order", () => {

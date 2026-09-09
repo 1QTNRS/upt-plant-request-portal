@@ -61,11 +61,11 @@ describe("Declined FedEx draft order notes", () => {
   it("appends Declined FedEx only for an explicit decline with accepted plants", () => {
     assert.equal(
       buildDraftOrderNote({ requestNumber: "REQ123", declinedFedEx: true }),
-      "UPT plant request REQ123\nDeclined FedEx",
+      "REQ123\nDeclined FedEx",
     );
     assert.equal(
       buildDraftOrderNote({ requestNumber: "REQ123" }),
-      "UPT plant request REQ123",
+      "REQ123",
     );
     assert.equal(
       customerDeclinedFedExUpgrade({

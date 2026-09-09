@@ -51,8 +51,10 @@ import {
   offerReadinessMessage,
   sendOfferHoldControlsEnabled,
   parseShippingFeeOverride,
+  partitionPendingOfferItems,
   partitionPlantItemsByCustomerChoice,
   payableInvoiceUrl,
+  shouldGroupPendingOfferItems,
   shouldGroupTerminalPlantItems,
   requestIsPurchased,
   requestShowsAnsweredPill,
@@ -2068,6 +2070,63 @@ function PlantPatternSection({
   );
 }
 
+function PendingOfferItemsSection({
+  items,
+  shop,
+  onRequiredPhotoBusyChange,
+}: {
+  items: PlantItem[];
+  shop: string;
+  onRequiredPhotoBusyChange?: (itemId: string, busy: boolean) => void;
+}) {
+  const { offered, notAvailable } = partitionPendingOfferItems(items);
+
+  return (
+    <s-stack direction="block" gap="large">
+      {offered.length > 0 ? (
+        <s-stack direction="block" gap="base">
+          <span className="upt-terminal-group-heading">
+            <s-heading>OFFERED</s-heading>
+          </span>
+          <NestedBox>
+            <s-stack direction="block" gap="base">
+              {offered.map((item) => (
+                <PlantItemCard
+                  key={item.id}
+                  item={item}
+                  shop={shop}
+                  canEdit={false}
+                  onRequiredPhotoBusyChange={onRequiredPhotoBusyChange}
+                />
+              ))}
+            </s-stack>
+          </NestedBox>
+        </s-stack>
+      ) : null}
+      {notAvailable.length > 0 ? (
+        <s-stack direction="block" gap="base">
+          <span className="upt-terminal-group-heading">
+            <s-heading>NOT AVAILABLE</s-heading>
+          </span>
+          <NestedBox>
+            <s-stack direction="block" gap="base">
+              {notAvailable.map((item) => (
+                <PlantItemCard
+                  key={item.id}
+                  item={item}
+                  shop={shop}
+                  canEdit={false}
+                  onRequiredPhotoBusyChange={onRequiredPhotoBusyChange}
+                />
+              ))}
+            </s-stack>
+          </NestedBox>
+        </s-stack>
+      ) : null}
+    </s-stack>
+  );
+}
+
 function TerminalPlantItemsSection({
   items,
   responseItems,
@@ -2223,6 +2282,11 @@ export default function RequestDetail() {
     plantRequest.status,
     response?.items,
   );
+  const groupPendingOffer = shouldGroupPendingOfferItems(
+    plantRequest.status,
+    Boolean(plantRequest.sentOffer),
+    response?.items,
+  );
 
   return (
     <s-page heading={`Request ${getDisplayRequestNumber(plantRequest)}`}>
@@ -2354,6 +2418,12 @@ export default function RequestDetail() {
             <TerminalPlantItemsSection
               items={plantRequest.items}
               responseItems={response.items}
+              shop={shop}
+              onRequiredPhotoBusyChange={setRequiredPhotoBusy}
+            />
+          ) : groupPendingOffer ? (
+            <PendingOfferItemsSection
+              items={plantRequest.items}
               shop={shop}
               onRequiredPhotoBusyChange={setRequiredPhotoBusy}
             />

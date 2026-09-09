@@ -49,3 +49,21 @@ export function shouldGroupTerminalPlantItems(
   if (status === "Pending") return true;
   return status === "Closed" || status === "Expired";
 }
+
+export function shouldGroupPendingOfferItems(
+  status: string,
+  sentOffer: boolean,
+  responseItems: ResponseChoice[] | null | undefined,
+): boolean {
+  if (status !== "Pending" || !sentOffer) return false;
+  return !shouldGroupTerminalPlantItems(status, responseItems);
+}
+
+export function partitionPendingOfferItems(
+  items: RequestItem[],
+): { offered: RequestItem[]; notAvailable: RequestItem[] } {
+  return {
+    offered: items.filter((item) => item.availability !== "not_available"),
+    notAvailable: items.filter((item) => item.availability === "not_available"),
+  };
+}
