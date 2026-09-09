@@ -12,6 +12,8 @@ import {
   isBaseScale,
   lockPageScroll,
   pinchScale,
+  pinchScaleFromTouches,
+  touchPairDistance,
 } from "./mobile-lightbox";
 
 describe("mobile lightbox helpers", () => {
@@ -39,6 +41,19 @@ describe("mobile lightbox helpers", () => {
     assert.equal(pinchScale(200, 100, 1), 2);
     assert.equal(pinchScale(50, 100, 2), 1);
     assert.equal(pinchScale(500, 100, 1), 4);
+  });
+
+  it("derives pinch scale from two touch contacts for iOS Safari", () => {
+    assert.equal(touchPairDistance({ clientX: 0, clientY: 0 }, { clientX: 3, clientY: 4 }), 5);
+    assert.equal(
+      pinchScaleFromTouches(
+        { clientX: 0, clientY: 0 },
+        { clientX: 200, clientY: 0 },
+        100,
+        1,
+      ),
+      2,
+    );
   });
 
   it("navigates gallery horizontally only at base scale with multiple images", () => {
@@ -76,6 +91,9 @@ describe("mobile lightbox helpers", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /lockScroll/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /unlockScroll/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointermove/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /touchstart/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /touchmove/);
+    assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /passive: false/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pinchStart/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /DISMISS_PX/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /urls.length <= 1/);

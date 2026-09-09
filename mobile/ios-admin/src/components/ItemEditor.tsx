@@ -342,7 +342,9 @@ export function ItemEditor({
   function scheduleAutosave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void persistDraftRef.current();
+      // silentUi skips onResult so RequestDetailScreen does not dismiss the keyboard
+      // after a background save while the merchant is still typing.
+      void persistDraftRef.current({ silentUi: true });
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
