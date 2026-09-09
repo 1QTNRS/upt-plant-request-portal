@@ -11,10 +11,13 @@ import {
   gallerySwipe,
   dismissSwipe,
   isBaseScale,
+  LIGHTBOX_TOUCH_LISTENER_OPTIONS,
   lockPageScroll,
   MOBILE_LIGHTBOX_STAGE_CSS,
   pinchScale,
+  pinchScaleFromTouches,
   pointerDistance,
+  touchPairDistance,
 } from "../lib/mobile-lightbox";
 import { LIGHTBOX_NAV_CSS, lightboxIndex } from "../lib/photo-lightbox";
 
@@ -106,12 +109,18 @@ export function AdminPhotoLightbox({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
 
+  const stageRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, PointerPoint>());
   const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
   const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(
     null,
   );
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const scaleRef = useRef(scale);
+  const offsetRef = useRef(offset);
+  const twoFingerTouch = useRef(false);
+  scaleRef.current = scale;
+  offsetRef.current = offset;
 
   const resetTransform = useCallback(() => {
     setScale(1);
@@ -133,6 +142,63 @@ export function AdminPhotoLightbox({
   }, []);
 
   useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      twoFingerTouch.current = true;
+      const first = event.touches[0];
+      const second = event.touches[1];
+      pinchStart.current = {
+        distance: touchPairDistance(first, second),
+        scale: scaleRef.current,
+      };
+      panStart.current = null;
+      swipeStart.current = null;
+      setDragging(false);
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length < 2 || !pinchStart.current) return;
+      event.preventDefault();
+      const first = event.touches[0];
+      const second = event.touches[1];
+      setScale(
+        pinchScaleFromTouches(
+          first,
+          second,
+          pinchStart.current.distance,
+          pinchStart.current.scale,
+        ),
+      );
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length >= 2) return;
+      twoFingerTouch.current = false;
+      pinchStart.current = null;
+      if (event.touches.length === 0) {
+        panStart.current = null;
+        swipeStart.current = null;
+        setDragging(false);
+      }
+    };
+
+    stage.addEventListener("touchstart", onTouchStart, LIGHTBOX_TOUCH_LISTENER_OPTIONS);
+    stage.addEventListener("touchmove", onTouchMove, LIGHTBOX_TOUCH_LISTENER_OPTIONS);
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("touchend", onTouchEnd);
+      stage.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
       if (!isBaseScale(scale)) return;
@@ -148,6 +214,7 @@ export function AdminPhotoLightbox({
   }, [onClose, scale, urls.length]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (twoFingerTouch.current) return;
     if (!event.isPrimary && pointers.current.size >= 2) return;
     if (isLightboxControl(event.target)) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -317,6 +384,7 @@ export function AdminPhotoLightbox({
       </div>
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
+        ref={stageRef}
         data-lightbox-stage
         style={{ ...stageStyle, zIndex: 1 }}
         onPointerDown={onPointerDown}

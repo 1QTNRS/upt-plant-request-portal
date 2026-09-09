@@ -514,6 +514,7 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   var pinchStart = null;
   var panStart = null;
   var swipeStart = null;
+  var twoFingerTouch = false;
   var DISMISS_PX = 80;
   var SWIPE_PX = 40;
 
@@ -692,7 +693,44 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
     return target instanceof Element && target.closest("[data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav");
   }
 
+  function onTouchStart(event) {
+    if (!(stage instanceof HTMLElement)) return;
+    if (event.touches.length < 2) return;
+    event.preventDefault();
+    twoFingerTouch = true;
+    var t0 = event.touches[0];
+    var t1 = event.touches[1];
+    pinchStart = {
+      distance: pointerDistance({ x: t0.clientX, y: t0.clientY }, { x: t1.clientX, y: t1.clientY }),
+      scale: scale,
+    };
+    panStart = null;
+    swipeStart = null;
+  }
+
+  function onTouchMove(event) {
+    if (!(stage instanceof HTMLElement)) return;
+    if (event.touches.length < 2 || !pinchStart) return;
+    event.preventDefault();
+    var u0 = event.touches[0];
+    var u1 = event.touches[1];
+    var dist = pointerDistance({ x: u0.clientX, y: u0.clientY }, { x: u1.clientX, y: u1.clientY });
+    scale = Math.min(4, Math.max(1, pinchStart.scale * (dist / pinchStart.distance)));
+    applyTransform();
+  }
+
+  function onTouchEnd(event) {
+    if (event.touches.length >= 2) return;
+    twoFingerTouch = false;
+    pinchStart = null;
+    if (event.touches.length === 0) {
+      panStart = null;
+      swipeStart = null;
+    }
+  }
+
   function onPointerDown(event) {
+    if (twoFingerTouch) return;
     if (isControl(event.target)) return;
     if (!(stage instanceof HTMLElement)) return;
     stage.setPointerCapture(event.pointerId);
@@ -781,6 +819,10 @@ export const CUSTOMER_LIGHTBOX_SCRIPT = `
   }
 
   if (stage instanceof HTMLElement) {
+    stage.addEventListener("touchstart", onTouchStart, { passive: false });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
     stage.addEventListener("pointerdown", onPointerDown);
     stage.addEventListener("pointermove", onPointerMove);
     stage.addEventListener("pointerup", onPointerUp);

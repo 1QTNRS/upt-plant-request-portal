@@ -34,6 +34,31 @@ export function pointerDistance(
   return Math.hypot(dx, dy);
 }
 
+/** Client coordinates for one touch/pointer contact. */
+export type TouchLike = { clientX: number; clientY: number };
+
+/** Distance between the first two contacts (iOS Safari pinch uses Touch events). */
+export function touchPairDistance(first: TouchLike, second: TouchLike): number {
+  return pointerDistance(
+    { x: first.clientX, y: first.clientY },
+    { x: second.clientX, y: second.clientY },
+  );
+}
+
+export function pinchScaleFromTouches(
+  first: TouchLike,
+  second: TouchLike,
+  startDistance: number,
+  startScale: number,
+): number {
+  return pinchScale(touchPairDistance(first, second), startDistance, startScale);
+}
+
+/** Non-passive options required so iOS Safari allows preventDefault on pinch. */
+export const LIGHTBOX_TOUCH_LISTENER_OPTIONS: AddEventListenerOptions = {
+  passive: false,
+};
+
 /** Downward drag at base scale — true when drag exceeds threshold. */
 export function dismissSwipe(deltaY: number, threshold = LIGHTBOX_DISMISS_PX): boolean {
   return deltaY > threshold;

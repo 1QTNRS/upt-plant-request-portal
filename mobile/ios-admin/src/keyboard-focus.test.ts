@@ -42,4 +42,14 @@ describe("iOS text input keyboard focus", () => {
     assert.doesNotMatch(hooks, /insets\.bottom, navigation\]/);
     assert.match(hooks, /bottomInsetRef\.current/);
   });
+
+  it("debounced autosave skips onResult so success does not dismiss the keyboard", () => {
+    const editor = read("src/components/ItemEditor.tsx");
+    const schedule = editor.slice(
+      editor.indexOf("function scheduleAutosave"),
+      editor.indexOf("const registerFlushRef"),
+    );
+    assert.match(schedule, /persistDraftRef\.current\(\{ silentUi: true \}\)/);
+    assert.doesNotMatch(schedule, /persistDraftRef\.current\(\)/);
+  });
 });
