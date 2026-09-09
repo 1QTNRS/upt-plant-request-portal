@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { formatAdminNoteTimestamp, formatPortalDateTime } from "../admin-time";
@@ -37,8 +37,11 @@ import {
   isOfferExpired,
 } from "../offer-expiration";
 import { THEME } from "../theme";
+import { logActiveTouchBlockers } from "../touch-diagnostics";
 import {
+  partitionPendingOfferItems,
   partitionPlantItemsByCustomerChoice,
+  shouldGroupPendingOfferItems,
   shouldGroupTerminalPlantItems,
 } from "../terminal-response";
 import type { ActionResult, RequestDetail } from "../types";
@@ -51,6 +54,7 @@ type Props =
 
 export function RequestDetailScreen({ navigation, route }: Props) {
   const { apiUrl, token } = useSession();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { requestId, backLabel = "← Requests" } = route.params;
   const [detail, setDetail] = useState<RequestDetail | null>(null);
@@ -63,12 +67,15 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
   const flushers = useRef(new Map<string, () => Promise<boolean>>());
   const stockDismissers = useRef(new Map<string, () => void>());
+  const photoDismissers = useRef(new Map<string, () => void>());
   const stockOpenIds = useRef(new Set<string>());
   const stockTouchConsumed = useRef(false);
 
   const dismissInteractionBlockers = useCallback(() => {
     for (const dismiss of stockDismissers.current.values()) dismiss();
     stockDismissers.current.clear();
+    for (const dismiss of photoDismissers.current.values()) dismiss();
+    photoDismissers.current.clear();
     stockOpenIds.current.clear();
     stockTouchConsumed.current = false;
     Keyboard.dismiss();
@@ -101,17 +108,16 @@ export function RequestDetailScreen({ navigation, route }: Props) {
       return () => {
         resetRequestDetailTransientState({ setConfirmOverride, setError });
         dismissInteractionBlockers();
+        logActiveTouchBlockers("request-detail-blur");
       };
     }, [dismissInteractionBlockers]),
   );
 
   useEffect(() => {
     return () => {
-      for (const dismiss of stockDismissers.current.values()) dismiss();
-      stockDismissers.current.clear();
-      stockOpenIds.current.clear();
+      dismissInteractionBlockers();
     };
-  }, [requestId]);
+  }, [dismissInteractionBlockers, requestId]);
 
   function applyResult(result: ActionResult) {
     const ok = applyAdminActionResult({
@@ -131,6 +137,11 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const registerStockDismiss = useCallback((itemId: string, dismiss: (() => void) | null) => {
     if (dismiss) stockDismissers.current.set(itemId, dismiss);
     else stockDismissers.current.delete(itemId);
+  }, []);
+
+  const registerPhotoDismiss = useCallback((itemId: string, dismiss: (() => void) | null) => {
+    if (dismiss) photoDismissers.current.set(itemId, dismiss);
+    else photoDismissers.current.delete(itemId);
   }, []);
 
   const onStockDropdownChange = useCallback((open: boolean, itemId: string) => {
@@ -217,6 +228,14 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     groupTerminalItems && detail.customerResponse
       ? partitionPlantItemsByCustomerChoice(detail.items, detail.customerResponse.items)
       : null;
+  const groupPendingOffer = shouldGroupPendingOfferItems(
+    detail.status,
+    Boolean(detail.sentOffer),
+    detail.customerResponse?.items,
+  );
+  const pendingGroups = groupPendingOffer
+    ? partitionPendingOfferItems(detail.items)
+    : null;
 
   function renderItemEditor(item: RequestDetail["items"][number], requestDetail: RequestDetail) {
     return (
@@ -234,12 +253,17 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         onDraftChange={onDraftChange}
         registerFlush={registerFlush}
         registerStockDismiss={registerStockDismiss}
+        registerPhotoDismiss={registerPhotoDismiss}
       />
     );
   }
 
   return (
-    <View style={ui.flexPage}>
+    <View
+      style={ui.flexPage}
+      pointerEvents={isFocused ? "auto" : "none"}
+      collapsable={false}
+    >
     <SafeAreaView style={ui.flexPage} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView
       key={requestId}
@@ -325,6 +349,21 @@ export function RequestDetailScreen({ navigation, route }: Props) {
               <View style={ui.card}>
                 <Text style={ui.terminalGroupHeading}>NOT AVAILABLE</Text>
                 {terminalGroups.notAvailable.map((item) => renderItemEditor(item, detail))}
+              </View>
+            ) : null}
+          </>
+        ) : pendingGroups ? (
+          <>
+            {pendingGroups.offered.length > 0 ? (
+              <View style={ui.card}>
+                <Text style={ui.terminalGroupHeading}>OFFERED</Text>
+                {pendingGroups.offered.map((item) => renderItemEditor(item, detail))}
+              </View>
+            ) : null}
+            {pendingGroups.notAvailable.length > 0 ? (
+              <View style={ui.card}>
+                <Text style={ui.terminalGroupHeading}>NOT AVAILABLE</Text>
+                {pendingGroups.notAvailable.map((item) => renderItemEditor(item, detail))}
               </View>
             ) : null}
           </>

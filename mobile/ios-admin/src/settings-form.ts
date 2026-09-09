@@ -12,6 +12,7 @@ export type SettingsFormState = {
   sku: string;
   heatPackAddonEnabled: boolean;
   heatPackSku: string;
+  heatPackDescription: string;
 };
 
 export function settingsFormFromShop(settings: ShopSettings): SettingsFormState {
@@ -27,6 +28,7 @@ export function settingsFormFromShop(settings: ShopSettings): SettingsFormState 
     sku: settings.fedexProductSku,
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackSku: settings.heatPackProductSku,
+    heatPackDescription: settings.heatPackDescription,
   };
 }
 

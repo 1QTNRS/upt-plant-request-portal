@@ -184,6 +184,8 @@ export type CustomerOfferResponse = {
   offerExpiresAt?: string;
   fedexUpgradeSelected: boolean;
   fedexUpgradePrice: number;
+  /** Frozen at submit when the customer went through FedEx removal confirmation. */
+  fedexExplicitlyDeclined?: boolean;
   heatPackSelected?: boolean | null;
   heatPackPrice?: number | null;
   hasAcceptedPurchasableItems: boolean;
@@ -220,6 +222,15 @@ export const HEAT_PACK_PRODUCT_SKU = "UPTHEAPACINC72S";
 
 export function heatPackVariantSkuQuery(sku = HEAT_PACK_PRODUCT_SKU): string {
   return `sku:${sku}`;
+}
+
+export const DEFAULT_HEAT_PACK_DESCRIPTION =
+  "We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.";
+
+/** Blank stored values fall back to the default copy on display and save. */
+export function effectiveHeatPackDescription(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || DEFAULT_HEAT_PACK_DESCRIPTION;
 }
 
 const LEGACY_PENDING_STATUSES = new Set([
@@ -824,6 +835,25 @@ export function shouldGroupTerminalPlantItems(
   return status === "Closed" || status === "Expired";
 }
 
+/** Pending + offer sent, before the customer accepts or rejects purchasable plants. */
+export function shouldGroupPendingOfferItems(
+  status: RequestStatus,
+  sentOffer: boolean,
+  responseItems: TerminalResponseChoice[] | null | undefined,
+): boolean {
+  if (status !== "Pending" || !sentOffer) return false;
+  return !shouldGroupTerminalPlantItems(status, responseItems);
+}
+
+export function partitionPendingOfferItems<
+  T extends { availability?: ItemAvailabilityStatus | string },
+>(items: T[]): { offered: T[]; notAvailable: T[] } {
+  return {
+    offered: items.filter((item) => item.availability !== "not_available"),
+    notAvailable: items.filter((item) => item.availability === "not_available"),
+  };
+}
+
 export const ADMIN_EMAIL_SUBSCRIPTION_OPTIONS = [
   {
     key: "admin_new_request",
@@ -1001,11 +1031,82 @@ export function customerDeclinedFedExUpgrade(input: {
   return input.acceptedPurchasableCount > 0 && !input.fedexUpgradeSelected;
 }
 
+/** Whether the customer made an explicit FedEx decision at submit time. */
+export function customerExplicitlyDeclinedFedEx(input: {
+  acceptedPurchasableCount: number;
+  formFedexSelected: boolean;
+  fedexRemovalAcknowledged?: boolean;
+}): boolean {
+  if (input.fedexRemovalAcknowledged) return true;
+  return input.acceptedPurchasableCount > 0 && !input.formFedexSelected;
+}
+
+/** Read `fedexExplicitlyDeclined` from a frozen response snapshot. */
+export function readFedexExplicitlyDeclinedFromSnapshot(
+  snapshotJson: string,
+  fallback: { hasAcceptedPurchasableItems: boolean; fedexUpgradeSelected: boolean },
+): boolean {
+  try {
+    const parsed = JSON.parse(snapshotJson) as { fedexExplicitlyDeclined?: boolean };
+    if (typeof parsed.fedexExplicitlyDeclined === "boolean") {
+      return parsed.fedexExplicitlyDeclined;
+    }
+  } catch {
+    // Legacy snapshots omit the flag; infer from stored billing fields.
+  }
+  return (
+    fallback.hasAcceptedPurchasableItems && !fallback.fedexUpgradeSelected
+  );
+}
+
+export type FedExSummaryState = "added" | "declined" | "not_applicable";
+
+/** Read-only FedEx card state from the frozen customer response snapshot. */
+export function fedExSummaryState(input: {
+  hasAcceptedPurchasableItems: boolean;
+  fedexUpgradeSelected: boolean;
+  fedexExplicitlyDeclined?: boolean;
+}): FedExSummaryState {
+  if (input.hasAcceptedPurchasableItems && input.fedexUpgradeSelected) {
+    return "added";
+  }
+  const explicitDecline =
+    input.fedexExplicitlyDeclined ??
+    (input.hasAcceptedPurchasableItems && !input.fedexUpgradeSelected);
+  if (explicitDecline) return "declined";
+  return "not_applicable";
+}
+
+export type HeatPackSummaryState = "added" | "not_added" | "not_offered";
+
+/** Read-only Heat Pack card state from the frozen customer response snapshot. */
+export function heatPackSummaryState(input: {
+  hasAcceptedPurchasableItems: boolean;
+  heatPackSelected: boolean | null | undefined;
+}): HeatPackSummaryState {
+  if (!input.hasAcceptedPurchasableItems) return "not_offered";
+  if (input.heatPackSelected === true) return "added";
+  if (input.heatPackSelected === false) return "not_added";
+  return "not_offered";
+}
+
+/** Admin Close Declined Request — only while a decline-all answer still needs closing. */
+export function canAdminCloseDeclinedRequest(input: {
+  status: RequestStatus;
+  hasCustomerResponse: boolean;
+  hasAcceptedPurchasableItems: boolean;
+}): boolean {
+  if (!input.hasCustomerResponse) return false;
+  if (input.hasAcceptedPurchasableItems) return false;
+  if (input.status === "Closed" || input.status === "Expired") return false;
+  return input.status === "Pending";
+}
+
 export function buildDraftOrderNote(input: {
   requestNumber: string;
   declinedFedEx?: boolean;
 }): string {
-  const lines = [`UPT plant request ${input.requestNumber}`];
+  const lines = [input.requestNumber];
   if (input.declinedFedEx) {
     lines.push("Declined FedEx");
   }
@@ -2050,6 +2151,7 @@ export type SampleCustomerOffer = {
   fedexUpgradePrice: number;
   heatPackAddonEnabled: boolean;
   heatPackLabel: string;
+  heatPackDescription: string;
   /** Null when the live Shopify variant could not be resolved — never show $0 as a fallback. */
   heatPackPrice: number | null;
   heatPackPriceResolved: boolean;

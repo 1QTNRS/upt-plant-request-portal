@@ -22,6 +22,7 @@ import { requireAdmin } from "../lib/admin-auth.server";
 import { missingProductionSecrets } from "../lib/environment.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  DEFAULT_HEAT_PACK_DESCRIPTION,
   FEDEX_PRODUCT_SKU,
   HEAT_PACK_PRODUCT_SKU,
 } from "../lib/portal";
@@ -55,6 +56,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     fedexProductHandle: settings.fedexProductHandle,
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackProductHandle: settings.heatPackProductHandle,
+    heatPackDescription: settings.heatPackDescription,
     missingSecrets: missingProductionSecrets(),
     mobileTokens: mobileTokens.map((token) => ({
       id: token.id,
@@ -132,6 +134,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "save-heat-pack-addon") {
     await updateShopSettings(shop, {
       heatPackAddonEnabled: form.get("heatPackAddonEnabled") === "on",
+      heatPackDescription: String(form.get("heatPackDescription") || ""),
     });
     return { saved: true, reset: false, section: "heat-pack" as const };
   }
@@ -202,6 +205,9 @@ export default function Settings() {
   const [heatPackAddonEnabled, setHeatPackAddonEnabled] = useState(
     settings.heatPackAddonEnabled,
   );
+  const [heatPackDescription, setHeatPackDescription] = useState(
+    settings.heatPackDescription,
+  );
 
   useEffect(() => {
     setDraft(settings.fedexRemovalWarning);
@@ -212,6 +218,7 @@ export default function Settings() {
     setPushNewRequest(settings.adminPushNewRequest);
     setPushItemStatus(settings.adminPushItemStatusUpdate);
     setHeatPackAddonEnabled(settings.heatPackAddonEnabled);
+    setHeatPackDescription(settings.heatPackDescription);
   }, [
     settings.adminEmailCustomerResponse,
     settings.adminEmailNewRequest,
@@ -220,6 +227,7 @@ export default function Settings() {
     settings.adminPushItemStatusUpdate,
     settings.adminPushNewRequest,
     settings.heatPackAddonEnabled,
+    settings.heatPackDescription,
     settings.fedexRemovalWarning,
   ]);
 
@@ -352,6 +360,30 @@ export default function Settings() {
                 />
                 <s-text>Heat Pack Add-On enabled</s-text>
               </label>
+              <label htmlFor="heat-pack-description">
+                <s-text>Customer-facing Heat Pack description</s-text>
+              </label>
+              <textarea
+                id="heat-pack-description"
+                name="heatPackDescription"
+                rows={4}
+                value={heatPackDescription}
+                onChange={(event) => setHeatPackDescription(event.currentTarget.value)}
+                placeholder={DEFAULT_HEAT_PACK_DESCRIPTION}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: `1px solid ${THEME.line}`,
+                  fontFamily: "inherit",
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                }}
+              />
+              <s-text color="subdued">
+                Shown on the customer offer when Heat Pack is enabled. Leave blank
+                to use the default text on save.
+              </s-text>
               <s-stack direction="inline" gap="small">
                 <s-button
                   variant="primary"

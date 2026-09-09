@@ -8,7 +8,9 @@ import {
 import {
   CUSTOMER_SUPPORT_EMAIL,
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  fedExSummaryState,
   formatCurrency,
+  heatPackSummaryState,
   isOfferExpired,
   shouldRenderCustomerSupportNote,
   type CustomerOfferResponse,
@@ -413,42 +415,34 @@ export function CustomerOfferView({
                   ))}
                 </s-stack>
               ) : null}
-              {response?.fedexUpgradeSelected ? (
-                <s-text>
-                  FedEx Priority Overnight Upgrade —{" "}
-                  {formatCurrency(response.fedexUpgradePrice)}
-                </s-text>
-              ) : (
-                <s-stack direction="block" gap="small">
-                  <s-text>FedEx Priority Overnight Upgrade — removed</s-text>
-                  <s-text color="subdued">
-                    {fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING}
-                  </s-text>
-                </s-stack>
-              )}
-              {offer.heatPackAddonEnabled && response?.heatPackSelected != null ? (
-                response.heatPackSelected ? (
-                  <s-text>
-                    {offer.heatPackLabel} —{" "}
-                    {formatCurrency(
-                      response.heatPackPrice ??
-                        offer.heatPackPrice ??
-                        0,
-                    )}
-                  </s-text>
-                ) : (
-                  <s-text>{offer.heatPackLabel} — not added</s-text>
-                )
+              {response ? (
+                <>
+                  <FedExSummaryCard
+                    offer={offer}
+                    response={response}
+                    fedexRemovalWarning={fedexRemovalWarning}
+                  />
+                  <HeatPackSummaryCard offer={offer} response={response} />
+                </>
               ) : null}
             </s-stack>
           </s-section>
         ) : rejectedItems.length > 0 ? (
           <s-section heading="Final approval summary">
-            <s-stack direction="block" gap="base">
-              <s-heading>DECLINED</s-heading>
-              {rejectedItems.map((item) => (
-                <DeclinedItemCard key={item.offerItemId} item={item} />
-              ))}
+            <s-stack direction="block" gap="large">
+              <s-stack direction="block" gap="base">
+                <s-heading>DECLINED</s-heading>
+                {rejectedItems.map((item) => (
+                  <DeclinedItemCard key={item.offerItemId} item={item} />
+                ))}
+              </s-stack>
+              {response ? (
+                <FedExSummaryCard
+                  offer={offer}
+                  response={response}
+                  fedexRemovalWarning={fedexRemovalWarning}
+                />
+              ) : null}
             </s-stack>
           </s-section>
         ) : null}
@@ -740,6 +734,9 @@ export function CustomerOfferView({
                           ? formatCurrency(offer.heatPackPrice)
                           : "Price unavailable"}
                       </s-text>
+                      {offer.heatPackDescription ? (
+                        <s-text>{offer.heatPackDescription}</s-text>
+                      ) : null}
                       <fieldset className="upt-heat-pack-choices">
                         <legend className="upt-sr-only">Heat pack choice</legend>
                         <label className="upt-heat-pack-choice">
@@ -844,6 +841,89 @@ function ResponseItemPhotos({
   }
 
   return null;
+}
+
+function AddonSummaryCard({
+  heading,
+  decision,
+  variant,
+  detail,
+}: {
+  heading: string;
+  decision: string;
+  variant: "positive" | "negative";
+  detail?: ReactNode;
+}) {
+  return (
+    <div className={`upt-addon-summary-card upt-addon-summary-${variant}`}>
+      <h3 className="upt-addon-summary-heading">{heading}</h3>
+      <p className="upt-addon-summary-decision">{decision}</p>
+      {detail ? <p className="upt-addon-summary-detail">{detail}</p> : null}
+    </div>
+  );
+}
+
+function FedExSummaryCard({
+  offer,
+  response,
+  fedexRemovalWarning,
+}: {
+  offer: SampleCustomerOffer;
+  response: CustomerOfferResponse;
+  fedexRemovalWarning: string;
+}) {
+  const state = fedExSummaryState({
+    hasAcceptedPurchasableItems: response.hasAcceptedPurchasableItems,
+    fedexUpgradeSelected: response.fedexUpgradeSelected,
+    fedexExplicitlyDeclined: response.fedexExplicitlyDeclined,
+  });
+  if (state === "not_applicable") return null;
+
+  return (
+    <div className="upt-offer-section-gap">
+      <AddonSummaryCard
+        heading={offer.fedexUpgradeLabel}
+        decision={state === "added" ? "Added" : "Declined"}
+        variant={state === "added" ? "positive" : "negative"}
+        detail={
+          state === "added"
+            ? formatCurrency(response.fedexUpgradePrice)
+            : fedexRemovalWarning || DEFAULT_FEDEX_REMOVAL_WARNING
+        }
+      />
+    </div>
+  );
+}
+
+function HeatPackSummaryCard({
+  offer,
+  response,
+}: {
+  offer: SampleCustomerOffer;
+  response: CustomerOfferResponse;
+}) {
+  const state = heatPackSummaryState({
+    hasAcceptedPurchasableItems: response.hasAcceptedPurchasableItems,
+    heatPackSelected: response.heatPackSelected,
+  });
+  if (state === "not_offered") return null;
+
+  return (
+    <div className="upt-offer-section-gap">
+      <AddonSummaryCard
+        heading={offer.heatPackLabel}
+        decision={state === "added" ? "Added" : "Not Added"}
+        variant={state === "added" ? "positive" : "negative"}
+        detail={
+          state === "added"
+            ? formatCurrency(
+                response.heatPackPrice ?? offer.heatPackPrice ?? 0,
+              )
+            : undefined
+        }
+      />
+    </div>
+  );
 }
 
 /** One plant the customer accepted, as the offer and the answer froze it. */

@@ -7,6 +7,7 @@ import {
   buildDraftOrderInput,
   buildDraftOrderNote,
   customerDeclinedFedExUpgrade,
+  customerExplicitlyDeclinedFedEx,
   formatOfferExpirationUrgencyPill,
   isOfferExpired,
   requestShowsAnsweredPill,
@@ -61,11 +62,11 @@ describe("Declined FedEx draft order notes", () => {
   it("appends Declined FedEx only for an explicit decline with accepted plants", () => {
     assert.equal(
       buildDraftOrderNote({ requestNumber: "REQ123", declinedFedEx: true }),
-      "UPT plant request REQ123\nDeclined FedEx",
+      "REQ123\nDeclined FedEx",
     );
     assert.equal(
       buildDraftOrderNote({ requestNumber: "REQ123" }),
-      "UPT plant request REQ123",
+      "REQ123",
     );
     assert.equal(
       customerDeclinedFedExUpgrade({
@@ -85,6 +86,21 @@ describe("Declined FedEx draft order notes", () => {
       customerDeclinedFedExUpgrade({
         acceptedPurchasableCount: 2,
         fedexUpgradeSelected: true,
+      }),
+      false,
+    );
+    assert.equal(
+      customerExplicitlyDeclinedFedEx({
+        acceptedPurchasableCount: 0,
+        formFedexSelected: false,
+        fedexRemovalAcknowledged: true,
+      }),
+      true,
+    );
+    assert.equal(
+      customerExplicitlyDeclinedFedEx({
+        acceptedPurchasableCount: 0,
+        formFedexSelected: false,
       }),
       false,
     );

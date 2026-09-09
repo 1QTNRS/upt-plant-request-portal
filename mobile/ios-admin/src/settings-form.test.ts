@@ -27,6 +27,8 @@ function shop(overrides: Partial<ShopSettings> = {}): ShopSettings {
     heatPackAddonEnabled: false,
     heatPackProductHandle: "heat-pack-includes-foil-insulation",
     heatPackProductSku: "UPTHEAPACINC72S",
+    heatPackDescription:
+      "We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.",
     ...overrides,
   };
 }

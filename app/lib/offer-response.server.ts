@@ -5,6 +5,7 @@ import {
 import {
   ADMIN_OVERRIDE_CLOSE_REASON,
   CUSTOMER_CLOSED_REQUEST_REASON,
+  customerExplicitlyDeclinedFedEx,
   INVOICE_VOIDED_BY_ADMIN_REASON,
   INVOICE_VOIDED_BY_CUSTOMER_CLOSE_REASON,
   payableInvoiceUrl,
@@ -521,8 +522,15 @@ export async function handleCustomerOfferAction(input: {
   // no shipment to upgrade, so it is recorded as unselected rather than made
   // the customer's problem to untick.
   const acceptedAnything = items.some((item) => item.choice === "accept");
-  const fedexUpgradeSelected =
-    acceptedAnything && String(input.form.get("fedexUpgradeSelected")) === "true";
+  const formFedexSelected =
+    String(input.form.get("fedexUpgradeSelected")) === "true";
+  const fedexUpgradeSelected = acceptedAnything && formFedexSelected;
+  const fedexExplicitlyDeclined = customerExplicitlyDeclinedFedEx({
+    acceptedPurchasableCount,
+    formFedexSelected,
+    fedexRemovalAcknowledged:
+      String(input.form.get("fedexRemovalAcknowledged")) === "true",
+  });
   const heatPackSelected =
     acceptedAnything && offer.heatPackAddonEnabled && heatPackChoice === true;
 
@@ -533,6 +541,7 @@ export async function handleCustomerOfferAction(input: {
       items,
       fedexUpgradeSelected,
       fedexUpgradePrice: offer.fedexUpgradePrice,
+      fedexExplicitlyDeclined,
       heatPackSelected: acceptedAnything && offer.heatPackAddonEnabled ? heatPackChoice : null,
       heatPackPrice:
         heatPackSelected && offer.heatPackPrice != null

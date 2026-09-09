@@ -25,6 +25,7 @@ import { declinedAllPurchasableItems } from "./customer-portal";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
   DEFAULT_FEDEX_REMOVAL_WARNING,
+  effectiveHeatPackDescription,
   DEFAULT_UNAVAILABLE_REASON,
   FEDEX_PRODUCT_HANDLE,
   formatDate,
@@ -47,6 +48,7 @@ import {
   offerIsAllExactPlants,
   offerReadinessMessage,
   PAYMENT_AFTER_VOID_REASON,
+  readFedexExplicitlyDeclinedFromSnapshot,
   responseSnapshotListingImage,
   responseSnapshotPhotoUrls,
   type CustomerOfferResponse,
@@ -492,6 +494,7 @@ export async function updateShopSettings(
     heatPackVariantGid?: string | null;
     heatPackPrice?: number;
     heatPackLabel?: string;
+    heatPackDescription?: string;
   },
 ) {
   await getShopSettings(shop);
@@ -542,6 +545,11 @@ export async function updateShopSettings(
         : {}),
       ...(data.heatPackLabel !== undefined
         ? { heatPackLabel: data.heatPackLabel.trim() || "Heat Pack (includes foil insulation)" }
+        : {}),
+      ...(data.heatPackDescription !== undefined
+        ? {
+            heatPackDescription: effectiveHeatPackDescription(data.heatPackDescription),
+          }
         : {}),
     },
   });
@@ -1339,6 +1347,7 @@ export async function buildCustomerOffer(
     fedexUpgradePrice: settings.fedexUpgradePrice,
     heatPackAddonEnabled: settings.heatPackAddonEnabled,
     heatPackLabel: settings.heatPackLabel,
+    heatPackDescription: effectiveHeatPackDescription(settings.heatPackDescription),
     heatPackPrice: heatPackPriceResolved ? settings.heatPackPrice : null,
     heatPackPriceResolved,
     customerEmail: request.customerEmail,
@@ -1422,6 +1431,13 @@ function toResponseDto(
       : undefined,
     fedexUpgradeSelected: response.fedexUpgradeSelected,
     fedexUpgradePrice: response.fedexUpgradePrice,
+    fedexExplicitlyDeclined: readFedexExplicitlyDeclinedFromSnapshot(
+      response.snapshotJson,
+      {
+        hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
+        fedexUpgradeSelected: response.fedexUpgradeSelected,
+      },
+    ),
     heatPackSelected: response.heatPackSelected,
     heatPackPrice: response.heatPackPrice,
     hasAcceptedPurchasableItems: items.some((item) => item.choice === "accept"),
@@ -1505,6 +1521,7 @@ export async function saveCustomerResponse(
     items: CustomerResponseItem[];
     fedexUpgradeSelected: boolean;
     fedexUpgradePrice: number;
+    fedexExplicitlyDeclined?: boolean;
     heatPackSelected?: boolean | null;
     heatPackPrice?: number | null;
   },
@@ -1531,6 +1548,7 @@ export async function saveCustomerResponse(
     submittedAt: new Date().toISOString(),
     offerExpiresAt: request.offer?.expiresAt.toISOString() ?? null,
     fedexUpgradeSelected: input.fedexUpgradeSelected,
+    fedexExplicitlyDeclined: input.fedexExplicitlyDeclined ?? false,
     items: input.items,
     heatPackSelected: input.heatPackSelected ?? null,
     heatPackPrice: input.heatPackPrice ?? null,

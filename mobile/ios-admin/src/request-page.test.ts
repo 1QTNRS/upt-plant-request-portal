@@ -39,7 +39,8 @@ describe("request page mint chrome", () => {
     assert.match(app, /theme=\{signedInTheme\}/);
     assert.match(app, /background: THEME\.requestPage/);
     assert.match(app, /signedInChrome \? THEME\.requestPage : APP_INTRO_BACKGROUND/);
-    assert.match(app, /backgroundColor: THEME\.darkGreen/);
+    const chrome = read("src/navigation-chrome.ts");
+    assert.match(chrome, /backgroundColor: THEME\.darkGreen/);
     assert.match(app, /tabBarActiveTintColor: THEME\.yellow/);
     assert.match(app, /tabBarInactiveTintColor: THEME\.white/);
 
@@ -73,11 +74,13 @@ describe("request page mint chrome", () => {
 
   it("paints the request-detail home-indicator edge mint when the tab bar is hidden", () => {
     const app = read("App.tsx");
+    const chrome = read("src/navigation-chrome.ts");
     const detail = read("src/screens/RequestDetailScreen.tsx");
-    assert.match(app, /style=\{ui\.flexPage\}/);
-    assert.match(app, /display: "none"/);
+    assert.match(detail, /style=\{ui\.flexPage\}/);
+    assert.match(chrome, /pointerEvents: "none"/);
+    assert.match(chrome, /height: 0/);
     assert.match(app, /backgroundColor: THEME\.requestPage/);
-    assert.match(detail, /<View style=\{ui\.flexPage\}>/);
+    assert.match(detail, /pointerEvents=\{isFocused \? "auto" : "none"\}/);
     assert.match(detail, /edges=\{\["top", "left", "right"\]\}/);
     assert.doesNotMatch(detail, /edges=\{\["top", "left", "right", "bottom"\]\}/);
   });

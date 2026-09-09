@@ -9,8 +9,19 @@ import {
   loadMobileAdminRequestDetail,
 } from "./admin-mobile-actions.server";
 import { createAdminMobileToken } from "./admin-mobile-auth.server";
-import { submitCustomerRequest, updateRequestItem } from "./portal.server";
+import { handleCustomerOfferAction } from "./offer-response.server";
+import {
+  getRequest,
+  submitCustomerRequest,
+  updateRequestItem,
+} from "./portal.server";
 import { DEMO_SHOP } from "./shop";
+
+function customerForm(fields: Record<string, string>): FormData {
+  const data = new FormData();
+  for (const [key, value] of Object.entries(fields)) data.append(key, value);
+  return data;
+}
 
 const shop = `${DEMO_SHOP}-mobile-actions`;
 
@@ -363,5 +374,54 @@ describe("admin mobile request actions", () => {
     });
     assert.equal(result.ok, false);
     assert.match(result.error ?? "", /has not answered/);
+  });
+
+  it("hides Close Declined Request once a decline-all is already closed", async () => {
+    const created = await submitCustomerRequest(shop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      shopifyCustomerId: "demo-customer-alex",
+      items: [{ plantName: "Monstera Albo" }],
+    });
+    const itemId = created.items[0].id;
+    await updateRequestItem(shop, {
+      requestId: created.id,
+      itemId,
+      availability: "available",
+      offeredName: "Monstera Albo Exact",
+      price: 250,
+      weightLbs: 2,
+      photoUrls: ["https://cdn.example.com/albo.jpg"],
+    });
+    await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: { intent: "send-offer", expirationDays: 3 },
+    });
+    await handleCustomerOfferAction({
+      shop,
+      requestId: created.id,
+      form: customerForm({
+        intent: "submit-response",
+        [`choice-${itemId}`]: "reject",
+        fedexUpgradeSelected: "true",
+      }),
+    });
+
+    const detail = await loadMobileAdminRequestDetail(shop, created.id);
+    assert.equal(detail?.status, "Closed");
+    assert.equal(detail?.canCloseDeclined, false);
+
+    const closed = await handleMobileAdminRequestAction({
+      shop,
+      requestId: created.id,
+      origin: "https://app.example",
+      fields: { intent: "close-request" },
+    });
+    assert.equal(closed.ok, true);
+    assert.equal(closed.request?.status, "Closed");
+    assert.equal(closed.request?.canCloseDeclined, false);
+    assert.equal((await getRequest(shop, created.id))?.status, "Closed");
   });
 });

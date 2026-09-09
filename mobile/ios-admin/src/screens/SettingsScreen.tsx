@@ -33,6 +33,7 @@ const EMPTY_FORM: SettingsFormState = {
   sku: "",
   heatPackAddonEnabled: false,
   heatPackSku: "",
+  heatPackDescription: "",
 };
 
 export function SettingsScreen() {
@@ -183,6 +184,20 @@ export function SettingsScreen() {
           trackColor={{ true: THEME.darkGreen }}
         />
       </View>
+      <Text style={styles.label}>Customer-facing Heat Pack description</Text>
+      <TextInput
+        value={form.heatPackDescription}
+        onChangeText={(heatPackDescription) =>
+          setForm((current) => ({ ...current, heatPackDescription }))
+        }
+        multiline
+        placeholder="Heat Pack description shown on the customer offer"
+        placeholderTextColor={THEME.muted}
+        style={[styles.input, styles.multiline]}
+      />
+      <Text style={styles.muted}>
+        Leave blank to use the default text on save.
+      </Text>
       <Pressable
         style={styles.button}
         disabled={savingHeatPack}
@@ -197,6 +212,7 @@ export function SettingsScreen() {
             {
               intent: "save-heat-pack-addon",
               heatPackAddonEnabled: form.heatPackAddonEnabled,
+              heatPackDescription: form.heatPackDescription,
             },
           )
             .then((result) => {

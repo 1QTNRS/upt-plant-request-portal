@@ -46,6 +46,7 @@ model ShopSettings {
   heatPackVariantGid      String?
   heatPackPrice           Float    @default(0)
   heatPackLabel           String   @default("Heat Pack (includes foil insulation)")
+  heatPackDescription     String   @default("We review the weather for every order before shipment. If a heat pack is not necessary, the cost will be refunded. If one is required but was not added, your order will be placed on hold and we will contact you.")
   adminNotificationEmail  String   @default("")
   /// Portal notification: admin_new_request. Off does not stop request create.
   adminEmailNewRequest    Boolean  @default(true)
