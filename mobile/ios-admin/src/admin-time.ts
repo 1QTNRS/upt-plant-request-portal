@@ -1,5 +1,5 @@
 /** Admin-facing note stamp in Pacific Time: Sep 8, 2026 · 3:24 PM PT */
-const PORTAL_DISPLAY_TIME_ZONE = "America/Los_Angeles";
+export const PORTAL_DISPLAY_TIME_ZONE = "America/Los_Angeles";
 
 export function formatAdminNoteTimestamp(iso: string): string {
   const value = new Date(iso);

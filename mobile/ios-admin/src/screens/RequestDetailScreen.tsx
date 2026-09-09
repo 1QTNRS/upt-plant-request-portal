@@ -12,9 +12,10 @@ import {
   View,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { formatAdminNoteTimestamp } from "../admin-time";
+import { formatAdminNoteTimestamp, formatPortalDateTime } from "../admin-time";
 import { apiGet, apiPost } from "../api";
 import { ItemEditor } from "../components/ItemEditor";
 import {
@@ -25,6 +26,10 @@ import {
 } from "../item-autosave";
 import { applyStockOutsideTouch } from "../item-editor";
 import { sendOfferHoldControlsEnabled } from "../offer-controls";
+import {
+  applyAdminActionResult,
+  resetRequestDetailTransientState,
+} from "../request-detail-ui";
 import { useSession } from "../SessionContext";
 import { ExistingOrderPill, StatusPills } from "../StatusPills";
 import {
@@ -61,11 +66,19 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const stockOpenIds = useRef(new Set<string>());
   const stockTouchConsumed = useRef(false);
 
+  const dismissInteractionBlockers = useCallback(() => {
+    for (const dismiss of stockDismissers.current.values()) dismiss();
+    stockDismissers.current.clear();
+    stockOpenIds.current.clear();
+    stockTouchConsumed.current = false;
+    Keyboard.dismiss();
+  }, []);
+
   useEffect(() => {
     void (async () => {
-      setError(null);
+      resetRequestDetailTransientState({ setConfirmOverride, setError });
+      dismissInteractionBlockers();
       setLoading(true);
-      setConfirmOverride(false);
       setShippingFeeOverride("");
       try {
         setDetail(
@@ -81,7 +94,16 @@ export function RequestDetailScreen({ navigation, route }: Props) {
         setLoading(false);
       }
     })();
-  }, [apiUrl, requestId, token]);
+  }, [apiUrl, dismissInteractionBlockers, requestId, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        resetRequestDetailTransientState({ setConfirmOverride, setError });
+        dismissInteractionBlockers();
+      };
+    }, [dismissInteractionBlockers]),
+  );
 
   useEffect(() => {
     return () => {
@@ -92,12 +114,13 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   }, [requestId]);
 
   function applyResult(result: ActionResult) {
-    if (!result.ok) {
-      setError(result.error || "That action failed.");
-      if (result.pendingAdminOverrideClose) setConfirmOverride(true);
-      return;
-    }
-    if (result.request) setDetail(result.request);
+    const ok = applyAdminActionResult({
+      result,
+      setError,
+      setConfirmOverride,
+      onSuccess: dismissInteractionBlockers,
+    });
+    if (ok && result.request) setDetail(result.request);
   }
 
   const registerFlush = useCallback((itemId: string, flush: (() => Promise<boolean>) | null) => {
@@ -219,6 +242,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
     <View style={ui.flexPage}>
     <SafeAreaView style={ui.flexPage} edges={["top", "left", "right"]}>
     <KeyboardAvoidingView
+      key={requestId}
       style={ui.flexPage}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
@@ -271,7 +295,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
                 ? "Offer expired"
                 : "Offer expires"}
             </Text>
-            <Text style={ui.muted}>{detail.sentOffer.expiresAt}</Text>
+            <Text style={ui.muted}>
+              {formatPortalDateTime(detail.sentOffer.expiresAtIso)}
+            </Text>
           </View>
         ) : null}
         <Text style={ui.muted}>{detail.email}</Text>
