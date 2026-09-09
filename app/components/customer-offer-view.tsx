@@ -396,30 +396,23 @@ export function CustomerOfferView({
           </s-section>
         ) : null}
 
-        {rejectedItems.length > 0 ? (
-          /*
-           * What the customer turned down, exactly as the offer froze it. This
-           * is the only record they have once the request is closed, so it
-           * comes from the response snapshot rather than the live request —
-           * a later admin edit must not rewrite what they were shown. Keep it
-           * even when they also accepted plants — those live in the summary
-           * below, and hiding this used to drop the declined photos entirely.
-           */
-          <s-section heading="Plants you declined">
-            <s-stack direction="block" gap="base">
-              {rejectedItems.map((item) => (
-                <DeclinedItemCard key={item.offerItemId} item={item} />
-              ))}
-            </s-stack>
-          </s-section>
-        ) : null}
-
         {hasAccepted ? (
           <s-section heading="Final approval summary">
-            <s-stack direction="block" gap="base">
-              {acceptedItems.map((item) => (
-                <AcceptedItemCard key={item.offerItemId} item={item} />
-              ))}
+            <s-stack direction="block" gap="large">
+              <s-stack direction="block" gap="base">
+                <s-heading>ACCEPTED</s-heading>
+                {acceptedItems.map((item) => (
+                  <AcceptedItemCard key={item.offerItemId} item={item} />
+                ))}
+              </s-stack>
+              {rejectedItems.length > 0 ? (
+                <s-stack direction="block" gap="base">
+                  <s-heading>DECLINED</s-heading>
+                  {rejectedItems.map((item) => (
+                    <DeclinedItemCard key={item.offerItemId} item={item} />
+                  ))}
+                </s-stack>
+              ) : null}
               {response?.fedexUpgradeSelected ? (
                 <s-text>
                   FedEx Priority Overnight Upgrade —{" "}
@@ -447,6 +440,15 @@ export function CustomerOfferView({
                   <s-text>{offer.heatPackLabel} — not added</s-text>
                 )
               ) : null}
+            </s-stack>
+          </s-section>
+        ) : rejectedItems.length > 0 ? (
+          <s-section heading="Final approval summary">
+            <s-stack direction="block" gap="base">
+              <s-heading>DECLINED</s-heading>
+              {rejectedItems.map((item) => (
+                <DeclinedItemCard key={item.offerItemId} item={item} />
+              ))}
             </s-stack>
           </s-section>
         ) : null}

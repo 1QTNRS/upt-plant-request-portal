@@ -911,6 +911,35 @@ describe("customer timezone is stored per profile", () => {
     );
     assert.ok(offer!.expiresAtIso.endsWith("Z"));
   });
+
+  it("stores admin sentOffer.expiresAt in Pacific Time", async () => {
+    const created = await submitCustomerRequest(tzShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Monstera" }],
+    });
+    await updateRequestItem(tzShop, {
+      requestId: created.id,
+      itemId: created.items[0].id,
+      availability: "available",
+      offeredName: "Monstera Exact",
+      price: 50,
+      weightLbs: 1,
+    });
+    await addItemPhotos(tzShop, created.id, created.items[0].id, [
+      { url: "https://cdn.example.com/tz.jpg" },
+    ]);
+    await sendOffer(tzShop, created.id, 3);
+    const winterExpiry = new Date("2026-01-15T18:00:00.000Z");
+    await prisma.offer.update({
+      where: { requestId: created.id },
+      data: { expiresAt: winterExpiry },
+    });
+    const request = await getRequest(tzShop, created.id);
+    assert.ok(request?.sentOffer);
+    assert.match(request.sentOffer.expiresAt, /10:00 AM PST/);
+    assert.equal(request.sentOffer.expiresAtIso, winterExpiry.toISOString());
+  });
 });
 
 describe("admin internal notes", () => {

@@ -529,9 +529,10 @@ describe("a customer who accepted plants can still see their photos later", () =
     });
 
     assert.match(html, /Final approval summary/);
-    assert.match(html, /Monstera Albo/);
-    assert.match(html, /Plants you declined/);
-    assert.match(html, /Hoya Callistophylla/);
+    assert.match(html, />ACCEPTED</);
+    assert.match(html, />DECLINED</);
+    assert.ok(html.indexOf("Monstera Albo") < html.indexOf("Hoya Callistophylla"));
+    assert.ok(html.indexOf(">ACCEPTED<") < html.indexOf(">DECLINED<"));
     for (const url of PHOTOS) {
       assert.ok(html.includes(url));
     }
@@ -555,7 +556,8 @@ describe("a customer who declined everything can still see what they declined", 
   it("shows the plant, the price it was offered at, the notes and every photo", () => {
     const html = declined(false);
 
-    assert.match(html, /Plants you declined/);
+    assert.match(html, /Final approval summary/);
+    assert.match(html, />DECLINED</);
     assert.match(html, /Monstera Albo/);
     assert.match(html, /Hoya Callistophylla/);
     assert.match(html, /\$250\.00/);
@@ -569,7 +571,8 @@ describe("a customer who declined everything can still see what they declined", 
   it("keeps that history after the request is closed", () => {
     const html = declined(true);
 
-    assert.match(html, /Plants you declined/);
+    assert.match(html, /Final approval summary/);
+    assert.match(html, />DECLINED</);
     assert.match(html, /Monstera Albo/);
     for (const url of PHOTOS) {
       assert.ok(html.includes(url));
@@ -581,7 +584,10 @@ describe("a customer who declined everything can still see what they declined", 
     for (const html of [declined(false), declined(true)]) {
       assert.ok(!html.includes("Continue to Checkout"));
       assert.ok(!html.includes("Complete your payment"));
-      assert.ok(!html.includes("Final approval summary"));
+      assert.ok(!html.includes("Complete Your Purchase"));
+      assert.match(html, /Final approval summary/);
+      assert.match(html, />DECLINED</);
+      assert.ok(!html.includes(">ACCEPTED<"));
       assert.ok(
         !/FedEx Priority Overnight Upgrade —/.test(html),
         "nothing shipped, so the upgrade was neither kept nor charged",

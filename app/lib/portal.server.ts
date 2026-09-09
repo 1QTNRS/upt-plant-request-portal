@@ -272,7 +272,7 @@ function toSentOffer(offer: Offer, requestId: string): SentOffer {
     offerLink: offer.offerLink || `/app/customer-offer-preview?requestId=${requestId}`,
     sentAt: formatDateTime(offer.sentAt),
     sentAtIso: offer.sentAt.toISOString(),
-    expiresAt: formatDateTime(offer.expiresAt),
+    expiresAt: formatCustomerDateTime(offer.expiresAt),
     expiresAtIso: offer.expiresAt.toISOString(),
     expirationDays: offer.expirationDays as OfferExpirationDays,
     shippingFeeOverride:
