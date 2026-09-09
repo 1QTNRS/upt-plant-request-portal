@@ -1,5 +1,3 @@
-import type { StyleProp, ViewStyle } from "react-native";
-
 import { TAB_BAR_CONTENT_HEIGHT, TAB_BAR_LABEL_FONT_SIZE } from "./item-editor";
 import { THEME } from "./theme";
 
@@ -9,25 +7,27 @@ export function rootTabBarVisible(focusedRouteName: string): boolean {
   return !DETAIL_ROUTES.has(focusedRouteName);
 }
 
-/** Bottom tabs default to a triangle MissingIcon when tabBarIcon is omitted. */
-export function rootTabBarLabelOnlyOptions(bottomInset: number) {
+/** Label-only bottom tab bar for the material-top-tab pager (no indicator icons). */
+export function rootMaterialTabScreenOptions(
+  bottomInset: number,
+  swipeEnabled: boolean,
+) {
   return {
-    tabBarIcon: () => null,
-    tabBarIconStyle: {
-      display: "none" as const,
-      width: 0,
-      height: 0,
-    } satisfies StyleProp<ViewStyle>,
-    tabBarShowLabel: true,
+    lazy: false,
+    swipeEnabled,
     tabBarActiveTintColor: THEME.yellow,
     tabBarInactiveTintColor: THEME.white,
     tabBarLabelStyle: {
       fontWeight: "700" as const,
       fontSize: TAB_BAR_LABEL_FONT_SIZE,
       marginBottom: 0,
+      textTransform: "none" as const,
     },
+    tabBarItemStyle: { justifyContent: "center" as const, paddingVertical: 6 },
+    tabBarIndicatorStyle: { height: 0, backgroundColor: "transparent" },
+    tabBarPressColor: "transparent",
+    tabBarBounces: false,
     tabBarStyle: rootTabBarStyle({ visible: true, bottomInset }),
-    tabBarHideOnKeyboard: true,
   };
 }
 

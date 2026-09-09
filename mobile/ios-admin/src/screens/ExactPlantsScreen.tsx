@@ -22,7 +22,6 @@ import type {
   ExactPlantReview,
   ExactPlantRow,
 } from "../types";
-import { RootTabSwipeShell } from "../RootTabSwipeShell";
 import { ui } from "../ui";
 import {
   useRootTabBarHiddenOnFocus,
@@ -85,7 +84,6 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
   }, [filter, loadQueue]);
 
   return (
-    <RootTabSwipeShell tabName="ExactPlants" swipeEnabled>
     <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
       <Text style={ui.title}>EXACT PLANTS</Text>
       <Text style={ui.muted}>
@@ -145,7 +143,6 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
         ) : null}
       </ScrollView>
     </SafeAreaView>
-    </RootTabSwipeShell>
   );
 }
 

@@ -16,20 +16,23 @@ function read(rel: string): string {
 }
 
 describe("iOS navigation touch regression", () => {
-  it("uses a persistent bottom tab navigator instead of a material top pager", () => {
+  it("uses a material top tab pager for smooth root-tab swipe", () => {
     const app = read("App.tsx");
-    assert.match(app, /createBottomTabNavigator/);
-    assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /tabBarPosition="bottom"/);
+    assert.match(read("package.json"), /react-native-pager-view/);
+    assert.doesNotMatch(app, /RootTabSwipeShell/);
     assert.doesNotMatch(app, /getFocusedRouteNameFromRoute/);
-    assert.match(app, /lazy: false/);
+    assert.match(read("src/navigation-chrome.ts"), /lazy: false/);
     assert.match(app, /freezeOnBlur: true/);
-    assert.match(app, /rootTabBarLabelOnlyOptions/);
+    assert.match(app, /rootMaterialTabScreenOptions/);
   });
 
-  it("removes default triangle tab icons and drives tab-bar visibility from focus hooks", () => {
+  it("uses label-only tab styling and focus hooks for tab bar timing and pager swipe", () => {
     const chrome = read("src/navigation-chrome.ts");
-    assert.match(chrome, /tabBarIcon: \(\) => null/);
-    assert.match(chrome, /display: "none"/);
+    assert.match(chrome, /tabBarIndicatorStyle: \{ height: 0/);
+    assert.match(chrome, /tabBarActiveTintColor: THEME\.yellow/);
+    assert.match(chrome, /tabBarInactiveTintColor: THEME\.white/);
     const detail = read("src/screens/RequestDetailScreen.tsx");
     assert.match(detail, /useRootTabBarHiddenOnFocus/);
     const list = read("src/screens/RequestListScreen.tsx");
@@ -37,6 +40,7 @@ describe("iOS navigation touch regression", () => {
     const hooks = read("src/use-root-tab-bar.ts");
     assert.match(hooks, /useLayoutEffect/);
     assert.match(hooks, /transitionStart/);
+    assert.match(hooks, /swipeEnabled/);
   });
 
   it("hides the tab bar on detail routes without leaving touch targets active", () => {
@@ -73,21 +77,15 @@ describe("iOS navigation touch regression", () => {
     assert.match(list, /useFocusEffect/);
   });
 
-  it("restores root-tab swipe only on list screens, not on detail routes", () => {
-    const shell = read("src/RootTabSwipeShell.tsx");
-    assert.match(shell, /Gesture\.Pan/);
-    assert.match(shell, /swipeDirectionToAdjacent/);
+  it("does not mount custom swipe shells on root or detail screens", () => {
     const list = read("src/screens/RequestListScreen.tsx");
-    assert.match(list, /RootTabSwipeShell/);
-    assert.match(list, /tabName="Requests"/);
+    assert.doesNotMatch(list, /RootTabSwipeShell/);
     const detail = read("src/screens/RequestDetailScreen.tsx");
     assert.doesNotMatch(detail, /RootTabSwipeShell/);
     const exact = read("src/screens/ExactPlantsScreen.tsx");
-    assert.match(exact, /tabName="ExactPlants"/);
-    const reviewStart = exact.indexOf("export function ExactPlantsReviewScreen");
-    assert.ok(reviewStart > -1);
-    const reviewBody = exact.slice(reviewStart);
-    assert.doesNotMatch(reviewBody, /RootTabSwipeShell/);
+    assert.doesNotMatch(exact, /RootTabSwipeShell/);
+    const settings = read("src/screens/SettingsScreen.tsx");
+    assert.doesNotMatch(settings, /RootTabSwipeShell/);
   });
 });
 

@@ -106,14 +106,14 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /linkedStock\.productTitle/);
   });
 
-  it("uses native stack swipe-back and a persistent bottom tab bar", () => {
+  it("uses native stack swipe-back and a material top tab pager with bottom labels", () => {
     const app = read("App.tsx");
     const chrome = read("src/navigation-chrome.ts");
-    assert.match(app, /createBottomTabNavigator/);
-    assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /tabBarPosition="bottom"/);
     assert.match(app, /createNativeStackNavigator/);
-    assert.match(app, /lazy: false/);
-    assert.match(app, /rootTabBarLabelOnlyOptions/);
+    assert.match(chrome, /lazy: false/);
+    assert.match(app, /rootMaterialTabScreenOptions/);
     assert.match(chrome, /rootTabBarStyle/);
     assert.match(app, /gestureEnabled: true/);
     assert.match(app, /fullScreenGestureEnabled: false/);

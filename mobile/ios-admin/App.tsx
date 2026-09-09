@@ -7,7 +7,7 @@ import {
   NavigationContainer,
   createNavigationContainerRef,
 } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import * as Notifications from "expo-notifications";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as SecureStore from "expo-secure-store";
@@ -19,7 +19,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { apiGet } from "./src/api";
 import { AppIntro } from "./src/AppIntro";
 import { APP_INTRO_BACKGROUND, shouldPlayAppIntro } from "./src/app-intro";
-import { rootTabBarLabelOnlyOptions } from "./src/navigation-chrome";
+import { rootMaterialTabScreenOptions } from "./src/navigation-chrome";
 import { SessionContext } from "./src/SessionContext";
 import { ExactPlantsReviewScreen, ExactPlantsScreen } from "./src/screens/ExactPlantsScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -69,7 +69,7 @@ function openRequestDetail(requestId: string) {
 
 const RequestsStack = createNativeStackNavigator<RequestsStackParamList>();
 const ExactPlantsStack = createNativeStackNavigator<ExactPlantsStackParamList>();
-const Tabs = createBottomTabNavigator<MainTabParamList>();
+const Tabs = createMaterialTopTabNavigator<MainTabParamList>();
 
 const stackScreenOptions = {
   headerShown: false,
@@ -110,13 +110,13 @@ function ExactPlantsNavigator() {
 
 function MainTabs() {
   const insets = useSafeAreaInsets();
-  const tabOptions = rootTabBarLabelOnlyOptions(insets.bottom);
+  const tabOptions = rootMaterialTabScreenOptions(insets.bottom, true);
 
   return (
     <Tabs.Navigator
+      tabBarPosition="bottom"
+      style={ui.flexPage}
       screenOptions={{
-        headerShown: false,
-        lazy: false,
         ...tabOptions,
         sceneStyle: { backgroundColor: THEME.requestPage },
       }}
