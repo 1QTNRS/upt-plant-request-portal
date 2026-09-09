@@ -1,4 +1,7 @@
-export const CUSTOMER_TIME_FALLBACK_ZONE = "UTC";
+/** Every user-facing portal timestamp is shown in Pacific Time. Storage stays UTC. */
+export const PORTAL_DISPLAY_TIME_ZONE = "America/Los_Angeles";
+
+export const CUSTOMER_TIME_FALLBACK_ZONE = PORTAL_DISPLAY_TIME_ZONE;
 
 /**
  * Accepts only a real IANA zone. Never infers one from an IP address.
@@ -15,18 +18,17 @@ export function normalizeIanaTimeZone(value: unknown): string | null {
   }
 }
 
-function formatInZone(
+function formatInPortalZone(
   date: Date,
-  timeZone: string | null | undefined,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  const zone = normalizeIanaTimeZone(timeZone) ?? CUSTOMER_TIME_FALLBACK_ZONE;
-  return new Intl.DateTimeFormat("en-US", { ...options, timeZone: zone }).format(
-    date,
-  );
+  return new Intl.DateTimeFormat("en-US", {
+    ...options,
+    timeZone: PORTAL_DISPLAY_TIME_ZONE,
+  }).format(date);
 }
 
-const VIEWER_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+const PORTAL_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   year: "numeric",
@@ -35,34 +37,33 @@ const VIEWER_DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   timeZoneName: "short",
 };
 
-/** Customer-facing date+time. Unknown zone falls back to labelled UTC. */
+/** Customer-facing date+time in Pacific Time (PST/PDT). */
 export function formatCustomerDateTime(
   date: Date,
   timeZone?: string | null,
 ): string {
-  return formatInZone(date, timeZone, VIEWER_DATE_TIME_OPTIONS);
+  void timeZone;
+  return formatInPortalZone(date, PORTAL_DATE_TIME_OPTIONS);
 }
 
 /**
- * Formats an instant in a reader's timezone. Pass an IANA zone in tests;
- * omit it in the browser so Intl uses that viewer's local zone and abbreviation.
+ * Formats an instant for admin and customer display in Pacific Time.
+ * The optional zone argument is ignored — display is always Los Angeles.
  */
 export function formatViewerDateTime(
   date: Date | string,
   timeZone?: string | null,
 ): string {
+  void timeZone;
   const value = typeof date === "string" ? new Date(date) : date;
   if (!Number.isFinite(value.getTime())) return "";
-  const zone = normalizeIanaTimeZone(timeZone);
-  return new Intl.DateTimeFormat("en-US", {
-    ...VIEWER_DATE_TIME_OPTIONS,
-    ...(zone ? { timeZone: zone } : {}),
-  }).format(value);
+  return formatInPortalZone(value, PORTAL_DATE_TIME_OPTIONS);
 }
 
-/** Customer-facing date. Unknown zone falls back to the UTC calendar day. */
+/** Customer-facing date in Pacific Time. */
 export function formatCustomerDate(date: Date, timeZone?: string | null): string {
-  return formatInZone(date, timeZone, {
+  void timeZone;
+  return formatInPortalZone(date, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -71,27 +72,29 @@ export function formatCustomerDate(date: Date, timeZone?: string | null): string
 }
 
 export function customerTimeZoneLabel(timeZone?: string | null): string {
-  return normalizeIanaTimeZone(timeZone) ?? CUSTOMER_TIME_FALLBACK_ZONE;
+  void timeZone;
+  return PORTAL_DISPLAY_TIME_ZONE;
 }
 
-/** Admin internal-note stamp: Sep 8, 2026 · 3:24 PM in the viewer zone. */
+/** Admin internal-note stamp: Sep 8, 2026 · 3:24 PM PT */
 export function formatAdminNoteTimestamp(
   iso: string,
   timeZone?: string | null,
 ): string {
+  void timeZone;
   const value = new Date(iso);
   if (!Number.isFinite(value.getTime())) return "";
-  const zone = normalizeIanaTimeZone(timeZone);
   const datePart = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
-    ...(zone ? { timeZone: zone } : {}),
+    timeZone: PORTAL_DISPLAY_TIME_ZONE,
   }).format(value);
   const timePart = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    ...(zone ? { timeZone: zone } : {}),
+    timeZone: PORTAL_DISPLAY_TIME_ZONE,
+    timeZoneName: "short",
   }).format(value);
   return `${datePart} · ${timePart}`;
 }

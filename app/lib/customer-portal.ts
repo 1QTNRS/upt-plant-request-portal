@@ -210,13 +210,17 @@ export function heatPackUiState(input: {
   heatPackAddonEnabled: boolean;
   acceptedPurchasableCount: number;
   heatPackChoice: boolean | null;
+  heatPackPriceResolved?: boolean;
 }): {
   visible: boolean;
   enabled: boolean;
   selected: boolean | null;
 } {
-  if (!input.heatPackAddonEnabled || input.acceptedPurchasableCount === 0) {
+  if (!input.heatPackAddonEnabled || input.heatPackPriceResolved === false) {
     return { visible: false, enabled: false, selected: null };
+  }
+  if (input.acceptedPurchasableCount === 0) {
+    return { visible: true, enabled: false, selected: null };
   }
   return {
     visible: true,

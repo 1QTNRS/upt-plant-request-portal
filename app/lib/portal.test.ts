@@ -549,7 +549,7 @@ describe("terminal plant item grouping", () => {
     { id: "c", plantName: "Hoya" },
   ];
 
-  it("partitions accepted and declined plants from explicit customer choices", () => {
+  it("partitions accepted, declined, and not available plants", () => {
     const grouped = partitionPlantItemsByCustomerChoice(items, [
       { sourceItemId: "a", choice: "accept" },
       { sourceItemId: "b", choice: "reject" },
@@ -562,6 +562,10 @@ describe("terminal plant item grouping", () => {
     assert.deepEqual(
       grouped.declined.map((item) => item.id),
       ["b"],
+    );
+    assert.deepEqual(
+      grouped.notAvailable.map((item) => item.id),
+      ["c"],
     );
   });
 

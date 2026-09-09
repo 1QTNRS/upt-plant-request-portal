@@ -1005,6 +1005,71 @@ describe("FedEx upgrade listing", () => {
   });
 });
 
+describe("Heat pack listing", () => {
+  const shop = `${DEMO_SHOP}-heat-pack-sku`;
+  const skuVariantGid = "gid://shopify/ProductVariant/heat72";
+
+  const reset = async () => {
+    await prisma.shopSettings.deleteMany({ where: { shop } });
+  };
+
+  before(reset);
+  after(reset);
+
+  it("looks up the live UPT SKU and persists the Shopify price", async () => {
+    const { resolveHeatPackVariant } = await import("./shopify-ops.server");
+    const { HEAT_PACK_PRODUCT_SKU, heatPackVariantSkuQuery } = await import("./portal");
+    const calls: Call[] = [];
+    const result = await resolveHeatPackVariant(
+      fakeAdmin(
+        {
+          HeatPackVariantBySku: {
+            productVariants: {
+              nodes: [
+                { id: skuVariantGid, sku: HEAT_PACK_PRODUCT_SKU, price: "7.00" },
+              ],
+            },
+          },
+        },
+        calls,
+      ),
+      shop,
+    );
+
+    assert.equal(result.variantGid, skuVariantGid);
+    assert.equal(result.price, 7);
+    assert.equal(result.resolved, true);
+    assert.deepEqual(calls[0]?.variables, {
+      query: heatPackVariantSkuQuery(HEAT_PACK_PRODUCT_SKU),
+    });
+
+    const settings = await getShopSettings(shop);
+    assert.equal(settings.heatPackVariantGid, skuVariantGid);
+    assert.equal(settings.heatPackPrice, 7);
+  });
+
+  it("does not pretend the price is zero when the SKU is missing", async () => {
+    const { resolveHeatPackVariant } = await import("./shopify-ops.server");
+    const missingShop = `${shop}-missing`;
+    await prisma.shopSettings.deleteMany({ where: { shop: missingShop } });
+    const calls: Call[] = [];
+    const result = await resolveHeatPackVariant(
+      fakeAdmin(
+        {
+          HeatPackVariantBySku: { productVariants: { nodes: [] } },
+          HeatPackProduct: { productByIdentifier: null },
+        },
+        calls,
+      ),
+      missingShop,
+    );
+
+    assert.equal(result.resolved, false);
+    assert.equal(result.price, null);
+    assert.equal(result.variantGid, undefined);
+  });
+});
+
 describe("sales channel publications", () => {
   async function resolve(nodes: Array<{ id: string; catalog: unknown }>) {
     const calls: Call[] = [];

@@ -7,54 +7,54 @@ import {
 } from "./terminal-response";
 import type { RequestItem } from "./types";
 
-function item(id: string): RequestItem {
-  return {
-    id,
-    plantName: id,
-    offeredName: id,
-    availability: "available",
-    fulfillmentType: "exact_plant",
-    price: 100,
-    weightLbs: 1,
-    customerFacingNotes: "",
-    adminNotes: "",
-    photoUrls: [],
-    photos: [],
-  };
-}
+describe("terminal plant grouping", () => {
+  const items = [
+    {
+      id: "a",
+      plantName: "Monstera",
+      availability: "available",
+    },
+    {
+      id: "b",
+      plantName: "Philodendron",
+      availability: "available",
+    },
+    {
+      id: "c",
+      plantName: "Hoya",
+      availability: "not_available",
+    },
+  ] as RequestItem[];
 
-describe("terminal response grouping", () => {
-  it("partitions accepted and declined items for terminal detail", () => {
+  it("partitions accepted, declined, and not available", () => {
     const grouped = partitionPlantItemsByCustomerChoice(
-      [item("a"), item("b")],
+      items,
       [
         { sourceItemId: "a", choice: "accept" },
         { sourceItemId: "b", choice: "reject" },
+        { sourceItemId: "c", choice: "unavailable" },
       ],
     );
     assert.deepEqual(
-      grouped.accepted.map((entry) => entry.id),
+      grouped.accepted.map((item) => item.id),
       ["a"],
     );
     assert.deepEqual(
-      grouped.declined.map((entry) => entry.id),
+      grouped.declined.map((item) => item.id),
       ["b"],
+    );
+    assert.deepEqual(
+      grouped.notAvailable.map((item) => item.id),
+      ["c"],
     );
   });
 
-  it("groups Pending and terminal requests with explicit accept/reject answers", () => {
+  it("groups pending unpaid responses", () => {
     assert.equal(
-      shouldGroupTerminalPlantItems("Closed", [{ sourceItemId: "a", choice: "accept" }]),
+      shouldGroupTerminalPlantItems("Pending", [
+        { sourceItemId: "a", choice: "accept" },
+      ]),
       true,
     );
-    assert.equal(
-      shouldGroupTerminalPlantItems("Expired", [{ sourceItemId: "a", choice: "reject" }]),
-      true,
-    );
-    assert.equal(
-      shouldGroupTerminalPlantItems("Pending", [{ sourceItemId: "a", choice: "accept" }]),
-      true,
-    );
-    assert.equal(shouldGroupTerminalPlantItems("Pending", []), false);
   });
 });

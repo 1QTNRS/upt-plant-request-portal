@@ -285,14 +285,20 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           <>
             {terminalGroups.accepted.length > 0 ? (
               <View style={ui.card}>
-                <Text style={ui.cardTitle}>ACCEPTED</Text>
+                <Text style={ui.terminalGroupHeading}>ACCEPTED</Text>
                 {terminalGroups.accepted.map((item) => renderItemEditor(item, detail))}
               </View>
             ) : null}
             {terminalGroups.declined.length > 0 ? (
               <View style={ui.card}>
-                <Text style={ui.cardTitle}>DECLINED</Text>
+                <Text style={ui.terminalGroupHeading}>DECLINED</Text>
                 {terminalGroups.declined.map((item) => renderItemEditor(item, detail))}
+              </View>
+            ) : null}
+            {terminalGroups.notAvailable.length > 0 ? (
+              <View style={ui.card}>
+                <Text style={ui.terminalGroupHeading}>NOT AVAILABLE</Text>
+                {terminalGroups.notAvailable.map((item) => renderItemEditor(item, detail))}
               </View>
             ) : null}
           </>
@@ -410,7 +416,9 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           <Text style={ui.cardTitle}>Internal notes</Text>
           {detail.internalNotes.map((note) => (
             <View key={note.id} style={{ marginBottom: 8 }}>
-              <Text style={ui.muted}>{formatAdminNoteTimestamp(note.createdAtIso)}</Text>
+              <Text style={ui.noteTimestamp}>
+                {formatAdminNoteTimestamp(note.createdAtIso)}
+              </Text>
               <Text>{note.body}</Text>
             </View>
           ))}

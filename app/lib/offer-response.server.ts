@@ -44,6 +44,7 @@ import {
 import {
   createDraftOrderForRequest,
   InsufficientStockError,
+  refreshHeatPackPrice,
 } from "./shopify-ops.server";
 import { RESERVATION_NOT_CONFIRMED } from "./growers-choice";
 import type { AdminContext } from "./admin-auth.server";
@@ -72,6 +73,7 @@ export async function loadCustomerOfferPage(
   await expireOverdueOffers(shop);
   if (admin) {
     await voidExpiredDraftOrder(shop, requestId, admin);
+    await refreshHeatPackPrice(admin, shop);
   }
 
   const offer = await buildCustomerOffer(shop, requestId);
@@ -402,6 +404,9 @@ export async function handleCustomerOfferAction(input: {
   admin?: AdminContext["admin"];
 }) {
   const intent = String(input.form.get("intent") || "");
+  if (input.admin) {
+    await refreshHeatPackPrice(input.admin, input.shop);
+  }
   const offer = await buildCustomerOffer(input.shop, input.requestId);
   if (!offer) return { ok: false as const };
 
@@ -473,6 +478,18 @@ export async function handleCustomerOfferAction(input: {
     };
   }
 
+  if (
+    offer.heatPackAddonEnabled &&
+    heatPackChoice === true &&
+    !offer.heatPackPriceResolved
+  ) {
+    return {
+      ok: false as const,
+      error:
+        "The heat pack add-on is temporarily unavailable. Please contact support if you need one added to your order.",
+    };
+  }
+
   const items = offer.items.map((item) => {
     const available = item.availability === "available";
     const choice = available
@@ -518,7 +535,11 @@ export async function handleCustomerOfferAction(input: {
       fedexUpgradePrice: offer.fedexUpgradePrice,
       heatPackSelected: acceptedAnything && offer.heatPackAddonEnabled ? heatPackChoice : null,
       heatPackPrice:
-        heatPackSelected ? offer.heatPackPrice : offer.heatPackAddonEnabled ? 0 : null,
+        heatPackSelected && offer.heatPackPrice != null
+          ? offer.heatPackPrice
+          : offer.heatPackAddonEnabled
+            ? 0
+            : null,
     });
   } catch (error) {
     // Lost a race with a concurrent submit of the same offer.

@@ -1059,8 +1059,9 @@ describe("heat pack add-on choice", () => {
         heatPackAddonEnabled: true,
         acceptedPurchasableCount: 0,
         heatPackChoice: null,
+        heatPackPriceResolved: true,
       }),
-      { visible: false, enabled: false, selected: null },
+      { visible: true, enabled: false, selected: null },
     );
   });
 });

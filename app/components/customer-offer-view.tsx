@@ -248,11 +248,6 @@ export function CustomerOfferView({
         })}
       >
         <StatusBadge label={statusLabel} tone={statusTone} />
-        {showSupportNote ? (
-          <s-section>
-            <CustomerSupportNote />
-          </s-section>
-        ) : null}
 
         {requestPaid ? (
           <s-section>
@@ -284,11 +279,32 @@ export function CustomerOfferView({
 
         {hasAccepted && invoiceUrl && !requestClosed && !holdEnded ? (
           <s-section>
-            <s-stack direction="block" gap="base">
-              <s-paragraph>We also emailed this link to you just in case.</s-paragraph>
-              <s-text color="subdued">{offer.customerEmail}</s-text>
-              <s-link href={invoiceUrl}>Continue to Checkout</s-link>
-            </s-stack>
+            <div className="upt-checkout-panel">
+              <s-stack direction="block" gap="base">
+                <h2 className="upt-checkout-heading">Complete Your Purchase</h2>
+                <s-paragraph>
+                  Your private checkout link is ready. We also emailed it to{" "}
+                  {offer.customerEmail} just in case.
+                </s-paragraph>
+                <a
+                  href={invoiceUrl}
+                  className="upt-primary-action"
+                  style={{
+                    ...primaryButtonStyle,
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  Continue to Checkout
+                </a>
+              </s-stack>
+            </div>
+          </s-section>
+        ) : null}
+
+        {showSupportNote ? (
+          <s-section>
+            <CustomerSupportNote />
           </s-section>
         ) : null}
 
@@ -421,7 +437,11 @@ export function CustomerOfferView({
                 response.heatPackSelected ? (
                   <s-text>
                     {offer.heatPackLabel} —{" "}
-                    {formatCurrency(response.heatPackPrice ?? offer.heatPackPrice)}
+                    {formatCurrency(
+                      response.heatPackPrice ??
+                        offer.heatPackPrice ??
+                        0,
+                    )}
                   </s-text>
                 ) : (
                   <s-text>{offer.heatPackLabel} — not added</s-text>
@@ -611,7 +631,8 @@ export function CustomerOfferView({
             </s-section>
           ) : (
             <>
-              <s-section heading="Shipping upgrade">
+              <div className="upt-offer-section-gap">
+                <s-section heading="Shipping upgrade">
                 <s-box
                   padding="base"
                   borderWidth="base"
@@ -699,8 +720,10 @@ export function CustomerOfferView({
                   </div>
                 </s-box>
               </s-section>
+              </div>
 
-              {offer.heatPackAddonEnabled ? (
+              {offer.heatPackAddonEnabled && offer.heatPackPriceResolved ? (
+                <div className="upt-offer-section-gap">
                 <s-section heading="Heat pack add-on" data-heat-pack-section>
                   <s-box
                     padding="base"
@@ -711,33 +734,40 @@ export function CustomerOfferView({
                     <s-stack direction="block" gap="base">
                       <s-text>
                         {offer.heatPackLabel},{" "}
-                        {formatCurrency(offer.heatPackPrice)}
+                        {offer.heatPackPrice != null
+                          ? formatCurrency(offer.heatPackPrice)
+                          : "Price unavailable"}
                       </s-text>
-                      <label style={choiceLabelStyle}>
-                        <input
-                          type="radio"
-                          name="heatPackSelected"
-                          value="true"
-                          defaultChecked={heatPackChoice === true}
-                          required
-                        />
-                        <s-text>Add heat pack</s-text>
-                      </label>
-                      <label style={choiceLabelStyle}>
-                        <input
-                          type="radio"
-                          name="heatPackSelected"
-                          value="false"
-                          defaultChecked={heatPackChoice === false}
-                          required
-                        />
-                        <s-text>No heat pack</s-text>
-                      </label>
+                      <fieldset className="upt-heat-pack-choices">
+                        <legend className="upt-sr-only">Heat pack choice</legend>
+                        <label className="upt-heat-pack-choice">
+                          <input
+                            type="radio"
+                            name="heatPackSelected"
+                            value="true"
+                            defaultChecked={heatPackChoice === true}
+                            required
+                          />
+                          <span>Add Heat Pack</span>
+                        </label>
+                        <label className="upt-heat-pack-choice">
+                          <input
+                            type="radio"
+                            name="heatPackSelected"
+                            value="false"
+                            defaultChecked={heatPackChoice === false}
+                            required
+                          />
+                          <span>No Heat Pack</span>
+                        </label>
+                      </fieldset>
                     </s-stack>
                   </s-box>
                 </s-section>
+                </div>
               ) : null}
 
+              <div className="upt-offer-section-gap">
               <s-section>
                 <button
                   type="submit"
@@ -750,6 +780,7 @@ export function CustomerOfferView({
                   Submit
                 </button>
               </s-section>
+              </div>
             </>
           )}
         </form>
@@ -766,7 +797,9 @@ export function CustomerOfferView({
       </form>
       <CustomerEnhanceScripts
         includeFedexWarning={!expired && !pendingFedexRemoval}
-        includeHeatPackSection={offer.heatPackAddonEnabled}
+        includeHeatPackSection={
+          offer.heatPackAddonEnabled && offer.heatPackPriceResolved
+        }
       />
     </CustomerOfferPage>
   );

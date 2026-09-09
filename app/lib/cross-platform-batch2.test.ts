@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { formatAdminNoteTimestamp } from "./customer-time";
+import {
+  formatAdminNoteTimestamp,
+  PORTAL_DISPLAY_TIME_ZONE,
+} from "./customer-time";
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
 
@@ -68,8 +71,9 @@ describe("cross-platform batch 2 wiring", () => {
   });
 
   it("formats internal note timestamps for admin views", () => {
-    const stamp = formatAdminNoteTimestamp("2026-09-08T15:24:00.000Z", "UTC");
-    assert.match(stamp, /Sep 8, 2026 · 3:24 PM/);
+    const stamp = formatAdminNoteTimestamp("2026-09-08T22:24:00.000Z");
+    assert.match(stamp, /Sep 8, 2026 · 3:24 PM PDT/);
+    assert.equal(PORTAL_DISPLAY_TIME_ZONE, "America/Los_Angeles");
     const web = readFileSync(
       path.join(REPO_ROOT, "app", "routes", "app.requests.$id.tsx"),
       "utf8",

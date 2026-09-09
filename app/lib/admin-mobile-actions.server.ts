@@ -35,6 +35,7 @@ import {
 import {
   getExistingStockVariant,
   refreshFedexUpgradePrice,
+  refreshHeatPackPrice,
   searchExistingStock,
 } from "./shopify-ops.server";
 
@@ -269,6 +270,7 @@ export async function handleMobileAdminRequestAction(input: {
       if (!shipping.ok) return { ok: false, error: shipping.error };
       const admin = await offlineAdminClient(shop);
       await refreshFedexUpgradePrice(admin, shop);
+      await refreshHeatPackPrice(admin, shop);
       const updated = await sendOffer(shop, requestId, expirationDays, {
         shippingFeeOverride: shipping.value,
       });
