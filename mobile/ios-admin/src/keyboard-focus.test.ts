@@ -43,6 +43,20 @@ describe("iOS text input keyboard focus", () => {
     assert.match(hooks, /bottomInsetRef\.current/);
   });
 
+  it("uses never-taps rule so switching fields requires two taps on iOS", () => {
+    const keyboard = read("src/ios-form-keyboard.logic.ts");
+    assert.match(keyboard, /keyboardShouldPersistTaps: "never"/);
+    assert.match(
+      keyboard,
+      /not delivered to children[\s\S]*another TextInput/,
+    );
+    assert.match(read("src/screens/RequestDetailScreen.tsx"), /iosFormScrollKeyboardProps\(\)/);
+    assert.doesNotMatch(
+      read("src/screens/RequestDetailScreen.tsx"),
+      /keyboardShouldPersistTaps="handled"/,
+    );
+  });
+
   it("debounced autosave skips onResult so success does not dismiss the keyboard", () => {
     const editor = read("src/components/ItemEditor.tsx");
     const schedule = editor.slice(

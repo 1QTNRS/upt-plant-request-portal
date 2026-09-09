@@ -1,3 +1,4 @@
+import { iosFormScrollKeyboardPropsForPlatform } from "./ios-form-keyboard.logic";
 import type { FulfillmentRoute, RequestItem } from "./types";
 
 export function routeOf(item: Pick<RequestItem, "availability" | "fulfillmentType">): FulfillmentRoute {
@@ -90,12 +91,16 @@ export function requestPageScrollEnabledWhileStockOpen(): boolean {
   return true;
 }
 
-export function requestPageKeyboardShouldPersistTaps(): "handled" {
-  return "handled";
+export function requestPageKeyboardShouldPersistTaps(
+  platformOs = "ios",
+): "handled" | "never" {
+  const taps = iosFormScrollKeyboardPropsForPlatform(platformOs).keyboardShouldPersistTaps;
+  return taps === "never" ? "never" : "handled";
 }
 
-export function requestPageKeyboardDismissMode(): "on-drag" {
-  return "on-drag";
+export function requestPageKeyboardDismissMode(platformOs = "ios"): "on-drag" | undefined {
+  const mode = iosFormScrollKeyboardPropsForPlatform(platformOs).keyboardDismissMode;
+  return mode === "on-drag" ? "on-drag" : undefined;
 }
 
 export type StockSearchPressTarget =

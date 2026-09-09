@@ -14,6 +14,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
+import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type {
@@ -217,7 +218,7 @@ export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
 
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
-    <ScrollView contentContainerStyle={ui.page} keyboardShouldPersistTaps="handled">
+    <ScrollView {...iosFormScrollKeyboardProps()} contentContainerStyle={ui.page}>
       <Pressable onPress={() => navigation.goBack()}>
         <Text style={ui.link}>← EXACT PLANTS</Text>
       </Pressable>

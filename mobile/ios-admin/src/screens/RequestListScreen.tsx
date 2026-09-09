@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet } from "../api";
+import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
 import { logActiveTouchBlockers } from "../touch-diagnostics";
 import { StatusFilterBar } from "../components/StatusFilterBar";
 import { apiPath } from "../query";
@@ -133,8 +134,8 @@ export function RequestListScreen({ navigation }: Props) {
       />
       {error ? <Text style={ui.error}>{error}</Text> : null}
       <ScrollView
+        {...iosFormScrollKeyboardProps()}
         style={ui.flexPage}
-        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

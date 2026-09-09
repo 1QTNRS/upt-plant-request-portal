@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet } from "../api";
+import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
 import { ui } from "../ui";
 
 type Props = {
@@ -32,7 +33,7 @@ export function LoginScreen({ apiUrl, token, onApiUrl, onToken, onSignedIn }: Pr
 
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
-    <ScrollView contentContainerStyle={ui.page} keyboardShouldPersistTaps="handled">
+    <ScrollView {...iosFormScrollKeyboardProps()} contentContainerStyle={ui.page}>
       <Text style={ui.title}>Request Portal</Text>
       <Text style={ui.muted}>
         Create a device token in Shopify admin → Settings → iOS admin app, then paste it
