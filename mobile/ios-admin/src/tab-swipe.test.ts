@@ -25,7 +25,7 @@ describe("root tab swipe", () => {
     assert.equal(adjacentMainTab("Requests", "right"), null);
   });
 
-  it("keeps detail routes from receiving root-tab swipe gestures", () => {
+  it("keeps detail routes from receiving root-tab swipe gestures and isolates the photo viewer", () => {
     assert.equal(tabSwipeEnabled("RequestList"), true);
     assert.equal(tabSwipeEnabled("RequestDetail"), false);
     assert.equal(tabSwipeEnabled("ExactPlantsReview"), false);
@@ -35,6 +35,12 @@ describe("root tab swipe", () => {
     assert.match(app, /createBottomTabNavigator/);
     assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
     assert.match(app, /rootTabBarLabelOnlyOptions/);
+    const chrome = readFileSync(
+      path.join(import.meta.dirname, "navigation-chrome.ts"),
+      "utf8",
+    );
+    assert.match(chrome, /rootTabBarStyle/);
+    assert.match(chrome, /rootTabBarVisible/);
     const viewer = readFileSync(
       path.join(import.meta.dirname, "components", "PhotoViewer.tsx"),
       "utf8",
