@@ -1,6 +1,22 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
-import { LIGHTBOX_NAV_CSS, lightboxIndex, swipeNavigates } from "../lib/photo-lightbox";
+import {
+  gallerySwipe,
+  dismissSwipe,
+  isBaseScale,
+  lockPageScroll,
+  MOBILE_LIGHTBOX_STAGE_CSS,
+  pinchScale,
+  pointerDistance,
+} from "../lib/mobile-lightbox";
+import { LIGHTBOX_NAV_CSS, lightboxIndex } from "../lib/photo-lightbox";
 
 const overlayStyle: CSSProperties = {
   position: "fixed",
@@ -11,13 +27,15 @@ const overlayStyle: CSSProperties = {
   background: "rgba(32, 34, 35, 0.92)",
   color: "#fff",
   padding: 12,
+  touchAction: "none",
+  overscrollBehavior: "none",
 };
 
 function isOutsidePhoto(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   if (
     target.closest(
-      "[data-lightbox-image], [data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav",
+      "[data-lightbox-image], [data-lightbox-prev], [data-lightbox-next], [data-lightbox-close], .lightbox-nav, [data-lightbox-transform]",
     )
   ) {
     return false;
@@ -52,7 +70,8 @@ const stageStyle: CSSProperties = {
   justifyContent: "center",
   gap: 10,
   minHeight: 0,
-  touchAction: "pan-y",
+  touchAction: "none",
+  overscrollBehavior: "none",
 };
 
 const controlStyle: CSSProperties = {
@@ -66,6 +85,8 @@ const controlStyle: CSSProperties = {
   font: "inherit",
   cursor: "pointer",
 };
+
+type PointerPoint = { id: number; x: number; y: number };
 
 export function AdminPhotoLightbox({
   urls,
@@ -81,11 +102,40 @@ export function AdminPhotoLightbox({
   const [index, setIndex] = useState(() =>
     lightboxIndex(startIndex, 0, urls.length),
   );
-  const start = useRef<{ x: number; y: number } | null>(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+
+  const pointers = useRef(new Map<number, PointerPoint>());
+  const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
+  const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(
+    null,
+  );
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+
+  const resetTransform = useCallback(() => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+    setDragging(false);
+    pointers.current.clear();
+    pinchStart.current = null;
+    panStart.current = null;
+    swipeStart.current = null;
+  }, []);
+
+  useEffect(() => {
+    resetTransform();
+  }, [index, resetTransform]);
+
+  useEffect(() => {
+    const lock = lockPageScroll();
+    return () => lock?.unlock();
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (!isBaseScale(scale)) return;
       if (event.key === "ArrowLeft") {
         setIndex((current) => lightboxIndex(current, -1, urls.length));
       }
@@ -95,11 +145,135 @@ export function AdminPhotoLightbox({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, urls.length]);
+  }, [onClose, scale, urls.length]);
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.isPrimary && pointers.current.size >= 2) return;
+    if (isLightboxControl(event.target)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    if (pointers.current.size === 2) {
+      const pts = [...pointers.current.values()];
+      pinchStart.current = {
+        distance: pointerDistance(pts[0], pts[1]),
+        scale,
+      };
+      panStart.current = null;
+      swipeStart.current = null;
+      return;
+    }
+
+    if (!isBaseScale(scale)) {
+      panStart.current = {
+        x: event.clientX,
+        y: event.clientY,
+        ox: offset.x,
+        oy: offset.y,
+      };
+      return;
+    }
+
+    swipeStart.current = { x: event.clientX, y: event.clientY };
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const point = pointers.current.get(event.pointerId);
+    if (!point) return;
+    point.x = event.clientX;
+    point.y = event.clientY;
+
+    if (pointers.current.size >= 2 && pinchStart.current) {
+      const pts = [...pointers.current.values()];
+      if (pts.length < 2) return;
+      setScale(
+        pinchScale(
+          pointerDistance(pts[0], pts[1]),
+          pinchStart.current.distance,
+          pinchStart.current.scale,
+        ),
+      );
+      return;
+    }
+
+    if (panStart.current && !isBaseScale(scale)) {
+      setOffset({
+        x: panStart.current.ox + (event.clientX - panStart.current.x),
+        y: panStart.current.oy + (event.clientY - panStart.current.y),
+      });
+      return;
+    }
+
+    if (swipeStart.current && isBaseScale(scale)) {
+      const dy = event.clientY - swipeStart.current.y;
+      if (dy > 0) {
+        setOffset({ x: 0, y: dy });
+      }
+    }
+  };
+
+  const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(event.pointerId);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // capture may already be released
+    }
+
+    if (pointers.current.size >= 1) {
+      pinchStart.current = null;
+      return;
+    }
+
+    pinchStart.current = null;
+    panStart.current = null;
+
+    if (swipeStart.current && isBaseScale(scale)) {
+      const dx = event.clientX - swipeStart.current.x;
+      const dy = event.clientY - swipeStart.current.y;
+      swipeStart.current = null;
+      setDragging(false);
+
+      if (dismissSwipe(dy) && Math.abs(dy) > Math.abs(dx)) {
+        resetTransform();
+        onClose();
+        return;
+      }
+
+      const move = gallerySwipe(dx, dy, urls.length, scale);
+      if (move) {
+        resetTransform();
+        setIndex((current) => lightboxIndex(current, move, urls.length));
+        return;
+      }
+
+      setOffset({ x: 0, y: 0 });
+    }
+  };
+
+  const onPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size === 0) {
+      pinchStart.current = null;
+      panStart.current = null;
+      swipeStart.current = null;
+      setDragging(false);
+      if (isBaseScale(scale)) setOffset({ x: 0, y: 0 });
+    }
+  };
 
   if (urls.length === 0) return null;
   const many = urls.length > 1;
   const src = urls[index] ?? urls[0];
+  const transformStyle = {
+    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+    transition: dragging ? "none" : "transform 0.2s ease",
+  };
 
   return (
     <div
@@ -110,6 +284,7 @@ export function AdminPhotoLightbox({
       style={{ ...overlayStyle, position: "fixed" }}
     >
       <style>{LIGHTBOX_NAV_CSS}</style>
+      <style>{MOBILE_LIGHTBOX_STAGE_CSS}</style>
       <button
         type="button"
         aria-label="Close photo"
@@ -140,29 +315,16 @@ export function AdminPhotoLightbox({
           {many ? `${index + 1} of ${urls.length}` : ""}
         </span>
       </div>
-      {/* Clicking the dark stage around the photo closes it. Keyboard: Escape / Close. */}
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         data-lightbox-stage
         style={{ ...stageStyle, zIndex: 1 }}
-        onPointerDown={(event) => {
-          if (!event.isPrimary || isLightboxControl(event.target)) return;
-          start.current = { x: event.clientX, y: event.clientY };
-        }}
-        onPointerUp={(event) => {
-          if (!start.current) return;
-          const move = swipeNavigates(
-            event.clientX - start.current.x,
-            event.clientY - start.current.y,
-          );
-          start.current = null;
-          if (move) setIndex((current) => lightboxIndex(current, move, urls.length));
-        }}
-        onPointerCancel={() => {
-          start.current = null;
-        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onClick={(event) => {
-          if (event.target === event.currentTarget) onClose();
+          if (event.target === event.currentTarget && isBaseScale(scale)) onClose();
         }}
       >
         {many ? (
@@ -171,23 +333,27 @@ export function AdminPhotoLightbox({
             className="lightbox-nav"
             data-lightbox-prev
             aria-label="Previous"
-            onClick={() =>
-              setIndex((current) => lightboxIndex(current, -1, urls.length))
-            }
+            onClick={() => {
+              resetTransform();
+              setIndex((current) => lightboxIndex(current, -1, urls.length));
+            }}
           >
             ‹
           </button>
         ) : null}
-        <img data-lightbox-image src={src} alt={alt} />
+        <div data-lightbox-transform style={transformStyle}>
+          <img data-lightbox-image src={src} alt={alt} draggable={false} />
+        </div>
         {many ? (
           <button
             type="button"
             className="lightbox-nav"
             data-lightbox-next
             aria-label="Next"
-            onClick={() =>
-              setIndex((current) => lightboxIndex(current, 1, urls.length))
-            }
+            onClick={() => {
+              resetTransform();
+              setIndex((current) => lightboxIndex(current, 1, urls.length));
+            }}
           >
             ›
           </button>

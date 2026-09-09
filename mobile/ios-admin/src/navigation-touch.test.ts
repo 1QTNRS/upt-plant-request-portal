@@ -41,6 +41,7 @@ describe("iOS navigation touch regression", () => {
     assert.match(hooks, /useLayoutEffect/);
     assert.match(hooks, /transitionStart/);
     assert.match(hooks, /swipeEnabled/);
+    assert.match(hooks, /bottomInsetRef/);
   });
 
   it("hides the tab bar on detail routes without leaving touch targets active", () => {
