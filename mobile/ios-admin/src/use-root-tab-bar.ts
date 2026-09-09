@@ -5,20 +5,27 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rootTabBarStyle } from "./navigation-chrome";
 
 type TabBarParentNavigation = {
-  getParent(): { setOptions(options: { tabBarStyle: ReturnType<typeof rootTabBarStyle> }): void } | undefined;
+  getParent(): {
+    setOptions(options: {
+      tabBarStyle: ReturnType<typeof rootTabBarStyle>;
+      swipeEnabled?: boolean;
+    }): void;
+  } | undefined;
 };
 
-function setRootTabBarVisible(
+function setRootTabChrome(
   navigation: TabBarParentNavigation,
   visible: boolean,
+  swipeEnabled: boolean,
   bottomInset: number,
 ) {
   navigation.getParent()?.setOptions({
     tabBarStyle: rootTabBarStyle({ visible, bottomInset }),
+    swipeEnabled,
   });
 }
 
-/** Root stack screens keep the tab bar visible for the whole time they are focused. */
+/** Root stack screens keep the tab bar visible and pager swipe enabled while focused. */
 export function useRootTabBarVisibleOnFocus() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -26,14 +33,13 @@ export function useRootTabBarVisibleOnFocus() {
 
   useLayoutEffect(() => {
     if (!isFocused) return;
-    setRootTabBarVisible(navigation as TabBarParentNavigation, true, insets.bottom);
+    setRootTabChrome(navigation as TabBarParentNavigation, true, true, insets.bottom);
   }, [isFocused, insets.bottom, navigation]);
 }
 
 /**
- * Detail screens hide the tab bar synchronously on focus and restore it as soon
- * as the pop transition starts — not after `getFocusedRouteNameFromRoute`
- * catches up at transition end.
+ * Detail screens hide the tab bar and disable root-tab paging synchronously on
+ * focus, restoring both as soon as the pop transition starts.
  */
 export function useRootTabBarHiddenOnFocus() {
   const navigation = useNavigation();
@@ -43,9 +49,9 @@ export function useRootTabBarHiddenOnFocus() {
   useLayoutEffect(() => {
     if (!isFocused) return;
     const tabNav = navigation as TabBarParentNavigation;
-    setRootTabBarVisible(tabNav, false, insets.bottom);
+    setRootTabChrome(tabNav, false, false, insets.bottom);
     return () => {
-      setRootTabBarVisible(tabNav, true, insets.bottom);
+      setRootTabChrome(tabNav, true, true, insets.bottom);
     };
   }, [isFocused, insets.bottom, navigation]);
 
@@ -60,7 +66,7 @@ export function useRootTabBarHiddenOnFocus() {
       }
     ).addListener("transitionStart", (event) => {
       if (event.data?.closing) {
-        setRootTabBarVisible(tabNav, true, insets.bottom);
+        setRootTabChrome(tabNav, true, true, insets.bottom);
       }
     });
     return unsubscribe;

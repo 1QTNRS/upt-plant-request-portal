@@ -29,7 +29,6 @@ import { useSession } from "../SessionContext";
 import { StatusPills } from "../StatusPills";
 import { THEME } from "../theme";
 import type { RequestRow, Stats } from "../types";
-import { RootTabSwipeShell } from "../RootTabSwipeShell";
 import { ui } from "../ui";
 import { useRootTabBarVisibleOnFocus } from "../use-root-tab-bar";
 import type { RequestsStackParamList } from "./navigation-types";
@@ -91,7 +90,6 @@ export function RequestListScreen({ navigation }: Props) {
   const counts = statusFilterCounts(requests, stats);
 
   return (
-    <RootTabSwipeShell tabName="Requests" swipeEnabled>
     <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
       <View style={ui.header}>
         <Text style={ui.title}>Requests</Text>
@@ -172,6 +170,5 @@ export function RequestListScreen({ navigation }: Props) {
         ) : null}
       </ScrollView>
     </SafeAreaView>
-    </RootTabSwipeShell>
   );
 }

@@ -17,7 +17,6 @@ import {
   settingsFormFromShop,
   type SettingsFormState,
 } from "../settings-form";
-import { RootTabSwipeShell } from "../RootTabSwipeShell";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
@@ -118,7 +117,6 @@ export function SettingsScreen() {
   const feedbackBusy = saving || savingPush || savingHeatPack;
 
   return (
-    <RootTabSwipeShell tabName="Settings" swipeEnabled>
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
     <ScrollView contentContainerStyle={styles.page}>
       <Text style={styles.title}>Settings</Text>
@@ -305,7 +303,6 @@ export function SettingsScreen() {
       </Pressable>
     </ScrollView>
     </SafeAreaView>
-    </RootTabSwipeShell>
   );
 }
 

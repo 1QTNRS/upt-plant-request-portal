@@ -3,38 +3,31 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import {
-  adjacentMainTab,
-  swipeDirectionToAdjacent,
-  tabSwipeEnabled,
-} from "./tab-swipe";
+import { tabSwipeEnabled } from "./tab-swipe";
 
-describe("root tab swipe", () => {
-  it("moves Requests to EXACT PLANTS on a left swipe", () => {
-    assert.equal(adjacentMainTab("Requests", "left"), "ExactPlants");
-    assert.equal(swipeDirectionToAdjacent("Requests", -80), "ExactPlants");
-  });
-
-  it("moves EXACT PLANTS to Settings on a left swipe", () => {
-    assert.equal(adjacentMainTab("ExactPlants", "left"), "Settings");
-  });
-
-  it("moves back on a right swipe", () => {
-    assert.equal(adjacentMainTab("Settings", "right"), "ExactPlants");
-    assert.equal(adjacentMainTab("ExactPlants", "right"), "Requests");
-    assert.equal(adjacentMainTab("Requests", "right"), null);
-  });
-
-  it("keeps detail routes from receiving root-tab swipe gestures and isolates the photo viewer", () => {
+describe("root tab pager swipe", () => {
+  it("allows pager swipe on root list routes", () => {
     assert.equal(tabSwipeEnabled("RequestList"), true);
+    assert.equal(tabSwipeEnabled("ExactPlantsList"), true);
+    assert.equal(tabSwipeEnabled(undefined), true);
+  });
+
+  it("blocks pager swipe on detail and review routes", () => {
     assert.equal(tabSwipeEnabled("RequestDetail"), false);
     assert.equal(tabSwipeEnabled("ExactPlantsReview"), false);
-    assert.equal(swipeDirectionToAdjacent("ExactPlants", -80), "Settings");
-    assert.equal(swipeDirectionToAdjacent("Settings", 80), "ExactPlants");
+  });
+
+  it("uses material top tabs with pager view and focus-hook swipe gating", () => {
     const app = readFileSync(path.join(import.meta.dirname, "..", "App.tsx"), "utf8");
-    assert.match(app, /createBottomTabNavigator/);
-    assert.doesNotMatch(app, /createMaterialTopTabNavigator/);
-    assert.match(app, /rootTabBarLabelOnlyOptions/);
+    assert.match(app, /createMaterialTopTabNavigator/);
+    assert.match(app, /tabBarPosition="bottom"/);
+    assert.doesNotMatch(app, /RootTabSwipeShell/);
+    assert.match(app, /rootMaterialTabScreenOptions/);
+    const hooks = readFileSync(
+      path.join(import.meta.dirname, "use-root-tab-bar.ts"),
+      "utf8",
+    );
+    assert.match(hooks, /swipeEnabled/);
     const chrome = readFileSync(
       path.join(import.meta.dirname, "navigation-chrome.ts"),
       "utf8",
