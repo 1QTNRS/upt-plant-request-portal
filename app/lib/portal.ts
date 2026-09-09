@@ -835,14 +835,20 @@ export function shouldGroupTerminalPlantItems(
   return status === "Closed" || status === "Expired";
 }
 
-/** Pending + offer sent, before the customer accepts or rejects purchasable plants. */
+/**
+ * Before the customer accepts or rejects purchasable plants: OFFERED then NOT AVAILABLE
+ * from frozen item availability. Response state wins over request status.
+ */
 export function shouldGroupPendingOfferItems(
   status: RequestStatus,
   sentOffer: boolean,
   responseItems: TerminalResponseChoice[] | null | undefined,
 ): boolean {
-  if (status !== "Pending" || !sentOffer) return false;
-  return !shouldGroupTerminalPlantItems(status, responseItems);
+  if (shouldGroupTerminalPlantItems(status, responseItems)) return false;
+  if (status === "New") return false;
+  if (status === "Pending" || status === "Expired") return sentOffer;
+  if (status === "Closed") return true;
+  return false;
 }
 
 export function partitionPendingOfferItems<

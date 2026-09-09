@@ -22,6 +22,7 @@ import {
   partitionPendingOfferItems,
   partitionPlantItemsByCustomerChoice,
   shouldGroupPendingOfferItems,
+  shouldGroupTerminalPlantItems,
   buildDraftOrderLineItems,
   type CustomerOfferResponse,
   type OfferPlantItem,
@@ -312,6 +313,74 @@ describe("pending offer grouping before customer response", () => {
       grouped.notAvailable.map((item) => item.id),
       ["b"],
     );
+  });
+
+  it("groups expired unanswered offers into OFFERED then NOT AVAILABLE", () => {
+    assert.equal(
+      shouldGroupPendingOfferItems("Expired", true, undefined),
+      true,
+    );
+    assert.equal(
+      shouldGroupPendingOfferItems("Expired", true, [
+        { sourceItemId: "a", choice: "reject" },
+      ]),
+      false,
+    );
+    const grouped = partitionPendingOfferItems([
+      { id: "offered", availability: "available" },
+      { id: "na", availability: "not_available" },
+    ]);
+    assert.deepEqual(grouped.offered.map((item) => item.id), ["offered"]);
+    assert.deepEqual(grouped.notAvailable.map((item) => item.id), ["na"]);
+  });
+
+  it("groups closed unanswered all-unavailable requests into NOT AVAILABLE only", () => {
+    assert.equal(shouldGroupPendingOfferItems("Closed", false, null), true);
+    const grouped = partitionPendingOfferItems([
+      { id: "x", availability: "not_available" },
+      { id: "y", availability: "not_available" },
+    ]);
+    assert.deepEqual(grouped.offered, []);
+    assert.deepEqual(
+      grouped.notAvailable.map((item) => item.id),
+      ["x", "y"],
+    );
+  });
+
+  it("groups closed unanswered mixed snapshot into OFFERED then NOT AVAILABLE", () => {
+    assert.equal(shouldGroupPendingOfferItems("Closed", true, undefined), true);
+    const grouped = partitionPendingOfferItems([
+      { id: "was-offered", availability: "available" },
+      { id: "was-na", availability: "not_available" },
+    ]);
+    assert.deepEqual(grouped.offered.map((item) => item.id), ["was-offered"]);
+    assert.deepEqual(grouped.notAvailable.map((item) => item.id), ["was-na"]);
+  });
+
+  it("keeps answered closed/expired requests on ACCEPTED / DECLINED / NOT AVAILABLE", () => {
+    assert.equal(
+      shouldGroupPendingOfferItems("Closed", true, [
+        { sourceItemId: "a", choice: "accept" },
+      ]),
+      false,
+    );
+    assert.equal(
+      shouldGroupPendingOfferItems("Expired", true, [
+        { sourceItemId: "b", choice: "reject" },
+      ]),
+      false,
+    );
+    assert.equal(shouldGroupTerminalPlantItems("Closed", [
+      { sourceItemId: "a", choice: "accept" },
+    ]), true);
+  });
+
+  it("does not label unanswered offered items Accepted or Declined", () => {
+    const grouped = partitionPendingOfferItems([
+      { id: "a", availability: "available" },
+    ]);
+    assert.deepEqual(Object.keys(grouped), ["offered", "notAvailable"]);
+    assert.doesNotMatch(JSON.stringify(grouped), /accept|declin/i);
   });
 
   it("renders OFFERED before NOT AVAILABLE on the admin request page", () => {

@@ -46,6 +46,7 @@ import {
   closedRequestSortLabel,
   closedRequestSortTime,
   partitionPlantItemsByCustomerChoice,
+  shouldGroupPendingOfferItems,
   shouldGroupTerminalPlantItems,
   terminalRequestSortTime,
   adminSubscribedToEmail,
@@ -567,6 +568,21 @@ describe("terminal plant item grouping", () => {
       grouped.notAvailable.map((item) => item.id),
       ["c"],
     );
+  });
+
+  it("groups expired and closed unanswered offers before customer accept/reject", () => {
+    assert.equal(
+      shouldGroupPendingOfferItems("Expired", true, undefined),
+      true,
+    );
+    assert.equal(shouldGroupPendingOfferItems("Closed", false, null), true);
+    assert.equal(
+      shouldGroupPendingOfferItems("Closed", true, [
+        { sourceItemId: "a", choice: "accept" },
+      ]),
+      false,
+    );
+    assert.equal(shouldGroupPendingOfferItems("New", true, undefined), false);
   });
 
   it("groups detail when the customer answered, including Pending unpaid", () => {
