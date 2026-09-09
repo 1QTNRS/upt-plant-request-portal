@@ -24,8 +24,8 @@ import {
   isValidCleanupConfirmation,
   normalizeCleanupEmail,
   verifyTestCustomerCleanup,
-} from "../app/lib/test-customer-cleanup.server";
-import { offlineAdminClient } from "../app/lib/offline-admin.server";
+} from "../app/lib/test-customer-cleanup.server.ts";
+import { offlineAdminClient } from "../app/lib/offline-admin.server.ts";
 
 function usage(): never {
   console.error(`Usage:
