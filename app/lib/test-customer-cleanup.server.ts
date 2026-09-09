@@ -327,7 +327,6 @@ export async function auditTestCustomerCleanup(
 ): Promise<TestCustomerCleanupAudit> {
   const normalizedEmail = normalizeCleanupEmail(email);
   const requests = await loadRequestsForCleanupEmail(shop, normalizedEmail);
-  const requestIds = requests.map((row) => row.id);
 
   const customers = await prisma.customerProfile.findMany({
     where: { shop, email: normalizedEmail },
