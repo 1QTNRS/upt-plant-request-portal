@@ -42,6 +42,10 @@ RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY prisma ./prisma
 COPY scripts ./scripts
+# The standalone cleanup CLI imports application source, not the SSR bundle.
+# Ship its local module graph and TS settings in the private server filesystem.
+COPY --from=build /app/app ./app
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 RUN npx prisma generate --schema prisma/postgres/schema.prisma \
   && npm cache clean --force
 

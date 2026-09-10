@@ -83,6 +83,35 @@ jobs:
           npm run prisma:generate
           npm run build
 
+  cleanup-docker-runtime:
+    name: Cleanup CLI in Docker runtime
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: upt_portal_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: Verify cleanup CLI in the production Docker image
+        env:
+          HOST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/upt_portal_ci
+          CONTAINER_DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:5432/upt_portal_ci
+        run: bash scripts/verify-cleanup-docker-runtime.sh
+
   e2e:
     name: Local Playwright smoke
     runs-on: ubuntu-latest
