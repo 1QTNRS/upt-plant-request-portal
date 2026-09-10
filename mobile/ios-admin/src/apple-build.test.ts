@@ -113,7 +113,7 @@ describe("first Apple build config", () => {
     assert.equal(app.name, "Request Portal");
     assert.equal(app.slug, EXPO_SLUG);
     assert.equal(app.scheme, "uptadmin");
-    assert.equal(app.version, "1.0.0");
+    assert.equal(app.version, "1.0.1");
     assert.equal(app.owner, EXPO_OWNER);
     assert.equal(
       (app.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId,
