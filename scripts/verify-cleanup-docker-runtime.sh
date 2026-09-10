@@ -52,8 +52,8 @@ NONEMPTY="$(
     --shop=cleanup-docker-runtime.myshopify.com \
     --dry-run
 )"
-printf '%s\n' "$NONEMPTY" | rg -q 'REQ-DOCKER-TARGET'
-printf '%s\n' "$NONEMPTY" | rg -q '"requests": 1'
+printf '%s\n' "$NONEMPTY" | grep -q 'REQ-DOCKER-TARGET'
+printf '%s\n' "$NONEMPTY" | grep -q '"requests": 1'
 
 echo "Running empty-result dry-run inside the final image..."
 EMPTY="$(
@@ -62,7 +62,7 @@ EMPTY="$(
     --shop=cleanup-docker-runtime.myshopify.com \
     --dry-run
 )"
-printf '%s\n' "$EMPTY" | rg -q 'Nothing to delete'
+printf '%s\n' "$EMPTY" | grep -q 'Nothing to delete'
 
 echo "Exercising offline Shopify import path with safe test env..."
 OFFLINE="$(
@@ -79,13 +79,13 @@ OFFLINE="$(
       --shop=cleanup-docker-runtime.myshopify.com \
       --dry-run 2>&1
 )"
-printf '%s\n' "$OFFLINE" | rg -q 'could not load offline Shopify Admin session'
+printf '%s\n' "$OFFLINE" | grep -q 'could not load offline Shopify Admin session'
 
 echo "Running mocked Shopify audit helper inside the final image..."
 MOCK="$(
   run_in_image npx tsx scripts/cleanup-docker-shopify-mock.mts
 )"
-printf '%s\n' "$MOCK" | rg -q '"ok": true'
+printf '%s\n' "$MOCK" | grep -q '"ok": true'
 
 AFTER="$(npx tsx scripts/cleanup-docker-fixtures.mts snapshot)"
 if [ "$BEFORE" != "$AFTER" ]; then
