@@ -5,6 +5,7 @@ import {
   CUSTOMER_LIGHTBOX_SCRIPT,
   CUSTOMER_PAGED_LIST_SCRIPT,
   CUSTOMER_PLANT_ROWS_SCRIPT,
+  CUSTOMER_REQUEST_SUBMIT_SCRIPT,
   CUSTOMER_TIME_SCRIPT,
   FEDEX_WARNING_SCRIPT,
 } from "../components/customer-enhance";
@@ -55,6 +56,15 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-prev/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerup/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowRight/);
+  });
+
+  it("locks the customer request submit button on first submit", () => {
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /data-customer-request-form/);
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /data-submit-request/);
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /submit-request/);
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /Submitting/);
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /preventDefault/);
+    assert.match(CUSTOMER_REQUEST_SUBMIT_SCRIPT, /__uptRequestSubmit/);
   });
 
   it("opens the FedEx warning only when an accepted plant would lose the upgrade", () => {

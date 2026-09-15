@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { data } from "react-router";
 
 import type { PlantLine } from "../components/customer-request-portal";
@@ -63,6 +65,8 @@ export type CustomerPortalData = {
   plantLines: PlantLine[] | null;
   /** Carried in the query string so Yes/No survives add/remove plant. */
   hasExistingOrder: "yes" | "no" | null;
+  /** One per page load; deduplicates a double submit or retried POST. */
+  submissionNonce: string;
   customerTimeZone: string | null;
 };
 
@@ -102,6 +106,7 @@ export async function loadCustomerPortal(
     browseAction: portalHome(context),
     plantLines: plantLinesFromQuery(search),
     hasExistingOrder: readExistingOrderAnswer(search),
+    submissionNonce: randomUUID(),
     submittedMessage: submittedNumber
       ? `Request submitted. Your request number is ${submittedNumber}. We'll notify you when matching plants become available.`
       : null,

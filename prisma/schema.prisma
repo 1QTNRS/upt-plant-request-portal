@@ -102,6 +102,9 @@ model PlantRequest {
   customerEmail         String
   shopifyCustomerId     String?
   status                String
+  /// One per form render. A double submit or retried POST reuses the same
+  /// nonce and hits @@unique([shop, submissionNonce]) instead of creating twice.
+  submissionNonce       String?
   submittedAt           DateTime               @default(now())
   firstViewedAt         DateTime?
   closedAt              DateTime?
@@ -124,6 +127,7 @@ model PlantRequest {
   internalNotes         RequestInternalNote[]
 
   @@unique([shop, requestNumber])
+  @@unique([shop, submissionNonce])
   @@index([shop, status])
   @@index([shop, customerEmail])
   // listCustomerRequests matches on the Shopify account id first; without this

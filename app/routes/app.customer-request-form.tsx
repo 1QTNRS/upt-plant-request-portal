@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -25,7 +27,7 @@ import {
 import {
   findOrCreateCustomer,
   listCustomerRequests,
-  submitCustomerRequest,
+  submitCustomerRequestWithNonce,
 } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
 
@@ -69,6 +71,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       previewNotice: PREVIEW_NOTICE as string | null,
       plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
       hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
+      submissionNonce: randomUUID(),
     };
   }
 
@@ -87,6 +90,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     previewNotice: null as string | null,
     plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
     hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
+    submissionNonce: randomUUID(),
   };
 };
 
@@ -129,12 +133,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     };
   }
 
-  const created = await submitCustomerRequest(shop, {
-    ...DEMO_CUSTOMER,
-    items: items.filter((item) => item.plantName),
-    hasExistingOrder: existingOrderAnswer === "yes",
-  });
-  await notifyNewRequest(shop, created.id);
+  const submissionNonce = String(form.get("submissionNonce") || "");
+  const { request: created, created: isNewSubmission } =
+    await submitCustomerRequestWithNonce(
+      shop,
+      {
+        ...DEMO_CUSTOMER,
+        items: items.filter((item) => item.plantName),
+        hasExistingOrder: existingOrderAnswer === "yes",
+      },
+      submissionNonce,
+    );
+  if (isNewSubmission) {
+    await notifyNewRequest(shop, created.id);
+  }
 
   return {
     errors: [],
@@ -173,6 +185,7 @@ export default function CustomerRequestForm() {
       hasExistingOrder={
         actionData?.hasExistingOrder ?? loaderData.hasExistingOrder
       }
+      submissionNonce={loaderData.submissionNonce}
       canSubmit={loaderData.previewNotice === null}
     />
   );

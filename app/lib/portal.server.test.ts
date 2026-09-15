@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 
 import prisma from "../db.server";
 import { DEMO_SHOP } from "./shop";
@@ -22,6 +22,7 @@ import {
   saveCustomerTimeZone,
   sendOffer,
   submitCustomerRequest,
+  submitCustomerRequestWithNonce,
   updateRequestItem,
   updateShopSettings,
 } from "./portal.server";
@@ -356,6 +357,58 @@ describe("concurrent writes", () => {
     assert.equal(await prisma.shopSettings.count({ where: { shop: freshShop } }), 1);
 
     await prisma.shopSettings.deleteMany({ where: { shop: freshShop } });
+  });
+});
+
+describe("customer submission nonce", () => {
+  const nonceShop = `${DEMO_SHOP}-submit-nonce`;
+
+  const purge = async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: nonceShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: nonceShop } });
+    await prisma.requestNumberSequence.deleteMany({ where: { shop: nonceShop } });
+  };
+
+  beforeEach(purge);
+  after(purge);
+
+  it("creates one request when the same nonce is submitted twice", async () => {
+    const input = {
+      name: "Double Clicker",
+      email: "double-clicker@example.com",
+      items: [{ plantName: "Philodendron verrucosum" }],
+    };
+    const nonce = "nonce-double-submit-test";
+
+    const first = await submitCustomerRequestWithNonce(nonceShop, input, nonce);
+    const second = await submitCustomerRequestWithNonce(nonceShop, input, nonce);
+
+    assert.equal(first.created, true);
+    assert.equal(second.created, false);
+    assert.equal(second.request.id, first.request.id);
+    assert.equal(
+      await prisma.plantRequest.count({ where: { shop: nonceShop } }),
+      1,
+    );
+  });
+
+  it("creates separate requests when each form render gets its own nonce", async () => {
+    const input = {
+      name: "Repeat Customer",
+      email: "repeat@example.com",
+      items: [{ plantName: "Monstera" }],
+    };
+
+    const first = await submitCustomerRequestWithNonce(nonceShop, input, "nonce-a");
+    const second = await submitCustomerRequestWithNonce(nonceShop, input, "nonce-b");
+
+    assert.equal(first.created, true);
+    assert.equal(second.created, true);
+    assert.notEqual(second.request.id, first.request.id);
+    assert.equal(
+      await prisma.plantRequest.count({ where: { shop: nonceShop } }),
+      2,
+    );
   });
 });
 

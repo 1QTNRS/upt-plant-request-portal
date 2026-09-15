@@ -23,7 +23,10 @@ import {
 } from "../lib/customer-session.server";
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
-import { saveCustomerTimeZone, submitCustomerRequest } from "../lib/portal.server";
+import {
+  saveCustomerTimeZone,
+  submitCustomerRequestWithNonce,
+} from "../lib/portal.server";
 
 /**
  * The customer request form's POST target.
@@ -107,6 +110,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     throw redirect(home, { headers });
   }
 
+  // App-proxy pages post the clicked button as intent. A hydrated local `/customer`
+  // demo can omit the submitter, so an empty intent still means "submit request"
+  // once the explicit intents above have been handled.
+  if (intent && intent !== "submit-request") {
+    return {
+      errors: ["Unknown action."],
+      plantLines: null,
+      hasExistingOrder: null,
+    };
+  }
+
   if (!context.identity) {
     return {
       errors: ["Please log in to submit a request."],
@@ -155,14 +169,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     identity.email,
     form.get("customerTimeZone"),
   );
-  const created = await submitCustomerRequest(context.shop, {
-    name: identity.name,
-    email: identity.email,
-    shopifyCustomerId: identity.shopifyCustomerId,
-    items: items.filter((item) => item.plantName),
-    hasExistingOrder: existingOrderAnswer === "yes",
-  });
-  await notifyNewRequest(context.shop, created.id);
+  const submissionNonce = String(form.get("submissionNonce") || "");
+  const { request: created, created: isNewSubmission } =
+    await submitCustomerRequestWithNonce(
+      context.shop,
+      {
+        name: identity.name,
+        email: identity.email,
+        shopifyCustomerId: identity.shopifyCustomerId,
+        items: items.filter((item) => item.plantName),
+        hasExistingOrder: existingOrderAnswer === "yes",
+      },
+      submissionNonce,
+    );
+  if (isNewSubmission) {
+    await notifyNewRequest(context.shop, created.id);
+  }
 
   throw redirect(`${home}?submitted=${encodeURIComponent(created.requestNumber)}`);
 };
@@ -196,6 +218,7 @@ export default function CustomerRequestSubmit() {
         actionData?.plantLines ?? portal.plantLines ?? [EMPTY_PLANT_LINE]
       }
       hasExistingOrder={actionData?.hasExistingOrder ?? portal.hasExistingOrder}
+      submissionNonce={portal.submissionNonce}
       canSubmit={portal.canSubmitRequests}
       customerTimeZone={portal.customerTimeZone}
     />

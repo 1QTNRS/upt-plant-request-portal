@@ -380,6 +380,40 @@ export const CUSTOMER_PAGED_LIST_SCRIPT = `
 })();
 `.trim();
 
+export const CUSTOMER_REQUEST_SUBMIT_SCRIPT = `
+(function () {
+  if (window.__uptRequestSubmit) return;
+  window.__uptRequestSubmit = true;
+
+  function lockSubmit(form) {
+    form.querySelectorAll("[data-submit-request]").forEach(function (btn) {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      if (!btn.getAttribute("data-original-label")) {
+        btn.setAttribute("data-original-label", btn.textContent || "");
+      }
+      btn.textContent = "Submitting…";
+    });
+  }
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute("data-customer-request-form")) return;
+    var submitter = event.submitter;
+    if (!(submitter instanceof HTMLButtonElement)) return;
+    if (submitter.name !== "intent" || submitter.value !== "submit-request") return;
+    if (submitter.disabled) {
+      event.preventDefault();
+      return;
+    }
+    lockSubmit(form);
+  });
+})();
+`.trim();
+
 export const CUSTOMER_PLANT_ROWS_SCRIPT = `
 (function () {
   if (window.__uptPlantRows) return;
@@ -843,6 +877,7 @@ export function CustomerEnhanceScripts({
     CUSTOMER_LIGHTBOX_SCRIPT,
     CUSTOMER_PAGED_LIST_SCRIPT,
     CUSTOMER_PLANT_ROWS_SCRIPT,
+    CUSTOMER_REQUEST_SUBMIT_SCRIPT,
     includeFedexWarning ? FEDEX_WARNING_SCRIPT : "",
     includeHeatPackSection ? HEAT_PACK_SCRIPT : "",
   ]
