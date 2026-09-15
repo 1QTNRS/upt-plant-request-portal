@@ -717,7 +717,7 @@ export async function listCustomerRequests(
   return rows.map(toPlantRequest);
 }
 
-export async function submitCustomerRequest(
+async function createPlantRequest(
   shop: string,
   input: {
     name: string;
@@ -726,6 +726,7 @@ export async function submitCustomerRequest(
     items: Array<{ plantName: string; notes?: string }>;
     hasExistingOrder?: boolean;
   },
+  submissionNonce: string | null,
 ): Promise<PlantRequest> {
   const customer = await findOrCreateCustomer(shop, input);
   const requestNumber = await nextRequestNumber(shop);
@@ -734,6 +735,7 @@ export async function submitCustomerRequest(
     data: {
       shop,
       requestNumber,
+      submissionNonce,
       customerId: customer.id,
       customerName: customer.name,
       customerEmail: customer.email,
@@ -777,6 +779,63 @@ export async function submitCustomerRequest(
   }
 
   return toPlantRequest(created);
+}
+
+export async function submitCustomerRequest(
+  shop: string,
+  input: {
+    name: string;
+    email: string;
+    shopifyCustomerId?: string;
+    items: Array<{ plantName: string; notes?: string }>;
+    hasExistingOrder?: boolean;
+  },
+): Promise<PlantRequest> {
+  return createPlantRequest(shop, input, null);
+}
+
+/**
+ * Creates a request once per `submissionNonce`. A double tap or retried POST
+ * with the same nonce returns the first request instead of creating another.
+ */
+export async function submitCustomerRequestWithNonce(
+  shop: string,
+  input: {
+    name: string;
+    email: string;
+    shopifyCustomerId?: string;
+    items: Array<{ plantName: string; notes?: string }>;
+    hasExistingOrder?: boolean;
+  },
+  submissionNonce: string,
+): Promise<{ request: PlantRequest; created: boolean }> {
+  const nonce = submissionNonce.trim();
+  if (!nonce) {
+    return { request: await submitCustomerRequest(shop, input), created: true };
+  }
+
+  const existing = await prisma.plantRequest.findUnique({
+    where: { shop_submissionNonce: { shop, submissionNonce: nonce } },
+    include: requestInclude,
+  });
+  if (existing) {
+    return { request: toPlantRequest(existing), created: false };
+  }
+
+  try {
+    return {
+      request: await createPlantRequest(shop, input, nonce),
+      created: true,
+    };
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+    const again = await prisma.plantRequest.findUnique({
+      where: { shop_submissionNonce: { shop, submissionNonce: nonce } },
+      include: requestInclude,
+    });
+    if (!again) throw error;
+    return { request: toPlantRequest(again), created: false };
+  }
 }
 
 /**

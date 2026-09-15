@@ -823,6 +823,10 @@ describe("the request form works without JavaScript", () => {
       "utf8",
     );
     assert.match(enhance, /CUSTOMER_PLANT_ROWS_SCRIPT/);
+    assert.match(enhance, /CUSTOMER_REQUEST_SUBMIT_SCRIPT/);
+    assert.match(source, /name="submissionNonce"/);
+    assert.match(source, /data-customer-request-form/);
+    assert.match(source, /data-submit-request/);
   });
 
   it("uses a real storefront login anchor instead of a click handler", () => {

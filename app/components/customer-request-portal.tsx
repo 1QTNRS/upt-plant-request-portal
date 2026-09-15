@@ -68,6 +68,7 @@ export function CustomerRequestPortal({
   canSubmit = true,
   customerTimeZone = null,
   hasExistingOrder = null,
+  submissionNonce,
 }: {
   loggedIn: boolean;
   name: string;
@@ -94,6 +95,7 @@ export function CustomerRequestPortal({
   canSubmit?: boolean;
   customerTimeZone?: string | null;
   hasExistingOrder?: "yes" | "no" | null;
+  submissionNonce?: string;
 }) {
 
   if (!loggedIn) {
@@ -152,8 +154,11 @@ export function CustomerRequestPortal({
         </label>
       </section>
 
-      <form method="post" action={formAction}>
+      <form method="post" action={formAction} data-customer-request-form>
         <input type="hidden" name="customerTimeZone" defaultValue="" />
+        {submissionNonce ? (
+          <input type="hidden" name="submissionNonce" value={submissionNonce} />
+        ) : null}
         <section
           className="upt-card"
           data-plant-rows
@@ -272,6 +277,7 @@ export function CustomerRequestPortal({
             type="submit"
             name="intent"
             value="submit-request"
+            data-submit-request
             disabled={!canSubmit}
             style={{
               ...themePrimaryButtonStyle,
