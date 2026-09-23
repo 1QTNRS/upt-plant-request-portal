@@ -43,17 +43,16 @@ describe("iOS text input keyboard focus", () => {
     assert.match(hooks, /bottomInsetRef\.current/);
   });
 
-  it("uses never-taps rule so switching fields requires two taps on iOS", () => {
+  it("uses handled taps so the first tap and field switches stay focused", () => {
     const keyboard = read("src/ios-form-keyboard.logic.ts");
-    assert.match(keyboard, /keyboardShouldPersistTaps: "never"/);
-    assert.match(
-      keyboard,
-      /not delivered to children[\s\S]*another TextInput/,
-    );
+    assert.match(keyboard, /keyboardShouldPersistTaps: "handled"/);
+    assert.match(keyboard, /keyboardDismissMode: "none"/);
+    assert.doesNotMatch(keyboard, /keyboardShouldPersistTaps: "never"/);
+    assert.doesNotMatch(keyboard, /keyboardDismissMode: "on-drag"/);
     assert.match(read("src/screens/RequestDetailScreen.tsx"), /iosFormScrollKeyboardProps\(\)/);
     assert.doesNotMatch(
       read("src/screens/RequestDetailScreen.tsx"),
-      /keyboardShouldPersistTaps="handled"/,
+      /keyboardShouldPersistTaps="/,
     );
   });
 

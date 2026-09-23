@@ -149,8 +149,8 @@ describe("item editor rules", () => {
 
   it("keeps the request page scrollable and lets the keyboard dismiss outside search", () => {
     assert.equal(requestPageScrollEnabledWhileStockOpen(), true);
-    assert.equal(requestPageKeyboardDismissMode("ios"), "on-drag");
-    assert.equal(requestPageKeyboardShouldPersistTaps("ios"), "never");
+    assert.equal(requestPageKeyboardDismissMode("ios"), "none");
+    assert.equal(requestPageKeyboardShouldPersistTaps("ios"), "handled");
     assert.equal(requestPageKeyboardShouldPersistTaps("android"), "handled");
   });
 

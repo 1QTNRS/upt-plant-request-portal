@@ -55,18 +55,19 @@ describe("Link Stock dropdown dismiss", () => {
     );
   });
 
-  it("lets the keyboard dismiss on an outside tap without refocusing another input", () => {
-    assert.equal(requestPageKeyboardDismissMode("ios"), "on-drag");
-    assert.equal(requestPageKeyboardShouldPersistTaps("ios"), "never");
+  it("lets an empty-space tap dismiss without eating a TextInput tap", () => {
+    assert.equal(requestPageKeyboardDismissMode("ios"), "none");
+    assert.equal(requestPageKeyboardShouldPersistTaps("ios"), "handled");
     assert.match(detail, /iosFormScrollKeyboardProps\(\)/);
-    assert.doesNotMatch(detail, /keyboardShouldPersistTaps="handled"/);
+    assert.doesNotMatch(detail, /keyboardShouldPersistTaps="/);
     assert.match(detail, /Keyboard\.dismiss/);
     assert.match(editor, /keyboardDismissMode="none"/);
     const keyboard = readFileSync(
       path.join(import.meta.dirname, "ios-form-keyboard.logic.ts"),
       "utf8",
     );
-    assert.match(keyboard, /keyboardShouldPersistTaps: "never"/);
+    assert.match(keyboard, /keyboardShouldPersistTaps: "handled"/);
+    assert.doesNotMatch(keyboard, /keyboardDismissMode: "on-drag"/);
   });
 
   it("keeps page controls tappable after dismissal and never locks page scroll", () => {

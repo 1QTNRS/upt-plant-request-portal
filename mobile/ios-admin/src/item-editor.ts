@@ -98,9 +98,12 @@ export function requestPageKeyboardShouldPersistTaps(
   return taps === "never" ? "never" : "handled";
 }
 
-export function requestPageKeyboardDismissMode(platformOs = "ios"): "on-drag" | undefined {
+export function requestPageKeyboardDismissMode(
+  platformOs = "ios",
+): "none" | "on-drag" | undefined {
   const mode = iosFormScrollKeyboardPropsForPlatform(platformOs).keyboardDismissMode;
-  return mode === "on-drag" ? "on-drag" : undefined;
+  if (mode === "on-drag" || mode === "none") return mode;
+  return undefined;
 }
 
 export type StockSearchPressTarget =
