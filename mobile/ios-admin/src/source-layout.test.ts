@@ -59,6 +59,8 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /nestedScrollEnabled/);
     assert.match(editor, /keyboardShouldPersistTaps="always"/);
     assert.match(editor, /keyboardDismissMode="none"/);
+    assert.match(editor, /backgroundColor: "#fff2f0"/);
+    assert.match(editor, /borderColor: "#e8beb8"/);
     assert.match(editor, /intent: "link-stock"/);
     assert.match(editor, /intent: "unlink-stock"/);
     assert.match(editor, /accessibilityLabel="Remove"/);
@@ -74,7 +76,7 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /overflow: "visible"/);
     assert.doesNotMatch(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
     assert.match(detail, /iosFormScrollKeyboardProps\(\)/);
-    assert.doesNotMatch(detail, /keyboardShouldPersistTaps="handled"/);
+    assert.doesNotMatch(detail, /keyboardShouldPersistTaps="/);
     assert.match(detail, /dismissStockSearches/);
     assert.match(detail, /registerStockDismiss/);
     assert.match(detail, /onTouchStart=\{dismissStockSearches\}/);
