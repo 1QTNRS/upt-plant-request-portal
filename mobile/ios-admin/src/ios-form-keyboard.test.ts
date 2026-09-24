@@ -4,8 +4,10 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  backgroundAutosaveDismissesKeyboard,
+  explicitActionDismissesKeyboard,
+  fieldSaveDismissesKeyboard,
   iosFormScrollKeyboardPropsForPlatform,
+  keyboardDismissAllowed,
   keyboardIsDismissible,
   onBlurFlushRuns,
   outcomeOfSwitchingTextInput,
@@ -13,6 +15,7 @@ import {
   outsideTapDismissesKeyboard,
   revealScrollDismissesKeyboard,
   scrollViewCapturesTap,
+  simulateMoveFromFieldAToFieldB,
   stockSearchStealsOrdinaryTextInputTap,
   tabChromeRefreshesFor,
   typingPreservesFocus,
@@ -106,10 +109,53 @@ describe("moving between fields and typing", () => {
   });
 });
 
+describe("moving from one field to the next", () => {
+  it("keeps B's keyboard up when A's blur-save returns", () => {
+    const kept = simulateMoveFromFieldAToFieldB({ blurSaveForwardsResult: false });
+    assert.equal(kept.focusedField, "B");
+    assert.equal(kept.keyboardVisible, true);
+    assert.equal(kept.dismissedBy, null);
+    assert.equal(kept.blurSavePersisted, true);
+    assert.ok(kept.sequence.includes("B onFocus"));
+    assert.ok(kept.sequence.includes("skip onResult"));
+    assert.ok(kept.sequence.indexOf("B onFocus") < kept.sequence.indexOf("blur-save returns"));
+
+    const broken = simulateMoveFromFieldAToFieldB({ blurSaveForwardsResult: true });
+    assert.equal(broken.keyboardVisible, false);
+    assert.equal(broken.dismissedBy, "Keyboard.dismiss");
+    assert.ok(broken.sequence.includes("dismissInteractionBlockers"));
+  });
+
+  it("does not dismiss for autosave or blur flush, and still dismisses explicit actions", () => {
+    assert.equal(fieldSaveDismissesKeyboard("autosave"), false);
+    assert.equal(fieldSaveDismissesKeyboard("blur-flush"), false);
+    assert.equal(explicitActionDismissesKeyboard(), true);
+    assert.equal(keyboardDismissAllowed("screen-blur"), true);
+    assert.equal(keyboardDismissAllowed("screen-unmount"), true);
+    assert.equal(keyboardDismissAllowed("stock-search-outside"), true);
+    assert.equal(keyboardDismissAllowed("field-autosave"), false);
+    assert.equal(keyboardDismissAllowed("field-blur-save"), false);
+
+    const editor = read("src/components/ItemEditor.tsx");
+    const persist = editor.slice(
+      editor.indexOf("async function persistDraft"),
+      editor.indexOf("persistDraftRef.current = persistDraft"),
+    );
+    assert.match(persist, /skipResult: true/);
+    assert.doesNotMatch(persist, /skipResult: options\?\.silentUi/);
+    assert.match(editor, /onBlur=\{\(\) => void persistDraftRef\.current\(\{ flush: true \}\)\}/);
+    assert.match(editor, /persistDraftRef\.current\(\{ silentUi: true \}\)/);
+
+    const detail = read("src/screens/RequestDetailScreen.tsx");
+    assert.match(detail, /onSuccess: dismissInteractionBlockers/);
+    assert.equal(detail.split("Keyboard.dismiss()").length - 1, 2);
+  });
+});
+
 describe("saves, chrome, and stock search do not steal focus", () => {
-  it("background autosave does not dismiss; a visible save can", () => {
-    assert.equal(backgroundAutosaveDismissesKeyboard(true), false);
-    assert.equal(backgroundAutosaveDismissesKeyboard(false), true);
+  it("background autosave and blur flush both skip the parent dismiss", () => {
+    assert.equal(fieldSaveDismissesKeyboard("autosave"), false);
+    assert.equal(fieldSaveDismissesKeyboard("blur-flush"), false);
     const editor = read("src/components/ItemEditor.tsx");
     assert.match(editor, /persistDraftRef\.current\(\{ silentUi: true \}\)/);
   });

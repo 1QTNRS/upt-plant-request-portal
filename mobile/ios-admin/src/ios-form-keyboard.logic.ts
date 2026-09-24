@@ -197,9 +197,85 @@ export function typingPreservesFocus(keystrokes: string[]): boolean {
   return keystrokes.length > 0;
 }
 
-/** Debounced item saves must not run the success path that calls Keyboard.dismiss. */
-export function backgroundAutosaveDismissesKeyboard(silentUi: boolean): boolean {
-  return !silentUi;
+export type KeyboardDismissReason =
+  | "screen-blur"
+  | "screen-unmount"
+  | "explicit-action"
+  | "stock-search-outside"
+  | "field-autosave"
+  | "field-blur-save";
+
+/**
+ * Keyboard.dismiss is for leaving the screen, finishing an explicit action,
+ * or tapping outside an open stock search. Saving a field is not one of those.
+ */
+export function keyboardDismissAllowed(reason: KeyboardDismissReason): boolean {
+  return (
+    reason === "screen-blur" ||
+    reason === "screen-unmount" ||
+    reason === "explicit-action" ||
+    reason === "stock-search-outside"
+  );
+}
+
+/** Field persistence never forwards to applyResult, so it cannot dismiss. */
+export function fieldSaveDismissesKeyboard(
+  _kind: "autosave" | "blur-flush",
+): boolean {
+  return false;
+}
+
+export function explicitActionDismissesKeyboard(): boolean {
+  return keyboardDismissAllowed("explicit-action");
+}
+
+/**
+ * Input A is focused. The merchant taps Input B. A's onBlur starts a save.
+ * B focuses and the keyboard stays. When A's save returns, forwarding that
+ * result into applyResult calls dismissInteractionBlockers → Keyboard.dismiss
+ * and hides B's keyboard. Skipping the parent result leaves B editable.
+ */
+export function simulateMoveFromFieldAToFieldB(input: {
+  blurSaveForwardsResult: boolean;
+}): {
+  sequence: string[];
+  focusedField: "B";
+  keyboardVisible: boolean;
+  dismissedBy: "Keyboard.dismiss" | null;
+  blurSavePersisted: boolean;
+} {
+  const sequence = [
+    "A focused, keyboard open",
+    "tap B",
+    "A onBlur",
+    "blur-save starts",
+    "B onFocus",
+    "keyboard still open for B",
+  ];
+  if (input.blurSaveForwardsResult) {
+    sequence.push(
+      "blur-save returns request",
+      "onResult",
+      "applyResult",
+      "dismissInteractionBlockers",
+      "Keyboard.dismiss",
+    );
+    return {
+      sequence,
+      focusedField: "B",
+      keyboardVisible: false,
+      dismissedBy: "Keyboard.dismiss",
+      blurSavePersisted: true,
+    };
+  }
+  sequence.push("blur-save returns", "skip onResult");
+  return {
+    sequence,
+    focusedField: "B",
+    keyboardVisible: true,
+    dismissedBy: null,
+    blurSavePersisted: true,
+  };
 }
 
 export function onBlurFlushRuns(input: { blurred: boolean }): boolean {

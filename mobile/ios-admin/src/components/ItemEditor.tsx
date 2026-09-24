@@ -323,7 +323,10 @@ export function ItemEditor({
               }
             : {}),
         },
-        { silent: true, skipResult: options?.silentUi },
+        // Always skip the parent result. applyResult dismisses the keyboard on
+        // success, and this save often finishes after the merchant has focused
+        // the next field. silentUi only hides the local Saving/Saved label.
+        { silent: true, skipResult: true },
       );
       if (mountedRef.current && !options?.silentUi) {
         setAutosave(result?.ok ? "saved" : "failed");
@@ -342,8 +345,7 @@ export function ItemEditor({
   function scheduleAutosave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      // silentUi skips onResult so RequestDetailScreen does not dismiss the keyboard
-      // after a background save while the merchant is still typing.
+      // Debounce stays quiet in the label. The save itself never calls onResult.
       void persistDraftRef.current({ silentUi: true });
     }, AUTOSAVE_DEBOUNCE_MS);
   }
