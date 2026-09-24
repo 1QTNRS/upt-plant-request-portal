@@ -59,8 +59,8 @@ describe("iOS admin source layout", () => {
     assert.match(editor, /nestedScrollEnabled/);
     assert.match(editor, /keyboardShouldPersistTaps="always"/);
     assert.match(editor, /keyboardDismissMode="none"/);
-    assert.match(editor, /backgroundColor: "#f9ddd9"/);
-    assert.match(editor, /borderColor: "#d99a92"/);
+    assert.match(editor, /backgroundColor: "#ff7f7f"/);
+    assert.match(editor, /borderColor: "#d86464"/);
     assert.match(editor, /intent: "link-stock"/);
     assert.match(editor, /intent: "unlink-stock"/);
     assert.match(editor, /accessibilityLabel="Remove"/);
