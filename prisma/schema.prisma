@@ -540,10 +540,12 @@ model PropagationPlanningState {
   shop        String
   groupKey    String
   completedAt DateTime?
+  closedAt    DateTime?
   propNotes   String    @default("")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@unique([shop, groupKey])
   @@index([shop, completedAt])
+  @@index([shop, closedAt])
 }

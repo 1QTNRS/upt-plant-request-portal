@@ -3,7 +3,25 @@ import { normalizeUnavailableReason, type UnavailableReason } from "./portal";
 
 export type PropagationDateRange = "all" | "90d" | "30d";
 
-export type PropagationStatusFilter = "needs" | "done" | "all";
+export type PropagationStatusFilter = "active" | "done" | "closed" | "all";
+
+/** @deprecated Accept legacy mobile query values until all clients send `active`. */
+export type PropagationStatusFilterLegacy = PropagationStatusFilter | "needs";
+
+export type PropagationTabId = "prop" | "inventory" | "check_props" | "other";
+
+export type PropagationTabDefinition = {
+  id: PropagationTabId;
+  title: string;
+  actionLabel: string | null;
+};
+
+export const PROPAGATION_TAB_DEFINITIONS: PropagationTabDefinition[] = [
+  { id: "prop", title: "Prop", actionLabel: "Prop" },
+  { id: "inventory", title: "Inventory", actionLabel: "Obtained" },
+  { id: "check_props", title: "Check Props", actionLabel: "Check Props" },
+  { id: "other", title: "Other", actionLabel: null },
+];
 
 export type PropagationSort = "most_requested" | "oldest_request" | "az";
 
@@ -56,14 +74,32 @@ export type PropagationCategoryOtherOccurrence = {
   customerFacingNotes: string;
 };
 
+export type PropagationHistoryOccurrence = {
+  offerItemId: string;
+  requestNumber: string;
+  submittedAtIso: string;
+  offerSentAtIso: string;
+  unavailableReason: string;
+  customerFacingNotes: string;
+};
+
 export type PropagationCategoryPlantRow = {
   groupKey: string;
   displayName: string;
   uniqueCustomerCount: number;
   oldestRequestAtIso: string;
   newSinceDone: number;
+  newSinceClosed: number;
   state: PropagationPlanningStateView;
+  historyOccurrences: PropagationHistoryOccurrence[];
   otherOccurrences: PropagationCategoryOtherOccurrence[];
+};
+
+export type PropagationPlanningTab = {
+  id: PropagationTabId;
+  title: string;
+  actionLabel: string | null;
+  plants: PropagationCategoryPlantRow[];
 };
 
 export type PropagationPlanningCategory = {
@@ -88,7 +124,9 @@ export type PropagationPlanningOccurrence = {
 
 export type PropagationPlanningStateView = {
   done: boolean;
+  closed: boolean;
   completedAtIso: string | null;
+  closedAtIso: string | null;
   propNotes: string;
   updatedAtIso: string | null;
 };
@@ -101,13 +139,15 @@ export type PropagationPlanningGroup = {
   lastRequestedAtIso: string;
   reasonCounts: Array<{ reason: string; count: number }>;
   newSinceDone: number;
+  newSinceClosed: number;
   state: PropagationPlanningStateView;
   occurrences: PropagationPlanningOccurrence[];
 };
 
 export type PropagationPlanningSummary = {
-  needsPropagation: number;
+  active: number;
   done: number;
+  closed: number;
   unavailableInRange: number;
 };
 
@@ -181,15 +221,41 @@ export function occurrenceInDateRange(
 export type PropagationPlanningStateRow = {
   groupKey: string;
   completedAt: Date | null;
+  closedAt: Date | null;
   propNotes: string;
   updatedAt: Date;
 };
+
+export function normalizePropagationStatusFilter(
+  value: string | null | undefined,
+): PropagationStatusFilter {
+  if (value === "done" || value === "closed" || value === "all") return value;
+  if (value === "needs" || value === "active") return "active";
+  return "active";
+}
+
+export function propagationPlantMatchesStatus(
+  state: PropagationPlanningStateView,
+  status: PropagationStatusFilter,
+): boolean {
+  if (status === "all") return true;
+  if (status === "closed") return state.closed;
+  if (status === "done") return !state.closed && state.done;
+  return !state.closed && !state.done;
+}
 
 export function mergePlanningStateRows(
   rows: PropagationPlanningStateRow[],
 ): PropagationPlanningStateView {
   if (rows.length === 0) {
-    return { done: false, completedAtIso: null, propNotes: "", updatedAtIso: null };
+    return {
+      done: false,
+      closed: false,
+      completedAtIso: null,
+      closedAtIso: null,
+      propNotes: "",
+      updatedAtIso: null,
+    };
   }
   const sorted = [...rows].sort((left, right) => {
     const leftCanonical = left.groupKey.startsWith("c:") ? 0 : 1;
@@ -200,10 +266,14 @@ export function mergePlanningStateRows(
   const primary = sorted[0];
   const completedAt =
     sorted.find((row) => row.completedAt)?.completedAt ?? primary.completedAt;
+  const closedAt =
+    sorted.find((row) => row.closedAt)?.closedAt ?? primary.closedAt ?? null;
   const propNotes = sorted.find((row) => row.propNotes.trim())?.propNotes ?? primary.propNotes;
   return {
     done: completedAt != null,
+    closed: closedAt != null,
     completedAtIso: completedAt?.toISOString() ?? null,
+    closedAtIso: closedAt?.toISOString() ?? null,
     propNotes,
     updatedAtIso: primary.updatedAt.toISOString(),
   };
@@ -219,6 +289,19 @@ export function countNewSinceDone(
   return occurrences.filter((row) => {
     const sent = new Date(row.offerSentAtIso);
     return Number.isFinite(sent.getTime()) && sent > completedAt;
+  }).length;
+}
+
+export function countNewSinceClosed(
+  occurrences: PropagationPlanningOccurrence[],
+  closedAtIso: string | null,
+): number {
+  if (!closedAtIso) return 0;
+  const closedAt = new Date(closedAtIso);
+  if (!Number.isFinite(closedAt.getTime())) return 0;
+  return occurrences.filter((row) => {
+    const sent = new Date(row.offerSentAtIso);
+    return Number.isFinite(sent.getTime()) && sent > closedAt;
   }).length;
 }
 
@@ -337,6 +420,7 @@ export function buildPropagationGroups(input: {
       lastRequestedAtIso: sorted[0]?.offerSentAtIso ?? sorted[0]?.submittedAtIso ?? "",
       reasonCounts: summarizeReasonCounts(inRange),
       newSinceDone: countNewSinceDone(allOccurrences, state.completedAtIso),
+      newSinceClosed: countNewSinceClosed(allOccurrences, state.closedAtIso),
       state,
       occurrences: sorted.map(stripRawOccurrenceFields),
     });
@@ -352,8 +436,7 @@ export function filterPropagationGroups(
 ): PropagationPlanningGroup[] {
   const normalized = query.trim().toLowerCase();
   return groups.filter((group) => {
-    if (status === "needs" && group.state.done) return false;
-    if (status === "done" && !group.state.done) return false;
+    if (!propagationPlantMatchesStatus(group.state, status)) return false;
     if (!normalized) return true;
     if (group.displayName.toLowerCase().includes(normalized)) return true;
     return group.occurrences.some((row) =>
@@ -390,8 +473,13 @@ export function summarizePropagationPlanning(
   allOccurrenceCountInRange: number,
 ): PropagationPlanningSummary {
   return {
-    needsPropagation: groups.filter((group) => !group.state.done).length,
-    done: groups.filter((group) => group.state.done).length,
+    active: groups.filter((group) =>
+      propagationPlantMatchesStatus(group.state, "active"),
+    ).length,
+    done: groups.filter((group) => propagationPlantMatchesStatus(group.state, "done"))
+      .length,
+    closed: groups.filter((group) => propagationPlantMatchesStatus(group.state, "closed"))
+      .length,
     unavailableInRange: allOccurrenceCountInRange,
   };
 }
@@ -408,6 +496,33 @@ export function propagationCategoryIdForReason(
     other: "other",
   };
   return map[normalized];
+}
+
+export function propagationTabIdForReason(
+  reason: string | null | undefined,
+): PropagationTabId {
+  const categoryId = propagationCategoryIdForReason(reason);
+  const map: Record<PropagationCategoryId, PropagationTabId> = {
+    upt_prop_circulation: "prop",
+    available_2plus_mos: "prop",
+    upt_inventory: "inventory",
+    available_2_3_weeks: "check_props",
+    other: "other",
+  };
+  return map[categoryId];
+}
+
+function historyOccurrenceFromRow(
+  row: PropagationPlanningOccurrence,
+): PropagationHistoryOccurrence {
+  return {
+    offerItemId: row.offerItemId,
+    requestNumber: row.requestNumber,
+    submittedAtIso: row.submittedAtIso,
+    offerSentAtIso: row.offerSentAtIso,
+    unavailableReason: (row.unavailableReason || "other").trim(),
+    customerFacingNotes: row.customerFacingNotes.trim(),
+  };
 }
 
 export function oldestSubmittedAtIso(
@@ -445,22 +560,25 @@ export function buildPropagationCategories(
 
     for (const [categoryId, occurrences] of byReason.entries()) {
       const customers = new Set(occurrences.map((row) => row.customerKey));
+      const sortedOccurrences = [...occurrences].sort(
+        (left, right) =>
+          new Date(right.offerSentAtIso).getTime() -
+          new Date(left.offerSentAtIso).getTime(),
+      );
       const otherOccurrences =
         categoryId === "other"
-          ? [...occurrences]
-              .sort(
-                (left, right) =>
-                  new Date(right.offerSentAtIso).getTime() -
-                  new Date(left.offerSentAtIso).getTime(),
-              )
-              .map((row) => ({
-                offerItemId: row.offerItemId,
-                requestNumber: row.requestNumber,
-                submittedAtIso: row.submittedAtIso,
-                offerSentAtIso: row.offerSentAtIso,
-                customerFacingNotes: row.customerFacingNotes.trim(),
-              }))
+          ? sortedOccurrences.map((row) => ({
+              offerItemId: row.offerItemId,
+              requestNumber: row.requestNumber,
+              submittedAtIso: row.submittedAtIso,
+              offerSentAtIso: row.offerSentAtIso,
+              customerFacingNotes: row.customerFacingNotes.trim(),
+            }))
           : [];
+      const historyOccurrences =
+        categoryId === "other"
+          ? []
+          : sortedOccurrences.map(historyOccurrenceFromRow);
 
       const plantRow: PropagationCategoryPlantRow = {
         groupKey: group.groupKey,
@@ -468,7 +586,9 @@ export function buildPropagationCategories(
         uniqueCustomerCount: customers.size,
         oldestRequestAtIso: oldestSubmittedAtIso(occurrences),
         newSinceDone: group.newSinceDone,
+        newSinceClosed: group.newSinceClosed,
         state: group.state,
+        historyOccurrences,
         otherOccurrences,
       };
 
@@ -486,6 +606,68 @@ export function buildPropagationCategories(
   })).filter((category) => category.plants.length > 0);
 }
 
+export function buildPropagationTabs(
+  groups: PropagationPlanningGroup[],
+): PropagationPlanningTab[] {
+  const byTab = new Map<PropagationTabId, Map<string, PropagationCategoryPlantRow>>();
+
+  for (const group of groups) {
+    const byTabReason = new Map<PropagationTabId, PropagationPlanningOccurrence[]>();
+    for (const occurrence of group.occurrences) {
+      const tabId = propagationTabIdForReason(occurrence.unavailableReason);
+      const list = byTabReason.get(tabId) ?? [];
+      list.push(occurrence);
+      byTabReason.set(tabId, list);
+    }
+
+    for (const [tabId, occurrences] of byTabReason.entries()) {
+      const customers = new Set(occurrences.map((row) => row.customerKey));
+      const sortedOccurrences = [...occurrences].sort(
+        (left, right) =>
+          new Date(right.offerSentAtIso).getTime() -
+          new Date(left.offerSentAtIso).getTime(),
+      );
+      const otherOccurrences =
+        tabId === "other"
+          ? sortedOccurrences.map((row) => ({
+              offerItemId: row.offerItemId,
+              requestNumber: row.requestNumber,
+              submittedAtIso: row.submittedAtIso,
+              offerSentAtIso: row.offerSentAtIso,
+              customerFacingNotes: row.customerFacingNotes.trim(),
+            }))
+          : [];
+      const historyOccurrences =
+        tabId === "other"
+          ? []
+          : sortedOccurrences.map(historyOccurrenceFromRow);
+
+      const plantRow: PropagationCategoryPlantRow = {
+        groupKey: group.groupKey,
+        displayName: group.displayName,
+        uniqueCustomerCount: customers.size,
+        oldestRequestAtIso: oldestSubmittedAtIso(occurrences),
+        newSinceDone: group.newSinceDone,
+        newSinceClosed: group.newSinceClosed,
+        state: group.state,
+        historyOccurrences,
+        otherOccurrences,
+      };
+
+      const plants = byTab.get(tabId) ?? new Map();
+      plants.set(group.groupKey, plantRow);
+      byTab.set(tabId, plants);
+    }
+  }
+
+  return PROPAGATION_TAB_DEFINITIONS.map((definition) => ({
+    id: definition.id,
+    title: definition.title,
+    actionLabel: definition.actionLabel,
+    plants: [...(byTab.get(definition.id)?.values() ?? [])],
+  })).filter((tab) => tab.plants.length > 0);
+}
+
 export function filterPropagationCategories(
   categories: PropagationPlanningCategory[],
   status: PropagationStatusFilter,
@@ -496,8 +678,7 @@ export function filterPropagationCategories(
     .map((category) => ({
       ...category,
       plants: category.plants.filter((plant) => {
-        if (status === "needs" && plant.state.done) return false;
-        if (status === "done" && !plant.state.done) return false;
+        if (!propagationPlantMatchesStatus(plant.state, status)) return false;
         if (!normalized) return true;
         if (plant.displayName.toLowerCase().includes(normalized)) return true;
         return plant.otherOccurrences.some((row) =>
@@ -506,6 +687,32 @@ export function filterPropagationCategories(
       }),
     }))
     .filter((category) => category.plants.length > 0);
+}
+
+export function filterPropagationTabs(
+  tabs: PropagationPlanningTab[],
+  status: PropagationStatusFilter,
+  query: string,
+): PropagationPlanningTab[] {
+  const normalized = query.trim().toLowerCase();
+  return tabs
+    .map((tab) => ({
+      ...tab,
+      plants: tab.plants.filter((plant) => {
+        if (!propagationPlantMatchesStatus(plant.state, status)) return false;
+        if (!normalized) return true;
+        if (plant.displayName.toLowerCase().includes(normalized)) return true;
+        return (
+          plant.otherOccurrences.some((row) =>
+            row.requestNumber.toLowerCase().includes(normalized),
+          ) ||
+          plant.historyOccurrences.some((row) =>
+            row.requestNumber.toLowerCase().includes(normalized),
+          )
+        );
+      }),
+    }))
+    .filter((tab) => tab.plants.length > 0);
 }
 
 export function sortPropagationCategoryPlants(
@@ -536,6 +743,37 @@ export function sortPropagationCategoryPlants(
       });
     });
     return { ...category, plants };
+  });
+}
+
+export function sortPropagationTabPlants(
+  tabs: PropagationPlanningTab[],
+  sort: PropagationSort,
+): PropagationPlanningTab[] {
+  return tabs.map((tab) => {
+    const plants = [...tab.plants];
+    plants.sort((left, right) => {
+      if (sort === "most_requested") {
+        return (
+          right.uniqueCustomerCount - left.uniqueCustomerCount ||
+          left.displayName.localeCompare(right.displayName, undefined, {
+            sensitivity: "base",
+          })
+        );
+      }
+      if (sort === "oldest_request") {
+        return (
+          Date.parse(left.oldestRequestAtIso) - Date.parse(right.oldestRequestAtIso) ||
+          left.displayName.localeCompare(right.displayName, undefined, {
+            sensitivity: "base",
+          })
+        );
+      }
+      return left.displayName.localeCompare(right.displayName, undefined, {
+        sensitivity: "base",
+      });
+    });
+    return { ...tab, plants };
   });
 }
 
