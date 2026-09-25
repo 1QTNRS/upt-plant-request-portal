@@ -28,7 +28,8 @@ describe("iOS admin source layout", () => {
     assert.match(list, /StatusFilterBar/);
     assert.match(list, /DEFAULT_STATUS_FILTER/);
     assert.match(list, /RefreshControl/);
-    assert.match(list, /filterRequestRows/);
+    assert.match(list, /visibleRequestsFromIndexes/);
+    assert.match(list, /useDeferredValue\(statusFilter\)/);
     assert.match(list, /closedSort/);
     assert.match(list, /closedRequestSortLabel/);
     assert.match(list, /isPurchased/);
@@ -75,7 +76,7 @@ describe("iOS admin source layout", () => {
     assert.match(strip, /paddingTop: THUMB_PAD/);
     assert.match(strip, /overflow: "visible"/);
     assert.doesNotMatch(detail, /scrollEnabled=\{!stockDropdownOpen\}/);
-    assert.match(detail, /iosFormScrollKeyboardProps\(\)/);
+    assert.match(detail, /usePrimaryScrollProps/);
     assert.doesNotMatch(detail, /keyboardShouldPersistTaps="/);
     assert.match(detail, /dismissStockSearches/);
     assert.match(detail, /registerStockDismiss/);

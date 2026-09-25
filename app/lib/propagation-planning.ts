@@ -1,10 +1,77 @@
 import { canonicalPlantKey } from "./plant-identity";
+import { normalizeUnavailableReason, type UnavailableReason } from "./portal";
 
 export type PropagationDateRange = "all" | "90d" | "30d";
 
 export type PropagationStatusFilter = "needs" | "done" | "all";
 
-export type PropagationSort = "most_requested" | "most_recent" | "az";
+export type PropagationSort = "most_requested" | "oldest_request" | "az";
+
+export type PropagationCategoryId =
+  | "upt_prop_circulation"
+  | "available_2plus_mos"
+  | "upt_inventory"
+  | "available_2_3_weeks"
+  | "other";
+
+export type PropagationCategoryDefinition = {
+  id: PropagationCategoryId;
+  title: string;
+  actionLabel: string;
+};
+
+export const PROPAGATION_CATEGORY_DEFINITIONS: PropagationCategoryDefinition[] = [
+  {
+    id: "upt_prop_circulation",
+    title: "Currently not in UPT prop circulation",
+    actionLabel: "Needs Propagation",
+  },
+  {
+    id: "available_2plus_mos",
+    title: "Available in 2+ mos",
+    actionLabel: "Needs Propagation",
+  },
+  {
+    id: "upt_inventory",
+    title: "Currently not in UPT inventory",
+    actionLabel: "Obtained",
+  },
+  {
+    id: "available_2_3_weeks",
+    title: "Available in 2-3 weeks",
+    actionLabel: "Check Props",
+  },
+  {
+    id: "other",
+    title: "Other",
+    actionLabel: "Needs Propagation",
+  },
+];
+
+export type PropagationCategoryOtherOccurrence = {
+  offerItemId: string;
+  requestNumber: string;
+  submittedAtIso: string;
+  offerSentAtIso: string;
+  customerFacingNotes: string;
+};
+
+export type PropagationCategoryPlantRow = {
+  groupKey: string;
+  displayName: string;
+  uniqueCustomerCount: number;
+  oldestRequestAtIso: string;
+  newSinceDone: number;
+  state: PropagationPlanningStateView;
+  otherOccurrences: PropagationCategoryOtherOccurrence[];
+};
+
+export type PropagationPlanningCategory = {
+  id: PropagationCategoryId;
+  title: string;
+  actionLabel: string;
+  plants: PropagationCategoryPlantRow[];
+};
 
 export type PropagationPlanningOccurrence = {
   offerItemId: string;
@@ -307,8 +374,8 @@ export function sortPropagationGroups(
         right.lastRequestedAtIso.localeCompare(left.lastRequestedAtIso)
       );
     }
-    if (sort === "most_recent") {
-      return right.lastRequestedAtIso.localeCompare(left.lastRequestedAtIso);
+    if (sort === "oldest_request") {
+      return left.lastRequestedAtIso.localeCompare(right.lastRequestedAtIso);
     }
     return left.displayName.localeCompare(right.displayName, undefined, {
       sensitivity: "base",
@@ -327,4 +394,154 @@ export function summarizePropagationPlanning(
     done: groups.filter((group) => group.state.done).length,
     unavailableInRange: allOccurrenceCountInRange,
   };
+}
+
+export function propagationCategoryIdForReason(
+  reason: string | null | undefined,
+): PropagationCategoryId {
+  const normalized = normalizeUnavailableReason(reason);
+  const map: Record<UnavailableReason, PropagationCategoryId> = {
+    "currently not in UPT prop circulation": "upt_prop_circulation",
+    "available in 2+ mos": "available_2plus_mos",
+    "not in our current inventory": "upt_inventory",
+    "available in 2-3weeks": "available_2_3_weeks",
+    other: "other",
+  };
+  return map[normalized];
+}
+
+export function oldestSubmittedAtIso(
+  occurrences: Pick<PropagationPlanningOccurrence, "submittedAtIso">[],
+): string {
+  let oldest = "";
+  let oldestMs = Number.POSITIVE_INFINITY;
+  for (const row of occurrences) {
+    const ms = Date.parse(row.submittedAtIso);
+    if (!Number.isFinite(ms)) continue;
+    if (ms < oldestMs) {
+      oldestMs = ms;
+      oldest = row.submittedAtIso;
+    }
+  }
+  return oldest || occurrences[0]?.submittedAtIso || "";
+}
+
+export function buildPropagationCategories(
+  groups: PropagationPlanningGroup[],
+): PropagationPlanningCategory[] {
+  const byCategory = new Map<
+    PropagationCategoryId,
+    Map<string, PropagationCategoryPlantRow>
+  >();
+
+  for (const group of groups) {
+    const byReason = new Map<PropagationCategoryId, PropagationPlanningOccurrence[]>();
+    for (const occurrence of group.occurrences) {
+      const categoryId = propagationCategoryIdForReason(occurrence.unavailableReason);
+      const list = byReason.get(categoryId) ?? [];
+      list.push(occurrence);
+      byReason.set(categoryId, list);
+    }
+
+    for (const [categoryId, occurrences] of byReason.entries()) {
+      const customers = new Set(occurrences.map((row) => row.customerKey));
+      const otherOccurrences =
+        categoryId === "other"
+          ? [...occurrences]
+              .sort(
+                (left, right) =>
+                  new Date(right.offerSentAtIso).getTime() -
+                  new Date(left.offerSentAtIso).getTime(),
+              )
+              .map((row) => ({
+                offerItemId: row.offerItemId,
+                requestNumber: row.requestNumber,
+                submittedAtIso: row.submittedAtIso,
+                offerSentAtIso: row.offerSentAtIso,
+                customerFacingNotes: row.customerFacingNotes.trim(),
+              }))
+          : [];
+
+      const plantRow: PropagationCategoryPlantRow = {
+        groupKey: group.groupKey,
+        displayName: group.displayName,
+        uniqueCustomerCount: customers.size,
+        oldestRequestAtIso: oldestSubmittedAtIso(occurrences),
+        newSinceDone: group.newSinceDone,
+        state: group.state,
+        otherOccurrences,
+      };
+
+      const plants = byCategory.get(categoryId) ?? new Map();
+      plants.set(group.groupKey, plantRow);
+      byCategory.set(categoryId, plants);
+    }
+  }
+
+  return PROPAGATION_CATEGORY_DEFINITIONS.map((definition) => ({
+    id: definition.id,
+    title: definition.title,
+    actionLabel: definition.actionLabel,
+    plants: [...(byCategory.get(definition.id)?.values() ?? [])],
+  })).filter((category) => category.plants.length > 0);
+}
+
+export function filterPropagationCategories(
+  categories: PropagationPlanningCategory[],
+  status: PropagationStatusFilter,
+  query: string,
+): PropagationPlanningCategory[] {
+  const normalized = query.trim().toLowerCase();
+  return categories
+    .map((category) => ({
+      ...category,
+      plants: category.plants.filter((plant) => {
+        if (status === "needs" && plant.state.done) return false;
+        if (status === "done" && !plant.state.done) return false;
+        if (!normalized) return true;
+        if (plant.displayName.toLowerCase().includes(normalized)) return true;
+        return plant.otherOccurrences.some((row) =>
+          row.requestNumber.toLowerCase().includes(normalized),
+        );
+      }),
+    }))
+    .filter((category) => category.plants.length > 0);
+}
+
+export function sortPropagationCategoryPlants(
+  categories: PropagationPlanningCategory[],
+  sort: PropagationSort,
+): PropagationPlanningCategory[] {
+  return categories.map((category) => {
+    const plants = [...category.plants];
+    plants.sort((left, right) => {
+      if (sort === "most_requested") {
+        return (
+          right.uniqueCustomerCount - left.uniqueCustomerCount ||
+          left.displayName.localeCompare(right.displayName, undefined, {
+            sensitivity: "base",
+          })
+        );
+      }
+      if (sort === "oldest_request") {
+        return (
+          Date.parse(left.oldestRequestAtIso) - Date.parse(right.oldestRequestAtIso) ||
+          left.displayName.localeCompare(right.displayName, undefined, {
+            sensitivity: "base",
+          })
+        );
+      }
+      return left.displayName.localeCompare(right.displayName, undefined, {
+        sensitivity: "base",
+      });
+    });
+    return { ...category, plants };
+  });
+}
+
+export function summarizePropagationCategories(
+  groups: PropagationPlanningGroup[],
+  allOccurrenceCountInRange: number,
+): PropagationPlanningSummary {
+  return summarizePropagationPlanning(groups, "all", allOccurrenceCountInRange);
 }

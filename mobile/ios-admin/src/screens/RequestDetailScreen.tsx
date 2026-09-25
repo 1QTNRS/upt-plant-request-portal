@@ -37,7 +37,7 @@ import {
   isOfferExpired,
 } from "../offer-expiration";
 import { THEME } from "../theme";
-import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
+import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { logActiveTouchBlockers } from "../touch-diagnostics";
 import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import {
@@ -74,6 +74,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
   const stockTouchConsumed = useRef(false);
 
   useRootTabBarHiddenOnFocus();
+  const primaryScrollProps = usePrimaryScrollProps();
 
   const dismissOverlays = useCallback(() => {
     for (const dismiss of stockDismissers.current.values()) dismiss();
@@ -279,7 +280,7 @@ export function RequestDetailScreen({ navigation, route }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        {...iosFormScrollKeyboardProps()}
+        {...primaryScrollProps}
         style={ui.flexPage}
         contentContainerStyle={[ui.page, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
         onTouchStart={dismissStockSearches}

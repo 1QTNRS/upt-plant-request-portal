@@ -207,9 +207,14 @@ describe("shared props on every editable admin screen", () => {
       "src/screens/LoginScreen.tsx",
       "src/screens/ExactPlantsScreen.tsx",
       "src/screens/RequestListScreen.tsx",
+      "src/screens/PropagationPlanningScreen.tsx",
     ]) {
       const source = read(screen);
-      assert.match(source, /iosFormScrollKeyboardProps\(\)/, screen);
+      assert.match(
+        source,
+        /iosFormScrollKeyboardProps\(\)|usePrimaryScrollProps/,
+        screen,
+      );
       assert.doesNotMatch(source, /keyboardShouldPersistTaps="/, screen);
       assert.doesNotMatch(source, /keyboardDismissMode="/, screen);
     }

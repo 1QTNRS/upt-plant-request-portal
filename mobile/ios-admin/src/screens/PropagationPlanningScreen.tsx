@@ -13,16 +13,16 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
-import { formatPortalDateOnly, formatPortalDateTime } from "../admin-time";
-import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
+import { formatPortalDateOnly } from "../admin-time";
 import { apiPath } from "../query";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type {
-  PropagationPlanningGroup,
+  PropagationCategoryPlantRow,
+  PropagationPlanningCategory,
   PropagationPlanningPayload,
 } from "../types";
-import { ui } from "../ui";
+import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import type { SettingsStackParamList } from "./navigation-types";
 
@@ -33,7 +33,7 @@ type DateRange = PropagationPlanningPayload["filters"]["dateRange"];
 type Sort = PropagationPlanningPayload["filters"]["sort"];
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
-  { value: "needs", label: "Needs Propagation" },
+  { value: "needs", label: "Needs" },
   { value: "done", label: "Done" },
   { value: "all", label: "All" },
 ];
@@ -46,33 +46,16 @@ const DATE_OPTIONS: Array<{ value: DateRange; label: string }> = [
 
 const SORT_OPTIONS: Array<{ value: Sort; label: string }> = [
   { value: "most_requested", label: "Most Requested" },
-  { value: "most_recent", label: "Most Recent" },
+  { value: "oldest_request", label: "Oldest Request" },
   { value: "az", label: "A–Z" },
 ];
 
-function FilterChip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.chip, active ? styles.chipActive : null]}
-    >
-      <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function GroupCard({
-  group,
+function PlantRow({
+  plant,
+  categoryActionLabel,
+  isOther,
   expanded,
-  onToggleExpanded,
+  onToggleExpand,
   onToggleDone,
   notesDraft,
   onNotesChange,
@@ -80,9 +63,11 @@ function GroupCard({
   savingNotes,
   togglingDone,
 }: {
-  group: PropagationPlanningGroup;
+  plant: PropagationCategoryPlantRow;
+  categoryActionLabel: string;
+  isOther: boolean;
   expanded: boolean;
-  onToggleExpanded: () => void;
+  onToggleExpand: () => void;
   onToggleDone: () => void;
   notesDraft: string;
   onNotesChange: (value: string) => void;
@@ -90,98 +75,83 @@ function GroupCard({
   savingNotes: boolean;
   togglingDone: boolean;
 }) {
-  const doneLabel =
-    group.state.done && group.state.completedAtIso
-      ? `✓ Done ${formatPortalDateOnly(group.state.completedAtIso)}`
-      : "☐ Done";
+  const checked = plant.state.done;
+  const checkLabel = checked
+    ? `✓ ${categoryActionLabel}${
+        plant.state.completedAtIso
+          ? ` · ${formatPortalDateOnly(plant.state.completedAtIso)}`
+          : ""
+      }`
+    : `☐ ${categoryActionLabel}`;
 
   return (
-    <View style={styles.card}>
-      <Pressable onPress={onToggleExpanded}>
-        <Text style={styles.plantName}>{group.displayName}</Text>
-        <Text style={styles.summaryLine}>
-          {group.occurrenceCount} requests · {group.uniqueCustomerCount} customers
-        </Text>
-        <Text style={styles.muted}>
-          Last requested {formatPortalDateOnly(group.lastRequestedAtIso)}
-        </Text>
-        {group.newSinceDone > 0 ? (
-          <Text style={styles.newSinceDone}>
-            {group.newSinceDone} new request{group.newSinceDone === 1 ? "" : "s"} since done
-          </Text>
-        ) : null}
-        {group.reasonCounts.length > 0 ? (
-          <View style={styles.reasonBlock}>
-            {group.reasonCounts.slice(0, 4).map((row) => (
-              <Text key={row.reason} style={styles.reasonLine}>
-                {row.reason} × {row.count}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+    <View style={styles.plantRow}>
+      <Pressable onPress={onToggleDone} disabled={togglingDone} style={styles.checkRow}>
+        <Text style={styles.checkLabel}>{checkLabel}</Text>
       </Pressable>
 
-      <Pressable
-        onPress={onToggleDone}
-        disabled={togglingDone}
-        style={styles.doneButton}
-      >
-        <Text style={styles.doneButtonText}>{doneLabel}</Text>
-      </Pressable>
-
-      <View style={styles.notesBlock}>
-        <Text style={styles.notesLabel}>Prop Notes</Text>
-        <TextInput
-          value={notesDraft}
-          onChangeText={onNotesChange}
-          multiline
-          placeholder="Mother plant recovering. Prop after next watering."
-          placeholderTextColor={THEME.muted}
-          style={styles.notesInput}
-        />
-        <Pressable
-          onPress={onSaveNotes}
-          disabled={savingNotes}
-          style={[styles.saveNotesButton, savingNotes ? styles.saveNotesDisabled : null]}
-        >
-          <Text style={styles.saveNotesText}>{savingNotes ? "Saving…" : "Save Prop Notes"}</Text>
+      {isOther ? (
+        <Pressable onPress={onToggleExpand}>
+          <Text style={styles.plantNameLink}>{plant.displayName}</Text>
         </Pressable>
-      </View>
+      ) : (
+        <Text style={styles.plantName}>{plant.displayName}</Text>
+      )}
+
+      <Text style={styles.plantMeta}>
+        {plant.uniqueCustomerCount} {plant.uniqueCustomerCount === 1 ? "person" : "people"}{" "}
+        requested
+      </Text>
+      <Text style={styles.plantMeta}>
+        Oldest request: {formatPortalDateOnly(plant.oldestRequestAtIso)}
+      </Text>
+      {plant.newSinceDone > 0 ? (
+        <Text style={styles.newSinceDone}>
+          {plant.newSinceDone} new request{plant.newSinceDone === 1 ? "" : "s"} since done
+        </Text>
+      ) : null}
 
       {expanded ? (
-        <View style={styles.historyBlock}>
-          {group.occurrences.map((row) => (
-            <View key={row.offerItemId} style={styles.historyItem}>
-              <Text style={styles.historyHeading}>
-                {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
-              </Text>
-              <Text style={styles.historyLabel}>Requested:</Text>
-              <Text style={styles.historyBody}>{row.plantName}</Text>
-              <Text style={styles.historyLabel}>Answer:</Text>
-              <Text style={styles.historyBody}>
-                {row.unavailableReason || "not in our current inventory"}
-              </Text>
-              {row.customerFacingNotes.trim() ? (
-                <>
-                  <Text style={styles.historyLabel}>Customer-facing response:</Text>
-                  <Text style={styles.historyBody}>{row.customerFacingNotes}</Text>
-                </>
-              ) : null}
-              {row.customerRequestNotes?.trim() ? (
-                <>
-                  <Text style={styles.historyLabel}>Customer request notes:</Text>
-                  <Text style={styles.historyBody}>{row.customerRequestNotes}</Text>
-                </>
-              ) : null}
-              <Text style={styles.historyMeta}>
-                Offer sent {formatPortalDateTime(row.offerSentAtIso)}
-              </Text>
+        <View style={styles.expandedBlock}>
+          {isOther ? (
+            <View style={styles.otherBlock}>
+              {plant.otherOccurrences.map((row) => (
+                <View key={row.offerItemId} style={styles.otherItem}>
+                  <Text style={styles.otherHeading}>
+                    {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
+                  </Text>
+                  <Text style={styles.otherLabel}>Customer-facing response:</Text>
+                  <Text style={styles.otherBody}>
+                    {row.customerFacingNotes || "No customer-facing notes."}
+                  </Text>
+                </View>
+              ))}
             </View>
-          ))}
+          ) : null}
+          <Text style={styles.notesLabel}>Prop Notes</Text>
+          <TextInput
+            value={notesDraft}
+            onChangeText={onNotesChange}
+            multiline
+            placeholder="Mother plant recovering. Prop after next watering."
+            placeholderTextColor={THEME.muted}
+            style={styles.notesInput}
+          />
+          <Pressable
+            onPress={onSaveNotes}
+            disabled={savingNotes}
+            style={[styles.saveNotesButton, savingNotes ? styles.saveNotesDisabled : null]}
+          >
+            <Text style={styles.saveNotesText}>
+              {savingNotes ? "Saving…" : "Save Prop Notes"}
+            </Text>
+          </Pressable>
         </View>
       ) : (
-        <Pressable onPress={onToggleExpanded}>
-          <Text style={styles.expandHint}>Show request history</Text>
+        <Pressable onPress={onToggleExpand}>
+          <Text style={styles.expandHint}>
+            {isOther ? "Show responses & Prop Notes" : "Prop Notes & details"}
+          </Text>
         </Pressable>
       )}
     </View>
@@ -190,6 +160,7 @@ function GroupCard({
 
 export function PropagationPlanningScreen({ navigation }: Props) {
   useRootTabBarHiddenOnFocus();
+  const primaryScrollProps = usePrimaryScrollProps();
   const { apiUrl, token } = useSession();
   const [payload, setPayload] = useState<PropagationPlanningPayload | null>(null);
   const [status, setStatus] = useState<StatusFilter>("needs");
@@ -220,9 +191,11 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         setPayload(next);
         setNotesDrafts((current) => {
           const merged = { ...current };
-          for (const group of next.groups) {
-            if (merged[group.groupKey] === undefined) {
-              merged[group.groupKey] = group.state.propNotes;
+          for (const category of next.categories) {
+            for (const plant of category.plants) {
+              if (merged[plant.groupKey] === undefined) {
+                merged[plant.groupKey] = plant.state.propNotes;
+              }
             }
           }
           return merged;
@@ -251,13 +224,17 @@ export function PropagationPlanningScreen({ navigation }: Props) {
     return "No propagation planning groups match this filter.";
   }, [query, dateRange, status]);
 
-  async function toggleDone(group: PropagationPlanningGroup) {
-    setTogglingDoneKey(group.groupKey);
+  async function toggleDone(groupKey: string) {
+    const plant = payload?.categories
+      .flatMap((category) => category.plants)
+      .find((row) => row.groupKey === groupKey);
+    if (!plant) return;
+    setTogglingDoneKey(groupKey);
     setError(null);
     try {
       await apiPostJson(apiUrl, token, "/api/mobile/admin/propagation-planning", {
-        intent: group.state.done ? "undo-done" : "set-done",
-        groupKey: group.groupKey,
+        intent: plant.state.done ? "undo-done" : "set-done",
+        groupKey,
       });
       await load("refresh");
     } catch (caught) {
@@ -287,7 +264,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
       <ScrollView
-        {...iosFormScrollKeyboardProps()}
+        {...primaryScrollProps}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} />
         }
@@ -298,7 +275,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         </Pressable>
         <Text style={styles.title}>Propagation Planning</Text>
         <Text style={styles.muted}>
-          Unavailable customer requests grouped by plant to help plan propagation and restocks.
+          Unavailable customer requests grouped by reason to help plan propagation and restocks.
         </Text>
 
         {payload ? (
@@ -326,66 +303,96 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         <Text style={styles.filterHeading}>Status</Text>
         <View style={styles.chipRow}>
           {STATUS_OPTIONS.map((option) => (
-            <FilterChip
+            <Pressable
               key={option.value}
-              label={option.label}
-              active={status === option.value}
               onPress={() => setStatus(option.value)}
-            />
+              style={[styles.chip, status === option.value ? styles.chipActive : null]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  status === option.value ? styles.chipTextActive : null,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
           ))}
         </View>
 
         <Text style={styles.filterHeading}>Date range</Text>
         <View style={styles.chipRow}>
           {DATE_OPTIONS.map((option) => (
-            <FilterChip
+            <Pressable
               key={option.value}
-              label={option.label}
-              active={dateRange === option.value}
               onPress={() => setDateRange(option.value)}
-            />
+              style={[styles.chip, dateRange === option.value ? styles.chipActive : null]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  dateRange === option.value ? styles.chipTextActive : null,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
           ))}
         </View>
 
-        <Text style={styles.filterHeading}>Sort</Text>
+        <Text style={styles.filterHeading}>Sort within category</Text>
         <View style={styles.chipRow}>
           {SORT_OPTIONS.map((option) => (
-            <FilterChip
+            <Pressable
               key={option.value}
-              label={option.label}
-              active={sort === option.value}
               onPress={() => setSort(option.value)}
-            />
+              style={[styles.chip, sort === option.value ? styles.chipActive : null]}
+            >
+              <Text
+                style={[styles.chipText, sort === option.value ? styles.chipTextActive : null]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
           ))}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {loading && !payload ? <ActivityIndicator color={THEME.darkGreen} /> : null}
 
-        {!loading && payload && payload.groups.length === 0 ? (
+        {!loading && payload && payload.categories.length === 0 ? (
           <Text style={styles.empty}>{emptyMessage}</Text>
         ) : null}
 
-        {payload?.groups.map((group) => (
-          <GroupCard
-            key={group.groupKey}
-            group={group}
-            expanded={Boolean(expanded[group.groupKey])}
-            onToggleExpanded={() =>
-              setExpanded((current) => ({
-                ...current,
-                [group.groupKey]: !current[group.groupKey],
-              }))
-            }
-            onToggleDone={() => void toggleDone(group)}
-            notesDraft={notesDrafts[group.groupKey] ?? group.state.propNotes}
-            onNotesChange={(value) =>
-              setNotesDrafts((current) => ({ ...current, [group.groupKey]: value }))
-            }
-            onSaveNotes={() => void saveNotes(group.groupKey)}
-            savingNotes={savingNotesKey === group.groupKey}
-            togglingDone={togglingDoneKey === group.groupKey}
-          />
+        {payload?.categories.map((category: PropagationPlanningCategory) => (
+          <View key={category.id} style={styles.categoryBox}>
+            <Text style={styles.categoryTitle}>{category.title}</Text>
+            <Text style={styles.categoryAction}>{category.actionLabel}</Text>
+            {category.plants.map((plant) => (
+              <PlantRow
+                key={`${category.id}:${plant.groupKey}`}
+                plant={plant}
+                categoryActionLabel={category.actionLabel}
+                isOther={category.id === "other"}
+                expanded={Boolean(expanded[`${category.id}:${plant.groupKey}`])}
+                onToggleExpand={() =>
+                  setExpanded((current) => ({
+                    ...current,
+                    [`${category.id}:${plant.groupKey}`]:
+                      !current[`${category.id}:${plant.groupKey}`],
+                  }))
+                }
+                onToggleDone={() => void toggleDone(plant.groupKey)}
+                notesDraft={notesDrafts[plant.groupKey] ?? plant.state.propNotes}
+                onNotesChange={(value) =>
+                  setNotesDrafts((current) => ({ ...current, [plant.groupKey]: value }))
+                }
+                onSaveNotes={() => void saveNotes(plant.groupKey)}
+                savingNotes={savingNotesKey === plant.groupKey}
+                togglingDone={togglingDoneKey === plant.groupKey}
+              />
+            ))}
+          </View>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -393,34 +400,13 @@ export function PropagationPlanningScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  page: {
-    padding: 16,
-    paddingBottom: 32,
-    gap: 12,
-  },
-  backRow: {
-    alignSelf: "flex-start",
-  },
-  backLink: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-  },
-  title: {
-    color: THEME.darkGreen,
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  muted: {
-    color: THEME.darkGreen,
-    opacity: 0.85,
-  },
-  summaryRow: {
-    gap: 4,
-  },
-  summaryText: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-  },
+  page: { padding: 16, paddingBottom: 32, gap: 12 },
+  backRow: { alignSelf: "flex-start" },
+  backLink: { color: THEME.darkGreen, fontWeight: "600" },
+  title: { color: THEME.darkGreen, fontSize: 28, fontWeight: "700" },
+  muted: { color: THEME.darkGreen, opacity: 0.85 },
+  summaryRow: { gap: 4 },
+  summaryText: { color: THEME.darkGreen, fontWeight: "600" },
   search: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -430,16 +416,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.darkGreen,
   },
-  filterHeading: {
-    color: THEME.darkGreen,
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  filterHeading: { color: THEME.darkGreen, fontWeight: "700", marginTop: 4 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     borderRadius: 999,
     borderWidth: 1,
@@ -448,64 +426,48 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: "#fff",
   },
-  chipActive: {
-    backgroundColor: THEME.darkGreen,
-  },
-  chipText: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  chipTextActive: {
-    color: THEME.yellow,
-  },
-  card: {
+  chipActive: { backgroundColor: THEME.darkGreen },
+  chipText: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13 },
+  chipTextActive: { color: THEME.yellow },
+  categoryBox: {
     backgroundColor: "#fff",
     borderRadius: 12,
     padding: 14,
     gap: 10,
+    borderWidth: 1,
+    borderColor: THEME.darkGreen,
   },
-  plantName: {
+  categoryTitle: {
     color: THEME.darkGreen,
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  categoryAction: { color: THEME.muted, fontWeight: "700", marginBottom: 4 },
+  plantRow: {
+    borderTopWidth: 1,
+    borderTopColor: THEME.mint,
+    paddingTop: 10,
+    gap: 4,
+  },
+  checkRow: { alignSelf: "flex-start" },
+  checkLabel: { color: THEME.darkGreen, fontWeight: "700" },
+  plantName: { color: THEME.darkGreen, fontSize: 17, fontWeight: "700" },
+  plantNameLink: {
+    color: THEME.darkGreen,
+    fontSize: 17,
     fontWeight: "700",
+    textDecorationLine: "underline",
   },
-  summaryLine: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-  },
-  newSinceDone: {
-    color: "#b45309",
-    fontWeight: "700",
-    marginTop: 4,
-  },
-  reasonBlock: {
-    marginTop: 6,
-    gap: 2,
-  },
-  reasonLine: {
-    color: THEME.darkGreen,
-    opacity: 0.9,
-    fontSize: 13,
-  },
-  doneButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: THEME.mint,
-  },
-  doneButtonText: {
-    color: THEME.darkGreen,
-    fontWeight: "700",
-  },
-  notesBlock: {
-    gap: 6,
-  },
-  notesLabel: {
-    color: THEME.darkGreen,
-    fontWeight: "700",
-  },
+  plantMeta: { color: THEME.darkGreen, opacity: 0.9 },
+  newSinceDone: { color: "#b45309", fontWeight: "700" },
+  expandedBlock: { gap: 8, marginTop: 4 },
+  otherBlock: { gap: 10 },
+  otherItem: { gap: 4 },
+  otherHeading: { color: THEME.darkGreen, fontWeight: "700" },
+  otherLabel: { color: THEME.darkGreen, fontWeight: "600" },
+  otherBody: { color: THEME.darkGreen },
+  notesLabel: { color: THEME.darkGreen, fontWeight: "700", marginTop: 4 },
   notesInput: {
     minHeight: 72,
     borderWidth: 1,
@@ -523,51 +485,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  saveNotesDisabled: {
-    opacity: 0.6,
-  },
-  saveNotesText: {
-    color: THEME.yellow,
-    fontWeight: "700",
-  },
-  historyBlock: {
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: THEME.mint,
-    paddingTop: 10,
-  },
-  historyItem: {
-    gap: 4,
-  },
-  historyHeading: {
-    color: THEME.darkGreen,
-    fontWeight: "700",
-  },
-  historyLabel: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  historyBody: {
-    color: THEME.darkGreen,
-  },
-  historyMeta: {
-    color: THEME.darkGreen,
-    opacity: 0.75,
-    fontSize: 12,
-    marginTop: 4,
-  },
+  saveNotesDisabled: { opacity: 0.6 },
+  saveNotesText: { color: THEME.yellow, fontWeight: "700" },
   expandHint: {
     color: THEME.darkGreen,
     fontWeight: "600",
     textDecorationLine: "underline",
+    marginTop: 2,
   },
-  empty: {
-    color: THEME.darkGreen,
-    fontStyle: "italic",
-    marginTop: 8,
-  },
-  error: {
-    color: "#9b1c1c",
-  },
+  empty: { color: THEME.darkGreen, fontStyle: "italic", marginTop: 8 },
+  error: { color: "#9b1c1c" },
 });

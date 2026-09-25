@@ -64,6 +64,7 @@ export function PhotoStrip({
     <ScrollView
       horizontal
       nestedScrollEnabled
+      scrollsToTop={false}
       scrollEnabled={!draggedId.current}
       showsHorizontalScrollIndicator={false}
       style={styles.strip}

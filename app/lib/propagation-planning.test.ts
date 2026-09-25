@@ -3,13 +3,19 @@ import { describe, it } from "node:test";
 
 import { canonicalPlantKey } from "./plant-identity";
 import {
+  PROPAGATION_CATEGORY_DEFINITIONS,
+  buildPropagationCategories,
   buildPropagationGroups,
   countNewSinceDone,
   customerIdentityKey,
+  filterPropagationCategories,
   filterPropagationGroups,
   mergePlanningStateRows,
   occurrenceInDateRange,
+  oldestSubmittedAtIso,
+  propagationCategoryIdForReason,
   propagationGroupKeyForItem,
+  sortPropagationCategoryPlants,
   sortPropagationGroups,
   summarizeReasonCounts,
   type RawPropagationOccurrence,
@@ -281,5 +287,145 @@ describe("customer identity key", () => {
       }),
       "shopify:gid://shopify/Customer/1",
     );
+  });
+});
+
+describe("propagation planning categories", () => {
+  it("maps stored unavailable reasons to display categories in fixed order", () => {
+    assert.equal(
+      propagationCategoryIdForReason("currently not in UPT prop circulation"),
+      "upt_prop_circulation",
+    );
+    assert.equal(propagationCategoryIdForReason("available in 2+ mos"), "available_2plus_mos");
+    assert.equal(
+      propagationCategoryIdForReason("not in our current inventory"),
+      "upt_inventory",
+    );
+    assert.equal(propagationCategoryIdForReason("available in 2-3weeks"), "available_2_3_weeks");
+    assert.equal(propagationCategoryIdForReason("other"), "other");
+    assert.deepEqual(
+      PROPAGATION_CATEGORY_DEFINITIONS.map((row) => row.id),
+      [
+        "upt_prop_circulation",
+        "available_2plus_mos",
+        "upt_inventory",
+        "available_2_3_weeks",
+        "other",
+      ],
+    );
+  });
+
+  it("groups plants under reason categories with unique customers and oldest request", () => {
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({
+          offerItemId: "1",
+          plantName: "Hoya XYZ",
+          customerKey: "email:a@example.com",
+          submittedAtIso: "2026-09-10T12:00:00.000Z",
+          unavailableReason: "available in 2+ mos",
+        }),
+        occ({
+          offerItemId: "2",
+          plantName: "Hoya XYZ",
+          customerKey: "email:a@example.com",
+          submittedAtIso: "2026-08-12T12:00:00.000Z",
+          unavailableReason: "available in 2+ mos",
+        }),
+        occ({
+          offerItemId: "3",
+          plantName: "Hoya XYZ",
+          customerKey: "email:b@example.com",
+          submittedAtIso: "2026-09-01T12:00:00.000Z",
+          unavailableReason: "available in 2+ mos",
+        }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [],
+      dateRange: "all",
+    });
+    const categories = buildPropagationCategories(groups);
+    assert.equal(categories.length, 1);
+    assert.equal(categories[0]?.title, "Available in 2+ mos");
+    assert.equal(categories[0]?.plants[0]?.uniqueCustomerCount, 2);
+    assert.equal(categories[0]?.plants[0]?.oldestRequestAtIso, "2026-08-12T12:00:00.000Z");
+    assert.equal(
+      oldestSubmittedAtIso(groups[0]!.occurrences),
+      "2026-08-12T12:00:00.000Z",
+    );
+  });
+
+  it("omits empty categories and sorts plants within a category", () => {
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({
+          offerItemId: "1",
+          plantName: "Zz plant",
+          customerKey: "email:a@example.com",
+          unavailableReason: "currently not in UPT prop circulation",
+        }),
+        occ({
+          offerItemId: "2",
+          plantName: "Hoya ABC",
+          customerKey: "email:a@example.com",
+          unavailableReason: "currently not in UPT prop circulation",
+        }),
+        occ({
+          offerItemId: "3",
+          plantName: "Hoya ABC",
+          customerKey: "email:b@example.com",
+          unavailableReason: "currently not in UPT prop circulation",
+        }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [],
+      dateRange: "all",
+    });
+    const sorted = sortPropagationCategoryPlants(buildPropagationCategories(groups), "most_requested");
+    assert.equal(sorted[0]?.plants[0]?.displayName, "Hoya ABC");
+    assert.equal(sorted[0]?.plants[0]?.uniqueCustomerCount, 2);
+  });
+
+  it("filters plant rows by done state across categories", () => {
+    const doneKey = propagationGroupKeyForItem({
+      canonicalPlantId: null,
+      plantName: "Hoya done",
+    });
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({
+          offerItemId: "1",
+          plantName: "Hoya done",
+          unavailableReason: "other",
+          customerFacingNotes: "Note A",
+        }),
+        occ({
+          offerItemId: "2",
+          plantName: "Hoya open",
+          unavailableReason: "available in 2+ mos",
+        }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [
+        {
+          groupKey: doneKey,
+          completedAt: new Date("2026-09-01T12:00:00.000Z"),
+          propNotes: "",
+          updatedAt: new Date("2026-09-01T12:00:00.000Z"),
+        },
+      ],
+      dateRange: "all",
+    });
+    const categories = buildPropagationCategories(groups);
+    const needs = filterPropagationCategories(categories, "needs", "");
+    assert.equal(needs.length, 1);
+    assert.equal(needs[0]?.id, "available_2plus_mos");
+    const done = filterPropagationCategories(categories, "done", "");
+    assert.equal(done.length, 1);
+    assert.equal(done[0]?.id, "other");
+    assert.equal(done[0]?.plants[0]?.otherOccurrences[0]?.customerFacingNotes, "Note A");
   });
 });

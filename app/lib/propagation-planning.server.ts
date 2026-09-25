@@ -1,14 +1,15 @@
 import prisma from "../db.server";
 import {
+  buildPropagationCategories,
   buildPropagationGroups,
   customerIdentityKey,
   filterPropagationGroups,
   parsePropagationGroupKey,
   propagationGroupKeyForItem,
-  sortPropagationGroups,
-  summarizePropagationPlanning,
+  sortPropagationCategoryPlants,
+  summarizePropagationCategories,
   type PropagationDateRange,
-  type PropagationPlanningGroup,
+  type PropagationPlanningCategory,
   type PropagationPlanningStateRow,
   type PropagationSort,
   type PropagationStatusFilter,
@@ -16,8 +17,8 @@ import {
 } from "./propagation-planning";
 
 export type PropagationPlanningPayload = {
-  summary: ReturnType<typeof summarizePropagationPlanning>;
-  groups: PropagationPlanningGroup[];
+  summary: ReturnType<typeof summarizePropagationCategories>;
+  categories: PropagationPlanningCategory[];
   filters: {
     status: PropagationStatusFilter;
     dateRange: PropagationDateRange;
@@ -37,7 +38,8 @@ function parseDateRange(value: string | null): PropagationDateRange {
 }
 
 function parseSort(value: string | null): PropagationSort {
-  if (value === "most_recent" || value === "az") return value;
+  if (value === "oldest_request" || value === "az") return value;
+  if (value === "most_recent") return "oldest_request";
   return "most_requested";
 }
 
@@ -150,13 +152,16 @@ export async function listPropagationPlanning(
     dateRange,
   });
 
-  const filtered = filterPropagationGroups(built, status, q);
-  const groups = sortPropagationGroups(filtered, sort);
+  const filteredGroups = filterPropagationGroups(built, status, q);
+  const categories = sortPropagationCategoryPlants(
+    buildPropagationCategories(filteredGroups),
+    sort,
+  );
   const inRangeCount = built.reduce((sum, group) => sum + group.occurrenceCount, 0);
 
   return {
-    summary: summarizePropagationPlanning(built, dateRange, inRangeCount),
-    groups,
+    summary: summarizePropagationCategories(built, inRangeCount),
+    categories,
     filters: { status, dateRange, sort, q },
   };
 }

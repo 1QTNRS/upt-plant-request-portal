@@ -58,7 +58,7 @@ describe("Link Stock dropdown dismiss", () => {
   it("lets an empty-space tap dismiss without eating a TextInput tap", () => {
     assert.equal(requestPageKeyboardDismissMode("ios"), "none");
     assert.equal(requestPageKeyboardShouldPersistTaps("ios"), "handled");
-    assert.match(detail, /iosFormScrollKeyboardProps\(\)/);
+    assert.match(detail, /usePrimaryScrollProps/);
     assert.doesNotMatch(detail, /keyboardShouldPersistTaps="/);
     assert.match(detail, /Keyboard\.dismiss/);
     assert.match(editor, /keyboardDismissMode="none"/);
