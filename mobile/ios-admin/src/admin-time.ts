@@ -19,6 +19,17 @@ export function formatAdminNoteTimestamp(iso: string): string {
   return `${datePart} · ${timePart}`;
 }
 
+export function formatPortalDateOnly(iso: string): string {
+  const value = new Date(iso);
+  if (!Number.isFinite(value.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: PORTAL_DISPLAY_TIME_ZONE,
+  }).format(value);
+}
+
 export function formatPortalDateTime(iso: string): string {
   const value = new Date(iso);
   if (!Number.isFinite(value.getTime())) return "";

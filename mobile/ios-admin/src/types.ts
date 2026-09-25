@@ -176,6 +176,55 @@ export type ExactPlantActionResult = {
   review?: ExactPlantReview;
 };
 
+export type PropagationPlanningOccurrence = {
+  offerItemId: string;
+  requestId: string;
+  requestNumber: string;
+  submittedAtIso: string;
+  offerSentAtIso: string;
+  plantName: string;
+  unavailableReason: string | null;
+  customerFacingNotes: string;
+  customerRequestNotes: string | null;
+};
+
+export type PropagationPlanningGroup = {
+  groupKey: string;
+  displayName: string;
+  occurrenceCount: number;
+  uniqueCustomerCount: number;
+  lastRequestedAtIso: string;
+  reasonCounts: Array<{ reason: string; count: number }>;
+  newSinceDone: number;
+  state: {
+    done: boolean;
+    completedAtIso: string | null;
+    propNotes: string;
+    updatedAtIso: string | null;
+  };
+  occurrences: PropagationPlanningOccurrence[];
+};
+
+export type PropagationPlanningPayload = {
+  summary: {
+    needsPropagation: number;
+    done: number;
+    unavailableInRange: number;
+  };
+  groups: PropagationPlanningGroup[];
+  filters: {
+    status: "needs" | "done" | "all";
+    dateRange: "all" | "90d" | "30d";
+    sort: "most_requested" | "most_recent" | "az";
+    q: string;
+  };
+};
+
+export type PropagationPlanningActionResult = {
+  ok: boolean;
+  error?: string;
+};
+
 export type ShopSettings = {
   fedexRemovalWarning: string;
   adminNotificationEmail: string;

@@ -88,6 +88,7 @@ describe("Settings form save does not jump", () => {
     assert.match(source, /mergeSettingsForm/);
     assert.match(source, /settingsFeedbackLabel/);
     assert.doesNotMatch(app, /key=\{.*Settings/);
-    assert.match(app, /component=\{SettingsScreen\}/);
+    assert.match(app, /component=\{SettingsNavigator\}/);
+    assert.match(app, /name="SettingsHome" component=\{SettingsScreen\}/);
   });
 });

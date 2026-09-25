@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   Pressable,
   ScrollView,
@@ -22,6 +23,9 @@ import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
 import { useRootTabBarVisibleOnFocus } from "../use-root-tab-bar";
+import type { SettingsStackParamList } from "./navigation-types";
+
+type Props = NativeStackScreenProps<SettingsStackParamList, "SettingsHome">;
 
 const EMPTY_FORM: SettingsFormState = {
   warning: "",
@@ -38,7 +42,7 @@ const EMPTY_FORM: SettingsFormState = {
   heatPackDescription: "",
 };
 
-export function SettingsScreen() {
+export function SettingsScreen({ navigation }: Props) {
   const { apiUrl, token, signOut } = useSession();
   useRootTabBarVisibleOnFocus();
   const [form, setForm] = useState<SettingsFormState>(EMPTY_FORM);
@@ -133,6 +137,17 @@ export function SettingsScreen() {
       >
         {feedback}
       </Text>
+
+      <Pressable
+        style={styles.propagationCard}
+        onPress={() => navigation.navigate("PropagationPlanning")}
+      >
+        <Text style={styles.propagationTitle}>Propagation Planning</Text>
+        <Text style={styles.propagationBody}>
+          Review plants customers requested that were unavailable and track what needs to be
+          propagated.
+        </Text>
+      </Pressable>
 
       <Text style={styles.label}>FedEx upgrade warning</Text>
       <Text style={styles.muted}>{form.sku ? `Listing SKU: ${form.sku}` : " "}</Text>
@@ -359,4 +374,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   toggleLabel: { color: THEME.darkGreen, flex: 1, fontWeight: "600" },
+  propagationCard: {
+    backgroundColor: THEME.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: THEME.darkGreen,
+    padding: 14,
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  propagationTitle: {
+    color: THEME.darkGreen,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  propagationBody: {
+    color: THEME.muted,
+    lineHeight: 20,
+  },
 });
