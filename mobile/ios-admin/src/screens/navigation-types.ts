@@ -16,8 +16,13 @@ export type ExactPlantsStackParamList = {
   RequestDetail: RequestDetailParams;
 };
 
+export type SettingsStackParamList = {
+  SettingsHome: undefined;
+  PropagationPlanning: undefined;
+};
+
 export type MainTabParamList = {
   Requests: NavigatorScreenParams<RequestsStackParamList> | undefined;
   ExactPlants: NavigatorScreenParams<ExactPlantsStackParamList> | undefined;
-  Settings: undefined;
+  Settings: NavigatorScreenParams<SettingsStackParamList> | undefined;
 };

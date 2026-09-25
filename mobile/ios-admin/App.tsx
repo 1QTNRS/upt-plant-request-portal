@@ -25,6 +25,7 @@ import { ExactPlantsReviewScreen, ExactPlantsScreen } from "./src/screens/ExactP
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { RequestDetailScreen } from "./src/screens/RequestDetailScreen";
 import { RequestListScreen } from "./src/screens/RequestListScreen";
+import { PropagationPlanningScreen } from "./src/screens/PropagationPlanningScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { resolveAdminPushDeepLink, iosAdminLinkPrefix } from "./src/push";
 import { notificationRequestId, registerAdminPush } from "./src/register-push";
@@ -32,6 +33,7 @@ import type {
   ExactPlantsStackParamList,
   MainTabParamList,
   RequestsStackParamList,
+  SettingsStackParamList,
 } from "./src/screens/navigation-types";
 import { THEME } from "./src/theme";
 import { ui } from "./src/ui";
@@ -69,6 +71,7 @@ function openRequestDetail(requestId: string) {
 
 const RequestsStack = createNativeStackNavigator<RequestsStackParamList>();
 const ExactPlantsStack = createNativeStackNavigator<ExactPlantsStackParamList>();
+const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 const Tabs = createMaterialTopTabNavigator<MainTabParamList>();
 
 const stackScreenOptions = {
@@ -108,6 +111,18 @@ function ExactPlantsNavigator() {
   );
 }
 
+function SettingsNavigator() {
+  return (
+    <SettingsStack.Navigator screenOptions={stackScreenOptions}>
+      <SettingsStack.Screen name="SettingsHome" component={SettingsScreen} />
+      <SettingsStack.Screen
+        name="PropagationPlanning"
+        component={PropagationPlanningScreen}
+      />
+    </SettingsStack.Navigator>
+  );
+}
+
 function MainTabs() {
   const insets = useSafeAreaInsets();
   const tabOptions = rootMaterialTabScreenOptions(insets.bottom, true);
@@ -133,7 +148,7 @@ function MainTabs() {
       />
       <Tabs.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={SettingsNavigator}
         options={{ title: "Settings" }}
       />
     </Tabs.Navigator>

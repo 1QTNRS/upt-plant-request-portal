@@ -530,3 +530,20 @@ model AdminPushMessage {
   @@unique([shop, idempotencyKey])
   @@index([shop, status])
 }
+
+/**
+ * Admin-only propagation planning state for grouped unavailable offer snapshots.
+ * `groupKey` is either `c:<canonicalPlantId>` or `a:<canonicalPlantKey>`.
+ */
+model PropagationPlanningState {
+  id          String    @id @default(cuid())
+  shop        String
+  groupKey    String
+  completedAt DateTime?
+  propNotes   String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([shop, groupKey])
+  @@index([shop, completedAt])
+}
