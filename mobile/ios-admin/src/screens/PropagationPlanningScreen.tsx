@@ -22,6 +22,11 @@ import type {
   PropagationPlanningCategory,
   PropagationPlanningPayload,
 } from "../types";
+import {
+  appendNotesDraft,
+  mergeNotesDraftsFromCategories,
+  normalizePropagationPlanningPayload,
+} from "../propagation-planning-screen";
 import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import type { SettingsStackParamList } from "./navigation-types";
@@ -115,7 +120,7 @@ function PlantRow({
         <View style={styles.expandedBlock}>
           {isOther ? (
             <View style={styles.otherBlock}>
-              {plant.otherOccurrences.map((row) => (
+              {(plant.otherOccurrences ?? []).map((row) => (
                 <View key={row.offerItemId} style={styles.otherItem}>
                   <Text style={styles.otherHeading}>
                     {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
@@ -187,19 +192,18 @@ export function PropagationPlanningScreen({ navigation }: Props) {
           sort,
           q: query.trim() || undefined,
         });
-        const next = await apiGet<PropagationPlanningPayload>(apiUrl, token, path);
+        const raw = await apiGet<PropagationPlanningPayload>(apiUrl, token, path);
+        const { payload: next, warning } = normalizePropagationPlanningPayload(raw);
+        if (warning.missingCategories && __DEV__) {
+          console.error("[PropagationPlanning]", warning.message);
+        }
         setPayload(next);
-        setNotesDrafts((current) => {
-          const merged = { ...current };
-          for (const category of next.categories) {
-            for (const plant of category.plants) {
-              if (merged[plant.groupKey] === undefined) {
-                merged[plant.groupKey] = plant.state.propNotes;
-              }
-            }
-          }
-          return merged;
-        });
+        if (warning.message) {
+          setError(warning.message);
+        }
+        setNotesDrafts((current) =>
+          mergeNotesDraftsFromCategories(current, next.categories),
+        );
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not load propagation planning.");
       } finally {
@@ -364,7 +368,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
           <Text style={styles.empty}>{emptyMessage}</Text>
         ) : null}
 
-        {payload?.categories.map((category: PropagationPlanningCategory) => (
+        {(payload?.categories ?? []).map((category: PropagationPlanningCategory) => (
           <View key={category.id} style={styles.categoryBox}>
             <Text style={styles.categoryTitle}>{category.title}</Text>
             <Text style={styles.categoryAction}>{category.actionLabel}</Text>
@@ -385,7 +389,9 @@ export function PropagationPlanningScreen({ navigation }: Props) {
                 onToggleDone={() => void toggleDone(plant.groupKey)}
                 notesDraft={notesDrafts[plant.groupKey] ?? plant.state.propNotes}
                 onNotesChange={(value) =>
-                  setNotesDrafts((current) => ({ ...current, [plant.groupKey]: value }))
+                  setNotesDrafts((current) =>
+                    appendNotesDraft(current, plant.groupKey, value),
+                  )
                 }
                 onSaveNotes={() => void saveNotes(plant.groupKey)}
                 savingNotes={savingNotesKey === plant.groupKey}
