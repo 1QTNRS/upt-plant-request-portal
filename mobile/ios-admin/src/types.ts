@@ -188,13 +188,19 @@ export type PropagationPlanningOccurrence = {
   customerRequestNotes: string | null;
 };
 
-export type PropagationPlanningGroup = {
+export type PropagationCategoryOtherOccurrence = {
+  offerItemId: string;
+  requestNumber: string;
+  submittedAtIso: string;
+  offerSentAtIso: string;
+  customerFacingNotes: string;
+};
+
+export type PropagationCategoryPlantRow = {
   groupKey: string;
   displayName: string;
-  occurrenceCount: number;
   uniqueCustomerCount: number;
-  lastRequestedAtIso: string;
-  reasonCounts: Array<{ reason: string; count: number }>;
+  oldestRequestAtIso: string;
   newSinceDone: number;
   state: {
     done: boolean;
@@ -202,7 +208,14 @@ export type PropagationPlanningGroup = {
     propNotes: string;
     updatedAtIso: string | null;
   };
-  occurrences: PropagationPlanningOccurrence[];
+  otherOccurrences: PropagationCategoryOtherOccurrence[];
+};
+
+export type PropagationPlanningCategory = {
+  id: string;
+  title: string;
+  actionLabel: string;
+  plants: PropagationCategoryPlantRow[];
 };
 
 export type PropagationPlanningPayload = {
@@ -211,11 +224,11 @@ export type PropagationPlanningPayload = {
     done: number;
     unavailableInRange: number;
   };
-  groups: PropagationPlanningGroup[];
+  categories: PropagationPlanningCategory[];
   filters: {
     status: "needs" | "done" | "all";
     dateRange: "all" | "90d" | "30d";
-    sort: "most_requested" | "most_recent" | "az";
+    sort: "most_requested" | "oldest_request" | "az";
     q: string;
   };
 };

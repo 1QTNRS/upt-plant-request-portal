@@ -49,7 +49,7 @@ describe("iOS text input keyboard focus", () => {
     assert.match(keyboard, /keyboardDismissMode: "none"/);
     assert.doesNotMatch(keyboard, /keyboardShouldPersistTaps: "never"/);
     assert.doesNotMatch(keyboard, /keyboardDismissMode: "on-drag"/);
-    assert.match(read("src/screens/RequestDetailScreen.tsx"), /iosFormScrollKeyboardProps\(\)/);
+    assert.match(read("src/screens/RequestDetailScreen.tsx"), /usePrimaryScrollProps/);
     assert.doesNotMatch(
       read("src/screens/RequestDetailScreen.tsx"),
       /keyboardShouldPersistTaps="/,

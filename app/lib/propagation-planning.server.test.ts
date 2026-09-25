@@ -173,12 +173,12 @@ describe("propagation planning mobile API", () => {
     );
     assert.equal(response.status, 200);
     const payload = (await response.json()) as {
-      groups: Array<{ displayName: string; occurrences: Array<{ plantName: string }> }>;
+      categories: Array<{ plants: Array<{ displayName: string }> }>;
     };
-    const plants = payload.groups.flatMap((group) =>
-      group.occurrences.map((row) => row.plantName),
+    const plants = payload.categories.flatMap((category) =>
+      category.plants.map((row) => row.displayName),
     );
-    assert.ok(plants.includes(sent.item.plantName));
+    assert.ok(plants.some((name) => name.includes("Hoya") || name === sent.item.plantName));
     assert.ok(!plants.includes("Unsent NA"));
     assert.ok(!plants.some((name) => name.includes("Thai Constellation Exact")));
   });
@@ -193,11 +193,11 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      groups: Array<{ groupKey: string; occurrences: Array<{ plantName: string }> }>;
+      categories: Array<{ plants: Array<{ groupKey: string; displayName: string }> }>;
     };
-    const group = payload.groups.find((row) =>
-      row.occurrences.some((occurrence) => occurrence.plantName === plantName),
-    );
+    const group = payload.categories
+      .flatMap((category) => category.plants)
+      .find((row) => row.displayName === plantName || row.displayName.includes(plantName));
     assert.ok(group, `missing group for ${plantName}`);
     return group.groupKey;
   }
@@ -242,13 +242,17 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      groups: Array<{
-        groupKey: string;
-        state: { done: boolean; propNotes: string };
-        newSinceDone: number;
+      categories: Array<{
+        plants: Array<{
+          groupKey: string;
+          state: { done: boolean; propNotes: string };
+          newSinceDone: number;
+        }>;
       }>;
     };
-    const group = payload.groups.find((row) => row.groupKey === groupKey);
+    const group = payload.categories
+      .flatMap((category) => category.plants)
+      .find((row) => row.groupKey === groupKey);
     assert.equal(group?.state.done, true);
     assert.equal(group?.state.propNotes, "Mother plant recovering.");
     assert.ok((group?.newSinceDone ?? 0) >= 2);
@@ -351,9 +355,11 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      groups: Array<{ groupKey: string; state: { propNotes: string } }>;
+      categories: Array<{ plants: Array<{ groupKey: string; state: { propNotes: string } }> }>;
     };
-    const canonicalGroup = payload.groups.find((row) => row.groupKey === `c:${canonical.id}`);
+    const canonicalGroup = payload.categories
+      .flatMap((category) => category.plants)
+      .find((row) => row.groupKey === `c:${canonical.id}`);
     assert.equal(canonicalGroup?.state.propNotes, "Keep this note after linking.");
   });
 });

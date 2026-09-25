@@ -4,11 +4,13 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_STATUS_FILTER,
   STATUS_FILTERS,
+  buildRequestListIndexes,
   closedRequestSortLabel,
   filterRequestRows,
   parseClosedRequestSort,
   sortClosedRequests,
   statusFilterCounts,
+  visibleRequestsFromIndexes,
 } from "./request-filters";
 import type { RequestRow } from "./types";
 
@@ -143,6 +145,18 @@ describe("closed request sorting", () => {
     assert.deepEqual(
       filterRequestRows(terminal, "Closed", "", "oldest").map((item) => item.id),
       ["closed-old", "expired-new"],
+    );
+  });
+
+  it("reuses precomputed Closed sorts without changing membership", () => {
+    const indexes = buildRequestListIndexes(rows);
+    assert.deepEqual(
+      visibleRequestsFromIndexes(indexes, "Closed", "", "newest").map((item) => item.id).sort(),
+      ["closed", "expired"],
+    );
+    assert.deepEqual(
+      visibleRequestsFromIndexes(indexes, "Pending", "").map((item) => item.id),
+      ["pending"],
     );
   });
 });

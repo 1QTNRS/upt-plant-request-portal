@@ -648,6 +648,7 @@ export function ItemEditor({
                   ) : (
                     <GestureScrollView
                       nestedScrollEnabled
+                      scrollsToTop={false}
                       keyboardShouldPersistTaps="always"
                       keyboardDismissMode="none"
                       onTouchStart={consumeStockSearchTouch}

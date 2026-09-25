@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -13,16 +13,17 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet } from "../api";
-import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
+import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { logActiveTouchBlockers } from "../touch-diagnostics";
 import { StatusFilterBar } from "../components/StatusFilterBar";
 import { apiPath } from "../query";
 import {
   DEFAULT_STATUS_FILTER,
+  buildRequestListIndexes,
   closedRequestSortLabel,
-  filterRequestRows,
   parseClosedRequestSort,
   statusFilterCounts,
+  visibleRequestsFromIndexes,
   type ClosedRequestSort,
   type StatusFilterValue,
 } from "../request-filters";
@@ -47,6 +48,9 @@ export function RequestListScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const primaryScrollProps = usePrimaryScrollProps();
+  const deferredStatusFilter = useDeferredValue(statusFilter);
+  const deferredClosedSort = useDeferredValue(closedSort);
 
   const loadList = useCallback(
     async (nextQuery: string, mode: "initial" | "refresh" = "initial") => {
@@ -87,8 +91,18 @@ export function RequestListScreen({ navigation }: Props) {
     }, []),
   );
 
-  const visible = filterRequestRows(requests, statusFilter, "", closedSort);
-  const counts = statusFilterCounts(requests, stats);
+  const listIndexes = useMemo(() => buildRequestListIndexes(requests), [requests]);
+  const counts = useMemo(() => statusFilterCounts(requests, stats), [requests, stats]);
+  const visible = useMemo(
+    () =>
+      visibleRequestsFromIndexes(
+        listIndexes,
+        deferredStatusFilter,
+        query,
+        deferredClosedSort,
+      ),
+    [listIndexes, deferredStatusFilter, query, deferredClosedSort],
+  );
 
   return (
     <SafeAreaView style={ui.screen} edges={["top", "left", "right"]}>
@@ -134,7 +148,7 @@ export function RequestListScreen({ navigation }: Props) {
       />
       {error ? <Text style={ui.error}>{error}</Text> : null}
       <ScrollView
-        {...iosFormScrollKeyboardProps()}
+        {...primaryScrollProps}
         style={ui.flexPage}
         refreshControl={
           <RefreshControl

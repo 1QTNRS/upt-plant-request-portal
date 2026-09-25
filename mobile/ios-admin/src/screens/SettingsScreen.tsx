@@ -18,7 +18,7 @@ import {
   settingsFormFromShop,
   type SettingsFormState,
 } from "../settings-form";
-import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
+import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type { ShopSettings } from "../types";
@@ -45,6 +45,7 @@ const EMPTY_FORM: SettingsFormState = {
 export function SettingsScreen({ navigation }: Props) {
   const { apiUrl, token, signOut } = useSession();
   useRootTabBarVisibleOnFocus();
+  const primaryScrollProps = usePrimaryScrollProps();
   const [form, setForm] = useState<SettingsFormState>(EMPTY_FORM);
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -123,7 +124,7 @@ export function SettingsScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
-    <ScrollView {...iosFormScrollKeyboardProps()} contentContainerStyle={styles.page}>
+    <ScrollView {...primaryScrollProps} contentContainerStyle={styles.page}>
       <Text style={styles.title}>Settings</Text>
       <Text style={styles.muted}>
         FedEx warning, admin emails, and iOS push toggles. Create or revoke a

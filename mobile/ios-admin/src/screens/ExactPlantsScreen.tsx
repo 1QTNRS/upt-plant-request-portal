@@ -14,7 +14,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
-import { iosFormScrollKeyboardProps } from "../ios-form-keyboard";
+import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type {
@@ -49,6 +49,7 @@ const FILTER_LABELS: Record<ExactPlantFilter, string> = {
 type ListProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlantsList">;
 
 export function ExactPlantsScreen({ navigation }: ListProps) {
+  const primaryScrollProps = usePrimaryScrollProps();
   const { apiUrl, token } = useSession();
   useRootTabBarVisibleOnFocus();
   const [filter, setFilter] = useState<ExactPlantFilter>("not_yet_listed");
@@ -106,6 +107,7 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
       </View>
       {error ? <Text style={ui.error}>{error}</Text> : null}
       <ScrollView
+        {...primaryScrollProps}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -150,6 +152,7 @@ export function ExactPlantsScreen({ navigation }: ListProps) {
 type ReviewProps = NativeStackScreenProps<ExactPlantsStackParamList, "ExactPlantsReview">;
 
 export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
+  const primaryScrollProps = usePrimaryScrollProps();
   const { apiUrl, token } = useSession();
   useRootTabBarHiddenOnFocus();
   const { itemId } = route.params;
@@ -218,7 +221,7 @@ export function ExactPlantsReviewScreen({ navigation, route }: ReviewProps) {
 
   return (
     <SafeAreaView style={ui.flex} edges={["top", "left", "right", "bottom"]}>
-    <ScrollView {...iosFormScrollKeyboardProps()} contentContainerStyle={ui.page}>
+    <ScrollView {...primaryScrollProps} contentContainerStyle={ui.page}>
       <Pressable onPress={() => navigation.goBack()}>
         <Text style={ui.link}>← EXACT PLANTS</Text>
       </Pressable>

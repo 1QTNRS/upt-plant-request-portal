@@ -80,6 +80,17 @@ export function matchesStatusFilter(
   return row.status === filter;
 }
 
+function matchesSearchQuery(
+  row: Pick<RequestRow, "customer" | "email" | "requestNumber" | "plantsRequested">,
+  needle: string,
+): boolean {
+  if (!needle) return true;
+  return [row.customer, row.email, row.requestNumber, row.plantsRequested]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
+}
+
 export function filterRequestRows(
   rows: RequestRow[],
   filter: string,
@@ -89,14 +100,58 @@ export function filterRequestRows(
   const needle = query.trim().toLowerCase();
   const filtered = rows.filter((row) => {
     if (!matchesStatusFilter(row, filter)) return false;
-    if (!needle) return true;
-    return [row.customer, row.email, row.requestNumber, row.plantsRequested]
-      .join(" ")
-      .toLowerCase()
-      .includes(needle);
+    return matchesSearchQuery(row, needle);
   });
   if (filter !== "Closed") return filtered;
   return sortClosedRequests(filtered, closedSort);
+}
+
+/** Precomputed Closed sorts so switching the Closed pill does not re-sort on every render. */
+export type RequestListIndexes = {
+  closedBySort: Record<ClosedRequestSort, RequestRow[]>;
+  new: RequestRow[];
+  pending: RequestRow[];
+  existingOrder: RequestRow[];
+};
+
+export function buildRequestListIndexes(rows: RequestRow[]): RequestListIndexes {
+  const closed = rows.filter((row) => matchesStatusFilter(row, "Closed"));
+  return {
+    closedBySort: {
+      newest: sortClosedRequests(closed, "newest"),
+      oldest: sortClosedRequests(closed, "oldest"),
+    },
+    new: rows.filter((row) => matchesStatusFilter(row, "New")),
+    pending: rows.filter((row) => matchesStatusFilter(row, "Pending")),
+    existingOrder: rows.filter((row) => matchesStatusFilter(row, "ExistingOrder")),
+  };
+}
+
+export function visibleRequestsFromIndexes(
+  indexes: RequestListIndexes,
+  filter: string,
+  query = "",
+  closedSort: ClosedRequestSort = "newest",
+): RequestRow[] {
+  const needle = query.trim().toLowerCase();
+  let base: RequestRow[];
+  switch (filter) {
+    case "Closed":
+      base = indexes.closedBySort[closedSort];
+      break;
+    case "Pending":
+      base = indexes.pending;
+      break;
+    case "ExistingOrder":
+      base = indexes.existingOrder;
+      break;
+    case "New":
+    default:
+      base = indexes.new;
+      break;
+  }
+  if (!needle) return base;
+  return base.filter((row) => matchesSearchQuery(row, needle));
 }
 
 export function statusFilterCounts(
