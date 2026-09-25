@@ -397,6 +397,10 @@ export default function Analytics() {
       <CollapsibleSectionStyles />
 
       <s-section heading="Date Range">
+        <s-text color="subdued">
+          Every figure on this page uses this range, including the customer
+          table, item conversion, and revenue this / last month.
+        </s-text>
         <WrappingRow>
           {DATE_FILTERS.map((filter) => (
             <s-button

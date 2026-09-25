@@ -43,10 +43,14 @@ async function seedRequest(options: {
   fulfillmentTypes?: Array<"exact_plant" | "growers_choice">;
   /** Per plant; a false marks the plant UPT could not supply at all. */
   availability?: boolean[];
+  customerName?: string;
+  email?: string;
 }) {
+  const customerName = options.customerName ?? "Test Customer";
+  const email = options.email ?? "test.customer@example.com";
   const customer = await prisma.customerProfile.upsert({
-    where: { shop_email: { shop, email: "test.customer@example.com" } },
-    create: { shop, name: "Test Customer", email: "test.customer@example.com" },
+    where: { shop_email: { shop, email } },
+    create: { shop, name: customerName, email },
     update: {},
   });
 
@@ -55,8 +59,8 @@ async function seedRequest(options: {
       shop,
       requestNumber: options.requestNumber,
       customerId: customer.id,
-      customerName: "Test Customer",
-      customerEmail: "test.customer@example.com",
+      customerName,
+      customerEmail: email,
       status: options.status,
       submittedAt: options.submittedAt ?? new Date("2026-01-15T00:00:00.000Z"),
       paidAt: options.paidAt ?? null,
@@ -120,8 +124,8 @@ async function seedRequest(options: {
       data: {
         requestId: request.id,
         respondedAt: new Date("2026-01-17T00:00:00.000Z"),
-        customerName: "Test Customer",
-        customerEmail: "test.customer@example.com",
+        customerName,
+        customerEmail: email,
         requestNumber: options.requestNumber,
         fedexUpgradeSelected: false,
         snapshotJson: "{}",
@@ -563,3 +567,140 @@ describe("analytics by fulfilment source", () => {
     assert.equal(fulfillment.growersChoice.revenue, 285);
   });
 });
+
+describe("analytics date range", () => {
+  before(reset);
+  after(reset);
+
+  /**
+   * One paid request inside the picker, one paid request outside it — the
+   * customer table, item-conversion rows, and this/last-month cards used to
+   * read the whole shop and ignore `range`.
+   */
+  it("keeps the customer table, item conversion and month cards on the picker", async () => {
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 10);
+    const lastMonthPaid = lastMonthStart;
+
+    await seedRequest({
+      requestNumber: "REQ500",
+      status: "Closed",
+      customerName: "In Range",
+      email: "in.range@example.com",
+      prices: [200],
+      choices: ["accept"],
+      submittedAt: now,
+      paidAt: now,
+    });
+    await seedRequest({
+      requestNumber: "REQ501",
+      status: "Closed",
+      customerName: "Paid This Month Outside Range",
+      email: "outside.thismonth@example.com",
+      prices: [500],
+      choices: ["accept"],
+      submittedAt: twoMonthsAgo,
+      paidAt: now,
+    });
+    await seedRequest({
+      requestNumber: "REQ502",
+      status: "Closed",
+      customerName: "Last Month Only",
+      email: "last.month@example.com",
+      prices: [300],
+      choices: ["accept"],
+      submittedAt: lastMonthStart,
+      paidAt: lastMonthPaid,
+    });
+
+    const thisMonth = await getAnalytics(shop, {
+      start: thisMonthStart,
+      end: now,
+    });
+    assert.deepEqual(
+      thisMonth.customers.map((row) => row.email).sort(),
+      ["in.range@example.com"],
+      "a customer whose only request sits outside the picker is not listed",
+    );
+    assert.deepEqual(
+      thisMonth.itemPurchaseRows.map((row) => row.requestId).sort(),
+      ["REQ500"],
+      "item conversion lists only requests submitted in the range",
+    );
+    assert.equal(
+      thisMonth.financial.revenueThisMonth,
+      200,
+      "a payment this month on an older request does not fill Revenue This Month",
+    );
+    assert.equal(
+      thisMonth.financial.revenueLastMonth,
+      0,
+      "last month's paid request is outside This Month's submittedAt window",
+    );
+    assert.deepEqual(thisMonth.financial.revenueByMonth, [
+      { month: monthKey(now), revenue: 200 },
+    ]);
+
+    const lastMonthEnd = thisMonthStart;
+    const lastMonth = await getAnalytics(shop, {
+      start: lastMonthStart,
+      end: new Date(lastMonthEnd.getTime() - 1),
+    });
+    assert.deepEqual(
+      lastMonth.customers.map((row) => row.email),
+      ["last.month@example.com"],
+    );
+    assert.equal(lastMonth.financial.revenueThisMonth, 0);
+    assert.equal(lastMonth.financial.revenueLastMonth, 300);
+
+    const allTime = await getAnalytics(shop, range);
+    assert.equal(allTime.customers.length, 3);
+    assert.equal(allTime.itemPurchaseRows.length, 3);
+    assert.equal(allTime.financial.revenueThisMonth, 700);
+    assert.equal(allTime.financial.revenueLastMonth, 300);
+  });
+
+  it("counts only the in-range requests on a customer who also has older ones", async () => {
+    await reset();
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    await seedRequest({
+      requestNumber: "REQ510",
+      status: "Closed",
+      customerName: "Alex Rivera",
+      email: "alex.range@example.com",
+      prices: [180],
+      choices: ["accept"],
+      submittedAt: new Date(now.getFullYear(), now.getMonth() - 2, 4),
+      paidAt: new Date(now.getFullYear(), now.getMonth() - 2, 8),
+    });
+    await seedRequest({
+      requestNumber: "REQ511",
+      status: "Pending",
+      customerName: "Alex Rivera",
+      email: "alex.range@example.com",
+      prices: [175],
+      submittedAt: now,
+    });
+
+    const thisMonth = await getAnalytics(shop, {
+      start: thisMonthStart,
+      end: now,
+    });
+    assert.equal(thisMonth.customers.length, 1);
+    assert.equal(thisMonth.customers[0].totalRequests, 1);
+    assert.equal(thisMonth.customers[0].itemsPurchased, 0);
+    assert.equal(thisMonth.customers[0].totalRevenue, 0);
+    assert.deepEqual(
+      thisMonth.itemPurchaseRows.map((row) => row.requestId),
+      ["REQ511"],
+    );
+  });
+});
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
