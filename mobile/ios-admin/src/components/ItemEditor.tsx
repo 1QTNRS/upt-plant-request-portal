@@ -891,7 +891,7 @@ const styles = {
     marginBottom: 16,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: "#ff7f7f",
+    backgroundColor: "#ff9999",
     borderWidth: 1,
     borderColor: "#d86464",
     gap: 4,

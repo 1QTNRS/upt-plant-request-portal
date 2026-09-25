@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,19 +16,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiGet, apiPostJson } from "../api";
 import { formatPortalDateOnly } from "../admin-time";
+import { CompactSelect } from "../components/CompactSelect";
 import { apiPath } from "../query";
 import { useSession } from "../SessionContext";
 import { THEME } from "../theme";
 import type {
   PropagationCategoryPlantRow,
-  PropagationPlanningCategory,
   PropagationPlanningPayload,
+  PropagationTabId,
 } from "../types";
 import {
   appendNotesDraft,
-  mergeNotesDraftsFromCategories,
+  mergeNotesDraftsFromTabs,
   normalizePropagationPlanningPayload,
+  plantsForTab,
+  PROPAGATION_TAB_ORDER,
 } from "../propagation-planning-screen";
+import { scrollToTopButtonVisible } from "../scroll-to-top-button";
 import { usePrimaryScrollProps } from "../use-primary-scroll";
 import { useRootTabBarHiddenOnFocus } from "../use-root-tab-bar";
 import type { SettingsStackParamList } from "./navigation-types";
@@ -38,8 +44,9 @@ type DateRange = PropagationPlanningPayload["filters"]["dateRange"];
 type Sort = PropagationPlanningPayload["filters"]["sort"];
 
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
-  { value: "needs", label: "Needs" },
+  { value: "active", label: "Active" },
   { value: "done", label: "Done" },
+  { value: "closed", label: "Closed" },
   { value: "all", label: "All" },
 ];
 
@@ -55,13 +62,23 @@ const SORT_OPTIONS: Array<{ value: Sort; label: string }> = [
   { value: "az", label: "A–Z" },
 ];
 
+const TAB_LABELS: Record<PropagationTabId, string> = {
+  prop: "Prop",
+  inventory: "Inventory",
+  check_props: "Check Props",
+  other: "Other",
+};
+
 function PlantRow({
   plant,
-  categoryActionLabel,
+  actionLabel,
   isOther,
   expanded,
   onToggleExpand,
+  onCollapseExpand,
   onToggleDone,
+  onCloseOrReopen,
+  closing,
   notesDraft,
   onNotesChange,
   onSaveNotes,
@@ -69,11 +86,14 @@ function PlantRow({
   togglingDone,
 }: {
   plant: PropagationCategoryPlantRow;
-  categoryActionLabel: string;
+  actionLabel: string | null;
   isOther: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
+  onCollapseExpand: () => void;
   onToggleDone: () => void;
+  onCloseOrReopen: () => void;
+  closing: boolean;
   notesDraft: string;
   onNotesChange: (value: string) => void;
   onSaveNotes: () => void;
@@ -81,26 +101,27 @@ function PlantRow({
   togglingDone: boolean;
 }) {
   const checked = plant.state.done;
-  const checkLabel = checked
-    ? `✓ ${categoryActionLabel}${
-        plant.state.completedAtIso
-          ? ` · ${formatPortalDateOnly(plant.state.completedAtIso)}`
-          : ""
-      }`
-    : `☐ ${categoryActionLabel}`;
+  const showAction = Boolean(actionLabel) && !plant.state.closed;
+  const checkText = actionLabel
+    ? checked
+      ? `☑ ${actionLabel}${
+          plant.state.completedAtIso
+            ? ` · ${formatPortalDateOnly(plant.state.completedAtIso)}`
+            : ""
+        }`
+      : `☐ ${actionLabel.toUpperCase()}`
+    : "";
 
   return (
     <View style={styles.plantRow}>
-      <Pressable onPress={onToggleDone} disabled={togglingDone} style={styles.checkRow}>
-        <Text style={styles.checkLabel}>{checkLabel}</Text>
-      </Pressable>
-
       {isOther ? (
         <Pressable onPress={onToggleExpand}>
           <Text style={styles.plantNameLink}>{plant.displayName}</Text>
         </Pressable>
       ) : (
-        <Text style={styles.plantName}>{plant.displayName}</Text>
+        <Pressable onPress={onToggleExpand}>
+          <Text style={styles.plantName}>{plant.displayName}</Text>
+        </Pressable>
       )}
 
       <Text style={styles.plantMeta}>
@@ -110,14 +131,65 @@ function PlantRow({
       <Text style={styles.plantMeta}>
         Oldest request: {formatPortalDateOnly(plant.oldestRequestAtIso)}
       </Text>
-      {plant.newSinceDone > 0 ? (
+      {plant.newSinceDone > 0 && !plant.state.closed ? (
         <Text style={styles.newSinceDone}>
           {plant.newSinceDone} new request{plant.newSinceDone === 1 ? "" : "s"} since done
         </Text>
       ) : null}
+      {plant.newSinceClosed > 0 && plant.state.closed ? (
+        <Text style={styles.newSinceDone}>
+          {plant.newSinceClosed} new request{plant.newSinceClosed === 1 ? "" : "s"} since closed
+        </Text>
+      ) : null}
+
+      <View style={styles.actionRow}>
+        {showAction ? (
+          <Pressable
+            onPress={onToggleDone}
+            disabled={togglingDone}
+            style={[styles.actionCheck, checked ? styles.actionCheckDone : null]}
+          >
+            <Text style={[styles.actionCheckText, checked ? styles.actionCheckTextDone : null]}>
+              {checkText}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.actionSpacer} />
+        )}
+        <Pressable
+          onPress={onCloseOrReopen}
+          disabled={closing}
+          style={styles.closeButton}
+          accessibilityRole="button"
+          accessibilityLabel={plant.state.closed ? "Reopen plant" : "Close plant"}
+        >
+          <Text style={styles.closeButtonText}>
+            {plant.state.closed ? "Reopen" : "✕ Close"}
+          </Text>
+        </Pressable>
+      </View>
+
+      {!expanded && !isOther ? (
+        <Pressable onPress={onToggleExpand}>
+          <Text style={styles.expandHint}>Prop Notes & history</Text>
+        </Pressable>
+      ) : null}
+      {!expanded && isOther ? (
+        <Pressable onPress={onToggleExpand}>
+          <Text style={styles.expandHint}>Show responses & Prop Notes</Text>
+        </Pressable>
+      ) : null}
 
       {expanded ? (
         <View style={styles.expandedBlock}>
+          <Pressable
+            onPress={onCollapseExpand}
+            style={styles.expandedDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Collapse details"
+          >
+            <Text style={styles.expandedDismissText}>✕</Text>
+          </Pressable>
           {isOther ? (
             <View style={styles.otherBlock}>
               {(plant.otherOccurrences ?? []).map((row) => (
@@ -132,7 +204,19 @@ function PlantRow({
                 </View>
               ))}
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.historyBlock}>
+              {(plant.historyOccurrences ?? []).map((row) => (
+                <View key={row.offerItemId} style={styles.otherItem}>
+                  <Text style={styles.otherHeading}>
+                    {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
+                  </Text>
+                  <Text style={styles.otherLabel}>Unavailable reason:</Text>
+                  <Text style={styles.otherBody}>{row.unavailableReason}</Text>
+                </View>
+              ))}
+            </View>
+          )}
           <Text style={styles.notesLabel}>Prop Notes</Text>
           <TextInput
             value={notesDraft}
@@ -152,13 +236,7 @@ function PlantRow({
             </Text>
           </Pressable>
         </View>
-      ) : (
-        <Pressable onPress={onToggleExpand}>
-          <Text style={styles.expandHint}>
-            {isOther ? "Show responses & Prop Notes" : "Prop Notes & details"}
-          </Text>
-        </Pressable>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -166,12 +244,15 @@ function PlantRow({
 export function PropagationPlanningScreen({ navigation }: Props) {
   useRootTabBarHiddenOnFocus();
   const primaryScrollProps = usePrimaryScrollProps();
+  const scrollRef = useRef<ScrollView>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const { apiUrl, token } = useSession();
   const [payload, setPayload] = useState<PropagationPlanningPayload | null>(null);
-  const [status, setStatus] = useState<StatusFilter>("needs");
+  const [status, setStatus] = useState<StatusFilter>("active");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [sort, setSort] = useState<Sort>("most_requested");
   const [query, setQuery] = useState("");
+  const [reasonTab, setReasonTab] = useState<PropagationTabId>("prop");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -179,6 +260,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [savingNotesKey, setSavingNotesKey] = useState<string | null>(null);
   const [togglingDoneKey, setTogglingDoneKey] = useState<string | null>(null);
+  const [closingKey, setClosingKey] = useState<string | null>(null);
 
   const load = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -194,16 +276,14 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         });
         const raw = await apiGet<PropagationPlanningPayload>(apiUrl, token, path);
         const { payload: next, warning } = normalizePropagationPlanningPayload(raw);
-        if (warning.missingCategories && __DEV__) {
+        if (warning.missingTabs && __DEV__) {
           console.error("[PropagationPlanning]", warning.message);
         }
         setPayload(next);
-        if (warning.message) {
+        if (warning.message && warning.missingTabs && !next.tabs.length) {
           setError(warning.message);
         }
-        setNotesDrafts((current) =>
-          mergeNotesDraftsFromCategories(current, next.categories),
-        );
+        setNotesDrafts((current) => mergeNotesDraftsFromTabs(current, next.tabs));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not load propagation planning.");
       } finally {
@@ -218,19 +298,32 @@ export function PropagationPlanningScreen({ navigation }: Props) {
     void load("initial");
   }, [load]);
 
+  const activeTabPlants = useMemo(
+    () => plantsForTab(payload?.tabs ?? [], reasonTab),
+    [payload?.tabs, reasonTab],
+  );
+
+  const activeTabMeta = useMemo(
+    () => payload?.tabs.find((tab) => tab.id === reasonTab),
+    [payload?.tabs, reasonTab],
+  );
+
   const emptyMessage = useMemo(() => {
     if (query.trim() || dateRange !== "all") {
       return "No unavailable requests match these filters.";
     }
-    if (status === "needs") {
-      return "No unavailable plants need propagation right now.";
+    if (status === "active") {
+      return "No active plants in this tab.";
+    }
+    if (status === "closed") {
+      return "No closed plants in this tab.";
     }
     return "No propagation planning groups match this filter.";
   }, [query, dateRange, status]);
 
   async function toggleDone(groupKey: string) {
-    const plant = payload?.categories
-      .flatMap((category) => category.plants)
+    const plant = payload?.tabs
+      .flatMap((tab) => tab.plants)
       .find((row) => row.groupKey === groupKey);
     if (!plant) return;
     setTogglingDoneKey(groupKey);
@@ -245,6 +338,22 @@ export function PropagationPlanningScreen({ navigation }: Props) {
       setError(caught instanceof Error ? caught.message : "Could not update done state.");
     } finally {
       setTogglingDoneKey(null);
+    }
+  }
+
+  async function closeOrReopen(groupKey: string, closed: boolean) {
+    setClosingKey(groupKey);
+    setError(null);
+    try {
+      await apiPostJson(apiUrl, token, "/api/mobile/admin/propagation-planning", {
+        intent: closed ? "reopen" : "close",
+        groupKey,
+      });
+      await load("refresh");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update closed state.");
+    } finally {
+      setClosingKey(null);
     }
   }
 
@@ -265,10 +374,21 @@ export function PropagationPlanningScreen({ navigation }: Props) {
     }
   }
 
+  function onScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    setShowScrollTop(scrollToTopButtonVisible(event.nativeEvent.contentOffset.y));
+  }
+
+  function scrollToTop() {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: THEME.mint }} edges={["top", "left", "right"]}>
       <ScrollView
+        ref={scrollRef}
         {...primaryScrollProps}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} />
         }
@@ -284,13 +404,9 @@ export function PropagationPlanningScreen({ navigation }: Props) {
 
         {payload ? (
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>
-              Needs Propagation: {payload.summary.needsPropagation}
-            </Text>
+            <Text style={styles.summaryText}>Active: {payload.summary.active}</Text>
             <Text style={styles.summaryText}>Done: {payload.summary.done}</Text>
-            <Text style={styles.summaryText}>
-              Unavailable requests in current date range: {payload.summary.unavailableInRange}
-            </Text>
+            <Text style={styles.summaryText}>Closed: {payload.summary.closed}</Text>
           </View>
         ) : null}
 
@@ -304,94 +420,78 @@ export function PropagationPlanningScreen({ navigation }: Props) {
           onSubmitEditing={() => void load("initial")}
         />
 
-        <Text style={styles.filterHeading}>Status</Text>
-        <View style={styles.chipRow}>
-          {STATUS_OPTIONS.map((option) => (
-            <Pressable
-              key={option.value}
-              onPress={() => setStatus(option.value)}
-              style={[styles.chip, status === option.value ? styles.chipActive : null]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  status === option.value ? styles.chipTextActive : null,
-                ]}
-              >
-                {option.label}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={styles.filterRow}>
+          <CompactSelect label="Status" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
+          <CompactSelect
+            label="Date range"
+            value={dateRange}
+            options={DATE_OPTIONS}
+            onChange={setDateRange}
+          />
         </View>
+        <CompactSelect label="Sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
 
-        <Text style={styles.filterHeading}>Date range</Text>
-        <View style={styles.chipRow}>
-          {DATE_OPTIONS.map((option) => (
+        <ScrollView
+          horizontal
+          scrollsToTop={false}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabRow}
+        >
+          {PROPAGATION_TAB_ORDER.map((tabId) => (
             <Pressable
-              key={option.value}
-              onPress={() => setDateRange(option.value)}
-              style={[styles.chip, dateRange === option.value ? styles.chipActive : null]}
+              key={tabId}
+              onPress={() => setReasonTab(tabId)}
+              style={[styles.tabChip, reasonTab === tabId ? styles.tabChipActive : null]}
             >
               <Text
-                style={[
-                  styles.chipText,
-                  dateRange === option.value ? styles.chipTextActive : null,
-                ]}
+                style={[styles.tabChipText, reasonTab === tabId ? styles.tabChipTextActive : null]}
               >
-                {option.label}
+                {TAB_LABELS[tabId]}
               </Text>
             </Pressable>
           ))}
-        </View>
-
-        <Text style={styles.filterHeading}>Sort within category</Text>
-        <View style={styles.chipRow}>
-          {SORT_OPTIONS.map((option) => (
-            <Pressable
-              key={option.value}
-              onPress={() => setSort(option.value)}
-              style={[styles.chip, sort === option.value ? styles.chipActive : null]}
-            >
-              <Text
-                style={[styles.chipText, sort === option.value ? styles.chipTextActive : null]}
-              >
-                {option.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        </ScrollView>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {loading && !payload ? <ActivityIndicator color={THEME.darkGreen} /> : null}
 
-        {!loading && payload && payload.categories.length === 0 ? (
+        {!loading && payload && activeTabPlants.length === 0 ? (
           <Text style={styles.empty}>{emptyMessage}</Text>
         ) : null}
 
-        {(payload?.categories ?? []).map((category: PropagationPlanningCategory) => (
-          <View key={category.id} style={styles.categoryBox}>
-            <Text style={styles.categoryTitle}>{category.title}</Text>
-            <Text style={styles.categoryAction}>{category.actionLabel}</Text>
-            {category.plants.map((plant) => (
+        {activeTabPlants.length > 0 ? (
+          <View style={styles.listBox}>
+            {activeTabMeta?.actionLabel ? (
+              <Text style={styles.listActionHint}>Action: {activeTabMeta.actionLabel}</Text>
+            ) : null}
+            {activeTabPlants.map((plant) => (
               <PlantRow
-                key={`${category.id}:${plant.groupKey}`}
+                key={`${reasonTab}:${plant.groupKey}`}
                 plant={plant}
-                categoryActionLabel={category.actionLabel}
-                isOther={category.id === "other"}
-                expanded={Boolean(expanded[`${category.id}:${plant.groupKey}`])}
+                actionLabel={activeTabMeta?.actionLabel ?? null}
+                isOther={reasonTab === "other"}
+                expanded={Boolean(expanded[`${reasonTab}:${plant.groupKey}`])}
                 onToggleExpand={() =>
                   setExpanded((current) => ({
                     ...current,
-                    [`${category.id}:${plant.groupKey}`]:
-                      !current[`${category.id}:${plant.groupKey}`],
+                    [`${reasonTab}:${plant.groupKey}`]:
+                      !current[`${reasonTab}:${plant.groupKey}`],
+                  }))
+                }
+                onCollapseExpand={() =>
+                  setExpanded((current) => ({
+                    ...current,
+                    [`${reasonTab}:${plant.groupKey}`]: false,
                   }))
                 }
                 onToggleDone={() => void toggleDone(plant.groupKey)}
+                onCloseOrReopen={() =>
+                  void closeOrReopen(plant.groupKey, plant.state.closed)
+                }
+                closing={closingKey === plant.groupKey}
                 notesDraft={notesDrafts[plant.groupKey] ?? plant.state.propNotes}
                 onNotesChange={(value) =>
-                  setNotesDrafts((current) =>
-                    appendNotesDraft(current, plant.groupKey, value),
-                  )
+                  setNotesDrafts((current) => appendNotesDraft(current, plant.groupKey, value))
                 }
                 onSaveNotes={() => void saveNotes(plant.groupKey)}
                 savingNotes={savingNotesKey === plant.groupKey}
@@ -399,19 +499,30 @@ export function PropagationPlanningScreen({ navigation }: Props) {
               />
             ))}
           </View>
-        ))}
+        ) : null}
       </ScrollView>
+
+      {showScrollTop ? (
+        <Pressable
+          onPress={scrollToTop}
+          style={styles.scrollTopFab}
+          accessibilityRole="button"
+          accessibilityLabel="Scroll to top"
+        >
+          <Text style={styles.scrollTopFabText}>↑ Top</Text>
+        </Pressable>
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 32, gap: 12 },
+  page: { padding: 16, paddingBottom: 88, gap: 10 },
   backRow: { alignSelf: "flex-start" },
   backLink: { color: THEME.darkGreen, fontWeight: "600" },
   title: { color: THEME.darkGreen, fontSize: 28, fontWeight: "700" },
   muted: { color: THEME.darkGreen, opacity: 0.85 },
-  summaryRow: { gap: 4 },
+  summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   summaryText: { color: THEME.darkGreen, fontWeight: "600" },
   search: {
     backgroundColor: "#fff",
@@ -422,53 +533,88 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.darkGreen,
   },
-  filterHeading: { color: THEME.darkGreen, fontWeight: "700", marginTop: 4 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
+  filterRow: { flexDirection: "row", gap: 10 },
+  tabRow: { flexDirection: "row", gap: 8, paddingVertical: 4 },
+  tabChip: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: THEME.darkGreen,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     backgroundColor: "#fff",
   },
-  chipActive: { backgroundColor: THEME.darkGreen },
-  chipText: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13 },
-  chipTextActive: { color: THEME.yellow },
-  categoryBox: {
+  tabChipActive: { backgroundColor: THEME.darkGreen },
+  tabChipText: { color: THEME.darkGreen, fontWeight: "700", fontSize: 14 },
+  tabChipTextActive: { color: THEME.yellow },
+  listBox: {
     backgroundColor: "#fff",
     borderRadius: 12,
     padding: 14,
-    gap: 10,
+    gap: 4,
     borderWidth: 1,
     borderColor: THEME.darkGreen,
   },
-  categoryTitle: {
-    color: THEME.darkGreen,
-    fontSize: 18,
-    fontWeight: "800",
-    textTransform: "uppercase",
-  },
-  categoryAction: { color: THEME.muted, fontWeight: "700", marginBottom: 4 },
+  listActionHint: { color: THEME.muted, fontWeight: "600", marginBottom: 4 },
   plantRow: {
     borderTopWidth: 1,
     borderTopColor: THEME.mint,
-    paddingTop: 10,
+    paddingTop: 12,
     gap: 4,
   },
-  checkRow: { alignSelf: "flex-start" },
-  checkLabel: { color: THEME.darkGreen, fontWeight: "700" },
-  plantName: { color: THEME.darkGreen, fontSize: 17, fontWeight: "700" },
+  plantName: { color: THEME.darkGreen, fontSize: 18, fontWeight: "700" },
   plantNameLink: {
     color: THEME.darkGreen,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "700",
     textDecorationLine: "underline",
   },
   plantMeta: { color: THEME.darkGreen, opacity: 0.9 },
   newSinceDone: { color: "#b45309", fontWeight: "700" },
-  expandedBlock: { gap: 8, marginTop: 4 },
-  otherBlock: { gap: 10 },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginTop: 6,
+  },
+  actionCheck: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: THEME.darkGreen,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+  },
+  actionCheckDone: { backgroundColor: THEME.darkGreen },
+  actionCheckText: {
+    color: THEME.darkGreen,
+    fontWeight: "800",
+    fontSize: 16,
+    letterSpacing: 0.5,
+  },
+  actionCheckTextDone: { color: THEME.yellow },
+  actionSpacer: { flex: 1 },
+  closeButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.darkGreen,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+  },
+  closeButtonText: { color: THEME.darkGreen, fontWeight: "700" },
+  expandedBlock: { gap: 8, marginTop: 8, position: "relative" },
+  expandedDismiss: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    zIndex: 1,
+    padding: 6,
+  },
+  expandedDismissText: { color: THEME.darkGreen, fontWeight: "800", fontSize: 18 },
+  historyBlock: { gap: 10, paddingRight: 28 },
+  otherBlock: { gap: 10, paddingRight: 28 },
   otherItem: { gap: 4 },
   otherHeading: { color: THEME.darkGreen, fontWeight: "700" },
   otherLabel: { color: THEME.darkGreen, fontWeight: "600" },
@@ -501,4 +647,16 @@ const styles = StyleSheet.create({
   },
   empty: { color: THEME.darkGreen, fontStyle: "italic", marginTop: 8 },
   error: { color: "#9b1c1c" },
+  scrollTopFab: {
+    position: "absolute",
+    right: 16,
+    bottom: 24,
+    backgroundColor: THEME.darkGreen,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: THEME.yellow,
+  },
+  scrollTopFabText: { color: THEME.yellow, fontWeight: "800" },
 });

@@ -35,10 +35,12 @@ describe("iOS propagation planning navigation", () => {
   it("types propagation planning API payloads", () => {
     const types = read("src/types.ts");
     const planning = read("src/screens/PropagationPlanningScreen.tsx");
-    assert.match(types, /PropagationPlanningCategory/);
-    assert.match(planning, /categoryBox/);
+    assert.match(types, /PropagationPlanningTab/);
+    assert.match(types, /PropagationTabId/);
+    assert.match(planning, /CompactSelect/);
     assert.match(planning, /Oldest request:/);
     assert.match(types, /PropagationPlanningOccurrence/);
     assert.match(types, /PropagationPlanningPayload/);
+    assert.match(types, /status: "active" \| "done" \| "closed" \| "all"/);
   });
 });

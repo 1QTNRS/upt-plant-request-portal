@@ -196,19 +196,41 @@ export type PropagationCategoryOtherOccurrence = {
   customerFacingNotes: string;
 };
 
+export type PropagationHistoryOccurrence = {
+  offerItemId: string;
+  requestNumber: string;
+  submittedAtIso: string;
+  offerSentAtIso: string;
+  unavailableReason: string;
+  customerFacingNotes: string;
+};
+
 export type PropagationCategoryPlantRow = {
   groupKey: string;
   displayName: string;
   uniqueCustomerCount: number;
   oldestRequestAtIso: string;
   newSinceDone: number;
+  newSinceClosed: number;
   state: {
     done: boolean;
+    closed: boolean;
     completedAtIso: string | null;
+    closedAtIso: string | null;
     propNotes: string;
     updatedAtIso: string | null;
   };
+  historyOccurrences: PropagationHistoryOccurrence[];
   otherOccurrences: PropagationCategoryOtherOccurrence[];
+};
+
+export type PropagationTabId = "prop" | "inventory" | "check_props" | "other";
+
+export type PropagationPlanningTab = {
+  id: PropagationTabId;
+  title: string;
+  actionLabel: string | null;
+  plants: PropagationCategoryPlantRow[];
 };
 
 export type PropagationPlanningCategory = {
@@ -220,13 +242,16 @@ export type PropagationPlanningCategory = {
 
 export type PropagationPlanningPayload = {
   summary: {
-    needsPropagation: number;
+    active: number;
     done: number;
+    closed: number;
     unavailableInRange: number;
   };
-  categories: PropagationPlanningCategory[];
+  tabs: PropagationPlanningTab[];
+  /** Legacy API field; normalized into tabs when tabs[] is absent. */
+  categories?: PropagationPlanningCategory[];
   filters: {
-    status: "needs" | "done" | "all";
+    status: "active" | "done" | "closed" | "all";
     dateRange: "all" | "90d" | "30d";
     sort: "most_requested" | "oldest_request" | "az";
     q: string;
