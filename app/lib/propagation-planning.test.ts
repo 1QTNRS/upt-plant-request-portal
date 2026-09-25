@@ -4,19 +4,27 @@ import { describe, it } from "node:test";
 import { canonicalPlantKey } from "./plant-identity";
 import {
   PROPAGATION_CATEGORY_DEFINITIONS,
+  PROPAGATION_TAB_DEFINITIONS,
   buildPropagationCategories,
   buildPropagationGroups,
+  buildPropagationTabs,
+  countNewSinceClosed,
   countNewSinceDone,
   customerIdentityKey,
   filterPropagationCategories,
   filterPropagationGroups,
+  filterPropagationTabs,
   mergePlanningStateRows,
+  normalizePropagationStatusFilter,
   occurrenceInDateRange,
   oldestSubmittedAtIso,
   propagationCategoryIdForReason,
   propagationGroupKeyForItem,
+  propagationPlantMatchesStatus,
+  propagationTabIdForReason,
   sortPropagationCategoryPlants,
   sortPropagationGroups,
+  sortPropagationTabPlants,
   summarizeReasonCounts,
   type RawPropagationOccurrence,
 } from "./propagation-planning";
@@ -172,6 +180,7 @@ describe("propagation planning state", () => {
         {
           groupKey: aliasKey,
           completedAt: new Date("2026-09-20T12:00:00.000Z"),
+          closedAt: null,
           propNotes: "Mother recovering",
           updatedAt: new Date("2026-09-21T12:00:00.000Z"),
         },
@@ -195,6 +204,7 @@ describe("propagation planning state", () => {
         {
           groupKey: `a:${canonicalPlantKey("Hoya sp. XYZ")}`,
           completedAt: new Date("2026-09-21T12:00:00.000Z"),
+          closedAt: null,
           propNotes: "",
           updatedAt: new Date("2026-09-21T12:00:00.000Z"),
         },
@@ -214,12 +224,14 @@ describe("propagation planning state", () => {
       {
         groupKey: "a:hoya sp xyz",
         completedAt: null,
+        closedAt: null,
         propNotes: "alias notes",
         updatedAt: new Date("2026-09-01T12:00:00.000Z"),
       },
       {
         groupKey: "c:cp1",
         completedAt: new Date("2026-09-10T12:00:00.000Z"),
+        closedAt: null,
         propNotes: "",
         updatedAt: new Date("2026-09-11T12:00:00.000Z"),
       },
@@ -241,6 +253,7 @@ describe("propagation planning filters", () => {
       {
         groupKey: `a:${canonicalPlantKey("Hoya A")}`,
         completedAt: new Date("2026-09-01T12:00:00.000Z"),
+        closedAt: null,
         propNotes: "",
         updatedAt: new Date("2026-09-01T12:00:00.000Z"),
       },
@@ -248,9 +261,10 @@ describe("propagation planning filters", () => {
     dateRange: "all",
   });
 
-  it("filters done vs needs propagation", () => {
+  it("filters done vs active propagation", () => {
     assert.equal(filterPropagationGroups(sample, "done", "").length, 1);
-    assert.equal(filterPropagationGroups(sample, "needs", "").length, 1);
+    assert.equal(filterPropagationGroups(sample, "active", "").length, 1);
+    assert.equal(normalizePropagationStatusFilter("needs"), "active");
   });
 
   it("searches display and customer spellings", () => {
@@ -413,6 +427,7 @@ describe("propagation planning categories", () => {
         {
           groupKey: doneKey,
           completedAt: new Date("2026-09-01T12:00:00.000Z"),
+          closedAt: null,
           propNotes: "",
           updatedAt: new Date("2026-09-01T12:00:00.000Z"),
         },
@@ -420,12 +435,155 @@ describe("propagation planning categories", () => {
       dateRange: "all",
     });
     const categories = buildPropagationCategories(groups);
-    const needs = filterPropagationCategories(categories, "needs", "");
-    assert.equal(needs.length, 1);
-    assert.equal(needs[0]?.id, "available_2plus_mos");
+    const active = filterPropagationCategories(categories, "active", "");
+    assert.equal(active.length, 1);
+    assert.equal(active[0]?.id, "available_2plus_mos");
     const done = filterPropagationCategories(categories, "done", "");
     assert.equal(done.length, 1);
     assert.equal(done[0]?.id, "other");
     assert.equal(done[0]?.plants[0]?.otherOccurrences[0]?.customerFacingNotes, "Note A");
+  });
+});
+
+describe("propagation planning tabs", () => {
+  it("combines prop circulation and 2+ mos under the Prop tab", () => {
+    assert.equal(
+      propagationTabIdForReason("currently not in UPT prop circulation"),
+      "prop",
+    );
+    assert.equal(propagationTabIdForReason("available in 2+ mos"), "prop");
+    assert.equal(
+      propagationTabIdForReason("not in our current inventory"),
+      "inventory",
+    );
+    assert.equal(propagationTabIdForReason("available in 2-3weeks"), "check_props");
+    assert.equal(propagationTabIdForReason("other"), "other");
+    assert.deepEqual(
+      PROPAGATION_TAB_DEFINITIONS.map((row) => row.id),
+      ["prop", "inventory", "check_props", "other"],
+    );
+  });
+
+  it("builds tabs with original unavailable reasons in history", () => {
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({
+          offerItemId: "1",
+          unavailableReason: "currently not in UPT prop circulation",
+        }),
+        occ({
+          offerItemId: "2",
+          unavailableReason: "available in 2+ mos",
+        }),
+        occ({
+          offerItemId: "3",
+          unavailableReason: "not in our current inventory",
+        }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [],
+      dateRange: "all",
+    });
+    const tabs = buildPropagationTabs(groups);
+    const propTab = tabs.find((tab) => tab.id === "prop");
+    assert.equal(propTab?.plants.length, 1);
+    assert.equal(propTab?.actionLabel, "Prop");
+    assert.equal(propTab?.plants[0]?.historyOccurrences.length, 2);
+    assert.ok(
+      propTab?.plants[0]?.historyOccurrences.some(
+        (row) => row.unavailableReason === "available in 2+ mos",
+      ),
+    );
+    assert.equal(tabs.find((tab) => tab.id === "inventory")?.actionLabel, "Obtained");
+    const checkProps = buildPropagationTabs(
+      buildPropagationGroups({
+        occurrences: [
+          occ({
+            offerItemId: "9",
+            unavailableReason: "available in 2-3weeks",
+          }),
+        ],
+        aliasToCanonical: new Map(),
+        canonicalNames: new Map(),
+        planningStates: [],
+        dateRange: "all",
+      }),
+    ).find((tab) => tab.id === "check_props");
+    assert.equal(checkProps?.actionLabel, "Check Props");
+  });
+
+  it("filters active, done, closed, and all tab rows", () => {
+    const doneKey = propagationGroupKeyForItem({
+      canonicalPlantId: null,
+      plantName: "Hoya done",
+    });
+    const closedKey = propagationGroupKeyForItem({
+      canonicalPlantId: null,
+      plantName: "Hoya closed",
+    });
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({ offerItemId: "1", plantName: "Hoya open" }),
+        occ({ offerItemId: "2", plantName: "Hoya done" }),
+        occ({ offerItemId: "3", plantName: "Hoya closed" }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [
+        {
+          groupKey: doneKey,
+          completedAt: new Date("2026-09-01T12:00:00.000Z"),
+          closedAt: null,
+          propNotes: "",
+          updatedAt: new Date("2026-09-01T12:00:00.000Z"),
+        },
+        {
+          groupKey: closedKey,
+          completedAt: new Date("2026-09-01T12:00:00.000Z"),
+          closedAt: new Date("2026-09-02T12:00:00.000Z"),
+          propNotes: "Still here",
+          updatedAt: new Date("2026-09-02T12:00:00.000Z"),
+        },
+      ],
+      dateRange: "all",
+    });
+    const tabs = buildPropagationTabs(groups);
+    assert.equal(filterPropagationTabs(tabs, "active", "")[0]?.plants.length, 1);
+    assert.equal(filterPropagationTabs(tabs, "done", "")[0]?.plants.length, 1);
+    assert.equal(filterPropagationTabs(tabs, "closed", "")[0]?.plants.length, 1);
+    assert.equal(filterPropagationTabs(tabs, "all", "")[0]?.plants.length, 3);
+    const closedPlant = tabs
+      .flatMap((tab) => tab.plants)
+      .find((row) => row.groupKey === closedKey);
+    assert.equal(closedPlant?.state.propNotes, "Still here");
+    assert.equal(closedPlant?.state.done, true);
+    assert.equal(propagationPlantMatchesStatus(closedPlant!.state, "closed"), true);
+    assert.equal(propagationPlantMatchesStatus(closedPlant!.state, "done"), false);
+  });
+
+  it("counts new requests since closed without reopening", () => {
+    const closedAt = "2026-09-10T12:00:00.000Z";
+    const occurrences = [
+      occ({ offerItemId: "1", offerSentAtIso: "2026-09-01T12:00:00.000Z" }),
+      occ({ offerItemId: "2", offerSentAtIso: "2026-09-15T12:00:00.000Z" }),
+    ];
+    assert.equal(countNewSinceClosed(occurrences, closedAt), 1);
+  });
+
+  it("sorts plants within tabs", () => {
+    const groups = buildPropagationGroups({
+      occurrences: [
+        occ({ offerItemId: "1", plantName: "Zz plant" }),
+        occ({ offerItemId: "2", plantName: "Hoya ABC" }),
+        occ({ offerItemId: "3", plantName: "Hoya ABC" }),
+      ],
+      aliasToCanonical: new Map(),
+      canonicalNames: new Map(),
+      planningStates: [],
+      dateRange: "all",
+    });
+    const sorted = sortPropagationTabPlants(buildPropagationTabs(groups), "most_requested");
+    assert.equal(sorted[0]?.plants[0]?.displayName, "Hoya ABC");
   });
 });

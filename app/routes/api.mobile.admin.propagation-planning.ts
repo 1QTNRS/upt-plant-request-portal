@@ -7,6 +7,7 @@ import {
 import {
   listPropagationPlanning,
   savePropagationPlanningNotes,
+  setPropagationPlanningClosed,
   setPropagationPlanningDone,
 } from "../lib/propagation-planning.server";
 
@@ -48,6 +49,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         groupKey,
         String(body.propNotes ?? ""),
       );
+      return Response.json({ ok: true });
+    }
+    if (intent === "close") {
+      await setPropagationPlanningClosed(auth.shop, groupKey, true);
+      return Response.json({ ok: true });
+    }
+    if (intent === "reopen") {
+      await setPropagationPlanningClosed(auth.shop, groupKey, false);
       return Response.json({ ok: true });
     }
   } catch (error) {

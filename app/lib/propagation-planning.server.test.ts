@@ -173,10 +173,10 @@ describe("propagation planning mobile API", () => {
     );
     assert.equal(response.status, 200);
     const payload = (await response.json()) as {
-      categories: Array<{ plants: Array<{ displayName: string }> }>;
+      tabs: Array<{ plants: Array<{ displayName: string }> }>;
     };
-    const plants = payload.categories.flatMap((category) =>
-      category.plants.map((row) => row.displayName),
+    const plants = payload.tabs.flatMap((tab) =>
+      tab.plants.map((row) => row.displayName),
     );
     assert.ok(plants.some((name) => name.includes("Hoya") || name === sent.item.plantName));
     assert.ok(!plants.includes("Unsent NA"));
@@ -193,10 +193,10 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      categories: Array<{ plants: Array<{ groupKey: string; displayName: string }> }>;
+      tabs: Array<{ plants: Array<{ groupKey: string; displayName: string }> }>;
     };
-    const group = payload.categories
-      .flatMap((category) => category.plants)
+    const group = payload.tabs
+      .flatMap((tab) => tab.plants)
       .find((row) => row.displayName === plantName || row.displayName.includes(plantName));
     assert.ok(group, `missing group for ${plantName}`);
     return group.groupKey;
@@ -242,7 +242,7 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      categories: Array<{
+      tabs: Array<{
         plants: Array<{
           groupKey: string;
           state: { done: boolean; propNotes: string };
@@ -250,8 +250,8 @@ describe("propagation planning mobile API", () => {
         }>;
       }>;
     };
-    const group = payload.categories
-      .flatMap((category) => category.plants)
+    const group = payload.tabs
+      .flatMap((tab) => tab.plants)
       .find((row) => row.groupKey === groupKey);
     assert.equal(group?.state.done, true);
     assert.equal(group?.state.propNotes, "Mother plant recovering.");
@@ -355,11 +355,106 @@ describe("propagation planning mobile API", () => {
       ),
     );
     const payload = (await response.json()) as {
-      categories: Array<{ plants: Array<{ groupKey: string; state: { propNotes: string } }> }>;
+      tabs: Array<{ plants: Array<{ groupKey: string; state: { propNotes: string } }> }>;
     };
-    const canonicalGroup = payload.categories
-      .flatMap((category) => category.plants)
+    const canonicalGroup = payload.tabs
+      .flatMap((tab) => tab.plants)
       .find((row) => row.groupKey === `c:${canonical.id}`);
     assert.equal(canonicalGroup?.state.propNotes, "Keep this note after linking.");
+  });
+
+  it("closes and reopens a plant while preserving notes and done history", async () => {
+    await createNotAvailableOffer({ plantName: "Dischidia ovata" });
+    const groupKey = await groupKeyForPlant("Dischidia ovata");
+
+    await propagationAction(
+      actionArgs(
+        authed(token, "https://app.example/api/mobile/admin/propagation-planning", {
+          method: "POST",
+          body: JSON.stringify({ intent: "set-done", groupKey }),
+        }),
+      ),
+    );
+
+    await propagationAction(
+      actionArgs(
+        authed(token, "https://app.example/api/mobile/admin/propagation-planning", {
+          method: "POST",
+          body: JSON.stringify({
+            intent: "save-notes",
+            groupKey,
+            propNotes: "Not worth sourcing.",
+          }),
+        }),
+      ),
+    );
+
+    const close = await propagationAction(
+      actionArgs(
+        authed(token, "https://app.example/api/mobile/admin/propagation-planning", {
+          method: "POST",
+          body: JSON.stringify({ intent: "close", groupKey }),
+        }),
+      ),
+    );
+    assert.equal(close.status, 200);
+
+    const activeResponse = await propagationLoader(
+      loaderArgs(
+        authed(
+          token,
+          "https://app.example/api/mobile/admin/propagation-planning?status=active",
+        ),
+      ),
+    );
+    const activePayload = (await activeResponse.json()) as {
+      tabs: Array<{ plants: Array<{ groupKey: string }> }>;
+    };
+    assert.ok(
+      !activePayload.tabs
+        .flatMap((tab) => tab.plants)
+        .some((row) => row.groupKey === groupKey),
+    );
+
+    const closedResponse = await propagationLoader(
+      loaderArgs(
+        authed(
+          token,
+          "https://app.example/api/mobile/admin/propagation-planning?status=closed",
+        ),
+      ),
+    );
+    const closedPayload = (await closedResponse.json()) as {
+      tabs: Array<{
+        plants: Array<{
+          groupKey: string;
+          state: { closed: boolean; done: boolean; propNotes: string; closedAtIso: string | null };
+        }>;
+      }>;
+    };
+    const closedGroup = closedPayload.tabs
+      .flatMap((tab) => tab.plants)
+      .find((row) => row.groupKey === groupKey);
+    assert.equal(closedGroup?.state.closed, true);
+    assert.equal(closedGroup?.state.done, true);
+    assert.equal(closedGroup?.state.propNotes, "Not worth sourcing.");
+    assert.ok(closedGroup?.state.closedAtIso);
+
+    const reopen = await propagationAction(
+      actionArgs(
+        authed(token, "https://app.example/api/mobile/admin/propagation-planning", {
+          method: "POST",
+          body: JSON.stringify({ intent: "reopen", groupKey }),
+        }),
+      ),
+    );
+    assert.equal(reopen.status, 200);
+
+    const row = await prisma.propagationPlanningState.findUnique({
+      where: { shop_groupKey: { shop, groupKey } },
+    });
+    assert.equal(row?.closedAt, null);
+    assert.ok(row?.completedAt);
+    assert.equal(row?.propNotes, "Not worth sourcing.");
   });
 });

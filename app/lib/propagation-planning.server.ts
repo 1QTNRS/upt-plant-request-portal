@@ -1,16 +1,17 @@
 import prisma from "../db.server";
 import {
-  buildPropagationCategories,
+  buildPropagationTabs,
   buildPropagationGroups,
   customerIdentityKey,
-  filterPropagationGroups,
+  filterPropagationTabs,
+  normalizePropagationStatusFilter,
   parsePropagationGroupKey,
   propagationGroupKeyForItem,
-  sortPropagationCategoryPlants,
+  sortPropagationTabPlants,
   summarizePropagationCategories,
   type PropagationDateRange,
-  type PropagationPlanningCategory,
   type PropagationPlanningStateRow,
+  type PropagationPlanningTab,
   type PropagationSort,
   type PropagationStatusFilter,
   type RawPropagationOccurrence,
@@ -18,7 +19,7 @@ import {
 
 export type PropagationPlanningPayload = {
   summary: ReturnType<typeof summarizePropagationCategories>;
-  categories: PropagationPlanningCategory[];
+  tabs: PropagationPlanningTab[];
   filters: {
     status: PropagationStatusFilter;
     dateRange: PropagationDateRange;
@@ -26,11 +27,6 @@ export type PropagationPlanningPayload = {
     q: string;
   };
 };
-
-function parseStatusFilter(value: string | null): PropagationStatusFilter {
-  if (value === "done" || value === "all") return value;
-  return "needs";
-}
 
 function parseDateRange(value: string | null): PropagationDateRange {
   if (value === "90d" || value === "30d") return value;
@@ -120,6 +116,7 @@ async function loadPlanningStates(shop: string): Promise<PropagationPlanningStat
     select: {
       groupKey: true,
       completedAt: true,
+      closedAt: true,
       propNotes: true,
       updatedAt: true,
     },
@@ -131,7 +128,7 @@ export async function listPropagationPlanning(
   shop: string,
   searchParams: URLSearchParams,
 ): Promise<PropagationPlanningPayload> {
-  const status = parseStatusFilter(searchParams.get("status"));
+  const status = normalizePropagationStatusFilter(searchParams.get("status"));
   const dateRange = parseDateRange(searchParams.get("dateRange"));
   const sort = parseSort(searchParams.get("sort"));
   const q = searchParams.get("q")?.trim() ?? "";
@@ -152,16 +149,15 @@ export async function listPropagationPlanning(
     dateRange,
   });
 
-  const filteredGroups = filterPropagationGroups(built, status, q);
-  const categories = sortPropagationCategoryPlants(
-    buildPropagationCategories(filteredGroups),
+  const tabs = sortPropagationTabPlants(
+    filterPropagationTabs(buildPropagationTabs(built), status, q),
     sort,
   );
   const inRangeCount = built.reduce((sum, group) => sum + group.occurrenceCount, 0);
 
   return {
     summary: summarizePropagationCategories(built, inRangeCount),
-    categories,
+    tabs,
     filters: { status, dateRange, sort, q },
   };
 }
@@ -197,13 +193,18 @@ export async function setPropagationPlanningDone(
     throw new Error("Unknown propagation planning group.");
   }
 
+  const existing = await prisma.propagationPlanningState.findUnique({
+    where: { shop_groupKey: { shop, groupKey } },
+  });
+
   const row = await prisma.propagationPlanningState.upsert({
     where: { shop_groupKey: { shop, groupKey } },
     create: {
       shop,
       groupKey,
       completedAt: done ? new Date() : null,
-      propNotes: "",
+      closedAt: existing?.closedAt ?? null,
+      propNotes: existing?.propNotes ?? "",
     },
     update: {
       completedAt: done ? new Date() : null,
@@ -211,14 +212,68 @@ export async function setPropagationPlanningDone(
     select: {
       groupKey: true,
       completedAt: true,
+      closedAt: true,
       propNotes: true,
       updatedAt: true,
     },
   });
 
-  if (!done && !row.propNotes.trim()) {
+  if (
+    !done &&
+    !row.propNotes.trim() &&
+    !row.closedAt &&
+    !existing?.closedAt
+  ) {
     await prisma.propagationPlanningState.deleteMany({
-      where: { shop, groupKey, completedAt: null, propNotes: "" },
+      where: { shop, groupKey, completedAt: null, closedAt: null, propNotes: "" },
+    });
+  }
+
+  return row;
+}
+
+export async function setPropagationPlanningClosed(
+  shop: string,
+  groupKey: string,
+  closed: boolean,
+): Promise<PropagationPlanningStateRow> {
+  const valid = await shopHasPropagationGroup(shop, groupKey);
+  if (!valid) {
+    throw new Error("Unknown propagation planning group.");
+  }
+
+  const existing = await prisma.propagationPlanningState.findUnique({
+    where: { shop_groupKey: { shop, groupKey } },
+  });
+
+  const row = await prisma.propagationPlanningState.upsert({
+    where: { shop_groupKey: { shop, groupKey } },
+    create: {
+      shop,
+      groupKey,
+      closedAt: closed ? new Date() : null,
+      completedAt: existing?.completedAt ?? null,
+      propNotes: existing?.propNotes ?? "",
+    },
+    update: {
+      closedAt: closed ? new Date() : null,
+    },
+    select: {
+      groupKey: true,
+      completedAt: true,
+      closedAt: true,
+      propNotes: true,
+      updatedAt: true,
+    },
+  });
+
+  if (
+    !closed &&
+    !row.completedAt &&
+    !row.propNotes.trim()
+  ) {
+    await prisma.propagationPlanningState.deleteMany({
+      where: { shop, groupKey, completedAt: null, closedAt: null, propNotes: "" },
     });
   }
 
@@ -240,7 +295,7 @@ export async function savePropagationPlanningNotes(
     where: { shop_groupKey: { shop, groupKey } },
   });
 
-  if (!trimmed && !existing?.completedAt) {
+  if (!trimmed && !existing?.completedAt && !existing?.closedAt) {
     if (existing) {
       await prisma.propagationPlanningState.delete({
         where: { shop_groupKey: { shop, groupKey } },
@@ -249,6 +304,7 @@ export async function savePropagationPlanningNotes(
     return {
       groupKey,
       completedAt: null,
+      closedAt: null,
       propNotes: "",
       updatedAt: new Date(),
     };
@@ -261,11 +317,13 @@ export async function savePropagationPlanningNotes(
       groupKey,
       propNotes: trimmed,
       completedAt: existing?.completedAt ?? null,
+      closedAt: existing?.closedAt ?? null,
     },
     update: { propNotes: trimmed },
     select: {
       groupKey: true,
       completedAt: true,
+      closedAt: true,
       propNotes: true,
       updatedAt: true,
     },
