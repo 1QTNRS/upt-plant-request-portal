@@ -18,6 +18,7 @@ import {
   readPlantLines,
 } from "../lib/customer-portal";
 import {
+  CUSTOMER_SMS_OPT_IN_ENABLED,
   readSmsNotifyEnabled,
   readSmsPhone,
   validateSmsOptIn,
@@ -136,11 +137,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!existingOrderAnswer) {
     errors.push("Tell us whether you have an existing order.");
   }
-  const smsEnabled = readSmsNotifyEnabled(form);
-  const smsValidation = validateSmsOptIn({
-    enabled: smsEnabled,
-    phoneRaw: readSmsPhone(form),
-  });
+  const smsEnabled = CUSTOMER_SMS_OPT_IN_ENABLED
+    ? readSmsNotifyEnabled(form)
+    : false;
+  const smsValidation = CUSTOMER_SMS_OPT_IN_ENABLED
+    ? validateSmsOptIn({
+        enabled: smsEnabled,
+        phoneRaw: readSmsPhone(form),
+      })
+    : ({ ok: true as const, phone: "" });
   if (!smsValidation.ok) {
     errors.push(smsValidation.message);
   }
@@ -170,7 +175,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await notifyNewRequest(shop, created.id);
   }
 
-  if (smsValidation.ok) {
+  if (CUSTOMER_SMS_OPT_IN_ENABLED && smsValidation.ok) {
     await saveCustomerSmsNotifyPreference(shop, DEMO_CUSTOMER.email, {
       enabled: smsEnabled,
       phone: smsValidation.phone,

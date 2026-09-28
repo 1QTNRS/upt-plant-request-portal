@@ -24,6 +24,7 @@ import {
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
 import {
+  CUSTOMER_SMS_OPT_IN_ENABLED,
   readSmsNotifyEnabled,
   readSmsPhone,
   validateSmsOptIn,
@@ -166,8 +167,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const submitted = readPlantLines(form);
   const existingOrderAnswer = readExistingOrderAnswer(form);
-  const smsEnabled = readSmsNotifyEnabled(form);
-  const smsPhoneRaw = readSmsPhone(form);
+  const smsEnabled = CUSTOMER_SMS_OPT_IN_ENABLED
+    ? readSmsNotifyEnabled(form)
+    : false;
+  const smsPhoneRaw = CUSTOMER_SMS_OPT_IN_ENABLED ? readSmsPhone(form) : "";
   const items = submitted.map((line) => ({
     plantName: line.plantName.trim(),
     notes: line.notes.trim() || undefined,
@@ -183,10 +186,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!existingOrderAnswer) {
     errors.push("Tell us whether you have an existing order.");
   }
-  const smsValidation = validateSmsOptIn({
-    enabled: smsEnabled,
-    phoneRaw: smsPhoneRaw,
-  });
+  const smsValidation = CUSTOMER_SMS_OPT_IN_ENABLED
+    ? validateSmsOptIn({
+        enabled: smsEnabled,
+        phoneRaw: smsPhoneRaw,
+      })
+    : ({ ok: true as const, phone: "" });
   if (!smsValidation.ok) {
     errors.push(smsValidation.message);
   }
@@ -223,10 +228,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await notifyNewRequest(context.shop, created.id);
   }
 
-  await saveCustomerSmsNotifyPreference(context.shop, identity.email, {
-    enabled: smsEnabled,
-    phone: smsValidation.ok ? smsValidation.phone : "",
-  });
+  if (CUSTOMER_SMS_OPT_IN_ENABLED) {
+    await saveCustomerSmsNotifyPreference(context.shop, identity.email, {
+      enabled: smsEnabled,
+      phone: smsValidation.ok ? smsValidation.phone : "",
+    });
+  }
 
   throw redirect(`${home}?submitted=${encodeURIComponent(created.requestNumber)}`);
 };
