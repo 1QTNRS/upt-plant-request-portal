@@ -177,6 +177,20 @@ export function ThemeStyles() {
         line-height: 1.45;
       }
       .upt-muted { color: ${THEME.muted}; line-height: 1.5; }
+      .upt-sms-consent {
+        margin: 12px 0 0;
+        color: #5a6d62;
+        font-size: 0.8125rem;
+        font-style: italic;
+        font-weight: 400;
+        line-height: 1.55;
+      }
+      .upt-sms-consent a {
+        color: ${THEME.darkGreen};
+        font-style: italic;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
       .upt-sr-only {
         position: absolute;
         width: 1px;
