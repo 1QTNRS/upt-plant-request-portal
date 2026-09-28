@@ -7,6 +7,7 @@ import { CUSTOMER_SMS_OPTIN_SCRIPT } from "../components/customer-enhance";
 import {
   canonicalUsCaSmsPhoneE164,
   capUsCaNationalDigits,
+  CUSTOMER_SMS_OPT_IN_ENABLED,
   formatSmsPhoneFieldDisplay,
   formatUsCaNationalDigitsForDisplay,
   normalizeSmsPhone,
@@ -117,28 +118,42 @@ describe("customer SMS opt-in helpers", () => {
 });
 
 describe("customer request form SMS UI", () => {
-  it("places SMS opt-in after existing order and before submit", () => {
+  it("hides the SMS opt-in card while CUSTOMER_SMS_OPT_IN_ENABLED is false", () => {
+    assert.equal(CUSTOMER_SMS_OPT_IN_ENABLED, false);
+    const portal = readFileSync(
+      path.join(import.meta.dirname, "..", "components", "customer-request-portal.tsx"),
+      "utf8",
+    );
+    assert.match(portal, /CUSTOMER_SMS_OPT_IN_ENABLED \? \(/);
+    assert.match(portal, /data-sms-opt-in/);
+    assert.match(portal, /className="upt-sms-consent"/);
+    assert.match(portal, /Text me when plants from my request are available/);
+  });
+
+  it("skips SMS preference writes on submit while the UI flag is off", () => {
+    const submit = readFileSync(
+      path.join(import.meta.dirname, "..", "routes", "customer.submit.tsx"),
+      "utf8",
+    );
+    const demo = readFileSync(
+      path.join(import.meta.dirname, "..", "routes", "app.customer-request-form.tsx"),
+      "utf8",
+    );
+    assert.match(submit, /if \(CUSTOMER_SMS_OPT_IN_ENABLED\)/);
+    assert.match(submit, /saveCustomerSmsNotifyPreference/);
+    assert.match(demo, /CUSTOMER_SMS_OPT_IN_ENABLED && smsValidation\.ok/);
+  });
+
+  it("keeps existing order and submit adjacent without a visible SMS card", () => {
     const source = readFileSync(
       path.join(import.meta.dirname, "..", "components", "customer-request-portal.tsx"),
       "utf8",
     );
     assert.match(source, /Have an existing order\?/);
-    assert.match(source, /Text me when plants from my request are available/);
-    assert.match(source, /Enable SMS notifications/);
-    assert.match(source, /data-sms-opt-in/);
-    assert.match(source, /data-sms-phone-panel/);
+    assert.match(source, /Submit request/);
     assert.ok(
-      source.indexOf("Have an existing order?") <
-        source.indexOf("Text me when plants from my request are available"),
+      source.indexOf("Have an existing order?") < source.indexOf("Submit request"),
     );
-    assert.ok(
-      source.indexOf("Text me when plants from my request are available") <
-        source.indexOf("Submit request"),
-    );
-    assert.match(source, /Reply STOP to unsubscribe/);
-    assert.match(source, /className="upt-sms-consent"/);
-    assert.match(source, /inputMode="numeric"/);
-    assert.match(source, /formatSmsPhoneFieldDisplay/);
   });
 });
 
