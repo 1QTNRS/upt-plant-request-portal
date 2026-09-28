@@ -205,10 +205,12 @@ describe("PropagationPlanningScreen source guards", () => {
     assert.match(source, /CompactSelect/);
     assert.match(source, /PROPAGATION_TAB_ORDER/);
     assert.match(source, /scrollToTopButtonVisible/);
-    assert.match(source, /↑ Top/);
+    assert.match(source, /Mark Prop/);
     assert.match(source, /intent: closed \? "reopen" : "close"/);
-    assert.match(source, /expandedDismiss/);
+    assert.match(source, /disclosureRow/);
+    assert.match(source, /Prop Notes & History/);
     assert.match(source, /No customer-facing notes\./);
+    assert.doesNotMatch(source, /listActionHint/);
     assert.doesNotMatch(source, /categoryBox/);
   });
 });

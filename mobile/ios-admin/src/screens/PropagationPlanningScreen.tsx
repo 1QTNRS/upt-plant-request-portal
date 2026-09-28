@@ -69,6 +69,20 @@ const TAB_LABELS: Record<PropagationTabId, string> = {
   other: "Other",
 };
 
+const BORDER = "rgba(0, 41, 16, 0.22)";
+
+function markActionLabel(actionLabel: string): string {
+  if (actionLabel === "Prop") return "Mark Prop";
+  if (actionLabel === "Obtained") return "Mark Obtained";
+  if (actionLabel === "Check Props") return "Mark Check Props";
+  return `Mark ${actionLabel}`;
+}
+
+function disclosureTitle(isOther: boolean, expanded: boolean): string {
+  if (expanded) return "Hide details";
+  return isOther ? "Responses & Prop Notes" : "Prop Notes & History";
+}
+
 function PlantRow({
   plant,
   actionLabel,
@@ -102,34 +116,26 @@ function PlantRow({
 }) {
   const checked = plant.state.done;
   const showAction = Boolean(actionLabel) && !plant.state.closed;
-  const checkText = actionLabel
+  const primaryLabel = actionLabel ? markActionLabel(actionLabel) : "";
+  const doneLabel = actionLabel
     ? checked
-      ? `☑ ${actionLabel}${
+      ? `${actionLabel} ✓${
           plant.state.completedAtIso
             ? ` · ${formatPortalDateOnly(plant.state.completedAtIso)}`
             : ""
         }`
-      : `☐ ${actionLabel.toUpperCase()}`
+      : primaryLabel
     : "";
 
   return (
-    <View style={styles.plantRow}>
-      {isOther ? (
-        <Pressable onPress={onToggleExpand}>
-          <Text style={styles.plantNameLink}>{plant.displayName}</Text>
-        </Pressable>
-      ) : (
-        <Pressable onPress={onToggleExpand}>
-          <Text style={styles.plantName}>{plant.displayName}</Text>
-        </Pressable>
-      )}
-
+    <View style={styles.plantCard}>
+      <Text style={styles.plantName}>{plant.displayName}</Text>
       <Text style={styles.plantMeta}>
         {plant.uniqueCustomerCount} {plant.uniqueCustomerCount === 1 ? "person" : "people"}{" "}
         requested
       </Text>
-      <Text style={styles.plantMeta}>
-        Oldest request: {formatPortalDateOnly(plant.oldestRequestAtIso)}
+      <Text style={styles.plantMetaSub}>
+        Oldest request · {formatPortalDateOnly(plant.oldestRequestAtIso)}
       </Text>
       {plant.newSinceDone > 0 && !plant.state.closed ? (
         <Text style={styles.newSinceDone}>
@@ -147,72 +153,63 @@ function PlantRow({
           <Pressable
             onPress={onToggleDone}
             disabled={togglingDone}
-            style={[styles.actionCheck, checked ? styles.actionCheckDone : null]}
+            style={[styles.primaryAction, checked ? styles.primaryActionDone : null]}
           >
-            <Text style={[styles.actionCheckText, checked ? styles.actionCheckTextDone : null]}>
-              {checkText}
+            <Text
+              style={[styles.primaryActionText, checked ? styles.primaryActionTextDone : null]}
+            >
+              {doneLabel}
             </Text>
           </Pressable>
-        ) : (
-          <View style={styles.actionSpacer} />
-        )}
+        ) : null}
         <Pressable
           onPress={onCloseOrReopen}
           disabled={closing}
-          style={styles.closeButton}
+          style={styles.secondaryAction}
           accessibilityRole="button"
           accessibilityLabel={plant.state.closed ? "Reopen plant" : "Close plant"}
         >
-          <Text style={styles.closeButtonText}>
-            {plant.state.closed ? "Reopen" : "✕ Close"}
+          <Text style={styles.secondaryActionText}>
+            {plant.state.closed ? "Reopen" : "Close"}
           </Text>
         </Pressable>
       </View>
 
-      {!expanded && !isOther ? (
-        <Pressable onPress={onToggleExpand}>
-          <Text style={styles.expandHint}>Prop Notes & history</Text>
-        </Pressable>
-      ) : null}
-      {!expanded && isOther ? (
-        <Pressable onPress={onToggleExpand}>
-          <Text style={styles.expandHint}>Show responses & Prop Notes</Text>
-        </Pressable>
-      ) : null}
+      <Pressable
+        onPress={expanded ? onCollapseExpand : onToggleExpand}
+        style={styles.disclosureRow}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
+        <Text style={styles.disclosureLabel}>{disclosureTitle(isOther, expanded)}</Text>
+        <Text style={styles.disclosureChevron}>{expanded ? "▴" : "▸"}</Text>
+      </Pressable>
 
       {expanded ? (
         <View style={styles.expandedBlock}>
-          <Pressable
-            onPress={onCollapseExpand}
-            style={styles.expandedDismiss}
-            accessibilityRole="button"
-            accessibilityLabel="Collapse details"
-          >
-            <Text style={styles.expandedDismissText}>✕</Text>
-          </Pressable>
           {isOther ? (
-            <View style={styles.otherBlock}>
+            <View style={styles.detailBlock}>
               {(plant.otherOccurrences ?? []).map((row) => (
-                <View key={row.offerItemId} style={styles.otherItem}>
-                  <Text style={styles.otherHeading}>
+                <View key={row.offerItemId} style={styles.detailItem}>
+                  <Text style={styles.detailHeading}>
                     {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
                   </Text>
-                  <Text style={styles.otherLabel}>Customer-facing response:</Text>
-                  <Text style={styles.otherBody}>
+                  <Text style={styles.detailLabel}>Customer-facing response</Text>
+                  <Text style={styles.detailBody}>
                     {row.customerFacingNotes || "No customer-facing notes."}
                   </Text>
                 </View>
               ))}
             </View>
           ) : (
-            <View style={styles.historyBlock}>
+            <View style={styles.detailBlock}>
               {(plant.historyOccurrences ?? []).map((row) => (
-                <View key={row.offerItemId} style={styles.otherItem}>
-                  <Text style={styles.otherHeading}>
+                <View key={row.offerItemId} style={styles.detailItem}>
+                  <Text style={styles.detailHeading}>
                     {formatPortalDateOnly(row.submittedAtIso)} · {row.requestNumber}
                   </Text>
-                  <Text style={styles.otherLabel}>Unavailable reason:</Text>
-                  <Text style={styles.otherBody}>{row.unavailableReason}</Text>
+                  <Text style={styles.detailLabel}>Unavailable reason</Text>
+                  <Text style={styles.detailBody}>{row.unavailableReason}</Text>
                 </View>
               ))}
             </View>
@@ -404,9 +401,11 @@ export function PropagationPlanningScreen({ navigation }: Props) {
 
         {payload ? (
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>Active: {payload.summary.active}</Text>
-            <Text style={styles.summaryText}>Done: {payload.summary.done}</Text>
-            <Text style={styles.summaryText}>Closed: {payload.summary.closed}</Text>
+            <Text style={styles.summaryText}>Active {payload.summary.active}</Text>
+            <Text style={styles.summaryDot}>·</Text>
+            <Text style={styles.summaryText}>Done {payload.summary.done}</Text>
+            <Text style={styles.summaryDot}>·</Text>
+            <Text style={styles.summaryText}>Closed {payload.summary.closed}</Text>
           </View>
         ) : null}
 
@@ -421,36 +420,44 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         />
 
         <View style={styles.filterRow}>
-          <CompactSelect label="Status" value={status} options={STATUS_OPTIONS} onChange={setStatus} />
           <CompactSelect
+            compact
+            label="Status"
+            value={status}
+            options={STATUS_OPTIONS}
+            onChange={setStatus}
+          />
+          <CompactSelect
+            compact
             label="Date range"
             value={dateRange}
             options={DATE_OPTIONS}
             onChange={setDateRange}
           />
         </View>
-        <CompactSelect label="Sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
+        <CompactSelect compact label="Sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
 
-        <ScrollView
-          horizontal
-          scrollsToTop={false}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabRow}
-        >
-          {PROPAGATION_TAB_ORDER.map((tabId) => (
-            <Pressable
-              key={tabId}
-              onPress={() => setReasonTab(tabId)}
-              style={[styles.tabChip, reasonTab === tabId ? styles.tabChipActive : null]}
-            >
-              <Text
-                style={[styles.tabChipText, reasonTab === tabId ? styles.tabChipTextActive : null]}
+        <View style={styles.segmentTrack}>
+          {PROPAGATION_TAB_ORDER.map((tabId) => {
+            const active = reasonTab === tabId;
+            return (
+              <Pressable
+                key={tabId}
+                onPress={() => setReasonTab(tabId)}
+                style={[styles.segment, active ? styles.segmentActive : null]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               >
-                {TAB_LABELS[tabId]}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+                <Text
+                  style={[styles.segmentText, active ? styles.segmentTextActive : null]}
+                  numberOfLines={1}
+                >
+                  {TAB_LABELS[tabId]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {loading && !payload ? <ActivityIndicator color={THEME.darkGreen} /> : null}
@@ -460,10 +467,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
         ) : null}
 
         {activeTabPlants.length > 0 ? (
-          <View style={styles.listBox}>
-            {activeTabMeta?.actionLabel ? (
-              <Text style={styles.listActionHint}>Action: {activeTabMeta.actionLabel}</Text>
-            ) : null}
+          <View style={styles.plantList}>
             {activeTabPlants.map((plant) => (
               <PlantRow
                 key={`${reasonTab}:${plant.groupKey}`}
@@ -509,7 +513,7 @@ export function PropagationPlanningScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel="Scroll to top"
         >
-          <Text style={styles.scrollTopFabText}>↑ Top</Text>
+          <Text style={styles.scrollTopFabText}>↑</Text>
         </Pressable>
       ) : null}
     </SafeAreaView>
@@ -517,146 +521,172 @@ export function PropagationPlanningScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 88, gap: 10 },
+  page: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 72, gap: 8 },
   backRow: { alignSelf: "flex-start" },
-  backLink: { color: THEME.darkGreen, fontWeight: "600" },
-  title: { color: THEME.darkGreen, fontSize: 28, fontWeight: "700" },
-  muted: { color: THEME.darkGreen, opacity: 0.85 },
-  summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  summaryText: { color: THEME.darkGreen, fontWeight: "600" },
+  backLink: { color: THEME.darkGreen, fontWeight: "600", fontSize: 15 },
+  title: { color: THEME.darkGreen, fontSize: 26, fontWeight: "700" },
+  muted: { color: THEME.darkGreen, opacity: 0.75, fontSize: 14, lineHeight: 20 },
+  summaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+  },
+  summaryText: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13, opacity: 0.9 },
+  summaryDot: { color: THEME.darkGreen, opacity: 0.35 },
   search: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    color: THEME.darkGreen,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    fontSize: 15,
+  },
+  filterRow: { flexDirection: "row", gap: 8 },
+  segmentTrack: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    padding: 3,
+    gap: 2,
+  },
+  segment: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+    minHeight: 34,
+  },
+  segmentActive: { backgroundColor: THEME.darkGreen },
+  segmentText: {
+    color: THEME.darkGreen,
+    fontWeight: "600",
+    fontSize: 12,
+    opacity: 0.85,
+  },
+  segmentTextActive: { color: THEME.yellow, opacity: 1, fontWeight: "700" },
+  plantList: { gap: 10, marginTop: 2 },
+  plantCard: {
     backgroundColor: "#fff",
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: THEME.darkGreen,
-    borderWidth: 1,
-    borderColor: THEME.darkGreen,
+    paddingVertical: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    gap: 3,
   },
-  filterRow: { flexDirection: "row", gap: 10 },
-  tabRow: { flexDirection: "row", gap: 8, paddingVertical: 4 },
-  tabChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: THEME.darkGreen,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
-  },
-  tabChipActive: { backgroundColor: THEME.darkGreen },
-  tabChipText: { color: THEME.darkGreen, fontWeight: "700", fontSize: 14 },
-  tabChipTextActive: { color: THEME.yellow },
-  listBox: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: THEME.darkGreen,
-  },
-  listActionHint: { color: THEME.muted, fontWeight: "600", marginBottom: 4 },
-  plantRow: {
-    borderTopWidth: 1,
-    borderTopColor: THEME.mint,
-    paddingTop: 12,
-    gap: 4,
-  },
-  plantName: { color: THEME.darkGreen, fontSize: 18, fontWeight: "700" },
-  plantNameLink: {
-    color: THEME.darkGreen,
-    fontSize: 18,
-    fontWeight: "700",
-    textDecorationLine: "underline",
-  },
-  plantMeta: { color: THEME.darkGreen, opacity: 0.9 },
-  newSinceDone: { color: "#b45309", fontWeight: "700" },
+  plantName: { color: THEME.darkGreen, fontSize: 17, fontWeight: "700", marginBottom: 2 },
+  plantMeta: { color: THEME.darkGreen, fontSize: 14, fontWeight: "500" },
+  plantMetaSub: { color: THEME.darkGreen, fontSize: 13, opacity: 0.65 },
+  newSinceDone: { color: "#b45309", fontWeight: "600", fontSize: 13, marginTop: 2 },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    marginTop: 6,
+    gap: 10,
+    marginTop: 10,
   },
-  actionCheck: {
-    flex: 1,
-    borderWidth: 2,
+  primaryAction: {
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: THEME.darkGreen,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    backgroundColor: "#fff",
-  },
-  actionCheckDone: { backgroundColor: THEME.darkGreen },
-  actionCheckText: {
-    color: THEME.darkGreen,
-    fontWeight: "800",
-    fontSize: 16,
-    letterSpacing: 0.5,
-  },
-  actionCheckTextDone: { color: THEME.yellow },
-  actionSpacer: { flex: 1 },
-  closeButton: {
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.darkGreen,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: "#fff",
   },
-  closeButtonText: { color: THEME.darkGreen, fontWeight: "700" },
-  expandedBlock: { gap: 8, marginTop: 8, position: "relative" },
-  expandedDismiss: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    zIndex: 1,
-    padding: 6,
-  },
-  expandedDismissText: { color: THEME.darkGreen, fontWeight: "800", fontSize: 18 },
-  historyBlock: { gap: 10, paddingRight: 28 },
-  otherBlock: { gap: 10, paddingRight: 28 },
-  otherItem: { gap: 4 },
-  otherHeading: { color: THEME.darkGreen, fontWeight: "700" },
-  otherLabel: { color: THEME.darkGreen, fontWeight: "600" },
-  otherBody: { color: THEME.darkGreen },
-  notesLabel: { color: THEME.darkGreen, fontWeight: "700", marginTop: 4 },
-  notesInput: {
-    minHeight: 72,
-    borderWidth: 1,
+  primaryActionDone: {
+    backgroundColor: THEME.darkGreen,
     borderColor: THEME.darkGreen,
-    borderRadius: 10,
-    padding: 10,
+  },
+  primaryActionText: {
+    color: THEME.darkGreen,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  primaryActionTextDone: { color: THEME.yellow },
+  secondaryAction: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginLeft: "auto",
+  },
+  secondaryActionText: {
+    color: THEME.darkGreen,
+    fontWeight: "500",
+    fontSize: 14,
+    opacity: 0.55,
+    textDecorationLine: "underline",
+  },
+  disclosureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0, 41, 16, 0.12)",
+  },
+  disclosureLabel: { color: THEME.darkGreen, fontWeight: "600", fontSize: 14 },
+  disclosureChevron: { color: THEME.darkGreen, fontSize: 13, opacity: 0.5, marginLeft: 8 },
+  expandedBlock: {
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 8,
+    paddingHorizontal: 2,
+    backgroundColor: "rgba(214, 236, 226, 0.35)",
+    borderRadius: 8,
+    paddingBottom: 4,
+  },
+  detailBlock: { gap: 10 },
+  detailItem: { gap: 2 },
+  detailHeading: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13 },
+  detailLabel: { color: THEME.darkGreen, fontWeight: "500", fontSize: 12, opacity: 0.7 },
+  detailBody: { color: THEME.darkGreen, fontSize: 14, lineHeight: 19 },
+  notesLabel: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13, marginTop: 4 },
+  notesInput: {
+    minHeight: 68,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    borderRadius: 8,
+    padding: 9,
     color: THEME.darkGreen,
     backgroundColor: "#fff",
     textAlignVertical: "top",
+    fontSize: 14,
   },
   saveNotesButton: {
     alignSelf: "flex-start",
     backgroundColor: THEME.darkGreen,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    marginBottom: 4,
   },
   saveNotesDisabled: { opacity: 0.6 },
-  saveNotesText: { color: THEME.yellow, fontWeight: "700" },
-  expandHint: {
-    color: THEME.darkGreen,
-    fontWeight: "600",
-    textDecorationLine: "underline",
-    marginTop: 2,
-  },
-  empty: { color: THEME.darkGreen, fontStyle: "italic", marginTop: 8 },
+  saveNotesText: { color: THEME.yellow, fontWeight: "600", fontSize: 13 },
+  empty: { color: THEME.darkGreen, fontStyle: "italic", marginTop: 6, opacity: 0.8 },
   error: { color: "#9b1c1c" },
   scrollTopFab: {
     position: "absolute",
-    right: 16,
-    bottom: 24,
-    backgroundColor: THEME.darkGreen,
+    right: 14,
+    bottom: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 2,
-    borderColor: THEME.yellow,
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
+    shadowColor: "#002910",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  scrollTopFabText: { color: THEME.yellow, fontWeight: "800" },
+  scrollTopFabText: { color: THEME.darkGreen, fontWeight: "700", fontSize: 16 },
 });
