@@ -205,7 +205,11 @@ describe("PropagationPlanningScreen source guards", () => {
     assert.match(source, /CompactSelect/);
     assert.match(source, /PROPAGATION_TAB_ORDER/);
     assert.match(source, /scrollToTopButtonVisible/);
-    assert.match(source, /Mark Prop/);
+    assert.match(source, /Propped/);
+    assert.match(source, /Checked Props/);
+    assert.match(source, /plantActionButtonLabel/);
+    assert.doesNotMatch(source, /summaryRow/);
+    assert.doesNotMatch(source, /payload\.summary\.active/);
     assert.match(source, /intent: closed \? "reopen" : "close"/);
     assert.match(source, /disclosureRow/);
     assert.match(source, /Prop Notes & History/);

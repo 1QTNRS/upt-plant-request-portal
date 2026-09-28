@@ -71,11 +71,16 @@ const TAB_LABELS: Record<PropagationTabId, string> = {
 
 const BORDER = "rgba(0, 41, 16, 0.22)";
 
-function markActionLabel(actionLabel: string): string {
-  if (actionLabel === "Prop") return "Mark Prop";
-  if (actionLabel === "Obtained") return "Mark Obtained";
-  if (actionLabel === "Check Props") return "Mark Check Props";
-  return `Mark ${actionLabel}`;
+function plantActionDisplayLabel(apiActionLabel: string): string {
+  if (apiActionLabel === "Prop") return "Propped";
+  if (apiActionLabel === "Obtained") return "Obtained";
+  if (apiActionLabel === "Check Props") return "Checked Props";
+  return apiActionLabel;
+}
+
+function plantActionButtonLabel(apiActionLabel: string, checked: boolean): string {
+  const label = plantActionDisplayLabel(apiActionLabel);
+  return checked ? `☑ ${label}` : `☐ ${label}`;
 }
 
 function disclosureTitle(isOther: boolean, expanded: boolean): string {
@@ -116,15 +121,8 @@ function PlantRow({
 }) {
   const checked = plant.state.done;
   const showAction = Boolean(actionLabel) && !plant.state.closed;
-  const primaryLabel = actionLabel ? markActionLabel(actionLabel) : "";
-  const doneLabel = actionLabel
-    ? checked
-      ? `${actionLabel} ✓${
-          plant.state.completedAtIso
-            ? ` · ${formatPortalDateOnly(plant.state.completedAtIso)}`
-            : ""
-        }`
-      : primaryLabel
+  const actionButtonLabel = actionLabel
+    ? plantActionButtonLabel(actionLabel, checked)
     : "";
 
   return (
@@ -158,7 +156,7 @@ function PlantRow({
             <Text
               style={[styles.primaryActionText, checked ? styles.primaryActionTextDone : null]}
             >
-              {doneLabel}
+              {actionButtonLabel}
             </Text>
           </Pressable>
         ) : null}
@@ -399,16 +397,6 @@ export function PropagationPlanningScreen({ navigation }: Props) {
           Unavailable customer requests grouped by reason to help plan propagation and restocks.
         </Text>
 
-        {payload ? (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>Active {payload.summary.active}</Text>
-            <Text style={styles.summaryDot}>·</Text>
-            <Text style={styles.summaryText}>Done {payload.summary.done}</Text>
-            <Text style={styles.summaryDot}>·</Text>
-            <Text style={styles.summaryText}>Closed {payload.summary.closed}</Text>
-          </View>
-        ) : null}
-
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -526,14 +514,6 @@ const styles = StyleSheet.create({
   backLink: { color: THEME.darkGreen, fontWeight: "600", fontSize: 15 },
   title: { color: THEME.darkGreen, fontSize: 26, fontWeight: "700" },
   muted: { color: THEME.darkGreen, opacity: 0.75, fontSize: 14, lineHeight: 20 },
-  summaryRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 6,
-  },
-  summaryText: { color: THEME.darkGreen, fontWeight: "600", fontSize: 13, opacity: 0.9 },
-  summaryDot: { color: THEME.darkGreen, opacity: 0.35 },
   search: {
     backgroundColor: "#fff",
     borderRadius: 8,
