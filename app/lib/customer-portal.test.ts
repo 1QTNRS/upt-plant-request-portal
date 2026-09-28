@@ -923,6 +923,15 @@ describe("the request form works without JavaScript", () => {
     assert.ok(
       html.indexOf("Have an existing order?") < html.indexOf("Submit request"),
     );
+    assert.match(html, /Text me when plants from my request are available/);
+    assert.ok(
+      html.indexOf("Have an existing order?") <
+        html.indexOf("Text me when plants from my request are available"),
+    );
+    assert.ok(
+      html.indexOf("Text me when plants from my request are available") <
+        html.indexOf("Submit request"),
+    );
   });
 
   it("keeps the Yes/No answer when adding a plant row", () => {
