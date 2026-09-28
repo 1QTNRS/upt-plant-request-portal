@@ -321,7 +321,7 @@ export function CustomerRequestPortal({
                 data-sms-phone
               />
             </label>
-            <p className="upt-muted" style={{ marginTop: 12, fontSize: 14, lineHeight: 1.5 }}>
+            <p className="upt-sms-consent">
               By opting in, you agree to receive request-related text messages from
               Unsolicited Plant Talks. Message and data rates may apply. Reply STOP to unsubscribe.{" "}
               <a href={STOREFRONT_PRIVACY_POLICY_PATH}>Privacy Policy</a> ·{" "}
