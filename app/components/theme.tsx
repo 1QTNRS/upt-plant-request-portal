@@ -223,6 +223,20 @@ export function ThemeStyles() {
         outline: 3px solid ${THEME.yellow};
         outline-offset: 2px;
       }
+      .upt-sms-enable {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        color: ${THEME.darkGreen};
+        font-weight: 600;
+      }
+      .upt-sms-enable input {
+        width: 18px;
+        height: 18px;
+        accent-color: ${THEME.darkGreen};
+        flex: 0 0 auto;
+      }
       .upt-offer-section-gap {
         display: block;
         margin-top: 20px;

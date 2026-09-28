@@ -414,6 +414,37 @@ export const CUSTOMER_REQUEST_SUBMIT_SCRIPT = `
 })();
 `.trim();
 
+export const CUSTOMER_SMS_OPTIN_SCRIPT = `
+(function () {
+  if (window.__uptSmsOptIn) return;
+  window.__uptSmsOptIn = true;
+
+  function syncPanel(root) {
+    if (!(root instanceof HTMLElement)) return;
+    var toggle = root.querySelector("[data-sms-enable]");
+    var panel = root.querySelector("[data-sms-phone-panel]");
+    if (!(toggle instanceof HTMLInputElement) || !(panel instanceof HTMLElement)) return;
+    panel.hidden = !toggle.checked;
+  }
+
+  function scan() {
+    document.querySelectorAll("[data-sms-opt-in]").forEach(syncPanel);
+  }
+
+  document.addEventListener("change", function (event) {
+    var target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.hasAttribute("data-sms-enable")) return;
+    var root = target.closest("[data-sms-opt-in]");
+    if (root) syncPanel(root);
+  });
+
+  scan();
+  document.addEventListener("DOMContentLoaded", scan);
+  window.addEventListener("load", scan);
+})();
+`.trim();
+
 export const CUSTOMER_PLANT_ROWS_SCRIPT = `
 (function () {
   if (window.__uptPlantRows) return;
@@ -877,6 +908,7 @@ export function CustomerEnhanceScripts({
     CUSTOMER_LIGHTBOX_SCRIPT,
     CUSTOMER_PAGED_LIST_SCRIPT,
     CUSTOMER_PLANT_ROWS_SCRIPT,
+    CUSTOMER_SMS_OPTIN_SCRIPT,
     CUSTOMER_REQUEST_SUBMIT_SCRIPT,
     includeFedexWarning ? FEDEX_WARNING_SCRIPT : "",
     includeHeatPackSection ? HEAT_PACK_SCRIPT : "",

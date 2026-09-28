@@ -78,6 +78,11 @@ model CustomerProfile {
   email             String
   /// IANA zone captured from the browser, e.g. America/Los_Angeles. Null until known.
   timeZone          String?
+  /// Request-related SMS when an offer includes a purchasable plant. Off until explicit opt-in.
+  smsNotifyOptIn    Boolean        @default(false)
+  /// Portal-only SMS number after opt-in. Does not write back to Shopify.
+  smsNotifyPhone    String?
+  smsNotifyOptInAt  DateTime?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   requests          PlantRequest[]

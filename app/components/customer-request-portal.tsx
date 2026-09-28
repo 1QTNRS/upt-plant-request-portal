@@ -10,6 +10,10 @@ import {
   type RequestStatus,
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
+import {
+  STOREFRONT_PRIVACY_POLICY_PATH,
+  STOREFRONT_TERMS_OF_SERVICE_PATH,
+} from "../lib/customer-sms";
 import { THEME } from "../lib/theme";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { PagerChevron, pagerArrowStyle } from "./paged-list";
@@ -68,6 +72,9 @@ export function CustomerRequestPortal({
   canSubmit = true,
   customerTimeZone = null,
   hasExistingOrder = null,
+  smsNotifyEnabled = false,
+  smsPhone = "",
+  shopifyPhonePrefill = null,
   submissionNonce,
 }: {
   loggedIn: boolean;
@@ -95,8 +102,13 @@ export function CustomerRequestPortal({
   canSubmit?: boolean;
   customerTimeZone?: string | null;
   hasExistingOrder?: "yes" | "no" | null;
+  smsNotifyEnabled?: boolean;
+  smsPhone?: string;
+  shopifyPhonePrefill?: string | null;
   submissionNonce?: string;
 }) {
+  const smsPhoneDefault =
+    smsPhone.trim() || (smsNotifyEnabled ? "" : shopifyPhonePrefill?.trim() ?? "");
 
   if (!loggedIn) {
     return (
@@ -270,6 +282,52 @@ export function CustomerRequestPortal({
               <span>No</span>
             </label>
           </fieldset>
+        </section>
+
+        <section
+          className="upt-card"
+          style={{ borderColor: THEME.yellow, borderWidth: 2 }}
+          data-sms-opt-in
+        >
+          <h2 className="upt-card-title">
+            Text me when plants from my request are available
+          </h2>
+          <p className="upt-muted">
+            Get a text when UPT has something available from your request.
+          </p>
+          <label className="upt-sms-enable" style={{ marginTop: 12 }}>
+            <input
+              type="checkbox"
+              name="smsNotifyEnabled"
+              value="yes"
+              data-sms-enable
+              defaultChecked={smsNotifyEnabled}
+            />
+            <span>Enable SMS notifications</span>
+          </label>
+          <div
+            data-sms-phone-panel
+            hidden={!smsNotifyEnabled}
+            style={{ marginTop: 12 }}
+          >
+            <label>
+              <span>Mobile number</span>
+              <input
+                type="tel"
+                name="smsNotifyPhone"
+                autoComplete="tel"
+                defaultValue={smsPhoneDefault}
+                style={themeFieldStyle}
+                data-sms-phone
+              />
+            </label>
+            <p className="upt-muted" style={{ marginTop: 12, fontSize: 14, lineHeight: 1.5 }}>
+              By opting in, you agree to receive request-related text messages from
+              Unsolicited Plant Talks. Message and data rates may apply. Reply STOP to unsubscribe.{" "}
+              <a href={STOREFRONT_PRIVACY_POLICY_PATH}>Privacy Policy</a> ·{" "}
+              <a href={STOREFRONT_TERMS_OF_SERVICE_PATH}>Terms</a>
+            </p>
+          </div>
         </section>
 
         <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>

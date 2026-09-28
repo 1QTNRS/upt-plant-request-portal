@@ -641,6 +641,52 @@ export async function getCustomerTimeZone(
  * Writes a captured IANA zone onto that shop+email profile only.
  * A forged or empty value is ignored; another customer is never updated.
  */
+export async function saveCustomerSmsNotifyPreference(
+  shop: string,
+  email: string,
+  input: { enabled: boolean; phone: string },
+): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return;
+
+  if (!input.enabled) {
+    await prisma.customerProfile.updateMany({
+      where: { shop, email: normalized },
+      data: {
+        smsNotifyOptIn: false,
+        smsNotifyPhone: null,
+        smsNotifyOptInAt: null,
+      },
+    });
+    return;
+  }
+
+  await prisma.customerProfile.updateMany({
+    where: { shop, email: normalized },
+    data: {
+      smsNotifyOptIn: true,
+      smsNotifyPhone: input.phone,
+      smsNotifyOptInAt: new Date(),
+    },
+  });
+}
+
+export async function getCustomerSmsNotifyPreference(
+  shop: string,
+  email: string,
+): Promise<{ optIn: boolean; phone: string | null }> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return { optIn: false, phone: null };
+  const row = await prisma.customerProfile.findUnique({
+    where: { shop_email: { shop, email: normalized } },
+    select: { smsNotifyOptIn: true, smsNotifyPhone: true },
+  });
+  return {
+    optIn: row?.smsNotifyOptIn ?? false,
+    phone: row?.smsNotifyPhone?.trim() || null,
+  };
+}
+
 export async function saveCustomerTimeZone(
   shop: string,
   email: string,
