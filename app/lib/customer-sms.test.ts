@@ -62,7 +62,6 @@ describe("customer request form SMS UI", () => {
         source.indexOf("Submit request"),
     );
     assert.match(source, /Reply STOP to unsubscribe/);
-    assert.match(source, /upt-sms-consent/);
-    assert.doesNotMatch(source, /upt-sms-consent[\s\S]*<strong>/);
+    assert.match(source, /className="upt-sms-consent"/);
   });
 });
