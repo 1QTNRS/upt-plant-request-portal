@@ -135,7 +135,7 @@ function PlantRow({
         requested
       </Text>
       <Text style={styles.plantMetaSub}>
-        Oldest request · {formatPortalDateOnly(plant.oldestRequestAtIso)}
+        Oldest request: {formatPortalDateOnly(plant.oldestRequestAtIso)}
       </Text>
       {plant.newSinceDone > 0 && !plant.state.closed ? (
         <Text style={styles.newSinceDone}>
