@@ -11,6 +11,7 @@ import {
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
 import {
+  formatSmsPhoneFieldDisplay,
   STOREFRONT_PRIVACY_POLICY_PATH,
   STOREFRONT_TERMS_OF_SERVICE_PATH,
 } from "../lib/customer-sms";
@@ -107,8 +108,9 @@ export function CustomerRequestPortal({
   shopifyPhonePrefill?: string | null;
   submissionNonce?: string;
 }) {
-  const smsPhoneDefault =
+  const smsPhoneRaw =
     smsPhone.trim() || (smsNotifyEnabled ? "" : shopifyPhonePrefill?.trim() ?? "");
+  const smsPhoneDefault = formatSmsPhoneFieldDisplay(smsPhoneRaw);
 
   if (!loggedIn) {
     return (
@@ -315,6 +317,7 @@ export function CustomerRequestPortal({
               <input
                 type="tel"
                 name="smsNotifyPhone"
+                inputMode="numeric"
                 autoComplete="tel"
                 defaultValue={smsPhoneDefault}
                 style={themeFieldStyle}

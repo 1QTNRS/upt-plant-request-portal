@@ -419,12 +419,54 @@ export const CUSTOMER_SMS_OPTIN_SCRIPT = `
   if (window.__uptSmsOptIn) return;
   window.__uptSmsOptIn = true;
 
+  function digitsOnly(raw) {
+    return String(raw || "").replace(/\\D/g, "");
+  }
+
+  function capNational(digits) {
+    var d = digits;
+    if (d.length > 11) d = d.slice(0, 11);
+    if (d.length === 11 && d.charAt(0) === "1") return d.slice(1);
+    if (d.length > 10) return d.slice(0, 10);
+    return d;
+  }
+
+  function formatNational(national) {
+    var d = String(national || "").replace(/\\D/g, "").slice(0, 10);
+    if (!d) return "";
+    if (d.length <= 3) return "(" + d;
+    if (d.length <= 6) return "(" + d.slice(0, 3) + ") " + d.slice(3);
+    return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6);
+  }
+
+  function formatPhoneField(raw) {
+    return formatNational(capNational(digitsOnly(raw)));
+  }
+
+  function syncPhoneInput(input) {
+    if (!(input instanceof HTMLInputElement)) return;
+    var formatted = formatPhoneField(input.value);
+    if (input.value !== formatted) input.value = formatted;
+  }
+
+  function bindPhoneInput(input) {
+    if (!(input instanceof HTMLInputElement)) return;
+    if (input.getAttribute("data-sms-phone-bound") === "1") return;
+    input.setAttribute("data-sms-phone-bound", "1");
+    syncPhoneInput(input);
+    input.addEventListener("input", function () {
+      syncPhoneInput(input);
+    });
+  }
+
   function syncPanel(root) {
     if (!(root instanceof HTMLElement)) return;
     var toggle = root.querySelector("[data-sms-enable]");
     var panel = root.querySelector("[data-sms-phone-panel]");
     if (!(toggle instanceof HTMLInputElement) || !(panel instanceof HTMLElement)) return;
     panel.hidden = !toggle.checked;
+    var phone = panel.querySelector("[data-sms-phone]");
+    bindPhoneInput(phone);
   }
 
   function scan() {

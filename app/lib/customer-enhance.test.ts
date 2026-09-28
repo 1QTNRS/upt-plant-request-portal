@@ -6,6 +6,7 @@ import {
   CUSTOMER_PAGED_LIST_SCRIPT,
   CUSTOMER_PLANT_ROWS_SCRIPT,
   CUSTOMER_REQUEST_SUBMIT_SCRIPT,
+  CUSTOMER_SMS_OPTIN_SCRIPT,
   CUSTOMER_TIME_SCRIPT,
   FEDEX_WARNING_SCRIPT,
 } from "../components/customer-enhance";
@@ -56,6 +57,12 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /data-lightbox-prev/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /pointerup/);
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowRight/);
+  });
+
+  it("formats the SMS phone field without relying on maxlength", () => {
+    assert.match(CUSTOMER_SMS_OPTIN_SCRIPT, /data-sms-phone-bound/);
+    assert.match(CUSTOMER_SMS_OPTIN_SCRIPT, /formatPhoneField/);
+    assert.doesNotMatch(CUSTOMER_SMS_OPTIN_SCRIPT, /maxLength/);
   });
 
   it("locks the customer request submit button on first submit", () => {
