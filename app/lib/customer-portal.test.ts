@@ -923,11 +923,17 @@ describe("the request form works without JavaScript", () => {
     assert.ok(
       html.indexOf("Have an existing order?") < html.indexOf("Submit request"),
     );
+    assert.match(html, /Text me when plants from my request are available/);
+    assert.match(html, /name="smsNotifyEnabled"/);
+    assert.match(html, /class="upt-sms-consent"/);
     assert.ok(
-      !html.includes("Text me when plants from my request are available"),
-      "SMS opt-in stays hidden until CUSTOMER_SMS_OPT_IN_ENABLED is true",
+      html.indexOf("Have an existing order?") <
+        html.indexOf("Text me when plants from my request are available"),
     );
-    assert.ok(!html.includes("smsNotifyEnabled"));
+    assert.ok(
+      html.indexOf("Text me when plants from my request are available") <
+        html.indexOf("Submit request"),
+    );
   });
 
   it("keeps the Yes/No answer when adding a plant row", () => {
