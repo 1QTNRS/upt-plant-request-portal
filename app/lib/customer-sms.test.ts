@@ -118,8 +118,8 @@ describe("customer SMS opt-in helpers", () => {
 });
 
 describe("customer request form SMS UI", () => {
-  it("hides the SMS opt-in card while CUSTOMER_SMS_OPT_IN_ENABLED is false", () => {
-    assert.equal(CUSTOMER_SMS_OPT_IN_ENABLED, false);
+  it("shows the SMS opt-in card when CUSTOMER_SMS_OPT_IN_ENABLED is true", () => {
+    assert.equal(CUSTOMER_SMS_OPT_IN_ENABLED, true);
     const portal = readFileSync(
       path.join(import.meta.dirname, "..", "components", "customer-request-portal.tsx"),
       "utf8",
@@ -128,9 +128,12 @@ describe("customer request form SMS UI", () => {
     assert.match(portal, /data-sms-opt-in/);
     assert.match(portal, /className="upt-sms-consent"/);
     assert.match(portal, /Text me when plants from my request are available/);
+    assert.match(portal, /Enable SMS notifications/);
+    assert.match(portal, /Privacy Policy/);
+    assert.match(portal, /Terms/);
   });
 
-  it("skips SMS preference writes on submit while the UI flag is off", () => {
+  it("persists SMS preferences on submit when the UI flag is on", () => {
     const submit = readFileSync(
       path.join(import.meta.dirname, "..", "routes", "customer.submit.tsx"),
       "utf8",
@@ -144,7 +147,7 @@ describe("customer request form SMS UI", () => {
     assert.match(demo, /CUSTOMER_SMS_OPT_IN_ENABLED && smsValidation\.ok/);
   });
 
-  it("keeps existing order and submit adjacent without a visible SMS card", () => {
+  it("places SMS opt-in after existing order and before submit", () => {
     const source = readFileSync(
       path.join(import.meta.dirname, "..", "components", "customer-request-portal.tsx"),
       "utf8",
@@ -152,7 +155,12 @@ describe("customer request form SMS UI", () => {
     assert.match(source, /Have an existing order\?/);
     assert.match(source, /Submit request/);
     assert.ok(
-      source.indexOf("Have an existing order?") < source.indexOf("Submit request"),
+      source.indexOf("Have an existing order?") <
+        source.indexOf("Text me when plants from my request are available"),
+    );
+    assert.ok(
+      source.indexOf("Text me when plants from my request are available") <
+        source.indexOf("Submit request"),
     );
   });
 });

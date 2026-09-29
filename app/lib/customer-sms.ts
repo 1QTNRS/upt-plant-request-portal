@@ -5,10 +5,10 @@ export const STOREFRONT_PRIVACY_POLICY_PATH = "/policies/privacy-policy";
 export const STOREFRONT_TERMS_OF_SERVICE_PATH = "/policies/terms-of-service";
 
 /**
- * When false, the customer request form hides the SMS opt-in card (Twilio compliance).
- * Backend helpers, schema, and saved preferences are unchanged; set true to show the UI again.
+ * When false, the customer request form hides the SMS opt-in card.
+ * Backend helpers, schema, and saved preferences are unchanged.
  */
-export const CUSTOMER_SMS_OPT_IN_ENABLED = false;
+export const CUSTOMER_SMS_OPT_IN_ENABLED = true;
 
 export const SMS_PHONE_INVALID_MESSAGE = "Enter a valid 10-digit mobile number.";
 
