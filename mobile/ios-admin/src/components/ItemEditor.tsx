@@ -891,9 +891,9 @@ const styles = {
     marginBottom: 16,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: "#ff9999",
+    backgroundColor: THEME.customerRequestNotesBackground,
     borderWidth: 1,
-    borderColor: "#d86464",
+    borderColor: THEME.customerRequestNotesBorder,
     gap: 4,
   },
   customerNotesLabel: {

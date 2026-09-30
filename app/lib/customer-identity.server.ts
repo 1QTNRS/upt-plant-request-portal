@@ -25,10 +25,6 @@ const CUSTOMER_QUERY = `#graphql
       firstName
       lastName
       defaultEmailAddress { emailAddress }
-      defaultPhoneNumber {
-        phoneNumber
-      }
-      phone
     }
   }
 `;
@@ -40,19 +36,8 @@ type CustomerQueryResult = {
     firstName: string | null;
     lastName: string | null;
     defaultEmailAddress: { emailAddress: string | null } | null;
-    defaultPhoneNumber: { phoneNumber: string | null } | null;
-    phone: string | null;
   } | null;
 };
-
-export function shopifyCustomerPhoneFromRecord(customer: {
-  defaultPhoneNumber?: { phoneNumber?: string | null } | null;
-  phone?: string | null;
-}): string {
-  const fromDefault = customer.defaultPhoneNumber?.phoneNumber?.trim() ?? "";
-  if (fromDefault) return fromDefault;
-  return customer.phone?.trim() ?? "";
-}
 
 /**
  * The app proxy only forwards a customer id, so the id has to be turned into a
@@ -143,39 +128,5 @@ export async function resolveCustomerIdentity(
       error,
     );
     return { ...resolved, shopUnreachable: true };
-  }
-}
-
-/**
- * Read-only Shopify account phone for SMS prefill. Never stored as consent.
- */
-export async function fetchShopifyCustomerAccountPhone(
-  shop: string,
-  shopifyCustomerId: string,
-): Promise<string | null> {
-  const admin = await offlineAdminClient(shop);
-  if (!admin) return null;
-
-  try {
-    const response = await admin.graphql(CUSTOMER_QUERY, {
-      variables: { id: customerGid(shopifyCustomerId) },
-    });
-    const body = (await response.json()) as {
-      data?: CustomerQueryResult;
-      errors?: Array<{ message: string }>;
-    };
-    if (body.errors?.length) {
-      throw new Error(body.errors.map((error) => error.message).join("; "));
-    }
-    const customer = body.data?.customer;
-    if (!customer) return null;
-    const phone = shopifyCustomerPhoneFromRecord(customer);
-    return phone || null;
-  } catch (error) {
-    console.error(
-      `Could not read Shopify customer phone ${shopifyCustomerId} for ${shop}.`,
-      error,
-    );
-    return null;
   }
 }

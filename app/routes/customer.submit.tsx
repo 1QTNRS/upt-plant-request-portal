@@ -24,13 +24,6 @@ import {
 import { resolveCustomerIdentity } from "../lib/customer-identity.server";
 import { notifyNewRequest } from "../lib/emails.server";
 import {
-  CUSTOMER_SMS_OPT_IN_ENABLED,
-  readSmsNotifyEnabled,
-  readSmsPhone,
-  validateSmsOptIn,
-} from "../lib/customer-sms";
-import {
-  saveCustomerSmsNotifyPreference,
   saveCustomerTimeZone,
   submitCustomerRequestWithNonce,
 } from "../lib/portal.server";
@@ -83,8 +76,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errors: [],
       plantLines: null,
       hasExistingOrder: null,
-      smsNotifyEnabled: false,
-      smsPhone: "",
     };
   }
 
@@ -93,8 +84,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errors: [],
       plantLines: withExtraRow(readPlantLines(form)),
       hasExistingOrder: readExistingOrderAnswer(form),
-      smsNotifyEnabled: readSmsNotifyEnabled(form),
-      smsPhone: readSmsPhone(form),
     };
   }
 
@@ -104,8 +93,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errors: [],
       plantLines: withoutRow(readPlantLines(form), Number(removeMatch[1])),
       hasExistingOrder: readExistingOrderAnswer(form),
-      smsNotifyEnabled: readSmsNotifyEnabled(form),
-      smsPhone: readSmsPhone(form),
     };
   }
 
@@ -135,8 +122,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errors: ["Unknown action."],
       plantLines: null,
       hasExistingOrder: null,
-      smsNotifyEnabled: readSmsNotifyEnabled(form),
-      smsPhone: readSmsPhone(form),
     };
   }
 
@@ -145,8 +130,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       errors: ["Please log in to submit a request."],
       plantLines: null,
       hasExistingOrder: readExistingOrderAnswer(form),
-      smsNotifyEnabled: readSmsNotifyEnabled(form),
-      smsPhone: readSmsPhone(form),
     };
   }
 
@@ -160,17 +143,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       ],
       plantLines: readPlantLines(form),
       hasExistingOrder: readExistingOrderAnswer(form),
-      smsNotifyEnabled: readSmsNotifyEnabled(form),
-      smsPhone: readSmsPhone(form),
     };
   }
 
   const submitted = readPlantLines(form);
   const existingOrderAnswer = readExistingOrderAnswer(form);
-  const smsEnabled = CUSTOMER_SMS_OPT_IN_ENABLED
-    ? readSmsNotifyEnabled(form)
-    : false;
-  const smsPhoneRaw = CUSTOMER_SMS_OPT_IN_ENABLED ? readSmsPhone(form) : "";
   const items = submitted.map((line) => ({
     plantName: line.plantName.trim(),
     notes: line.notes.trim() || undefined,
@@ -186,23 +163,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!existingOrderAnswer) {
     errors.push("Tell us whether you have an existing order.");
   }
-  const smsValidation = CUSTOMER_SMS_OPT_IN_ENABLED
-    ? validateSmsOptIn({
-        enabled: smsEnabled,
-        phoneRaw: smsPhoneRaw,
-      })
-    : ({ ok: true as const, phone: "" });
-  if (!smsValidation.ok) {
-    errors.push(smsValidation.message);
-  }
   // Keep what was typed so a validation error does not clear the form.
   if (errors.length > 0) {
     return {
       errors,
       plantLines: submitted,
       hasExistingOrder: existingOrderAnswer,
-      smsNotifyEnabled: smsEnabled,
-      smsPhone: smsPhoneRaw,
     };
   }
 
@@ -226,13 +192,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
   if (isNewSubmission) {
     await notifyNewRequest(context.shop, created.id);
-  }
-
-  if (CUSTOMER_SMS_OPT_IN_ENABLED) {
-    await saveCustomerSmsNotifyPreference(context.shop, identity.email, {
-      enabled: smsEnabled,
-      phone: smsValidation.ok ? smsValidation.phone : "",
-    });
   }
 
   throw redirect(`${home}?submitted=${encodeURIComponent(created.requestNumber)}`);
@@ -267,9 +226,6 @@ export default function CustomerRequestSubmit() {
         actionData?.plantLines ?? portal.plantLines ?? [EMPTY_PLANT_LINE]
       }
       hasExistingOrder={actionData?.hasExistingOrder ?? portal.hasExistingOrder}
-      smsNotifyEnabled={actionData?.smsNotifyEnabled ?? portal.smsNotifyEnabled}
-      smsPhone={actionData?.smsPhone ?? portal.smsPhone}
-      shopifyPhonePrefill={portal.shopifyPhonePrefill}
       submissionNonce={portal.submissionNonce}
       canSubmit={portal.canSubmitRequests}
       customerTimeZone={portal.customerTimeZone}

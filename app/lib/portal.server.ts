@@ -21,6 +21,7 @@ import {
   type StockVariantCandidate,
   type StoredFulfillmentType,
 } from "./growers-choice";
+import { customerFacingNotesHistoryFromOffer } from "./customer-facing-notes-history";
 import { declinedAllPurchasableItems } from "./customer-portal";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
@@ -637,54 +638,28 @@ export async function getCustomerTimeZone(
   return normalizeIanaTimeZone(row?.timeZone);
 }
 
-/**
- * Writes a captured IANA zone onto that shop+email profile only.
- * A forged or empty value is ignored; another customer is never updated.
- */
-export async function saveCustomerSmsNotifyPreference(
+/** Frozen OfferItem notes shown in admin request detail history. */
+export async function getCustomerFacingNotesHistoryForRequest(
   shop: string,
-  email: string,
-  input: { enabled: boolean; phone: string },
-): Promise<void> {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return;
-
-  if (!input.enabled) {
-    await prisma.customerProfile.updateMany({
-      where: { shop, email: normalized },
-      data: {
-        smsNotifyOptIn: false,
-        smsNotifyPhone: null,
-        smsNotifyOptInAt: null,
+  requestId: string,
+) {
+  const row = await prisma.plantRequest.findFirst({
+    where: { id: requestId, shop },
+    select: {
+      requestNumber: true,
+      offer: {
+        select: {
+          sentAt: true,
+          items: {
+            orderBy: OFFER_ITEM_ORDER,
+            select: { plantName: true, customerFacingNotes: true },
+          },
+        },
       },
-    });
-    return;
-  }
-
-  await prisma.customerProfile.updateMany({
-    where: { shop, email: normalized },
-    data: {
-      smsNotifyOptIn: true,
-      smsNotifyPhone: input.phone,
-      smsNotifyOptInAt: new Date(),
     },
   });
-}
-
-export async function getCustomerSmsNotifyPreference(
-  shop: string,
-  email: string,
-): Promise<{ optIn: boolean; phone: string | null }> {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized) return { optIn: false, phone: null };
-  const row = await prisma.customerProfile.findUnique({
-    where: { shop_email: { shop, email: normalized } },
-    select: { smsNotifyOptIn: true, smsNotifyPhone: true },
-  });
-  return {
-    optIn: row?.smsNotifyOptIn ?? false,
-    phone: row?.smsNotifyPhone?.trim() || null,
-  };
+  if (!row?.offer) return [];
+  return customerFacingNotesHistoryFromOffer(row.offer, row.requestNumber);
 }
 
 export async function saveCustomerTimeZone(

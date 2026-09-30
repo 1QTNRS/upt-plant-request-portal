@@ -32,9 +32,6 @@ export default function CustomerHome() {
       browseAction={portal.browseAction}
       plantLines={portal.plantLines ?? [EMPTY_PLANT_LINE]}
       hasExistingOrder={portal.hasExistingOrder}
-      smsNotifyEnabled={portal.smsNotifyEnabled}
-      smsPhone={portal.smsPhone}
-      shopifyPhonePrefill={portal.shopifyPhonePrefill}
       submissionNonce={portal.submissionNonce}
       canSubmit={portal.canSubmitRequests}
       customerTimeZone={portal.customerTimeZone}
