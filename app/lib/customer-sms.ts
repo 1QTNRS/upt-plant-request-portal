@@ -4,6 +4,16 @@ type FieldSource = Pick<FormData, "get">;
 export const STOREFRONT_PRIVACY_POLICY_PATH = "/policies/privacy-policy";
 export const STOREFRONT_TERMS_OF_SERVICE_PATH = "/policies/terms-of-service";
 
+/** Absolute policy URLs for SMS consent disclosure (Twilio / storefront). */
+export const STOREFRONT_PRIVACY_POLICY_URL =
+  "https://unsolicitedplanttalks.com/policies/privacy-policy";
+export const STOREFRONT_TERMS_OF_SERVICE_URL =
+  "https://unsolicitedplanttalks.com/policies/terms-of-service";
+
+/** Exact consent copy shown before the SMS checkbox on the customer request form. */
+export const CUSTOMER_SMS_CONSENT_PARAGRAPH =
+  "By checking this box and submitting your request, you agree to receive automated, request-related text messages from Unsolicited Plant Talks. Availability alerts are sent only when at least one requested plant is available and an offer is ready for review. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to unsubscribe. SMS consent is optional and is not required to submit a plant request or make a purchase.";
+
 /**
  * When false, the customer request form hides the SMS opt-in card.
  * Backend helpers, schema, and saved preferences are unchanged.

@@ -11,10 +11,11 @@ import {
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
 import {
+  CUSTOMER_SMS_CONSENT_PARAGRAPH,
   CUSTOMER_SMS_OPT_IN_ENABLED,
   formatSmsPhoneFieldDisplay,
-  STOREFRONT_PRIVACY_POLICY_PATH,
-  STOREFRONT_TERMS_OF_SERVICE_PATH,
+  STOREFRONT_PRIVACY_POLICY_URL,
+  STOREFRONT_TERMS_OF_SERVICE_URL,
 } from "../lib/customer-sms";
 import { THEME } from "../lib/theme";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
@@ -299,6 +300,13 @@ export function CustomerRequestPortal({
             <p className="upt-muted">
               Get a text when UPT has something available from your request.
             </p>
+            <p className="upt-sms-consent" data-sms-consent-disclosure>
+              {CUSTOMER_SMS_CONSENT_PARAGRAPH}
+            </p>
+            <p className="upt-sms-consent" style={{ marginTop: 8 }}>
+              <a href={STOREFRONT_PRIVACY_POLICY_URL}>Privacy Policy</a> ·{" "}
+              <a href={STOREFRONT_TERMS_OF_SERVICE_URL}>Terms</a>
+            </p>
             <label className="upt-sms-enable" style={{ marginTop: 12 }}>
               <input
                 type="checkbox"
@@ -326,12 +334,6 @@ export function CustomerRequestPortal({
                   data-sms-phone
                 />
               </label>
-              <p className="upt-sms-consent">
-                By opting in, you agree to receive request-related text messages from
-                Unsolicited Plant Talks. Message and data rates may apply. Reply STOP to unsubscribe.{" "}
-                <a href={STOREFRONT_PRIVACY_POLICY_PATH}>Privacy Policy</a> ·{" "}
-                <a href={STOREFRONT_TERMS_OF_SERVICE_PATH}>Terms</a>
-              </p>
             </div>
           </section>
         ) : null}
