@@ -21,7 +21,10 @@ import {
   type StockVariantCandidate,
   type StoredFulfillmentType,
 } from "./growers-choice";
-import { customerFacingNotesHistoryFromOffer } from "./customer-facing-notes-history";
+import {
+  customerFacingNotesHistoryFromOffer,
+  frozenOfferItemPlantName,
+} from "./customer-facing-notes-history";
 import { declinedAllPurchasableItems } from "./customer-portal";
 import { assignCanonicalPlantsForRequest } from "./plant-identity.server";
 import {
@@ -652,14 +655,28 @@ export async function getCustomerFacingNotesHistoryForRequest(
           sentAt: true,
           items: {
             orderBy: OFFER_ITEM_ORDER,
-            select: { plantName: true, customerFacingNotes: true },
+            select: {
+              plantName: true,
+              customerFacingNotes: true,
+              requestItem: { select: { plantName: true } },
+            },
           },
         },
       },
     },
   });
   if (!row?.offer) return [];
-  return customerFacingNotesHistoryFromOffer(row.offer, row.requestNumber);
+  return customerFacingNotesHistoryFromOffer(
+    {
+      sentAt: row.offer.sentAt,
+      items: row.offer.items.map((item) => ({
+        plantName: item.plantName,
+        customerFacingNotes: item.customerFacingNotes,
+        requestedPlantName: item.requestItem.plantName,
+      })),
+    },
+    row.requestNumber,
+  );
 }
 
 export async function saveCustomerTimeZone(
@@ -1276,9 +1293,7 @@ export async function sendOffer(
             const growersChoice = fulfillment === "growers_choice";
             return {
               requestItemId: item.id,
-              plantName: growersChoice
-                ? item.offeredName || item.plantName
-                : item.offeredName.trim(),
+              plantName: frozenOfferItemPlantName(item),
               quantity: normalizeQuantity(item.quantity),
               price: normalizePrice(item.price),
               // The listing's own weight is what a Grower's Choice plant
