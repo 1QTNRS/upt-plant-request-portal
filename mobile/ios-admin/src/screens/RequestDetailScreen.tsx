@@ -490,13 +490,11 @@ export function RequestDetailScreen({ navigation, route }: Props) {
             <Text style={ui.cardTitle}>Customer-Facing Notes History</Text>
             {detail.customerFacingNotesHistory.map((entry, index) => (
               <View
-                key={`${entry.plantName}-${entry.sentAtIso}-${index}`}
+                key={`${entry.plantName}-${index}`}
                 style={styles.customerFacingHistoryEntry}
               >
-                <Text style={styles.customerFacingHistoryMeta}>
-                  {formatPortalDateTime(entry.sentAtIso)} · {entry.plantName}
-                </Text>
-                <Text style={styles.customerFacingHistoryBody}>{entry.note}</Text>
+                <Text style={styles.customerFacingHistoryPlant}>{entry.plantName}</Text>
+                <Text style={styles.customerFacingHistoryBody}>{`"${entry.note}"`}</Text>
               </View>
             ))}
           </View>
@@ -620,13 +618,15 @@ const styles = StyleSheet.create({
     borderColor: THEME.customerFacingNotesHistoryBorder,
     gap: 4,
   },
-  customerFacingHistoryMeta: {
+  customerFacingHistoryPlant: {
     color: THEME.darkGreen,
     fontWeight: "700" as const,
-    fontSize: 13,
+    fontSize: 15,
+    lineHeight: 20,
   },
   customerFacingHistoryBody: {
     color: THEME.darkGreen,
+    fontSize: 14,
     lineHeight: 20,
   },
 });

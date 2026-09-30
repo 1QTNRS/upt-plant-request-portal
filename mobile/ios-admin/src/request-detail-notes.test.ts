@@ -17,19 +17,47 @@ describe("request detail customer-facing notes", () => {
     assert.match(editor, /color: THEME\.darkGreen/);
   });
 
-  it("shows sent-offer history in mint boxes before internal notes", () => {
+  it("shows plant-first sent-offer history in mint boxes before internal notes", () => {
     const screen = readFileSync(
       path.join(import.meta.dirname, "screens", "RequestDetailScreen.tsx"),
       "utf8",
     );
     assert.match(screen, /Customer-Facing Notes History/);
-    assert.match(screen, /customerFacingNotesHistory/);
+    assert.match(screen, /customerFacingNotesHistory\.map/);
     assert.match(screen, /customerFacingHistoryEntry/);
     assert.match(screen, /customerFacingNotesHistoryBackground/);
+    assert.match(screen, /customerFacingHistoryPlant/);
+    assert.match(screen, /\{entry\.plantName\}/);
+    assert.match(screen, /entry\.note/);
+    assert.doesNotMatch(
+      screen,
+      /customerFacingHistory[\s\S]*formatPortalDateTime\(entry\.sentAtIso\)/,
+    );
     assert.ok(
       screen.indexOf("Customer-Facing Notes History") <
         screen.indexOf("Internal notes"),
     );
-    assert.match(screen, /formatPortalDateTime\(entry\.sentAtIso\)/);
+  });
+
+  it("keeps one mint entry per plant note and omits empty notes at the API layer", () => {
+    const screen = readFileSync(
+      path.join(import.meta.dirname, "screens", "RequestDetailScreen.tsx"),
+      "utf8",
+    );
+    assert.match(screen, /customerFacingNotesHistory\.length > 0/);
+    assert.match(screen, /\$\{entry\.plantName\}-\$\{index\}/);
+    const historyHelper = readFileSync(
+      path.join(
+        import.meta.dirname,
+        "..",
+        "..",
+        "..",
+        "app",
+        "lib",
+        "customer-facing-notes-history.ts",
+      ),
+      "utf8",
+    );
+    assert.match(historyHelper, /filter\(\(entry\) => entry\.note\.length > 0\)/);
   });
 });
