@@ -77,6 +77,12 @@ export type RequestDetail = {
     shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
+  customerFacingNotesHistory: Array<{
+    sentAtIso: string;
+    requestNumber: string;
+    plantName: string;
+    note: string;
+  }>;
   customerResponse?: {
     items: Array<{
       sourceItemId: string;

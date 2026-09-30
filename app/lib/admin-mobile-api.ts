@@ -10,6 +10,7 @@ import {
   type ExactPlantListingFilter,
   type ExactPlantReleaseReason,
 } from "./exact-plants";
+import type { CustomerFacingNotesHistoryEntry } from "./customer-facing-notes-history";
 import type { ExactPlantCandidateRow, ExactPlantReview } from "./exact-plants.server";
 import {
   filterAdminDashboardRequests,
@@ -65,6 +66,7 @@ export type MobileAdminRequestDetail = {
     shippingFeeOverride?: number;
   };
   internalNotes: Array<{ id: string; body: string; createdAtIso: string }>;
+  customerFacingNotesHistory: CustomerFacingNotesHistoryEntry[];
   customerResponse?: {
     items: Array<{
       sourceItemId: string;
@@ -122,6 +124,7 @@ export function toMobileAdminRequestDetail(
   extras: {
     canCloseDeclined?: boolean;
     internalNotes?: MobileAdminRequestDetail["internalNotes"];
+    customerFacingNotesHistory?: MobileAdminRequestDetail["customerFacingNotesHistory"];
     customerResponse?: MobileAdminRequestDetail["customerResponse"];
   } = {},
 ): MobileAdminRequestDetail {
@@ -156,6 +159,7 @@ export function toMobileAdminRequestDetail(
         }
       : undefined,
     internalNotes: extras.internalNotes ?? [],
+    customerFacingNotesHistory: extras.customerFacingNotesHistory ?? [],
     customerResponse: extras.customerResponse ?? null,
     items: request.items.map((item) => ({
       id: item.id,

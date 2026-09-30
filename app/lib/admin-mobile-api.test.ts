@@ -130,6 +130,21 @@ describe("iOS admin API payloads", () => {
     assert.equal(payload.requests[0].hasExistingOrder, true);
   });
 
+  it("carries customer-facing notes history from sent offer snapshots", () => {
+    const detail = toMobileAdminRequestDetail(request(), {
+      customerFacingNotesHistory: [
+        {
+          sentAtIso: "2026-08-21T16:00:00.000Z",
+          requestNumber: "REQ12",
+          plantName: "Monstera Albo",
+          note: "Frozen note from send.",
+        },
+      ],
+    });
+    assert.equal(detail.customerFacingNotesHistory.length, 1);
+    assert.equal(detail.customerFacingNotesHistory[0]?.note, "Frozen note from send.");
+  });
+
   it("keeps admin notes and photos on the detail payload", () => {
     const detail = toMobileAdminRequestDetail(request());
     assert.equal(detail.requestNumber, "REQ12");

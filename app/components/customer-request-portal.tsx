@@ -10,13 +10,6 @@ import {
   type RequestStatus,
 } from "../lib/portal";
 import { CUSTOMER_REQUEST_PAGE_SIZE } from "../lib/list-page";
-import {
-  CUSTOMER_SMS_CONSENT_PARAGRAPH,
-  CUSTOMER_SMS_OPT_IN_ENABLED,
-  formatSmsPhoneFieldDisplay,
-  STOREFRONT_PRIVACY_POLICY_URL,
-  STOREFRONT_TERMS_OF_SERVICE_URL,
-} from "../lib/customer-sms";
 import { THEME } from "../lib/theme";
 import { CustomerEnhanceScripts, CustomerTime } from "./customer-enhance";
 import { PagerChevron, pagerArrowStyle } from "./paged-list";
@@ -75,9 +68,6 @@ export function CustomerRequestPortal({
   canSubmit = true,
   customerTimeZone = null,
   hasExistingOrder = null,
-  smsNotifyEnabled = false,
-  smsPhone = "",
-  shopifyPhonePrefill = null,
   submissionNonce,
 }: {
   loggedIn: boolean;
@@ -105,15 +95,8 @@ export function CustomerRequestPortal({
   canSubmit?: boolean;
   customerTimeZone?: string | null;
   hasExistingOrder?: "yes" | "no" | null;
-  smsNotifyEnabled?: boolean;
-  smsPhone?: string;
-  shopifyPhonePrefill?: string | null;
   submissionNonce?: string;
 }) {
-  const smsPhoneRaw =
-    smsPhone.trim() || (smsNotifyEnabled ? "" : shopifyPhonePrefill?.trim() ?? "");
-  const smsPhoneDefault = formatSmsPhoneFieldDisplay(smsPhoneRaw);
-
   if (!loggedIn) {
     return (
       <CustomerPageShell title="Customer Request Form">
@@ -287,56 +270,6 @@ export function CustomerRequestPortal({
             </label>
           </fieldset>
         </section>
-
-        {CUSTOMER_SMS_OPT_IN_ENABLED ? (
-          <section
-            className="upt-card"
-            style={{ borderColor: THEME.yellow, borderWidth: 2 }}
-            data-sms-opt-in
-          >
-            <h2 className="upt-card-title">
-              Text me when plants from my request are available
-            </h2>
-            <p className="upt-muted">
-              Get a text when UPT has something available from your request.
-            </p>
-            <p className="upt-sms-consent" data-sms-consent-disclosure>
-              {CUSTOMER_SMS_CONSENT_PARAGRAPH}
-            </p>
-            <p className="upt-sms-consent" style={{ marginTop: 8 }}>
-              <a href={STOREFRONT_PRIVACY_POLICY_URL}>Privacy Policy</a> ·{" "}
-              <a href={STOREFRONT_TERMS_OF_SERVICE_URL}>Terms</a>
-            </p>
-            <label className="upt-sms-enable" style={{ marginTop: 12 }}>
-              <input
-                type="checkbox"
-                name="smsNotifyEnabled"
-                value="yes"
-                data-sms-enable
-                defaultChecked={smsNotifyEnabled}
-              />
-              <span>Enable SMS notifications</span>
-            </label>
-            <div
-              data-sms-phone-panel
-              hidden={!smsNotifyEnabled}
-              style={{ marginTop: 12 }}
-            >
-              <label>
-                <span>Mobile number</span>
-                <input
-                  type="tel"
-                  name="smsNotifyPhone"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  defaultValue={smsPhoneDefault}
-                  style={themeFieldStyle}
-                  data-sms-phone
-                />
-              </label>
-            </div>
-          </section>
-        ) : null}
 
         <section className="upt-card" style={{ padding: 0, overflow: "hidden" }}>
           <button

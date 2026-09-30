@@ -12,10 +12,7 @@ import {
   portalHome,
   readExistingOrderAnswer,
 } from "./customer-portal";
-import {
-  fetchShopifyCustomerAccountPhone,
-  resolveCustomerIdentity,
-} from "./customer-identity.server";
+import { resolveCustomerIdentity } from "./customer-identity.server";
 import {
   canUseDemoCustomerLogin,
   readCustomerContext,
@@ -23,10 +20,8 @@ import {
 } from "./customer-session.server";
 import { getDisplayRequestNumber, type CustomerMyRequestRow } from "./portal";
 import { formatCustomerDate } from "./customer-time";
-import { readSmsNotifyEnabled, readSmsPhone } from "./customer-sms";
 import {
   findOrCreateCustomer,
-  getCustomerSmsNotifyPreference,
   getCustomerTimeZone,
   listCustomerRequests,
 } from "./portal.server";
@@ -70,11 +65,6 @@ export type CustomerPortalData = {
   plantLines: PlantLine[] | null;
   /** Carried in the query string so Yes/No survives add/remove plant. */
   hasExistingOrder: "yes" | "no" | null;
-  smsNotifyEnabled: boolean;
-  /** Typed or stored portal SMS number (not consent until checkbox is on). */
-  smsPhone: string;
-  /** Shopify account phone for prefill only; never implies SMS consent. */
-  shopifyPhonePrefill: string | null;
   /** One per page load; deduplicates a double submit or retried POST. */
   submissionNonce: string;
   customerTimeZone: string | null;
@@ -116,9 +106,6 @@ export async function loadCustomerPortal(
     browseAction: portalHome(context),
     plantLines: plantLinesFromQuery(search),
     hasExistingOrder: readExistingOrderAnswer(search),
-    smsNotifyEnabled: readSmsNotifyEnabled(search),
-    smsPhone: readSmsPhone(search),
-    shopifyPhonePrefill: null,
     submissionNonce: randomUUID(),
     submittedMessage: submittedNumber
       ? `Request submitted. Your request number is ${submittedNumber}. We'll notify you when matching plants become available.`
@@ -175,11 +162,6 @@ export async function loadCustomerPortal(
     shopifyCustomerId: customer.shopifyCustomerId ?? undefined,
   });
   const customerTimeZone = await getCustomerTimeZone(customer.shop, customer.email);
-  const smsPrefs = await getCustomerSmsNotifyPreference(customer.shop, customer.email);
-  const shopifyPhonePrefill = identity.shopifyCustomerId
-    ? await fetchShopifyCustomerAccountPhone(context.shop, identity.shopifyCustomerId)
-    : null;
-  const smsFromQuery = search.has("smsNotifyEnabled") || search.has("smsNotifyPhone");
 
   return {
     context,
@@ -192,13 +174,6 @@ export async function loadCustomerPortal(
       identityError: null,
       myRequests: requests.map((request) => toRequestRow(request, customerTimeZone)),
       customerTimeZone,
-      shopifyPhonePrefill,
-      smsNotifyEnabled: smsFromQuery ? shared.smsNotifyEnabled : smsPrefs.optIn,
-      smsPhone: smsFromQuery
-        ? shared.smsPhone
-        : smsPrefs.optIn
-          ? smsPrefs.phone ?? ""
-          : "",
     },
   };
 }

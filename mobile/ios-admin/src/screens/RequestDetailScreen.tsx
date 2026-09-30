@@ -485,6 +485,23 @@ export function RequestDetailScreen({ navigation, route }: Props) {
           )}
         </View>
 
+        {detail.customerFacingNotesHistory.length > 0 ? (
+          <View style={ui.card}>
+            <Text style={ui.cardTitle}>Customer-Facing Notes History</Text>
+            {detail.customerFacingNotesHistory.map((entry, index) => (
+              <View
+                key={`${entry.plantName}-${entry.sentAtIso}-${index}`}
+                style={styles.customerFacingHistoryEntry}
+              >
+                <Text style={styles.customerFacingHistoryMeta}>
+                  {formatPortalDateTime(entry.sentAtIso)} · {entry.plantName}
+                </Text>
+                <Text style={styles.customerFacingHistoryBody}>{entry.note}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         <View style={ui.card}>
           <Text style={ui.cardTitle}>Internal notes</Text>
           {detail.internalNotes.map((note) => (
@@ -593,5 +610,23 @@ const styles = StyleSheet.create({
   expirationLabel: {
     fontWeight: "700",
     color: THEME.darkGreen,
+  },
+  customerFacingHistoryEntry: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: THEME.customerFacingNotesHistoryBackground,
+    borderWidth: 1,
+    borderColor: THEME.customerFacingNotesHistoryBorder,
+    gap: 4,
+  },
+  customerFacingHistoryMeta: {
+    color: THEME.darkGreen,
+    fontWeight: "700" as const,
+    fontSize: 13,
+  },
+  customerFacingHistoryBody: {
+    color: THEME.darkGreen,
+    lineHeight: 20,
   },
 });

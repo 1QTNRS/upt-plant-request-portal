@@ -17,12 +17,6 @@ import {
   readExistingOrderAnswer,
   readPlantLines,
 } from "../lib/customer-portal";
-import {
-  CUSTOMER_SMS_OPT_IN_ENABLED,
-  readSmsNotifyEnabled,
-  readSmsPhone,
-  validateSmsOptIn,
-} from "../lib/customer-sms";
 import { requireAdmin } from "../lib/admin-auth.server";
 import { isDemoDataEnabled } from "../lib/environment.server";
 import { notifyNewRequest } from "../lib/emails.server";
@@ -33,7 +27,6 @@ import {
 import {
   findOrCreateCustomer,
   listCustomerRequests,
-  saveCustomerSmsNotifyPreference,
   submitCustomerRequestWithNonce,
 } from "../lib/portal.server";
 import { ensureShopSeeded } from "../lib/seed-demo.server";
@@ -79,9 +72,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
       hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
       submissionNonce: randomUUID(),
-      smsNotifyEnabled: false,
-      smsPhone: "",
-      shopifyPhonePrefill: null,
     };
   }
 
@@ -101,9 +91,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     plantLines: plantLinesFromQuery(new URL(request.url).searchParams),
     hasExistingOrder: readExistingOrderAnswer(new URL(request.url).searchParams),
     submissionNonce: randomUUID(),
-    smsNotifyEnabled: readSmsNotifyEnabled(new URL(request.url).searchParams),
-    smsPhone: readSmsPhone(new URL(request.url).searchParams),
-    shopifyPhonePrefill: null,
   };
 };
 
@@ -137,26 +124,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!existingOrderAnswer) {
     errors.push("Tell us whether you have an existing order.");
   }
-  const smsEnabled = CUSTOMER_SMS_OPT_IN_ENABLED
-    ? readSmsNotifyEnabled(form)
-    : false;
-  const smsValidation = CUSTOMER_SMS_OPT_IN_ENABLED
-    ? validateSmsOptIn({
-        enabled: smsEnabled,
-        phoneRaw: readSmsPhone(form),
-      })
-    : ({ ok: true as const, phone: "" });
-  if (!smsValidation.ok) {
-    errors.push(smsValidation.message);
-  }
   if (errors.length > 0) {
     return {
       errors,
       successMessage: null,
       plantLines: submitted,
       hasExistingOrder: existingOrderAnswer,
-      smsNotifyEnabled: smsEnabled,
-      smsPhone: readSmsPhone(form),
     };
   }
 
@@ -173,13 +146,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
   if (isNewSubmission) {
     await notifyNewRequest(shop, created.id);
-  }
-
-  if (CUSTOMER_SMS_OPT_IN_ENABLED && smsValidation.ok) {
-    await saveCustomerSmsNotifyPreference(shop, DEMO_CUSTOMER.email, {
-      enabled: smsEnabled,
-      phone: smsValidation.phone,
-    });
   }
 
   return {
@@ -219,11 +185,6 @@ export default function CustomerRequestForm() {
       hasExistingOrder={
         actionData?.hasExistingOrder ?? loaderData.hasExistingOrder
       }
-      smsNotifyEnabled={
-        actionData?.smsNotifyEnabled ?? loaderData.smsNotifyEnabled ?? false
-      }
-      smsPhone={actionData?.smsPhone ?? loaderData.smsPhone ?? ""}
-      shopifyPhonePrefill={loaderData.shopifyPhonePrefill ?? null}
       submissionNonce={loaderData.submissionNonce}
       canSubmit={loaderData.previewNotice === null}
     />

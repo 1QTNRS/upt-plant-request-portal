@@ -4,6 +4,10 @@ export const THEME = {
   mint: "#d6ece2",
   /** Request list / detail page chrome. Cards stay white on top of this. */
   requestPage: "#d6ece2",
+  customerRequestNotesBackground: "#FFCCCB",
+  customerRequestNotesBorder: "#e8a8a6",
+  customerFacingNotesHistoryBackground: "#eef8f2",
+  customerFacingNotesHistoryBorder: "#b8dcc8",
   cream: "#f7faf7",
   white: "#ffffff",
   muted: "#4a5c52",

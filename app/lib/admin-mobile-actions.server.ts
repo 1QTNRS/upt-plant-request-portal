@@ -22,6 +22,7 @@ import {
 } from "./portal";
 import {
   addInternalNote,
+  getCustomerFacingNotesHistoryForRequest,
   getCustomerResponse,
   getRequest,
   linkExistingStock,
@@ -59,9 +60,10 @@ export async function loadMobileAdminRequestDetail(
 ): Promise<MobileAdminRequestDetail | null> {
   const request = await getRequest(shop, requestId);
   if (!request) return null;
-  const [customerResponse, notes] = await Promise.all([
+  const [customerResponse, notes, customerFacingNotesHistory] = await Promise.all([
     getCustomerResponse(shop, request.id),
     listInternalNotes(shop, request.id),
+    getCustomerFacingNotesHistoryForRequest(shop, request.id),
   ]);
   return toMobileAdminRequestDetail(request, {
     canCloseDeclined: canAdminCloseDeclinedRequest({
@@ -76,6 +78,7 @@ export async function loadMobileAdminRequestDetail(
       body: note.body,
       createdAtIso: note.createdAtIso,
     })),
+    customerFacingNotesHistory,
     customerResponse: customerResponse
       ? {
           items: customerResponse.items.map((item) => ({

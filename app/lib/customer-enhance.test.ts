@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -6,7 +8,6 @@ import {
   CUSTOMER_PAGED_LIST_SCRIPT,
   CUSTOMER_PLANT_ROWS_SCRIPT,
   CUSTOMER_REQUEST_SUBMIT_SCRIPT,
-  CUSTOMER_SMS_OPTIN_SCRIPT,
   CUSTOMER_TIME_SCRIPT,
   FEDEX_WARNING_SCRIPT,
 } from "../components/customer-enhance";
@@ -59,10 +60,13 @@ describe("customer progressive-enhancement scripts", () => {
     assert.match(CUSTOMER_LIGHTBOX_SCRIPT, /ArrowRight/);
   });
 
-  it("formats the SMS phone field without relying on maxlength", () => {
-    assert.match(CUSTOMER_SMS_OPTIN_SCRIPT, /data-sms-phone-bound/);
-    assert.match(CUSTOMER_SMS_OPTIN_SCRIPT, /formatPhoneField/);
-    assert.doesNotMatch(CUSTOMER_SMS_OPTIN_SCRIPT, /maxLength/);
+  it("does not ship SMS opt-in progressive enhancement", () => {
+    const enhance = readFileSync(
+      path.join(import.meta.dirname, "..", "components", "customer-enhance.tsx"),
+      "utf8",
+    );
+    assert.doesNotMatch(enhance, /CUSTOMER_SMS_OPTIN_SCRIPT/);
+    assert.doesNotMatch(enhance, /data-sms-opt-in/);
   });
 
   it("locks the customer request submit button on first submit", () => {

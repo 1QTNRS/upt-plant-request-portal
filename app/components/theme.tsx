@@ -177,20 +177,6 @@ export function ThemeStyles() {
         line-height: 1.45;
       }
       .upt-muted { color: ${THEME.muted}; line-height: 1.5; }
-      .upt-sms-consent {
-        margin: 12px 0 0;
-        color: #5a6d62;
-        font-size: 0.8125rem;
-        font-style: italic;
-        font-weight: 400;
-        line-height: 1.55;
-      }
-      .upt-sms-consent a {
-        color: ${THEME.darkGreen};
-        font-style: italic;
-        text-decoration: underline;
-        text-underline-offset: 2px;
-      }
       .upt-sr-only {
         position: absolute;
         width: 1px;
@@ -236,20 +222,6 @@ export function ThemeStyles() {
       .upt-choice input:focus-visible + span {
         outline: 3px solid ${THEME.yellow};
         outline-offset: 2px;
-      }
-      .upt-sms-enable {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        cursor: pointer;
-        color: ${THEME.darkGreen};
-        font-weight: 600;
-      }
-      .upt-sms-enable input {
-        width: 18px;
-        height: 18px;
-        accent-color: ${THEME.darkGreen};
-        flex: 0 0 auto;
       }
       .upt-offer-section-gap {
         display: block;
