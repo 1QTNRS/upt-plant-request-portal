@@ -9,6 +9,7 @@ import {
   buildCustomerOffer,
   closeRequest,
   getCustomerResponse,
+  getCustomerFacingNotesHistoryForRequest,
   listInternalNotes,
   getCustomerTimeZone,
   getRequest,
@@ -181,6 +182,18 @@ describe("plant request persistence", () => {
     const offered = await sendOffer(shop, created.id, 5);
     assert.equal(offered?.status, "Pending");
     assert.equal(offered?.sentOffer?.expirationDays, 5);
+    const frozenItems = await prisma.offerItem.findMany({
+      where: { offer: { requestId: created.id } },
+      orderBy: { id: "asc" },
+    });
+    const ghostOfferItem = frozenItems.find(
+      (item) => item.requestItemId === created.items[1].id,
+    );
+    assert.equal(ghostOfferItem?.plantName, "Ghost Plant");
+    const peruOfferItem = frozenItems.find(
+      (item) => item.requestItemId === created.items[0].id,
+    );
+    assert.equal(peruOfferItem?.plantName, "Monstera Peru Exact");
 
     const afterOfferEdit = await updateRequestItem(shop, {
       requestId: created.id,
@@ -875,6 +888,72 @@ describe("exact plant photos before the offer is sent", () => {
     assert.equal(heldAfterRemove?.availability, "not_available");
     assert.equal(heldAfterRemove?.unavailableReason, "currently not in UPT prop circulation");
     assert.equal(heldAfterRemove?.price, 85);
+  });
+});
+
+describe("customer-facing notes history for request", () => {
+  const historyShop = `${DEMO_SHOP}-notes-history-test`;
+
+  before(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: historyShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: historyShop } });
+  });
+
+  after(async () => {
+    await prisma.plantRequest.deleteMany({ where: { shop: historyShop } });
+    await prisma.customerProfile.deleteMany({ where: { shop: historyShop } });
+  });
+
+  it("returns requested plant names for not available notes after send", async () => {
+    const created = await submitCustomerRequest(historyShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Hoya clemensiorum ‘Dragon Scale’" }],
+    });
+    const itemId = created.items[0].id;
+    await updateRequestItem(historyShop, {
+      requestId: created.id,
+      itemId,
+      availability: "not_available",
+      unavailableReason: "not in our current inventory",
+      customerFacingNotes: "We cannot source this clone right now.",
+    });
+    await sendOffer(historyShop, created.id, 3);
+    const history = await getCustomerFacingNotesHistoryForRequest(
+      historyShop,
+      created.id,
+    );
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.plantName, "Hoya clemensiorum ‘Dragon Scale’");
+    assert.equal(history[0]?.note, "We cannot source this clone right now.");
+  });
+
+  it("backfills plant name from RequestItem when legacy offer snapshots are blank", async () => {
+    const created = await submitCustomerRequest(historyShop, {
+      name: "Alex Rivera",
+      email: "alex.rivera@example.com",
+      items: [{ plantName: "Legacy Not Available Plant" }],
+    });
+    const itemId = created.items[0].id;
+    await updateRequestItem(historyShop, {
+      requestId: created.id,
+      itemId,
+      availability: "not_available",
+      unavailableReason: "not in our current inventory",
+      customerFacingNotes: "Frozen historical note.",
+    });
+    await sendOffer(historyShop, created.id, 3);
+    await prisma.offerItem.updateMany({
+      where: { requestItemId: itemId },
+      data: { plantName: "" },
+    });
+    const history = await getCustomerFacingNotesHistoryForRequest(
+      historyShop,
+      created.id,
+    );
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.plantName, "Legacy Not Available Plant");
+    assert.equal(history[0]?.note, "Frozen historical note.");
   });
 });
 
