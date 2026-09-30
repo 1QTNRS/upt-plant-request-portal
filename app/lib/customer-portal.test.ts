@@ -926,6 +926,24 @@ describe("the request form works without JavaScript", () => {
     assert.match(html, /Text me when plants from my request are available/);
     assert.match(html, /name="smsNotifyEnabled"/);
     assert.match(html, /class="upt-sms-consent"/);
+    assert.match(html, /data-sms-consent-disclosure/);
+    assert.match(html, /automated, request-related text messages/);
+    assert.match(html, /Reply HELP for help or STOP to unsubscribe/);
+    assert.match(html, /SMS consent is optional/);
+    assert.match(
+      html,
+      /href="https:\/\/unsolicitedplanttalks\.com\/policies\/privacy-policy"/,
+    );
+    assert.match(
+      html,
+      /href="https:\/\/unsolicitedplanttalks\.com\/policies\/terms-of-service"/,
+    );
+    assert.ok(
+      html.indexOf("data-sms-consent-disclosure") <
+        html.indexOf('name="smsNotifyEnabled"'),
+      "consent disclosure appears before the SMS checkbox",
+    );
+    assert.match(html, /data-sms-phone-panel[^>]*hidden/);
     assert.ok(
       html.indexOf("Have an existing order?") <
         html.indexOf("Text me when plants from my request are available"),

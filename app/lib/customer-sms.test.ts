@@ -7,6 +7,7 @@ import { CUSTOMER_SMS_OPTIN_SCRIPT } from "../components/customer-enhance";
 import {
   canonicalUsCaSmsPhoneE164,
   capUsCaNationalDigits,
+  CUSTOMER_SMS_CONSENT_PARAGRAPH,
   CUSTOMER_SMS_OPT_IN_ENABLED,
   formatSmsPhoneFieldDisplay,
   formatUsCaNationalDigitsForDisplay,
@@ -15,6 +16,8 @@ import {
   readSmsNotifyEnabled,
   readSmsPhone,
   SMS_PHONE_INVALID_MESSAGE,
+  STOREFRONT_PRIVACY_POLICY_URL,
+  STOREFRONT_TERMS_OF_SERVICE_URL,
   validateSmsOptIn,
 } from "./customer-sms";
 
@@ -127,10 +130,33 @@ describe("customer request form SMS UI", () => {
     assert.match(portal, /CUSTOMER_SMS_OPT_IN_ENABLED \? \(/);
     assert.match(portal, /data-sms-opt-in/);
     assert.match(portal, /className="upt-sms-consent"/);
+    assert.match(portal, /data-sms-consent-disclosure/);
+    assert.match(portal, /CUSTOMER_SMS_CONSENT_PARAGRAPH/);
     assert.match(portal, /Text me when plants from my request are available/);
     assert.match(portal, /Enable SMS notifications/);
-    assert.match(portal, /Privacy Policy/);
-    assert.match(portal, /Terms/);
+    assert.match(portal, /STOREFRONT_PRIVACY_POLICY_URL/);
+    assert.match(portal, /STOREFRONT_TERMS_OF_SERVICE_URL/);
+    assert.doesNotMatch(
+      portal,
+      /data-sms-phone-panel[\s\S]*upt-sms-consent/,
+      "consent must not be inside the phone panel",
+    );
+  });
+
+  it("includes the full Twilio consent paragraph and policy URLs", () => {
+    assert.match(CUSTOMER_SMS_CONSENT_PARAGRAPH, /automated, request-related text messages/);
+    assert.match(CUSTOMER_SMS_CONSENT_PARAGRAPH, /offer is ready for review/);
+    assert.match(CUSTOMER_SMS_CONSENT_PARAGRAPH, /Message frequency varies/);
+    assert.match(CUSTOMER_SMS_CONSENT_PARAGRAPH, /Reply HELP for help or STOP to unsubscribe/);
+    assert.match(CUSTOMER_SMS_CONSENT_PARAGRAPH, /SMS consent is optional/);
+    assert.equal(
+      STOREFRONT_PRIVACY_POLICY_URL,
+      "https://unsolicitedplanttalks.com/policies/privacy-policy",
+    );
+    assert.equal(
+      STOREFRONT_TERMS_OF_SERVICE_URL,
+      "https://unsolicitedplanttalks.com/policies/terms-of-service",
+    );
   });
 
   it("persists SMS preferences on submit when the UI flag is on", () => {
